@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Settings;
 
 public sealed partial class MidTermSettingsPublic
 {
-    public const int DefaultScrollbackLines = 2000;
+    public const int DefaultScrollbackLines = 10000;
     public const int DefaultScrollbackBytes = 2 * 1024 * 1024;
     public const int DefaultBackgroundKenBurnsZoomPercent = 150;
     public const int DefaultBackgroundKenBurnsSpeedPxPerSecond = 12;

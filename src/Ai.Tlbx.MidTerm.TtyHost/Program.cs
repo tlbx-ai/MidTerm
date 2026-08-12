@@ -1366,6 +1366,7 @@ internal sealed class TerminalSession : IDisposable
     private readonly object _metadataLock = new();
     private readonly SemaphoreSlim _ptyWriteLock = new(1, 1);
     private readonly KittyGraphicsCapabilityResponder _kittyGraphicsResponder = new();
+    private readonly TerminalColorQueryGuard _terminalColorQueryGuard = new();
     private readonly int _scrollbackBytes;
     private readonly Action<ForegroundProcessInfo>? _foregroundChangedHandler;
     private TtyHostTransportInfo _transportInfo;
@@ -1485,6 +1486,7 @@ internal sealed class TerminalSession : IDisposable
                 var ptyOutputReadAtMs = Environment.TickCount64;
                 var data = buffer.AsMemory(0, bytesRead);
                 Log.Verbose(() => string.Create(CultureInfo.InvariantCulture, $"[PTY-READ] {bytesRead} bytes"));
+                _terminalColorQueryGuard.ObservePtyOutput(data.Span);
                 var kittyResponses = _kittyGraphicsResponder.Consume(data.Span);
                 if (kittyResponses is not null)
                 {
@@ -1523,6 +1525,12 @@ internal sealed class TerminalSession : IDisposable
 
     public async Task SendInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct)
     {
+        if (_terminalColorQueryGuard.ShouldSuppressClientResponse(data.Span))
+        {
+            Log.Verbose(() => "[PTY-WRITE] suppressed stale or duplicate terminal color response");
+            return;
+        }
+
         if (_kittyGraphicsResponder.IsDuplicateClientResponse(data.Span))
         {
             Log.Verbose(() => "[PTY-WRITE] suppressed duplicate Kitty capability response");

@@ -418,7 +418,7 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'immediate',
   }),
-  controlEntry('scrollbackLines', 'setting-scrollback', 'int', 2000, {
+  controlEntry('scrollbackLines', 'setting-scrollback', 'int', 10000, {
     editable: true,
     storage: 'settings.json',
     validation: 'integer, UI clamps to 500-10000',

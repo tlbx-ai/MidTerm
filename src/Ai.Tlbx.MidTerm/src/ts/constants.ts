@@ -309,7 +309,7 @@ export const THEMES: Record<string, TerminalTheme> = {
 /** Default terminal settings */
 export const DEFAULT_SETTINGS = {
   fontSize: 14,
-  scrollbackLines: 2000,
+  scrollbackLines: 10000,
   scrollbackBytes: 2 * 1024 * 1024,
   cursorStyle: 'block' as const,
   cursorBlink: false,

@@ -103,7 +103,7 @@ function resolveGeneralTerminalOptions(
     cursorBlink: currentSettings?.cursorBlink ?? false,
     cursorStyle: currentSettings?.cursorStyle ?? 'block',
     cursorInactiveStyle: currentSettings?.cursorInactiveStyle ?? 'none',
-    scrollback: currentSettings?.scrollbackLines ?? 2000,
+    scrollback: currentSettings?.scrollbackLines ?? 10000,
     smoothScrollDuration: currentSettings?.smoothScrolling ? 50 : 0,
     allowProposedApi: true,
     allowTransparency: true,
