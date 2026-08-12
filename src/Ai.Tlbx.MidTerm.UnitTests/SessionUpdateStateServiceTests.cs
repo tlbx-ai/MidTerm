@@ -17,6 +17,48 @@ public sealed class SessionUpdateStateServiceTests
     };
 
     [Fact]
+    public void ForegroundProcessEnvironmentReader_ReadsNamedVariableFromCurrentProcess()
+    {
+        if (OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        const string variableName = "TLBX_TEST_FOREGROUND_ENVIRONMENT_READER";
+        var expected = Guid.NewGuid().ToString("N");
+        Environment.SetEnvironmentVariable(variableName, expected);
+        try
+        {
+            Assert.Equal(
+                expected,
+                ForegroundProcessEnvironmentReader.TryReadVariable(Environment.ProcessId, variableName));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variableName, null);
+        }
+    }
+
+    [Fact]
+    public void ForegroundProcessEnvironmentReader_ParsesOnlyExactVariableName()
+    {
+        var block = "CODEX_THREAD_ID_OLD=stale\0CODEX_THREAD_ID=thread-123\0PATH=value\0\0";
+
+        Assert.Equal(
+            "thread-123",
+            ForegroundProcessEnvironmentReader.FindVariable(block, "CODEX_THREAD_ID"));
+    }
+
+    [Theory]
+    [InlineData("codex --yolo resume thread-123", "codex")]
+    [InlineData("C:\\tools\\claude.exe --resume thread-123", "claude")]
+    [InlineData("pwsh -NoLogo", null)]
+    public void TryGetResumeProvider_DetectsSupportedAgentCommand(string command, string? expected)
+    {
+        Assert.Equal(expected, SessionUpdateStateService.TryGetResumeProvider(command));
+    }
+
+    [Fact]
     public void SessionRegistry_GetSessionList_CanIncludeHiddenSessionsForUpdateStateCapture()
     {
         var registry = new SessionRegistry(isServiceMode: false);

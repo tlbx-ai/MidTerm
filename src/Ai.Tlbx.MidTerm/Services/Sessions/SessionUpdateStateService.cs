@@ -19,6 +19,8 @@ public sealed partial class SessionUpdateStateService
     private const int ObservedResumeTailBytes = 256;
     private const int ObservedResumeContextBeforeBytes = 64;
     private const int ObservedResumeContextAfterBytes = 384;
+    private static readonly TimeSpan RestoredShellReadyTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan RestoredAgentStartTimeout = TimeSpan.FromSeconds(6);
     private readonly string _statePath;
     private readonly ConcurrentDictionary<string, byte> _trackedAiSessions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ResumeObservation> _resumeObservations = new(StringComparer.Ordinal);
@@ -244,6 +246,7 @@ public sealed partial class SessionUpdateStateService
                 AppServerControlOnly = dto?.AppServerControlOnly ?? false,
                 ProfileHint = dto?.ProfileHint,
                 AppServerControlResumeThreadId = dto?.AppServerControlResumeThreadId,
+                ForegroundPid = dto?.ForegroundPid ?? session.ForegroundPid,
                 ForegroundName = dto?.ForegroundName ?? session.ForegroundName,
                 ForegroundCommandLine = dto?.ForegroundCommandLine ?? session.ForegroundCommandLine,
                 ForegroundDisplayName = dto?.ForegroundDisplayName ?? session.ForegroundDisplayName,
@@ -325,6 +328,14 @@ public sealed partial class SessionUpdateStateService
         bool tryResumeNonAiAgentProcesses,
         CancellationToken ct)
     {
+        var liveAgentSessionId = TryReadLiveAgentSessionId(decoration);
+        if (liveAgentSessionId is not null)
+        {
+            return BuildResumeCommand(
+                new AiResumeHint(AiCliProfileService.CodexProfile, "resume", liveAgentSessionId),
+                decoration.ForegroundCommandLine);
+        }
+
         var terminalText = string.Empty;
         try
         {
@@ -354,6 +365,48 @@ public sealed partial class SessionUpdateStateService
             decoration.ForegroundCommandLine,
             decoration.ForegroundName,
             tryResumeNonAiAgentProcesses);
+    }
+
+    private static string? TryReadLiveAgentSessionId(SessionDecorationState decoration)
+    {
+        if (decoration.ForegroundPid is not > 0 ||
+            !IsCodexForeground(
+                decoration.ForegroundName,
+                decoration.ForegroundCommandLine,
+                decoration.ForegroundProcessIdentity))
+        {
+            return null;
+        }
+
+        var candidate = ForegroundProcessEnvironmentReader.TryReadVariableFromProcessTree(
+            decoration.ForegroundPid.Value,
+            "CODEX_THREAD_ID");
+        return IsSafeResumeId(candidate) ? candidate : null;
+    }
+
+    private static bool IsCodexForeground(
+        string? foregroundName,
+        string? foregroundCommandLine,
+        string? foregroundProcessIdentity)
+    {
+        return IsToken(foregroundProcessIdentity, AiCliProfileService.CodexProfile)
+            || IsToken(foregroundName, AiCliProfileService.CodexProfile)
+            || TokenizeCommandLine(foregroundCommandLine)
+                .Any(static token => IsToken(token, AiCliProfileService.CodexProfile));
+    }
+
+    private static bool IsToken(string? value, string expected)
+    {
+        return string.Equals(
+            Path.GetFileNameWithoutExtension(value?.Trim()),
+            expected,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSafeResumeId(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value)
+            && value.All(static ch => char.IsAsciiLetterOrDigit(ch) || ch is '.' or '_' or ':' or '-');
     }
 
     internal string? TryBuildObservedResumeCommand(string sessionId, string? foregroundCommandLine)
@@ -442,14 +495,52 @@ public sealed partial class SessionUpdateStateService
             {
                 try
                 {
+                    await WaitForRestoredShellReadyAsync(sessionManager, created.Session.Id, ct)
+                        .ConfigureAwait(false);
                     await sessionManager.SendInputAsync(
                         created.Session.Id,
                         Encoding.UTF8.GetBytes(intent.Command + "\r"),
                         ct).ConfigureAwait(false);
+
+                    var expectedProvider = TryGetResumeProvider(intent.Command);
+                    if (expectedProvider is not null &&
+                        !await WaitForRestoredAgentAsync(
+                            sessionManager,
+                            created.Session.Id,
+                            expectedProvider,
+                            ct).ConfigureAwait(false))
+                    {
+                        Log.Warn(() => $"Restored session {decoration.SessionId} stayed at the shell; retrying its {expectedProvider} resume command once");
+                        await sessionManager.SendInputAsync(
+                            created.Session.Id,
+                            Encoding.UTF8.GetBytes(intent.Command + "\r"),
+                            ct).ConfigureAwait(false);
+
+                        if (!await WaitForRestoredAgentAsync(
+                                sessionManager,
+                                created.Session.Id,
+                                expectedProvider,
+                                ct).ConfigureAwait(false))
+                        {
+                            throw new InvalidOperationException(
+                                $"{expectedProvider} did not become the foreground process after two resume attempts.");
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
                     Log.Warn(() => $"Failed to send resume command for restored session {decoration.SessionId}: {ex.Message}");
+                    failedOriginalSessionIds.Add(decoration.SessionId);
+                    recreatedOrderBySessionId.Remove(created.Session.Id);
+                    try
+                    {
+                        await sessionManager.CloseSessionAsync(created.Session.Id, CancellationToken.None)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception closeEx)
+                    {
+                        Log.Warn(() => $"Failed to close incomplete restored session {created.Session.Id}: {closeEx.Message}");
+                    }
                 }
             }
         }
@@ -466,6 +557,78 @@ public sealed partial class SessionUpdateStateService
         state.RestoredAt = DateTimeOffset.UtcNow;
         Log.Info(() => $"Restored full-update session state: recreated={recreatedOrderBySessionId.Count}, failed={failedOriginalSessionIds.Count}");
         return new RestoreUpdateStateResult(failedOriginalSessionIds);
+    }
+
+    private static async Task WaitForRestoredShellReadyAsync(
+        TtyHostSessionManager sessionManager,
+        string sessionId,
+        CancellationToken ct)
+    {
+        var deadline = DateTimeOffset.UtcNow + RestoredShellReadyTimeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            var buffer = await sessionManager.GetBufferAsync(
+                sessionId,
+                maxBytes: 4096,
+                reason: TerminalReplayReason.Manual,
+                ct: ct).ConfigureAwait(false);
+            if (buffer is { Data.Length: > 0 })
+            {
+                return;
+            }
+
+            await Task.Delay(50, ct).ConfigureAwait(false);
+        }
+
+        Log.Warn(() => $"Restored shell {sessionId} produced no startup output before its resume command was sent");
+    }
+
+    private static async Task<bool> WaitForRestoredAgentAsync(
+        TtyHostSessionManager sessionManager,
+        string sessionId,
+        string expectedProvider,
+        CancellationToken ct)
+    {
+        var deadline = DateTimeOffset.UtcNow + RestoredAgentStartTimeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            var session = await sessionManager.GetSessionFreshAsync(sessionId, ct).ConfigureAwait(false);
+            if (session is null)
+            {
+                return false;
+            }
+
+            if (IsToken(session.ForegroundProcessIdentity, expectedProvider)
+                || IsToken(session.ForegroundName, expectedProvider)
+                || TokenizeCommandLine(session.ForegroundCommandLine)
+                    .Any(token => IsToken(token, expectedProvider)))
+            {
+                return true;
+            }
+
+            await Task.Delay(100, ct).ConfigureAwait(false);
+        }
+
+        return false;
+    }
+
+    internal static string? TryGetResumeProvider(string? command)
+    {
+        foreach (var token in TokenizeCommandLine(command))
+        {
+            var fileName = Path.GetFileNameWithoutExtension(token.Trim('"', '\''));
+            if (fileName is not null &&
+                (fileName.Equals("codex", StringComparison.OrdinalIgnoreCase)
+                 || fileName.Equals("claude", StringComparison.OrdinalIgnoreCase)
+                 || fileName.Equals("grok", StringComparison.OrdinalIgnoreCase)))
+            {
+                return fileName.ToLowerInvariant();
+            }
+        }
+
+        return null;
     }
 
     private static bool IsFullUpdateState(SessionUpdateState state)
@@ -1066,6 +1229,7 @@ public sealed class SessionDecorationState
     public bool AppServerControlOnly { get; set; }
     public string? ProfileHint { get; set; }
     public string? AppServerControlResumeThreadId { get; set; }
+    public int? ForegroundPid { get; set; }
     public string? ForegroundName { get; set; }
     public string? ForegroundCommandLine { get; set; }
     public string? ForegroundDisplayName { get; set; }
