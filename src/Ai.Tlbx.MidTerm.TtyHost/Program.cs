@@ -1525,10 +1525,17 @@ internal sealed class TerminalSession : IDisposable
 
     public async Task SendInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct)
     {
-        if (_terminalColorQueryGuard.ShouldSuppressClientResponse(data.Span))
+        var filteredInput = _terminalColorQueryGuard.FilterClientInput(data.Span);
+        if (filteredInput is { Length: 0 })
         {
             Log.Verbose(() => "[PTY-WRITE] suppressed stale or duplicate terminal color response");
             return;
+        }
+
+        if (filteredInput is not null)
+        {
+            Log.Verbose(() => "[PTY-WRITE] filtered stale, duplicate, or unsolicited terminal color response");
+            data = filteredInput;
         }
 
         if (_kittyGraphicsResponder.IsDuplicateClientResponse(data.Span))

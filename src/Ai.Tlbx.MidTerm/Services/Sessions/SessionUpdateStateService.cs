@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -14,16 +14,13 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public sealed partial class SessionUpdateStateService
 {
-    private const int ResumeHintScrollbackBytes = 256 * 1024;
     private const int ResumeHintTailLineCount = 8;
-    private const int ObservedResumeTailBytes = 256;
-    private const int ObservedResumeContextBeforeBytes = 64;
-    private const int ObservedResumeContextAfterBytes = 384;
+    private const int GracefulExitOutputLimit = 64 * 1024;
+    private static readonly TimeSpan GracefulExitInterruptDelay = TimeSpan.FromMilliseconds(750);
+    private static readonly TimeSpan GracefulExitTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan RestoredShellReadyTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan RestoredAgentStartTimeout = TimeSpan.FromSeconds(6);
     private readonly string _statePath;
-    private readonly ConcurrentDictionary<string, byte> _trackedAiSessions = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, ResumeObservation> _resumeObservations = new(StringComparer.Ordinal);
 
     public SessionUpdateStateService(SettingsService settingsService)
         : this(settingsService.SettingsDirectory)
@@ -33,66 +30,6 @@ public sealed partial class SessionUpdateStateService
     public SessionUpdateStateService(string settingsDirectory)
     {
         _statePath = Path.Combine(settingsDirectory, "state.json");
-    }
-
-    public void NoteForeground(
-        string sessionId,
-        string? foregroundName,
-        string? foregroundCommandLine,
-        string? foregroundProcessIdentity)
-    {
-        if (IsSupportedAiForeground(foregroundName, foregroundCommandLine, foregroundProcessIdentity))
-        {
-            _trackedAiSessions[sessionId] = 0;
-            return;
-        }
-
-        _trackedAiSessions.TryRemove(sessionId, out _);
-    }
-
-    public void ObserveOutput(string sessionId, ReadOnlyMemory<byte> data)
-    {
-        if (data.IsEmpty || !_trackedAiSessions.ContainsKey(sessionId))
-        {
-            return;
-        }
-
-        var observation = _resumeObservations.GetOrAdd(sessionId, static _ => new ResumeObservation());
-        lock (observation)
-        {
-            var span = data.Span;
-            var resumeIndex = LastIndexOfAsciiIgnoreCase(span, "resume"u8);
-            var crossesBoundary = resumeIndex < 0 && ContainsResumeAcrossBoundary(observation.Tail, observation.TailLength, span);
-
-            if (resumeIndex >= 0 || crossesBoundary)
-            {
-                var currentStart = resumeIndex >= 0
-                    ? Math.Max(0, resumeIndex - ObservedResumeContextBeforeBytes)
-                    : 0;
-                var currentLength = Math.Min(span.Length - currentStart, ObservedResumeContextAfterBytes);
-                var includeTail = currentStart == 0 ? observation.TailLength : 0;
-                var candidate = new byte[includeTail + currentLength];
-                if (includeTail > 0)
-                {
-                    observation.Tail.AsSpan(0, includeTail).CopyTo(candidate);
-                }
-                span.Slice(currentStart, currentLength).CopyTo(candidate.AsSpan(includeTail));
-
-                var hint = TryFindAiResumeHint(Encoding.UTF8.GetString(candidate));
-                if (hint is not null)
-                {
-                    observation.Hint = hint;
-                }
-            }
-
-            observation.RememberTail(span);
-        }
-    }
-
-    public void ForgetSession(string sessionId)
-    {
-        _trackedAiSessions.TryRemove(sessionId, out _);
-        _resumeObservations.TryRemove(sessionId, out _);
     }
 
     public async Task CaptureAsync(
@@ -115,28 +52,44 @@ public sealed partial class SessionUpdateStateService
 
         if (fullUpdate)
         {
-            foreach (var decoration in decorations.OrderBy(static item => item.Order))
+            var stoppedSessions = new List<(string SessionId, string Command)>();
+            try
             {
-                var command = await TryBuildResumeCommandAsync(
-                    sessionManager,
-                    decoration,
-                    tryResumeNonAiAgentProcesses,
-                    ct).ConfigureAwait(false);
-                if (string.IsNullOrWhiteSpace(command))
+                foreach (var decoration in decorations.OrderBy(static item => item.Order))
                 {
-                    continue;
-                }
+                    var command = await BuildResumeCommandAfterGracefulExitAsync(
+                        sessionManager,
+                        decoration,
+                        tryResumeNonAiAgentProcesses,
+                        ct).ConfigureAwait(false);
+                    if (string.IsNullOrWhiteSpace(command))
+                    {
+                        continue;
+                    }
 
-                state.PendingResumeSessions.Add(new SessionResumeIntent
-                {
-                    OriginalSessionId = decoration.SessionId,
-                    Command = command,
-                    ShellType = decoration.ShellType,
-                    WorkingDirectory = decoration.CurrentDirectory,
-                    Cols = decoration.Cols,
-                    Rows = decoration.Rows,
-                    Decoration = decoration
-                });
+                    state.PendingResumeSessions.Add(new SessionResumeIntent
+                    {
+                        OriginalSessionId = decoration.SessionId,
+                        Command = command,
+                        ShellType = decoration.ShellType,
+                        WorkingDirectory = decoration.CurrentDirectory,
+                        Cols = decoration.Cols,
+                        Rows = decoration.Rows,
+                        Decoration = decoration
+                    });
+                    if (IsCodexForeground(
+                            decoration.ForegroundName,
+                            decoration.ForegroundCommandLine,
+                            decoration.ForegroundProcessIdentity))
+                    {
+                        stoppedSessions.Add((decoration.SessionId, command));
+                    }
+                }
+            }
+            catch
+            {
+                await RelaunchStoppedSessionsAsync(sessionManager, stoppedSessions).ConfigureAwait(false);
+                throw;
             }
         }
 
@@ -246,7 +199,6 @@ public sealed partial class SessionUpdateStateService
                 AppServerControlOnly = dto?.AppServerControlOnly ?? false,
                 ProfileHint = dto?.ProfileHint,
                 AppServerControlResumeThreadId = dto?.AppServerControlResumeThreadId,
-                ForegroundPid = dto?.ForegroundPid ?? session.ForegroundPid,
                 ForegroundName = dto?.ForegroundName ?? session.ForegroundName,
                 ForegroundCommandLine = dto?.ForegroundCommandLine ?? session.ForegroundCommandLine,
                 ForegroundDisplayName = dto?.ForegroundDisplayName ?? session.ForegroundDisplayName,
@@ -322,66 +274,178 @@ public sealed partial class SessionUpdateStateService
         }
     }
 
-    private async Task<string?> TryBuildResumeCommandAsync(
+    private static async Task<string?> BuildResumeCommandAfterGracefulExitAsync(
         TtyHostSessionManager sessionManager,
         SessionDecorationState decoration,
         bool tryResumeNonAiAgentProcesses,
         CancellationToken ct)
     {
-        var liveAgentSessionId = TryReadLiveAgentSessionId(decoration);
-        if (liveAgentSessionId is not null)
-        {
-            return BuildResumeCommand(
-                new AiResumeHint(AiCliProfileService.CodexProfile, "resume", liveAgentSessionId),
-                decoration.ForegroundCommandLine);
-        }
-
-        var terminalText = string.Empty;
-        try
-        {
-            var buffer = await sessionManager.GetBufferAsync(
-                decoration.SessionId,
-                ResumeHintScrollbackBytes,
-                TerminalReplayReason.Manual,
-                ct: ct).ConfigureAwait(false);
-            if (buffer is not null)
-            {
-                terminalText = Encoding.UTF8.GetString(buffer.Data);
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Warn(() => $"Failed to read resume scrollback for {decoration.SessionId}: {ex.Message}");
-        }
-
-        var observedHint = GetObservedResumeHint(decoration.SessionId);
-        if (observedHint is not null)
-        {
-            return BuildResumeCommand(observedHint, decoration.ForegroundCommandLine);
-        }
-
-        return TryBuildResumeCommand(
-            terminalText,
-            decoration.ForegroundCommandLine,
-            decoration.ForegroundName,
-            tryResumeNonAiAgentProcesses);
-    }
-
-    private static string? TryReadLiveAgentSessionId(SessionDecorationState decoration)
-    {
-        if (decoration.ForegroundPid is not > 0 ||
-            !IsCodexForeground(
+        if (IsCodexForeground(
                 decoration.ForegroundName,
                 decoration.ForegroundCommandLine,
                 decoration.ForegroundProcessIdentity))
         {
+            try
+            {
+                var resumeId = await CaptureCodexResumeIdAfterExitAsync(
+                    sessionManager,
+                    decoration.SessionId,
+                    ct).ConfigureAwait(false);
+                return BuildResumeCommand(
+                    new AiResumeHint(AiCliProfileService.CodexProfile, "resume", resumeId),
+                    decoration.ForegroundCommandLine);
+            }
+            catch
+            {
+                await RelaunchCodexIfStoppedAsync(
+                    sessionManager,
+                    decoration.SessionId,
+                    decoration.ForegroundCommandLine).ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        if (IsSupportedAiForeground(
+                decoration.ForegroundName,
+                decoration.ForegroundCommandLine,
+                decoration.ForegroundProcessIdentity))
+        {
+            throw new InvalidOperationException(
+                $"Full-update recovery cannot yet stop {decoration.ForegroundProcessIdentity ?? decoration.ForegroundName} authoritatively in session {decoration.SessionId}.");
+        }
+
+        if (!tryResumeNonAiAgentProcesses ||
+            string.IsNullOrWhiteSpace(decoration.ForegroundCommandLine) ||
+            IsShellProcess(decoration.ForegroundName, decoration.ForegroundCommandLine))
+        {
             return null;
         }
 
-        var candidate = ForegroundProcessEnvironmentReader.TryReadVariableFromProcessTree(
-            decoration.ForegroundPid.Value,
-            "CODEX_THREAD_ID");
-        return IsSafeResumeId(candidate) ? candidate : null;
+        return decoration.ForegroundCommandLine.Trim();
+    }
+
+    private static async Task<string> CaptureCodexResumeIdAfterExitAsync(
+        TtyHostSessionManager sessionManager,
+        string sessionId,
+        CancellationToken ct)
+    {
+        var output = new List<byte>(4096);
+        var outputGate = new object();
+        void OnOutput(string observedSessionId, ulong _, int __, int ___, ReadOnlyMemory<byte> data)
+        {
+            if (!string.Equals(observedSessionId, sessionId, StringComparison.Ordinal) || data.IsEmpty)
+            {
+                return;
+            }
+
+            lock (outputGate)
+            {
+                var overflow = output.Count + data.Length - GracefulExitOutputLimit;
+                if (overflow > 0)
+                {
+                    output.RemoveRange(0, Math.Min(overflow, output.Count));
+                }
+
+                output.AddRange(data.ToArray());
+            }
+        }
+
+        sessionManager.OnOutput += OnOutput;
+        try
+        {
+            // The update may have been requested by a tool running inside this
+            // exact Codex turn. Interrupt that tool first so Codex can return to
+            // its prompt and process the explicit /quit command.
+            await sessionManager.SendInputAsync(sessionId, new byte[] { 0x03 }, ct).ConfigureAwait(false);
+            await Task.Delay(GracefulExitInterruptDelay, ct).ConfigureAwait(false);
+
+            var afterInterrupt = await sessionManager.GetSessionFreshAsync(sessionId, ct).ConfigureAwait(false);
+            var codexStillRunning = afterInterrupt is not null &&
+                IsCodexForeground(
+                    afterInterrupt.ForegroundName,
+                    afterInterrupt.ForegroundCommandLine,
+                    afterInterrupt.ForegroundProcessIdentity);
+            if (!codexStillRunning)
+            {
+                string interruptOutput;
+                lock (outputGate)
+                {
+                    interruptOutput = Encoding.UTF8.GetString(output.ToArray());
+                }
+
+                return TryExtractCodexExitResumeId(interruptOutput)
+                    ?? throw new InvalidOperationException(
+                        $"Codex exited from session {sessionId} after interruption without emitting its authoritative resume command.");
+            }
+
+            // Discard every repaint produced while interrupting the active turn.
+            // Only bytes emitted after the explicit /quit are authoritative for
+            // recovery and may contain the resume id.
+            lock (outputGate)
+            {
+                output.Clear();
+            }
+
+            await sessionManager.SendInputAsync(sessionId, "/quit"u8.ToArray(), ct).ConfigureAwait(false);
+            await Task.Delay(50, ct).ConfigureAwait(false);
+            await sessionManager.SendInputAsync(sessionId, new byte[] { 0x0d }, ct).ConfigureAwait(false);
+
+            var deadline = DateTimeOffset.UtcNow + GracefulExitTimeout;
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                ct.ThrowIfCancellationRequested();
+                string capturedText;
+                lock (outputGate)
+                {
+                    capturedText = Encoding.UTF8.GetString(output.ToArray());
+                }
+
+                var resumeId = TryExtractCodexExitResumeId(capturedText);
+                var session = await sessionManager.GetSessionFreshAsync(sessionId, ct).ConfigureAwait(false);
+                var codexExited = session is not null &&
+                    !IsCodexForeground(
+                        session.ForegroundName,
+                        session.ForegroundCommandLine,
+                        session.ForegroundProcessIdentity);
+                if (codexExited && resumeId is not null)
+                {
+                    return resumeId;
+                }
+
+                if (codexExited && resumeId is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Codex exited from session {sessionId} without emitting its authoritative resume command.");
+                }
+
+                await Task.Delay(100, ct).ConfigureAwait(false);
+            }
+
+            throw new TimeoutException(
+                $"Codex in session {sessionId} did not exit with an authoritative resume command within {GracefulExitTimeout.TotalSeconds.ToString(CultureInfo.InvariantCulture)} seconds.");
+        }
+        finally
+        {
+            sessionManager.OnOutput -= OnOutput;
+        }
+    }
+
+    internal static string? TryExtractCodexExitResumeId(string? capturedAfterExitStarted)
+    {
+        if (string.IsNullOrWhiteSpace(capturedAfterExitStarted))
+        {
+            return null;
+        }
+
+        var clean = TerminalOutputSanitizer.StripEscapeSequences(capturedAfterExitStarted);
+        var matches = CodexExitResumeHintRegex().Matches(clean);
+        if (matches.Count == 0)
+        {
+            return null;
+        }
+
+        var candidate = matches[^1].Groups["threadId"].Value;
+        return Guid.TryParse(candidate, out _) ? candidate : null;
     }
 
     private static bool IsCodexForeground(
@@ -403,28 +467,57 @@ public sealed partial class SessionUpdateStateService
             StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsSafeResumeId(string? value)
+    private static async Task RelaunchStoppedSessionsAsync(
+        TtyHostSessionManager sessionManager,
+        IEnumerable<(string SessionId, string Command)> stoppedSessions)
     {
-        return !string.IsNullOrWhiteSpace(value)
-            && value.All(static ch => char.IsAsciiLetterOrDigit(ch) || ch is '.' or '_' or ':' or '-');
-    }
-
-    internal string? TryBuildObservedResumeCommand(string sessionId, string? foregroundCommandLine)
-    {
-        var hint = GetObservedResumeHint(sessionId);
-        return hint is null ? null : BuildResumeCommand(hint, foregroundCommandLine);
-    }
-
-    private AiResumeHint? GetObservedResumeHint(string sessionId)
-    {
-        if (!_resumeObservations.TryGetValue(sessionId, out var observation))
+        foreach (var (sessionId, command) in stoppedSessions)
         {
-            return null;
+            try
+            {
+                await sessionManager.SendInputAsync(
+                    sessionId,
+                    Encoding.UTF8.GetBytes(command + "\r"),
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"Failed to relaunch session {sessionId} after update capture was aborted: {ex.Message}");
+            }
         }
+    }
 
-        lock (observation)
+    private static async Task RelaunchCodexIfStoppedAsync(
+        TtyHostSessionManager sessionManager,
+        string sessionId,
+        string? originalCommandLine)
+    {
+        try
         {
-            return observation.Hint;
+            var session = await sessionManager.GetSessionFreshAsync(
+                sessionId,
+                CancellationToken.None).ConfigureAwait(false);
+            if (session is null ||
+                IsCodexForeground(
+                    session.ForegroundName,
+                    session.ForegroundCommandLine,
+                    session.ForegroundProcessIdentity))
+            {
+                return;
+            }
+
+            var command = BuildCommand([
+                AiCliProfileService.CodexProfile,
+                ..PreserveResumeFlags(originalCommandLine)
+            ]);
+            await sessionManager.SendInputAsync(
+                sessionId,
+                Encoding.UTF8.GetBytes(command + "\r"),
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn(() => $"Failed to relaunch Codex in session {sessionId} after authoritative resume capture failed: {ex.Message}");
         }
     }
 
@@ -1164,33 +1257,10 @@ public sealed partial class SessionUpdateStateService
     [GeneratedRegex(@"\b(?<provider>codex|claude|grok)(?:\.exe)?\s+(?<resumeArg>--?resume|resume)\s+(?<threadId>[A-Za-z0-9._:-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex AiResumeHintRegex();
 
+    [GeneratedRegex(@"^\s*To continue this session, run codex resume (?<threadId>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\s*$", RegexOptions.Multiline | RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex CodexExitResumeHintRegex();
+
     private sealed record AiResumeHint(string Provider, string ResumeArgument, string ThreadId);
-
-    private sealed class ResumeObservation
-    {
-        public byte[] Tail { get; } = new byte[ObservedResumeTailBytes];
-        public int TailLength { get; private set; }
-        public AiResumeHint? Hint { get; set; }
-
-        public void RememberTail(ReadOnlySpan<byte> data)
-        {
-            if (data.Length >= Tail.Length)
-            {
-                data[^Tail.Length..].CopyTo(Tail);
-                TailLength = Tail.Length;
-                return;
-            }
-
-            var retained = Math.Min(TailLength, Tail.Length - data.Length);
-            if (retained > 0)
-            {
-                Tail.AsSpan(TailLength - retained, retained).CopyTo(Tail);
-            }
-
-            data.CopyTo(Tail.AsSpan(retained));
-            TailLength = retained + data.Length;
-        }
-    }
 
     private sealed record RestoreUpdateStateResult(IReadOnlyList<string> FailedOriginalSessionIds)
     {
@@ -1229,7 +1299,6 @@ public sealed class SessionDecorationState
     public bool AppServerControlOnly { get; set; }
     public string? ProfileHint { get; set; }
     public string? AppServerControlResumeThreadId { get; set; }
-    public int? ForegroundPid { get; set; }
     public string? ForegroundName { get; set; }
     public string? ForegroundCommandLine { get; set; }
     public string? ForegroundDisplayName { get; set; }

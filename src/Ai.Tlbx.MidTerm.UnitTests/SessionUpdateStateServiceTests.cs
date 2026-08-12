@@ -17,36 +17,23 @@ public sealed class SessionUpdateStateServiceTests
     };
 
     [Fact]
-    public void ForegroundProcessEnvironmentReader_ReadsNamedVariableFromCurrentProcess()
+    public void TryExtractCodexExitResumeId_AcceptsOnlyAuthoritativeExitLine()
     {
-        if (OperatingSystem.IsMacOS())
-        {
-            return;
-        }
-
-        const string variableName = "TLBX_TEST_FOREGROUND_ENVIRONMENT_READER";
-        var expected = Guid.NewGuid().ToString("N");
-        Environment.SetEnvironmentVariable(variableName, expected);
-        try
-        {
-            Assert.Equal(
-                expected,
-                ForegroundProcessEnvironmentReader.TryReadVariable(Environment.ProcessId, variableName));
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(variableName, null);
-        }
-    }
-
-    [Fact]
-    public void ForegroundProcessEnvironmentReader_ParsesOnlyExactVariableName()
-    {
-        var block = "CODEX_THREAD_ID_OLD=stale\0CODEX_THREAD_ID=thread-123\0PATH=value\0\0";
+        const string output = "\u001b[0mToken usage: total=13,945\r\nTo continue this session, run codex resume 019ff5ac-a7ab-7c23-8341-e3cc38782efa\r\nPS Q:\\repos\\Jpa> ";
 
         Assert.Equal(
-            "thread-123",
-            ForegroundProcessEnvironmentReader.FindVariable(block, "CODEX_THREAD_ID"));
+            "019ff5ac-a7ab-7c23-8341-e3cc38782efa",
+            SessionUpdateStateService.TryExtractCodexExitResumeId(output));
+    }
+
+    [Theory]
+    [InlineData("codex --yolo resume capture")]
+    [InlineData("Release title: Codex resume capture")]
+    [InlineData("To continue this session, run codex resume capture")]
+    [InlineData("To continue this session, run codex resume 019ff5ac-a7ab-7c23-8341-e3cc38782efa trailing")]
+    public void TryExtractCodexExitResumeId_RejectsRenderedTextAndInvalidIds(string output)
+    {
+        Assert.Null(SessionUpdateStateService.TryExtractCodexExitResumeId(output));
     }
 
     [Theory]
@@ -160,37 +147,6 @@ public sealed class SessionUpdateStateServiceTests
             tryResumeNonAiAgentProcesses: false);
 
         Assert.Equal("claude --dangerously-skip-permissions --resume abc-123", command);
-    }
-
-    [Fact]
-    public void ObserveOutput_RemembersAgentResumeHintAcrossChunksOutsideScrollback()
-    {
-        var stateDir = Path.Combine(Path.GetTempPath(), "midterm-update-state-tests", Guid.NewGuid().ToString("N"));
-        var service = new SessionUpdateStateService(stateDir);
-        service.NoteForeground(
-            "s1",
-            foregroundName: "node",
-            foregroundCommandLine: "node codex.js --yolo",
-            foregroundProcessIdentity: "codex");
-
-        service.ObserveOutput("s1", "To continue, run codex res"u8.ToArray());
-        service.ObserveOutput("s1", "ume 019ff0f5-6686-7c93-8420-4b6f4f4b9eae\r\n"u8.ToArray());
-
-        Assert.Equal(
-            "codex --yolo resume 019ff0f5-6686-7c93-8420-4b6f4f4b9eae",
-            service.TryBuildObservedResumeCommand("s1", "codex --yolo"));
-    }
-
-    [Fact]
-    public void ObserveOutput_IgnoresUntrackedShellTraffic()
-    {
-        var stateDir = Path.Combine(Path.GetTempPath(), "midterm-update-state-tests", Guid.NewGuid().ToString("N"));
-        var service = new SessionUpdateStateService(stateDir);
-        service.NoteForeground("s1", "pwsh", "pwsh", "pwsh");
-
-        service.ObserveOutput("s1", "echo codex resume must-not-run"u8.ToArray());
-
-        Assert.Null(service.TryBuildObservedResumeCommand("s1", "pwsh"));
     }
 
     [Fact]

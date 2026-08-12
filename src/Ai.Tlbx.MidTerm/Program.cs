@@ -278,11 +278,6 @@ public class Program
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
         {
             agentFeed.NoteForeground(sessionId, payload);
-            sessionUpdateStateService.NoteForeground(
-                sessionId,
-                payload.Name,
-                payload.CommandLine,
-                payload.ProcessIdentity);
             SyncTlbxDirectoryForCwd(payload.Cwd);
             var session = sessionManager.GetSession(sessionId);
             if (session is not null && !string.IsNullOrEmpty(payload.Name) && !string.IsNullOrEmpty(payload.Cwd))
@@ -313,7 +308,6 @@ public class Program
         sessionManager.OnOutput += (sessionId, _, _, _, data) =>
         {
             sessionTelemetry.RecordOutput(sessionId, data.Span);
-            sessionUpdateStateService.ObserveOutput(sessionId, data);
         };
 
         sessionManager.OnSessionClosed += sessionId =>
@@ -323,7 +317,6 @@ public class Program
             gitWatcher.UnregisterSession(sessionId);
             shareGrantService.RevokeBySession(sessionId);
             sessionTelemetry.ClearSession(sessionId);
-            sessionUpdateStateService.ForgetSession(sessionId);
             managerBarQueueService.RemoveSession(sessionId);
             workerSessionRegistry.Forget(sessionId);
             agentFeed.Forget(sessionId);

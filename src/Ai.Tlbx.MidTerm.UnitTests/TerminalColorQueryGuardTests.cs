@@ -15,8 +15,8 @@ public sealed class TerminalColorQueryGuardTests
         guard.ObservePtyOutput(Encoding.ASCII.GetBytes("\x1b]10;?\x1b\\"));
         var response = Encoding.ASCII.GetBytes("\x1b]10;rgb:f2f2/f2f2/f2f2\x1b\\");
 
-        Assert.False(guard.ShouldSuppressClientResponse(response));
-        Assert.True(guard.ShouldSuppressClientResponse(response));
+        Assert.Null(guard.FilterClientInput(response));
+        Assert.Empty(guard.FilterClientInput(response)!);
     }
 
     [Fact]
@@ -28,8 +28,8 @@ public sealed class TerminalColorQueryGuardTests
 
         time.Advance(TimeSpan.FromSeconds(2));
 
-        Assert.True(guard.ShouldSuppressClientResponse(
-            Encoding.ASCII.GetBytes("\x1b]11;rgb:0c0c/0c0c/0c0c\x1b\\")));
+        Assert.Empty(guard.FilterClientInput(
+            Encoding.ASCII.GetBytes("\x1b]11;rgb:0c0c/0c0c/0c0c\x1b\\"))!);
     }
 
     [Fact]
@@ -42,8 +42,8 @@ public sealed class TerminalColorQueryGuardTests
 
         time.Advance(TimeSpan.FromSeconds(2));
 
-        Assert.True(guard.ShouldSuppressClientResponse(
-            Encoding.ASCII.GetBytes("\x1b]12;rgb:ffff/0000/ffff\x07")));
+        Assert.Empty(guard.FilterClientInput(
+            Encoding.ASCII.GetBytes("\x1b]12;rgb:ffff/0000/ffff\x07"))!);
     }
 
     [Fact]
@@ -55,21 +55,43 @@ public sealed class TerminalColorQueryGuardTests
 
         time.Advance(TimeSpan.FromSeconds(2));
 
-        Assert.True(guard.ShouldSuppressClientResponse(
-            Encoding.ASCII.GetBytes("\x1b]10;rgb:ffff/ffff/ffff\x1b\\")));
-        Assert.True(guard.ShouldSuppressClientResponse(
-            Encoding.ASCII.GetBytes("\x1b]11;rgb:0000/0000/0000\x1b\\")));
+        Assert.Empty(guard.FilterClientInput(
+            Encoding.ASCII.GetBytes("\x1b]10;rgb:ffff/ffff/ffff\x1b\\"))!);
+        Assert.Empty(guard.FilterClientInput(
+            Encoding.ASCII.GetBytes("\x1b]11;rgb:0000/0000/0000\x1b\\"))!);
     }
 
     [Fact]
-    public void OrdinaryInputAndUnmatchedResponses_AreNeverSuppressed()
+    public void OrdinaryInputIsPreservedAndUnsolicitedResponsesAreSuppressed()
     {
         var guard = new TerminalColorQueryGuard(new FakeTimeProvider());
         guard.ObservePtyOutput(Encoding.ASCII.GetBytes("\x1b]10;?\x1b\\"));
 
-        Assert.False(guard.ShouldSuppressClientResponse("hello"u8));
-        Assert.False(guard.ShouldSuppressClientResponse("\x1b[A"u8));
-        Assert.False(guard.ShouldSuppressClientResponse(
-            Encoding.ASCII.GetBytes("\x1b]11;rgb:0c0c/0c0c/0c0c\x1b\\")));
+        Assert.Null(guard.FilterClientInput("hello"u8));
+        Assert.Null(guard.FilterClientInput("\x1b[A"u8));
+        Assert.Empty(guard.FilterClientInput(
+            Encoding.ASCII.GetBytes("\x1b]11;rgb:0c0c/0c0c/0c0c\x1b\\"))!);
+    }
+
+    [Fact]
+    public void ConcatenatedReplayedResponsesAreRemovedWithoutDroppingOrdinaryInput()
+    {
+        var guard = new TerminalColorQueryGuard(new FakeTimeProvider());
+        var input = Encoding.ASCII.GetBytes(
+            "before\x1b]10;rgb:f2f2/f2f2/f2f2\x1b\\\x1b]11;rgb:0c0c/0c0c/0c0c\u0007after");
+
+        Assert.Equal("beforeafter", Encoding.ASCII.GetString(guard.FilterClientInput(input)!));
+    }
+
+    [Fact]
+    public void ConcatenatedFreshResponsesAreForwardedOnceThenFilteredAsDuplicates()
+    {
+        var guard = new TerminalColorQueryGuard(new FakeTimeProvider());
+        guard.ObservePtyOutput(Encoding.ASCII.GetBytes("\x1b]10;?;?\x1b\\"));
+        var responses = Encoding.ASCII.GetBytes(
+            "\x1b]10;rgb:f2f2/f2f2/f2f2\x1b\\\x1b]11;rgb:0c0c/0c0c/0c0c\x1b\\");
+
+        Assert.Null(guard.FilterClientInput(responses));
+        Assert.Empty(guard.FilterClientInput(responses)!);
     }
 }

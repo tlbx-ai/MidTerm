@@ -997,6 +997,13 @@ public sealed partial class UpdateService : IDisposable
             }
             catch (Exception ex)
             {
+                if (updateType == UpdateType.Full)
+                {
+                    return FailUpdate(
+                        artifacts,
+                        $"Full update canceled because active sessions could not be recovered safely: {ex.Message}");
+                }
+
                 AppendUpdateLog(artifacts.LogPath, $"Failed to capture session update state: {ex.Message}", "WARN");
             }
         }

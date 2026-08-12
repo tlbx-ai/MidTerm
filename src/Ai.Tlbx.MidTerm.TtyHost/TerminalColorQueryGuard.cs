@@ -77,18 +77,50 @@ internal sealed class TerminalColorQueryGuard(TimeProvider? timeProvider = null)
         }
     }
 
-    public bool ShouldSuppressClientResponse(ReadOnlySpan<byte> data)
+    /// <summary>
+    /// Removes terminal-generated color responses which no longer have a fresh,
+    /// unanswered application query. A browser may concatenate several OSC
+    /// replies with ordinary input in one transport frame, so filtering must be
+    /// sequence-aware rather than deciding on the frame as a whole.
+    /// </summary>
+    public byte[]? FilterClientInput(ReadOnlySpan<byte> data)
     {
-        if (!TryParseColorResponse(data, out var colorIndex))
+        List<byte>? filtered = null;
+        var copyStart = 0;
+        for (var offset = 0; offset < data.Length;)
         {
-            return false;
+            if (!TryParseColorResponse(data[offset..], out var colorIndex, out var responseLength))
+            {
+                offset++;
+                continue;
+            }
+
+            if (ShouldSuppressColorResponse(colorIndex))
+            {
+                filtered ??= new List<byte>(data.Length);
+                filtered.AddRange(data[copyStart..offset].ToArray());
+                copyStart = offset + responseLength;
+            }
+
+            offset += responseLength;
         }
 
+        if (filtered is null)
+        {
+            return null;
+        }
+
+        filtered.AddRange(data[copyStart..].ToArray());
+        return filtered.ToArray();
+    }
+
+    private bool ShouldSuppressColorResponse(int colorIndex)
+    {
         lock (_lock)
         {
             if (!_queries.TryGetValue(colorIndex, out var query))
             {
-                return false;
+                return true;
             }
 
             if (query.Answered)
@@ -96,8 +128,9 @@ internal sealed class TerminalColorQueryGuard(TimeProvider? timeProvider = null)
                 return true;
             }
 
+            var stale = _timeProvider.GetElapsedTime(query.Timestamp) > MaximumResponseAge;
             _queries[colorIndex] = query with { Answered = true };
-            return _timeProvider.GetElapsedTime(query.Timestamp) > MaximumResponseAge;
+            return stale;
         }
     }
 
@@ -140,25 +173,44 @@ internal sealed class TerminalColorQueryGuard(TimeProvider? timeProvider = null)
         }
     }
 
-    private static bool TryParseColorResponse(ReadOnlySpan<byte> data, out int colorIndex)
+    private static bool TryParseColorResponse(
+        ReadOnlySpan<byte> data,
+        out int colorIndex,
+        out int responseLength)
     {
         colorIndex = 0;
-        if (data.Length < 14 || data[0] != Escape || data[1] != (byte)']')
+        responseLength = 0;
+        if (data.Length < 2 || data[0] != Escape || data[1] != (byte)']')
         {
             return false;
         }
 
-        var terminatorLength = data[^1] == Bell
-            ? 1
-            : data.Length >= 2 && data[^2] == Escape && data[^1] == (byte)'\\'
-                ? 2
-                : 0;
-        if (terminatorLength == 0)
+        var terminatorIndex = -1;
+        var terminatorLength = 0;
+        var limit = Math.Min(data.Length, MaximumOscBytes + 2);
+        for (var i = 2; i < limit; i++)
+        {
+            if (data[i] == Bell)
+            {
+                terminatorIndex = i;
+                terminatorLength = 1;
+                break;
+            }
+
+            if (data[i] == Escape && i + 1 < limit && data[i + 1] == (byte)'\\')
+            {
+                terminatorIndex = i;
+                terminatorLength = 2;
+                break;
+            }
+        }
+
+        if (terminatorIndex < 0)
         {
             return false;
         }
 
-        var payload = data[2..^terminatorLength];
+        var payload = data[2..terminatorIndex];
         var separator = payload.IndexOf((byte)';');
         if (separator <= 0 ||
             !Utf8Parser.TryParse(payload[..separator], out colorIndex, out var consumed) ||
@@ -183,9 +235,15 @@ internal sealed class TerminalColorQueryGuard(TimeProvider? timeProvider = null)
         }
 
         secondSlash += firstSlash + 1;
-        return IsHexComponent(components[..firstSlash]) &&
+        var valid = IsHexComponent(components[..firstSlash]) &&
             IsHexComponent(components[(firstSlash + 1)..secondSlash]) &&
             IsHexComponent(components[(secondSlash + 1)..]);
+        if (valid)
+        {
+            responseLength = terminatorIndex + terminatorLength;
+        }
+
+        return valid;
     }
 
     private static bool IsHexComponent(ReadOnlySpan<byte> component)

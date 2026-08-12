@@ -406,6 +406,12 @@ public static class TlbxCliScriptWriter
           else
             target=$(_MC "$_MT/api/update/check" 2>/dev/null | sed -n 's/.*"latestVersion":"\([^"]*\)".*/\1/p')
           fi
+          if [ -n "${MT_SESSION_ID:-}" ]; then
+            case "$url" in
+              *\?*) url="$url&detached=true" ;;
+              *) url="$url?detached=true" ;;
+            esac
+          fi
           _MC -X POST "$url" || return $?
           sleep 3
           local i version
@@ -1419,6 +1425,10 @@ public static class TlbxCliScriptWriter
                     $targetVersion = $update.latestVersion
                 }
                 catch {}
+            }
+            if ($env:MT_SESSION_ID) {
+                $separator = if ($url.Contains('?')) { '&' } else { '?' }
+                $url += "${separator}detached=true"
             }
             _MC -X POST $url
             Start-Sleep -Seconds 3

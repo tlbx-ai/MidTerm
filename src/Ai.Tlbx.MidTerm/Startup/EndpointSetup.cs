@@ -526,8 +526,29 @@ Start-Service -Name $serviceName -ErrorAction Stop
             return Results.Json(update, AppJsonContext.Default.UpdateInfo);
         });
 
-        app.MapPost("/api/update/apply", async (string? source) =>
+        app.MapPost("/api/update/apply", async (string? source, bool detached = false) =>
         {
+            if (detached)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var (success, message) = await updateService.ApplyUpdateAsync(settingsService, source)
+                            .ConfigureAwait(false);
+                        if (!success)
+                        {
+                            Log.Warn(() => $"Detached update failed before restart: {message}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Exception(ex, "DetachedUpdate");
+                    }
+                }, CancellationToken.None);
+                return Results.Accepted(value: "Update scheduled");
+            }
+
             var (success, message) = await updateService.ApplyUpdateAsync(settingsService, source);
             if (!success)
             {
