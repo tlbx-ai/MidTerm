@@ -17,6 +17,7 @@ public sealed partial class SessionUpdateStateService
     private const int ResumeHintTailLineCount = 8;
     private const int GracefulExitOutputLimit = 64 * 1024;
     private static readonly TimeSpan GracefulExitInterruptDelay = TimeSpan.FromMilliseconds(750);
+    private static readonly TimeSpan GracefulExitOutputDrainDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan GracefulExitTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan RestoredShellReadyTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan RestoredAgentStartTimeout = TimeSpan.FromSeconds(6);
@@ -359,13 +360,37 @@ public sealed partial class SessionUpdateStateService
             await sessionManager.SendInputAsync(sessionId, new byte[] { 0x03 }, ct).ConfigureAwait(false);
             await Task.Delay(GracefulExitInterruptDelay, ct).ConfigureAwait(false);
 
-            var afterInterrupt = await sessionManager.GetSessionFreshAsync(sessionId, ct).ConfigureAwait(false);
-            var codexStillRunning = afterInterrupt is not null &&
+            var interruptDeadline = DateTimeOffset.UtcNow + GracefulExitOutputDrainDelay;
+            while (DateTimeOffset.UtcNow < interruptDeadline)
+            {
+                string interruptOutput;
+                lock (outputGate)
+                {
+                    interruptOutput = Encoding.UTF8.GetString(output.ToArray());
+                }
+
+                var interruptResumeId = TryExtractCodexExitResumeId(interruptOutput);
+                var afterInterrupt = await sessionManager.GetSessionFreshAsync(sessionId, ct).ConfigureAwait(false);
+                var codexStillRunning = afterInterrupt is not null &&
+                    IsCodexForeground(
+                        afterInterrupt.ForegroundName,
+                        afterInterrupt.ForegroundCommandLine,
+                        afterInterrupt.ForegroundProcessIdentity);
+                if (!codexStillRunning && interruptResumeId is not null)
+                {
+                    return interruptResumeId;
+                }
+
+                await Task.Delay(100, ct).ConfigureAwait(false);
+            }
+
+            var finalAfterInterrupt = await sessionManager.GetSessionFreshAsync(sessionId, ct).ConfigureAwait(false);
+            var codexStillRunningAfterDrain = finalAfterInterrupt is not null &&
                 IsCodexForeground(
-                    afterInterrupt.ForegroundName,
-                    afterInterrupt.ForegroundCommandLine,
-                    afterInterrupt.ForegroundProcessIdentity);
-            if (!codexStillRunning)
+                    finalAfterInterrupt.ForegroundName,
+                    finalAfterInterrupt.ForegroundCommandLine,
+                    finalAfterInterrupt.ForegroundProcessIdentity);
+            if (!codexStillRunningAfterDrain)
             {
                 string interruptOutput;
                 lock (outputGate)
