@@ -49,7 +49,7 @@ import {
   applyTerminalScrollbarStyleClass,
   normalizeScrollbarStyle,
 } from '../terminal/scrollbarStyle';
-import { syncTerminalWebglState } from '../terminal/manager';
+import { syncTerminalCursorActivity, syncTerminalWebglState } from '../terminal/manager';
 import { shouldUseWebglRenderer } from '../terminal/webglSupport';
 import { setLocale, t } from '../i18n';
 import { renderUpdatePanel } from '../updating/checker';
@@ -179,7 +179,7 @@ function applyTerminalSettingsToState(args: {
     fontWeightBold,
   );
 
-  state.terminal.options.cursorBlink = settings.cursorBlink;
+  syncTerminalCursorActivity(state, undefined, settings.cursorBlink);
   state.terminal.options.cursorStyle = settings.cursorStyle;
   state.terminal.options.cursorInactiveStyle = settings.cursorInactiveStyle;
   state.terminal.options.fontFamily = fontFamily;

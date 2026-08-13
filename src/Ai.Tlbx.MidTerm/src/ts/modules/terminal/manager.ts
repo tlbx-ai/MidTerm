@@ -116,6 +116,7 @@ import {
   registerTerminalNotificationHandlers,
   type TerminalNotificationSignal,
 } from './terminalNotifications';
+import { shouldBlinkTerminalCursor } from './cursorActivity';
 
 let showTerminalNotification: (
   sessionId: string,
@@ -482,6 +483,48 @@ function setTerminalVisualFocus(state: TerminalState, focused: boolean): void {
   fireTerminalFocusEvent(privateCore, focused);
 }
 
+function terminalOwnsDocumentFocus(state: TerminalState): boolean {
+  const activeElement = document.activeElement;
+  return isTerminalInputOwnerElement(activeElement) && state.container.contains(activeElement);
+}
+
+function isDocumentFocused(): boolean {
+  return typeof document.hasFocus !== 'function' || document.hasFocus();
+}
+
+/**
+ * Synchronize xterm's visual focus and cursor animation with browser lifecycle.
+ * The configured preference remains in the settings store; the xterm option is
+ * the effective runtime value so inactive terminals own no blink timer at all.
+ */
+export function syncTerminalCursorActivity(
+  state: TerminalState,
+  terminalInputFocused = terminalOwnsDocumentFocus(state),
+  configuredToBlink = $currentSettings.get()?.cursorBlink ?? false,
+): void {
+  const documentVisible = document.visibilityState !== 'hidden';
+  const documentFocused = isDocumentFocused();
+  const effectiveFocus = terminalInputFocused && documentVisible && documentFocused;
+
+  setTerminalVisualFocus(state, effectiveFocus);
+
+  const shouldBlink = shouldBlinkTerminalCursor({
+    configuredToBlink,
+    documentVisible,
+    documentFocused,
+    terminalInputFocused,
+  });
+  if (state.terminal.options.cursorBlink !== shouldBlink) {
+    state.terminal.options.cursorBlink = shouldBlink;
+  }
+}
+
+function syncAllTerminalCursorActivity(forceBlur = false): void {
+  sessionTerminals.forEach((state) => {
+    syncTerminalCursorActivity(state, forceBlur ? false : terminalOwnsDocumentFocus(state));
+  });
+}
+
 function getOwnedTerminalInput(container: HTMLDivElement): HTMLTextAreaElement | null {
   const activeElement = document.activeElement;
   if (isTerminalInputOwnerElement(activeElement) && container.contains(activeElement)) {
@@ -608,16 +651,16 @@ function focusTerminalInput(state: TerminalState): void {
   if (isTerminalKeyAuditEnabled()) {
     const proxy = state.inputProxy ?? getOwnedTerminalInputProxy(state.container);
     if (proxy) {
-      setTerminalVisualFocus(state, true);
       proxy.focus({ preventScroll: true });
       proxy.value = '';
+      syncTerminalCursorActivity(state, true);
       refreshCursorBlink(state.terminal);
       return;
     }
   }
 
   state.terminal.focus();
-  setTerminalVisualFocus(state, true);
+  syncTerminalCursorActivity(state, true);
   refreshCursorBlink(state.terminal);
 }
 
@@ -1016,6 +1059,16 @@ export function setupGlobalFocusReclaim(): void {
   if (!globalTerminalEnterOverrideInstalled) {
     globalTerminalEnterOverrideInstalled = true;
 
+    window.addEventListener('blur', () => {
+      syncAllTerminalCursorActivity(true);
+    });
+    window.addEventListener('focus', () => {
+      syncAllTerminalCursorActivity();
+    });
+    document.addEventListener('visibilitychange', () => {
+      syncAllTerminalCursorActivity(document.visibilityState === 'hidden');
+    });
+
     document.addEventListener(
       'keydown',
       (event) => {
@@ -1186,7 +1239,7 @@ export function createTerminalForSession(
         const xtermTextarea = container.querySelector('textarea.xterm-helper-textarea');
         if (xtermTextarea) {
           xtermTextarea.addEventListener('focus', () => {
-            setTerminalVisualFocus(state, true);
+            syncTerminalCursorActivity(state, true);
             if (isSmartInputMode()) {
               (xtermTextarea as HTMLTextAreaElement).blur();
               showSmartInput();
@@ -1199,17 +1252,18 @@ export function createTerminalForSession(
             }
           });
           xtermTextarea.addEventListener('blur', () => {
-            setTerminalVisualFocus(state, false);
+            syncTerminalCursorActivity(state, false);
             enterModifierLatches.delete(sessionId);
           });
         }
         inputProxy.addEventListener('focus', () => {
-          setTerminalVisualFocus(state, true);
+          syncTerminalCursorActivity(state, true);
         });
         inputProxy.addEventListener('blur', () => {
-          setTerminalVisualFocus(state, false);
+          syncTerminalCursorActivity(state, false);
           enterModifierLatches.delete(sessionId);
         });
+        syncTerminalCursorActivity(state);
 
         // Register onData immediately to avoid losing keystrokes during font/rAF delay
         // Other event handlers are set up later in setupTerminalEvents
