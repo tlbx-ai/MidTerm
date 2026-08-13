@@ -1788,6 +1788,28 @@
                       </select>
                     </div>
                     <div class="setting-row">
+                      <label
+                        for="setting-notification-priority"
+                        data-i18n="settings.behavior.notificationPriority"
+                        >Notification Priority</label
+                      >
+                      <select id="setting-notification-priority">
+                        <option value="normal" data-i18n="settings.options.notificationPriorityNormal">
+                          Normal
+                        </option>
+                        <option
+                          value="important"
+                          data-i18n="settings.options.notificationPriorityImportant"
+                        >
+                          Important
+                        </option>
+                      </select>
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.notificationPriorityHint">
+                      Important uses native Windows urgent notifications to request delivery through
+                      Do Not Disturb. Windows remains in control and asks for permission.
+                    </p>
+                    <div class="setting-row">
                       <label for="setting-copy-on-select" data-i18n="settings.behavior.copyOnSelect"
                         >Copy on Select</label
                       >

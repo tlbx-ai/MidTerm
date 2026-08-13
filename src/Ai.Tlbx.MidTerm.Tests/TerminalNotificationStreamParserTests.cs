@@ -1,6 +1,7 @@
 using System.Text;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.Tests;
@@ -121,12 +122,14 @@ public sealed class TerminalNotificationStreamParserTests
         var published = telemetry.TryPublishAdHocNotification(
             "session",
             " tlbx\n",
-            "Release \x1b[31mcomplete");
+            "Release \x1b[31mcomplete",
+            NotificationPrioritySetting.Important);
 
         Assert.True(published);
         Assert.NotNull(received);
         AssertMessage(received, "cli", "tlbx", "Release complete");
         Assert.True(received.Force);
+        Assert.Equal(NotificationPrioritySetting.Important, received.Priority);
         Assert.False(telemetry.TryPublishAdHocNotification("session", "tlbx", "   "));
     }
 

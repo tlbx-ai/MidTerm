@@ -7,6 +7,8 @@ export interface TerminalNotificationSignal {
   title?: string;
   body?: string;
   force?: boolean;
+  priority?: 'normal' | 'important';
+  nativeHandled?: boolean;
 }
 
 export interface DesktopNotificationVisibility {

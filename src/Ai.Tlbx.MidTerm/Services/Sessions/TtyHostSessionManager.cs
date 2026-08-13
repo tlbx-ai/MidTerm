@@ -113,6 +113,19 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         Log.Info(() => $"TtyHostSessionManager: RunAsUser updated to: {runAsUser ?? "(none)"}");
     }
 
+    public Task<TtyHostNotificationResponse> ShowNativeNotificationAsync(
+        string sessionId,
+        TtyHostNotificationRequest request,
+        CancellationToken ct = default)
+    {
+        return _clients.TryGetValue(sessionId, out var client)
+            ? client.ShowNotificationAsync(request, ct)
+            : Task.FromResult(new TtyHostNotificationResponse
+            {
+                Error = "No local mthost is connected for this session."
+            });
+    }
+
     public void ConfigureTmux(int port, Func<string> generateToken, string? tmuxBinDir)
     {
         _mtPort = port;

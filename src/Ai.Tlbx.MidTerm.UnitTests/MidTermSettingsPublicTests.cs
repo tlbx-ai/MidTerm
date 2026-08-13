@@ -621,6 +621,7 @@ public sealed class MidTermSettingsPublicTests
             UseWebGL = settings.UseWebGL,
             ScrollbackLines = settings.ScrollbackLines,
             BellStyle = settings.BellStyle,
+            NotificationPriority = settings.NotificationPriority,
             CopyOnSelect = settings.CopyOnSelect,
             RightClickPaste = settings.RightClickPaste,
             ClipboardShortcuts = settings.ClipboardShortcuts,

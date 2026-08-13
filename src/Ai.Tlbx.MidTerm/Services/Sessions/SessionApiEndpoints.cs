@@ -705,7 +705,11 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
-            return sessionTelemetry.TryPublishAdHocNotification(sessionId, request.Title, request.Body)
+            return sessionTelemetry.TryPublishAdHocNotification(
+                sessionId,
+                request.Title,
+                request.Body,
+                request.Priority)
                 ? Results.NoContent()
                 : Results.BadRequest("body required");
         });

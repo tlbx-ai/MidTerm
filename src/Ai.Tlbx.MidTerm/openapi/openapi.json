@@ -5305,6 +5305,7 @@
           "scrollbackLines",
           "scrollbackBytes",
           "bellStyle",
+          "notificationPriority",
           "copyOnSelect",
           "rightClickPaste",
           "clipboardShortcuts",
@@ -5529,6 +5530,9 @@
           "bellStyle": {
             "$ref": "#/components/schemas/BellStyleSetting"
           },
+          "notificationPriority": {
+            "$ref": "#/components/schemas/NotificationPrioritySetting"
+          },
           "copyOnSelect": {
             "type": "boolean"
           },
@@ -5684,6 +5688,12 @@
             "type": "string"
           }
         }
+      },
+      "NotificationPrioritySetting": {
+        "enum": [
+          "normal",
+          "important"
+        ]
       },
       "PathsResponse": {
         "required": [

@@ -16,6 +16,7 @@ namespace Ai.Tlbx.MidTerm.Settings;
 [JsonSerializable(typeof(CursorStyleSetting))]
 [JsonSerializable(typeof(ThemeSetting))]
 [JsonSerializable(typeof(BellStyleSetting))]
+[JsonSerializable(typeof(NotificationPrioritySetting))]
 [JsonSerializable(typeof(ClipboardShortcutsSetting))]
 [JsonSerializable(typeof(ScrollbarStyleSetting))]
 [JsonSerializable(typeof(KeyProtectionMethod))]

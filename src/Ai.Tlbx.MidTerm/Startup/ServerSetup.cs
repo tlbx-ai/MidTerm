@@ -178,6 +178,9 @@ public static class ServerSetup
                 instanceIdentity: _.GetRequiredService<MidTermInstanceIdentity>(),
                 foregroundProcessService: _.GetRequiredService<SessionForegroundProcessService>(),
                 settingsService: _.GetRequiredService<SettingsService>()));
+        builder.Services.AddSingleton<TerminalNotificationDeliveryService>();
+        builder.Services.AddHostedService(static services =>
+            services.GetRequiredService<TerminalNotificationDeliveryService>());
         builder.Services.AddSingleton<TtyHostMuxConnectionManager>();
         builder.Services.AddSingleton<HistoryService>();
         builder.Services.AddSingleton<InputHistoryService>();

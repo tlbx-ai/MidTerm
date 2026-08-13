@@ -35,6 +35,12 @@ public enum BellStyleSetting
     [JsonStringEnumMemberName("off")] Off
 }
 
+public enum NotificationPrioritySetting
+{
+    [JsonStringEnumMemberName("normal")] Normal,
+    [JsonStringEnumMemberName("important")] Important
+}
+
 public enum ClipboardShortcutsSetting
 {
     [JsonStringEnumMemberName("auto")] Auto,

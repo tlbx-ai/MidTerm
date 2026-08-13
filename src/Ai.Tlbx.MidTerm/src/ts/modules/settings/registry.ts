@@ -436,6 +436,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'known bell style',
     applyMode: 'lazy',
   }),
+  controlEntry('notificationPriority', 'setting-notification-priority', 'select', 'normal', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'normal or important',
+    applyMode: 'lazy',
+  }),
   controlEntry('copyOnSelect', 'setting-copy-on-select', 'checkbox', false, {
     editable: true,
     storage: 'settings.json',

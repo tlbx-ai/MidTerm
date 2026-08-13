@@ -185,6 +185,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("mt_activity()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_notify()", shell, StringComparison.Ordinal);
         Assert.Contains("$_MT/api/notifications", shell, StringComparison.Ordinal);
+        Assert.Contains("--priority must be normal or important", shell, StringComparison.Ordinal);
         Assert.Contains("mt_attention()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_control_plane()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_agent_capabilities()", shell, StringComparison.Ordinal);
@@ -218,6 +219,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-Activity", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Notify", powershell, StringComparison.Ordinal);
         Assert.Contains("$script:_MT/api/notifications", powershell, StringComparison.Ordinal);
+        Assert.Contains("[ValidateSet(\"normal\", \"important\")]", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_notify -Value Mt-Notify", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Attention", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-ControlPlane", powershell, StringComparison.Ordinal);

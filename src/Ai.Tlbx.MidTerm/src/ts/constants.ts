@@ -315,6 +315,7 @@ export const DEFAULT_SETTINGS = {
   cursorBlink: false,
   theme: 'dark' as const,
   bellStyle: 'notification' as const,
+  notificationPriority: 'normal' as const,
   copyOnSelect: false,
   rightClickPaste: true,
   clipboardShortcuts: 'auto' as const,

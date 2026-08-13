@@ -681,12 +681,13 @@ public static class TlbxCliScriptWriter
           [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
           _MC -X POST "$_MT/api/sessions/$sid/inject-guidance"
         }
-        # mt_notify [--title TITLE] [--session SESSION_ID] TEXT...  — send an immediate desktop notification
+        # mt_notify [--title TITLE] [--priority normal|important] [--session SESSION_ID] TEXT...
         mt_notify() {
-          local title="tlbx" sid="" body
+          local title="tlbx" priority="" sid="" body priority_json=""
           while [ $# -gt 0 ]; do
             case "$1" in
               --title) [ $# -ge 2 ] || { echo "--title requires a value." >&2; return 1; }; title="$2"; shift 2 ;;
+              --priority) [ $# -ge 2 ] || { echo "--priority requires a value." >&2; return 1; }; priority="$2"; shift 2 ;;
               --session) [ $# -ge 2 ] || { echo "--session requires a value." >&2; return 1; }; sid="$2"; shift 2 ;;
               --) shift; break ;;
               *) break ;;
@@ -696,7 +697,11 @@ public static class TlbxCliScriptWriter
           [ -n "$sid" ] || sid="$(_MSID)"
           [ -n "$sid" ] || { echo "Session id required. Use --session or mt_context." >&2; return 1; }
           [ -n "$body" ] || { echo "Notification text required." >&2; return 1; }
-          _MJ -d "{\"sessionId\":\"$(_MJE "$sid")\",\"title\":\"$(_MJE "$title")\",\"body\":\"$(_MJE "$body")\"}" "$_MT/api/notifications"
+          if [ -n "$priority" ]; then
+            case "$priority" in normal|important) ;; *) echo "--priority must be normal or important." >&2; return 1 ;; esac
+            priority_json=",\"priority\":\"$priority\""
+          fi
+          _MJ -d "{\"sessionId\":\"$(_MJE "$sid")\",\"title\":\"$(_MJE "$title")\",\"body\":\"$(_MJE "$body")\"$priority_json}" "$_MT/api/notifications"
         }
         # mt_activity [SESSION_ID] [SECONDS] [BELL_LIMIT]  — output heatmap + bell history as JSON
         mt_activity() {
@@ -1702,16 +1707,19 @@ public static class TlbxCliScriptWriter
             if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
             _MC -X POST "$script:_MT/api/sessions/$($resolved.SessionId)/inject-guidance"
         }
-        # Mt-Notify [-Message] TEXT [-Title TITLE] [-SessionId SESSION_ID]  — send an immediate desktop notification
+        # Mt-Notify [-Message] TEXT [-Title TITLE] [-Priority normal|important] [-SessionId SESSION_ID]
         function Mt-Notify {
             param(
                 [Parameter(Mandatory=$true, Position=0)][string]$Message,
                 [string]$Title = "tlbx",
+                [ValidateSet("normal", "important")][string]$Priority,
                 [string]$SessionId
             )
             if (-not $SessionId) { $SessionId = _MSID }
             if (-not $SessionId) { Write-Error "Session id required. Use -SessionId or Mt-Context."; return }
-            _MJ -d (_MH @{ sessionId=$SessionId; title=$Title; body=$Message }) "$script:_MT/api/notifications"
+            $body = _MH @{ sessionId=$SessionId; title=$Title; body=$Message }
+            if ($Priority) { $body.priority = $Priority }
+            _MJ -d $body "$script:_MT/api/notifications"
         }
         # Mt-Activity [SESSION_ID] [SECONDS] [BELL_LIMIT]  — output heatmap + bell history as JSON
         function Mt-Activity {

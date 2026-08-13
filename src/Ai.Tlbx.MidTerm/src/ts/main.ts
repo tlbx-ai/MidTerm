@@ -1096,17 +1096,14 @@ function bindNotificationPermissionRequest(): void {
   bellStyle.addEventListener('change', requestForNotificationStyle);
 }
 
-function showTerminalNotification(sessionId: string, signal: TerminalNotificationSignal): void {
-  const settings = $currentSettings.get();
-  if (!settings) return;
-  if (bellNotificationsSuppressed) return;
-
-  const bellStyle = settings.bellStyle;
-  const session = getSession(sessionId);
-  const title = session ? getSessionDisplayName(session) : 'Terminal';
-
-  if (
+function shouldCreateBrowserTerminalNotification(
+  sessionId: string,
+  bellStyle: string,
+  signal: TerminalNotificationSignal,
+): boolean {
+  return (
     (bellStyle === 'notification' || bellStyle === 'both') &&
+    !signal.nativeHandled &&
     'Notification' in window &&
     Notification.permission === 'granted' &&
     shouldShowDesktopTerminalNotification(
@@ -1117,7 +1114,19 @@ function showTerminalNotification(sessionId: string, signal: TerminalNotificatio
       },
       signal.force === true,
     )
-  ) {
+  );
+}
+
+function showTerminalNotification(sessionId: string, signal: TerminalNotificationSignal): void {
+  const settings = $currentSettings.get();
+  if (!settings) return;
+  if (bellNotificationsSuppressed) return;
+
+  const bellStyle = settings.bellStyle;
+  const session = getSession(sessionId);
+  const title = session ? getSessionDisplayName(session) : 'Terminal';
+
+  if (shouldCreateBrowserTerminalNotification(sessionId, bellStyle, signal)) {
     // Close existing notification for this session (deduplication)
     const existing = activeNotifications.get(sessionId);
     if (existing) {
@@ -1130,6 +1139,7 @@ function showTerminalNotification(sessionId: string, signal: TerminalNotificatio
         body: buildTerminalNotificationBody(signal),
         icon: '/favicon.ico',
         tag: `tlbx-terminal-${sessionId}`,
+        requireInteraction: signal.priority === 'important',
       });
     } catch {
       return;
@@ -1146,13 +1156,16 @@ function showTerminalNotification(sessionId: string, signal: TerminalNotificatio
       }
     };
 
-    // Auto-close after 15 seconds
-    setTimeout(() => {
-      notification.close();
-      if (activeNotifications.get(sessionId) === notification) {
-        activeNotifications.delete(sessionId);
-      }
-    }, 15000);
+    if (signal.priority !== 'important') {
+      // Normal notifications are transient. Important browser fallbacks remain
+      // until the user interacts because native urgent delivery was unavailable.
+      setTimeout(() => {
+        notification.close();
+        if (activeNotifications.get(sessionId) === notification) {
+          activeNotifications.delete(sessionId);
+        }
+      }, 15000);
+    }
   }
 
   if (bellStyle === 'visual' || bellStyle === 'both') {

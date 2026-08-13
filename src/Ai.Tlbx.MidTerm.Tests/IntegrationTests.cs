@@ -20,6 +20,7 @@ using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 namespace Ai.Tlbx.MidTerm.Tests;
 
 public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime, IDisposable
@@ -149,7 +150,8 @@ public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Progr
                 {
                     SessionId = sessionId,
                     Title = "tlbx",
-                    Body = "Ad hoc test"
+                    Body = "Ad hoc test",
+                    Priority = NotificationPrioritySetting.Important
                 },
                 AppJsonContext.Default.TerminalNotificationRequest);
 
@@ -162,6 +164,8 @@ public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Progr
             Assert.Equal("cli", message.Protocol);
             Assert.Equal("Ad hoc test", message.Body);
             Assert.True(message.Force);
+            Assert.Equal(NotificationPrioritySetting.Important, message.Priority);
+            Assert.False(message.NativeHandled);
         }
         finally
         {

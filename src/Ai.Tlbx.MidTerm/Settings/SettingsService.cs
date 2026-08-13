@@ -600,6 +600,7 @@ public sealed class SettingsService
         current.ScrollbackLines = old.ScrollbackLines;
         current.ScrollbackBytes = old.ScrollbackBytes;
         current.BellStyle = old.BellStyle;
+        current.NotificationPriority = old.NotificationPriority;
         current.CopyOnSelect = old.CopyOnSelect;
         current.RightClickPaste = old.RightClickPaste;
         current.ClipboardShortcuts = old.ClipboardShortcuts;

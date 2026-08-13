@@ -91,6 +91,7 @@ namespace Ai.Tlbx.MidTerm.Api;
 [JsonSerializable(typeof(CursorStyleSetting))]
 [JsonSerializable(typeof(ThemeSetting))]
 [JsonSerializable(typeof(BellStyleSetting))]
+[JsonSerializable(typeof(NotificationPrioritySetting))]
 [JsonSerializable(typeof(ClipboardShortcutsSetting))]
 [JsonSerializable(typeof(TabTitleModeSetting))]
 [JsonSerializable(typeof(LogSubscribeMessage))]

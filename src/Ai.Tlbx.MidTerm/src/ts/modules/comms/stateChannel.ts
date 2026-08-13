@@ -291,6 +291,8 @@ function handleDirectStateMessage(data: StateWsMessage): data is DirectStateMess
       ...(data.title ? { title: data.title } : {}),
       ...(data.body ? { body: data.body } : {}),
       ...(data.force ? { force: true } : {}),
+      ...(data.priority ? { priority: data.priority } : {}),
+      ...(data.nativeHandled ? { nativeHandled: true } : {}),
     });
     return true;
   }

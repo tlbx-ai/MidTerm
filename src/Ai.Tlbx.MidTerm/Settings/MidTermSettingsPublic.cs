@@ -65,6 +65,7 @@ public sealed partial class MidTermSettingsPublic
     public int ScrollbackLines { get; set; } = DefaultScrollbackLines;
     public int ScrollbackBytes { get; set; } = DefaultScrollbackBytes;
     public BellStyleSetting BellStyle { get; set; } = BellStyleSetting.Notification;
+    public NotificationPrioritySetting NotificationPriority { get; set; } = NotificationPrioritySetting.Normal;
     public bool CopyOnSelect { get; set; } = false;
     public bool RightClickPaste { get; set; } = true;
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;

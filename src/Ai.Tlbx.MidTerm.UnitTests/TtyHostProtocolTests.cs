@@ -66,6 +66,41 @@ public class TtyHostProtocolTests
     }
 
     [Fact]
+    public void ShowNotification_RoundTrips_RequestAndAck()
+    {
+        var frame = TtyHostProtocol.CreateShowNotification(new TtyHostNotificationRequest
+        {
+            Title = "Codex",
+            Body = "Turn complete",
+            Tag = "session123",
+            Urgent = true
+        });
+
+        Assert.True(TtyHostProtocol.TryReadHeader(frame, out var type, out var payloadLength));
+        Assert.Equal(TtyHostMessageType.ShowNotification, type);
+        var request = TtyHostProtocol.ParseShowNotification(
+            frame.AsSpan(TtyHostProtocol.HeaderSize, payloadLength));
+        Assert.NotNull(request);
+        Assert.Equal("Codex", request.Title);
+        Assert.Equal("Turn complete", request.Body);
+        Assert.Equal("session123", request.Tag);
+        Assert.True(request.Urgent);
+
+        var ack = TtyHostProtocol.CreateShowNotificationAck(new TtyHostNotificationResponse
+        {
+            Success = true,
+            Supported = true
+        });
+        Assert.True(TtyHostProtocol.TryReadHeader(ack, out var ackType, out var ackPayloadLength));
+        Assert.Equal(TtyHostMessageType.ShowNotificationAck, ackType);
+        var response = TtyHostProtocol.ParseShowNotificationAck(
+            ack.AsSpan(TtyHostProtocol.HeaderSize, ackPayloadLength));
+        Assert.NotNull(response);
+        Assert.True(response.Success);
+        Assert.True(response.Supported);
+    }
+
+    [Fact]
     public void Attach_RoundTrips_RequestAndAck()
     {
         var requestFrame = TtyHostProtocol.CreateAttachRequest(new TtyHostAttachRequest

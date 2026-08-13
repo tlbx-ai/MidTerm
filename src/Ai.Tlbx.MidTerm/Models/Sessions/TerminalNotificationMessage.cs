@@ -1,3 +1,5 @@
+using Ai.Tlbx.MidTerm.Settings;
+
 namespace Ai.Tlbx.MidTerm.Models.Sessions;
 
 /// <summary>
@@ -12,4 +14,6 @@ public sealed class TerminalNotificationMessage
     public string? Title { get; init; }
     public string? Body { get; init; }
     public bool Force { get; init; }
+    public NotificationPrioritySetting? Priority { get; init; }
+    public bool NativeHandled { get; init; }
 }

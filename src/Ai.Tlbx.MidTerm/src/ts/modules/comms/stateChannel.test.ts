@@ -340,6 +340,8 @@ describe('stateChannel browser-ui handling', () => {
           title: 'tlbx',
           body: 'Release complete',
           force: true,
+          priority: 'important',
+          nativeHandled: true,
         }),
       }),
     );
@@ -349,6 +351,8 @@ describe('stateChannel browser-ui handling', () => {
       title: 'tlbx',
       body: 'Release complete',
       force: true,
+      priority: 'important',
+      nativeHandled: true,
     });
   });
 

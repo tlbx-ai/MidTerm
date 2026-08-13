@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -86,12 +87,17 @@ public sealed class SessionTelemetryService
         }
     }
 
-    public bool TryPublishAdHocNotification(string sessionId, string? title, string body)
+    public bool TryPublishAdHocNotification(
+        string sessionId,
+        string? title,
+        string body,
+        NotificationPrioritySetting? priority = null)
     {
         var notification = TerminalNotificationStreamParser.CreateAdHocNotification(
             sessionId,
             title,
-            body);
+            body,
+            priority);
         if (notification is null)
         {
             return false;

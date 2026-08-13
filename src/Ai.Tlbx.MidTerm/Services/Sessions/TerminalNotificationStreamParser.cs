@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -147,7 +148,8 @@ public sealed class TerminalNotificationStreamParser
     public static TerminalNotificationMessage? CreateAdHocNotification(
         string sessionId,
         string? title,
-        string body)
+        string body,
+        NotificationPrioritySetting? priority = null)
     {
         var normalizedTitle = NormalizeText(title ?? "", MaxTitleTextElements);
         var normalizedBody = NormalizeText(body, MaxBodyTextElements);
@@ -162,7 +164,8 @@ public sealed class TerminalNotificationStreamParser
             Protocol = "cli",
             Title = normalizedTitle,
             Body = normalizedBody,
-            Force = true
+            Force = true,
+            Priority = priority
         };
     }
 

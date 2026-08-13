@@ -4378,6 +4378,7 @@ export interface components {
       /** Format: int32 */
       scrollbackBytes: number;
       bellStyle: components['schemas']['BellStyleSetting'];
+      notificationPriority: components['schemas']['NotificationPrioritySetting'];
       copyOnSelect: boolean;
       rightClickPaste: boolean;
       clipboardShortcuts: components['schemas']['ClipboardShortcutsSetting'];
@@ -4423,6 +4424,8 @@ export interface components {
       name: string;
       ip: string;
     };
+    /** @enum {unknown} */
+    NotificationPrioritySetting: 'normal' | 'important';
     PathsResponse: {
       settingsFile: string;
       secretsFile: string;

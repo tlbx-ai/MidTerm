@@ -100,6 +100,7 @@ public sealed partial class MidTermSettingsPublic
             ScrollbackLines = settings.ScrollbackLines,
             ScrollbackBytes = settings.ScrollbackBytes,
             BellStyle = settings.BellStyle,
+            NotificationPriority = settings.NotificationPriority,
             CopyOnSelect = settings.CopyOnSelect,
             RightClickPaste = settings.RightClickPaste,
             ClipboardShortcuts = settings.ClipboardShortcuts,
@@ -224,6 +225,7 @@ public sealed partial class MidTermSettingsPublic
             MidTermSettings.MinScrollbackBytes,
             MidTermSettings.MaxScrollbackBytes);
         settings.BellStyle = BellStyle;
+        settings.NotificationPriority = NotificationPriority;
         settings.CopyOnSelect = CopyOnSelect;
         settings.RightClickPaste = RightClickPaste;
         settings.ClipboardShortcuts = ClipboardShortcuts;

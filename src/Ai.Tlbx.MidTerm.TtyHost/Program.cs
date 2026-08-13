@@ -1185,6 +1185,15 @@ public static class Program
                         EnqueueFrame(channelWriter, clipboardAck);
                         break;
 
+                    case TtyHostMessageType.ShowNotification:
+                        var notificationRequest = TtyHostProtocol.ParseShowNotification(payload);
+                        var notificationResult = notificationRequest is null
+                            ? new TtyHostNotificationResponse { Error = "Invalid notification request." }
+                            : NativeNotificationService.Show(notificationRequest);
+                        var notificationAck = TtyHostProtocol.CreateShowNotificationAck(notificationResult);
+                        EnqueueFrame(channelWriter, notificationAck);
+                        break;
+
                     case TtyHostMessageType.Ping:
                         var pongMsg = TtyHostProtocol.CreatePong(payload);
                         EnqueueFrame(channelWriter, pongMsg);

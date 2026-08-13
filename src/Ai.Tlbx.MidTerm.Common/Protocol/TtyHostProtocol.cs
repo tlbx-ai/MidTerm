@@ -347,6 +347,32 @@ public static class TtyHostProtocol
         return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.ClipboardImageResponse);
     }
 
+    public static byte[] CreateShowNotification(TtyHostNotificationRequest request)
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(
+            request,
+            TtyHostJsonContext.Default.TtyHostNotificationRequest);
+        return CreateFrame(TtyHostMessageType.ShowNotification, json);
+    }
+
+    public static TtyHostNotificationRequest? ParseShowNotification(ReadOnlySpan<byte> payload)
+    {
+        return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.TtyHostNotificationRequest);
+    }
+
+    public static byte[] CreateShowNotificationAck(TtyHostNotificationResponse response)
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(
+            response,
+            TtyHostJsonContext.Default.TtyHostNotificationResponse);
+        return CreateFrame(TtyHostMessageType.ShowNotificationAck, json);
+    }
+
+    public static TtyHostNotificationResponse? ParseShowNotificationAck(ReadOnlySpan<byte> payload)
+    {
+        return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.TtyHostNotificationResponse);
+    }
+
     private static byte[] CreateFrame(TtyHostMessageType type, byte[] payload)
     {
         var frame = new byte[HeaderSize + payload.Length];
@@ -533,6 +559,8 @@ public enum TtyHostMessageType : byte
     SetOrderAck = 0x25,
     SetMetadata = 0x28,
     SetMetadataAck = 0x29,
+    ShowNotification = 0x2A,
+    ShowNotificationAck = 0x2B,
 
     // Latency measurement
     Ping = 0x60,
@@ -729,6 +757,21 @@ public sealed class TtyHostTransportInfo
     public TerminalReplayReason? LastDataLossReason { get; set; }
 }
 
+public sealed class TtyHostNotificationRequest
+{
+    public string Title { get; set; } = "tlbx";
+    public string Body { get; set; } = string.Empty;
+    public string Tag { get; set; } = "terminal";
+    public bool Urgent { get; set; }
+}
+
+public sealed class TtyHostNotificationResponse
+{
+    public bool Success { get; set; }
+    public bool Supported { get; set; }
+    public string? Error { get; set; }
+}
+
 [JsonConverter(typeof(JsonStringEnumConverter<TerminalReplayReason>))]
 public enum TerminalReplayReason
 {
@@ -756,6 +799,8 @@ public enum TerminalReplayReason
 [JsonSerializable(typeof(TtyHostGetBufferRequest))]
 [JsonSerializable(typeof(TtyHostDataLossPayload))]
 [JsonSerializable(typeof(TtyHostTransportInfo))]
+[JsonSerializable(typeof(TtyHostNotificationRequest))]
+[JsonSerializable(typeof(TtyHostNotificationResponse))]
 public partial class TtyHostJsonContext : JsonSerializerContext
 {
 }
