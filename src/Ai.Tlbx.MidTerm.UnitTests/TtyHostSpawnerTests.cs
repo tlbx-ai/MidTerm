@@ -1,4 +1,6 @@
 using System.Runtime.Versioning;
+using System.Text;
+using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
 
@@ -65,5 +67,29 @@ public sealed class TtyHostSpawnerTests : IDisposable
     public void IsMatchingWindowsUsername_NormalizesConfiguredIdentityFormats(string configuredUser, string sessionUser)
     {
         Assert.True(TtyHostSpawner.IsMatchingWindowsUsername(configuredUser, sessionUser));
+    }
+
+    [Fact]
+    public void AddTtyHostEnvironmentOverrides_EncodesInitialCommandWithoutMarkingItForShellInheritance()
+    {
+        const string initialCommand = "codex --yolo";
+
+        var environment = TtyHostSpawner.AddTtyHostEnvironmentOverrides(
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["TLBX_TEST"] = "present" },
+            initialCommand);
+
+        Assert.NotNull(environment);
+        Assert.Equal("present", environment["TLBX_TEST"]);
+        Assert.Equal(
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(initialCommand)),
+            environment[TtyHostSpawner.InitialCommandEnvironmentVariable]);
+        Assert.DoesNotContain(
+            TtyHostSpawner.InitialCommandEnvironmentVariable,
+            environment[TerminalEnvironmentOverrides.OverrideKeysEnvironmentVariable],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "TLBX_TEST",
+            environment[TerminalEnvironmentOverrides.OverrideKeysEnvironmentVariable],
+            StringComparison.Ordinal);
     }
 }

@@ -12,4 +12,9 @@ public sealed class CreateSessionRequest
     public string? SpaceId { get; set; }
     public string? WorkspacePath { get; set; }
     public string? Surface { get; set; }
+    /// <summary>
+    /// Optional command written to the new PTY as part of session creation.
+    /// This keeps bookmark launches atomic and independent of browser WebSocket timing.
+    /// </summary>
+    public string? LaunchCommand { get; set; }
 }

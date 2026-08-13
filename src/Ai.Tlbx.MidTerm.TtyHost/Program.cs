@@ -126,9 +126,11 @@ public static class Program
 
     private static async Task RunAsync(SessionConfig config)
     {
+        var initialCommand = ReadAndClearInitialCommand();
         var shellRegistry = new ShellRegistry();
         var shellConfig = shellRegistry.GetConfigurationByName(config.ShellType)
             ?? shellRegistry.GetConfigurationOrDefault(null);
+        var (shellArguments, deferredInitialInput) = BuildShellLaunch(shellConfig, initialCommand);
 
         IPtyConnection? pty = null;
         IProcessMonitor? processMonitor = null;
@@ -142,7 +144,7 @@ public static class Program
             TerminalEnvironmentOverrides.ApplyMarkedOverrides(environment);
             pty = PtyConnectionFactory.Create(
                 shellConfig.ExecutablePath,
-                shellConfig.Arguments,
+                shellArguments,
                 config.WorkingDirectory,
                 config.Cols,
                 config.Rows,
@@ -175,23 +177,22 @@ public static class Program
             shutdownCts = new CancellationTokenSource();
             var previousShutdownCts = Interlocked.Exchange(ref _shutdownCts, shutdownCts);
             previousShutdownCts?.Dispose();
-            Task? ptyReadTask = null;
+            var ptyReadTask = session.StartReadLoopAsync(shutdownCts.Token);
+
+            if (!deferredInitialInput.IsEmpty)
+            {
+                await session.WaitForFirstOutputAsync(
+                    TimeSpan.FromMilliseconds(500),
+                    shutdownCts.Token).ConfigureAwait(false);
+                await Task.Delay(25, shutdownCts.Token).ConfigureAwait(false);
+                await session.SendInputAsync(deferredInitialInput, shutdownCts.Token).ConfigureAwait(false);
+            }
 
             // Accept client connections (mt.exe)
-            // The read loop is started by the first client that connects
-            await AcceptClientsAsync(session, endpoint, shutdownCts.Token, () =>
-            {
-                if (ptyReadTask is null)
-                {
-                    ptyReadTask = session.StartReadLoopAsync(shutdownCts.Token);
-                }
-            }).ConfigureAwait(false);
+            await AcceptClientsAsync(session, endpoint, shutdownCts.Token).ConfigureAwait(false);
 
             shutdownCts.Cancel();
-            if (ptyReadTask is not null)
-            {
-                await ptyReadTask.ConfigureAwait(false);
-            }
+            await ptyReadTask.ConfigureAwait(false);
         }
         finally
         {
@@ -209,6 +210,50 @@ public static class Program
             processMonitor?.Dispose();
             pty?.Dispose();
         }
+    }
+
+    private static string? ReadAndClearInitialCommand()
+    {
+        const string variableName = "MIDTERM_TTYHOST_INITIAL_COMMAND_BASE64";
+        var encoded = Environment.GetEnvironmentVariable(variableName);
+        Environment.SetEnvironmentVariable(variableName, null);
+        if (string.IsNullOrWhiteSpace(encoded))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidOperationException("The initial terminal command payload is invalid.", ex);
+        }
+    }
+
+    internal static (string[] Arguments, ReadOnlyMemory<byte> DeferredInput) BuildShellLaunch(
+        IShellConfiguration shellConfig,
+        string? initialCommand)
+    {
+        if (string.IsNullOrWhiteSpace(initialCommand))
+        {
+            return (shellConfig.Arguments, ReadOnlyMemory<byte>.Empty);
+        }
+
+        if (shellConfig.ShellType is ShellType.Pwsh or ShellType.PowerShell)
+        {
+            var arguments = shellConfig.Arguments.ToArray();
+            arguments[^1] = arguments[^1] + ";" + initialCommand;
+            return (arguments, ReadOnlyMemory<byte>.Empty);
+        }
+
+        if (shellConfig.ShellType == ShellType.Cmd)
+        {
+            return (["/K", initialCommand], ReadOnlyMemory<byte>.Empty);
+        }
+
+        return (shellConfig.Arguments, Encoding.UTF8.GetBytes(initialCommand + "\r"));
     }
 
     private static void InjectTmuxEnvironment(Dictionary<string, string> env, SessionConfig config)
@@ -266,9 +311,8 @@ public static class Program
     private static CancellationTokenSource? _currentClientCts;
     private static readonly object _clientLock = new();
 
-    private static async Task AcceptClientsAsync(TerminalSession session, string endpoint, CancellationToken ct, Action? onFirstClientSubscribed = null)
+    private static async Task AcceptClientsAsync(TerminalSession session, string endpoint, CancellationToken ct)
     {
-        var firstClientSubscribed = false;
         var connectionCount = 0;
         var clientTasks = new List<Task>();
 
@@ -282,21 +326,7 @@ public static class Program
                 connectionCount++;
                 Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"Client connected (#{connectionCount})"));
 
-                // Start the read loop when the first client subscribes to output
-                Action? onSubscribed = null;
-                if (!firstClientSubscribed && onFirstClientSubscribed is not null)
-                {
-                    onSubscribed = () =>
-                    {
-                        if (!firstClientSubscribed)
-                        {
-                            firstClientSubscribed = true;
-                            onFirstClientSubscribed();
-                        }
-                    };
-                }
-
-                var handlerTask = RunClientAsync(session, client, onSubscribed, ct);
+                var handlerTask = RunClientAsync(session, client, ct);
                 lock (clientTasks)
                 {
                     clientTasks.Add(handlerTask);
@@ -350,7 +380,6 @@ public static class Program
     private static async Task RunClientAsync(
         TerminalSession session,
         IIpcClientConnection client,
-        Action? onSubscribed,
         CancellationToken shutdownToken)
     {
         using var clientCts = new CancellationTokenSource();
@@ -362,7 +391,6 @@ public static class Program
                 session,
                 client,
                 linkedCts.Token,
-                onSubscribed,
                 () => PromoteCurrentClient(clientCts)).ConfigureAwait(false);
         }
         finally
@@ -564,7 +592,6 @@ public static class Program
         TerminalSession session,
         IIpcClientConnection client,
         CancellationToken ct,
-        Action? onSubscribed = null,
         Action? onAttached = null)
     {
         var outputLock = new object();
@@ -756,7 +783,6 @@ public static class Program
             }
 
             session.OnOutput += OnOutput;
-            onSubscribed?.Invoke(); // Notify that we're subscribed - read loop can start now
 
             // Don't subscribe to OnStateChanged until after handshake - OSC-7 during startup
             // can fire StateChange before Info response, breaking the handshake
@@ -1367,6 +1393,7 @@ internal sealed class TerminalSession : IDisposable
     private readonly SemaphoreSlim _ptyWriteLock = new(1, 1);
     private readonly KittyGraphicsCapabilityResponder _kittyGraphicsResponder = new();
     private readonly TerminalColorQueryGuard _terminalColorQueryGuard = new();
+    private readonly TaskCompletionSource _firstOutput = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly int _scrollbackBytes;
     private readonly Action<ForegroundProcessInfo>? _foregroundChangedHandler;
     private TtyHostTransportInfo _transportInfo;
@@ -1512,6 +1539,7 @@ internal sealed class TerminalSession : IDisposable
                     _transportInfo.SourceSeq = sequenceEndExclusive;
                 }
 
+                _firstOutput.TrySetResult();
                 MarkInputTracePtyOutputRead(sequenceEndExclusive, ptyOutputReadAtMs);
                 OnOutput?.Invoke(sequenceStart, data);
             }
@@ -1520,6 +1548,20 @@ internal sealed class TerminalSession : IDisposable
         {
             ArrayPool<byte>.Shared.Return(buffer);
             OnStateChanged?.Invoke();
+        }
+    }
+
+    public async Task WaitForFirstOutputAsync(TimeSpan timeout, CancellationToken ct)
+    {
+        try
+        {
+            await _firstOutput.Task.WaitAsync(timeout, ct).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            Log.Warn(() => string.Create(
+                CultureInfo.InvariantCulture,
+                $"Shell produced no startup output within {timeout.TotalMilliseconds} ms; sending initial input anyway."));
         }
     }
 

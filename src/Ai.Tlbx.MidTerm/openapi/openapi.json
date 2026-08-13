@@ -4281,6 +4281,12 @@
               "null",
               "string"
             ]
+          },
+          "launchCommand": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

@@ -25,7 +25,6 @@ import {
   $sessions,
   hasTerminalSizeControl,
 } from '../../stores';
-import { parseOutputFrame } from '../../utils';
 import { applyTerminalScalingSync, fitSessionToScreen, fitTerminalToContainer } from './scaling';
 import { setupFileDrop, sanitizeCopyContent } from './fileDrop';
 import { createAlternateScreenReplayPrefix } from './replayState';
@@ -36,6 +35,8 @@ import {
   requestBufferRefresh,
   sendCommand,
   sendInput,
+  getBrowserTransportSnapshot,
+  writeOutputFrame as writeMuxOutputFrame,
 } from '../comms';
 import { showPasteIndicator, hidePasteIndicator } from '../badges';
 
@@ -66,6 +67,10 @@ import * as enterOverrideSuppress from './enterOverrideSuppress';
 import { bindTerminalInteractionHandlers } from './interactionBindings';
 import { shouldReclaimTerminalFocusOnMouseUp } from './focusReclaim';
 import { openTerminalWebLinkInNewTab } from './webLinks';
+import {
+  runWithGuaranteedTerminalReplay,
+  shouldRequestInitialTerminalReplay,
+} from './guaranteedReplay';
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, clearPathAllowlist } from './fileLinks';
@@ -1135,129 +1140,149 @@ export function createTerminalForSession(
     }
 
     state.opened = true;
-    syncEffectiveXtermThemeDomOverrides($currentSettings.get());
+    runWithGuaranteedTerminalReplay(
+      () => {
+        syncEffectiveXtermThemeDomOverrides($currentSettings.get());
 
-    if (getComputedStyle(container).position === 'static') {
-      container.style.position = 'relative';
-    }
-    const inputProxy = document.createElement('textarea');
-    inputProxy.className = 'tlbx-terminal-input-proxy';
-    inputProxy.tabIndex = -1;
-    inputProxy.setAttribute('aria-label', 'Terminal input');
-    inputProxy.setAttribute('autocorrect', 'off');
-    inputProxy.autocapitalize = 'off';
-    inputProxy.spellcheck = false;
-    Object.assign(inputProxy.style, {
-      position: 'absolute',
-      inset: '0',
-      opacity: '0',
-      pointerEvents: 'none',
-      resize: 'none',
-      border: '0',
-      margin: '0',
-      padding: '0',
-      background: 'transparent',
-      color: 'transparent',
-      caretColor: 'transparent',
-      outline: 'none',
-      overflow: 'hidden',
-      zIndex: '5',
-    });
-    container.appendChild(inputProxy);
-    state.inputProxy = inputProxy;
+        if (getComputedStyle(container).position === 'static') {
+          container.style.position = 'relative';
+        }
+        const inputProxy = document.createElement('textarea');
+        inputProxy.className = 'tlbx-terminal-input-proxy';
+        inputProxy.tabIndex = -1;
+        inputProxy.setAttribute('aria-label', 'Terminal input');
+        inputProxy.setAttribute('autocorrect', 'off');
+        inputProxy.autocapitalize = 'off';
+        inputProxy.spellcheck = false;
+        Object.assign(inputProxy.style, {
+          position: 'absolute',
+          inset: '0',
+          opacity: '0',
+          pointerEvents: 'none',
+          resize: 'none',
+          border: '0',
+          margin: '0',
+          padding: '0',
+          background: 'transparent',
+          color: 'transparent',
+          caretColor: 'transparent',
+          outline: 'none',
+          overflow: 'hidden',
+          zIndex: '5',
+        });
+        container.appendChild(inputProxy);
+        state.inputProxy = inputProxy;
 
-    // Intercept xterm's internal textarea focus when Smart Input is active
-    const xtermTextarea = container.querySelector('textarea.xterm-helper-textarea');
-    if (xtermTextarea) {
-      xtermTextarea.addEventListener('focus', () => {
-        setTerminalVisualFocus(state, true);
-        if (isSmartInputMode()) {
-          (xtermTextarea as HTMLTextAreaElement).blur();
-          showSmartInput();
-          return;
+        // Intercept xterm's internal textarea focus when Smart Input is active
+        const xtermTextarea = container.querySelector('textarea.xterm-helper-textarea');
+        if (xtermTextarea) {
+          xtermTextarea.addEventListener('focus', () => {
+            setTerminalVisualFocus(state, true);
+            if (isSmartInputMode()) {
+              (xtermTextarea as HTMLTextAreaElement).blur();
+              showSmartInput();
+              return;
+            }
+
+            if (isTerminalKeyAuditEnabled() && state.inputProxy) {
+              (xtermTextarea as HTMLTextAreaElement).blur();
+              state.inputProxy.focus({ preventScroll: true });
+            }
+          });
+          xtermTextarea.addEventListener('blur', () => {
+            setTerminalVisualFocus(state, false);
+            enterModifierLatches.delete(sessionId);
+          });
+        }
+        inputProxy.addEventListener('focus', () => {
+          setTerminalVisualFocus(state, true);
+        });
+        inputProxy.addEventListener('blur', () => {
+          setTerminalVisualFocus(state, false);
+          enterModifierLatches.delete(sessionId);
+        });
+
+        // Register onData immediately to avoid losing keystrokes during font/rAF delay
+        // Other event handlers are set up later in setupTerminalEvents
+        state.earlyDataDisposable = terminal.onData((data: string) => {
+          resumeMobileStableTerminalCursorFollowing(state);
+          captureTerminalInputData(sessionId, data);
+          sendInput(sessionId, data);
+        });
+
+        // Load WebGL addon for GPU-accelerated rendering (with context limit)
+        // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
+        const settings = $currentSettings.get();
+        syncWebglTerminalCellBackgroundAlpha(settings);
+        syncTerminalWebglState(
+          sessionId,
+          state,
+          shouldUseWebglRenderer(settings),
+          settings?.customGlyphs ?? true,
+        );
+        syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
+        syncTerminalRgbBackgroundTransparency(state, settings);
+
+        // ImageAddon needs the opened terminal and its active renderer. Loading it
+        // after the WebGL/canvas selection keeps the image renderer bound to the
+        // renderer that will actually paint the session, including replayed output.
+        // Capability discovery itself is answered by mthost so it also works before
+        // a browser attaches. Keep decoded memory and individual payloads bounded.
+        try {
+          terminal.loadAddon(
+            new ImageAddon({
+              enableSizeReports: true,
+              pixelLimit: 4_194_304,
+              storageLimit: 32,
+              showPlaceholder: true,
+              kittySupport: true,
+              kittySizeLimit: 16_777_216,
+              sixelSupport: true,
+              sixelSizeLimit: 16_777_216,
+              iipSupport: true,
+              iipSizeLimit: 16_777_216,
+            }),
+          );
+        } catch (error) {
+          // Graphics are progressive enhancement. A future xterm/addon mismatch
+          // must degrade to text instead of making the session unusable.
+          log.warn(() => `Terminal ${sessionId} graphics initialization failed: ${String(error)}`);
         }
 
-        if (isTerminalKeyAuditEnabled() && state.inputProxy) {
-          (xtermTextarea as HTMLTextAreaElement).blur();
-          state.inputProxy.focus({ preventScroll: true });
+        // Load Web-Links addon for clickable URLs
+        try {
+          const webLinksAddon = new WebLinksAddon(openTerminalWebLinkInNewTab);
+          terminal.loadAddon(webLinksAddon);
+        } catch {
+          // Web-Links addon failed to load
         }
-      });
-      xtermTextarea.addEventListener('blur', () => {
-        setTerminalVisualFocus(state, false);
-        enterModifierLatches.delete(sessionId);
-      });
-    }
-    inputProxy.addEventListener('focus', () => {
-      setTerminalVisualFocus(state, true);
-    });
-    inputProxy.addEventListener('blur', () => {
-      setTerminalVisualFocus(state, false);
-      enterModifierLatches.delete(sessionId);
-    });
 
-    // Register onData immediately to avoid losing keystrokes during font/rAF delay
-    // Other event handlers are set up later in setupTerminalEvents
-    state.earlyDataDisposable = terminal.onData((data: string) => {
-      resumeMobileStableTerminalCursorFollowing(state);
-      captureTerminalInputData(sessionId, data);
-      sendInput(sessionId, data);
-    });
+        // Register file link provider for clickable file paths
+        registerFileLinkProvider(terminal, sessionId);
 
-    // Load WebGL addon for GPU-accelerated rendering (with context limit)
-    // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
-    const settings = $currentSettings.get();
-    syncWebglTerminalCellBackgroundAlpha(settings);
-    syncTerminalWebglState(
-      sessionId,
-      state,
-      shouldUseWebglRenderer(settings),
-      settings?.customGlyphs ?? true,
+        // Load Search addon for Ctrl+F search
+        initSearchForTerminal(sessionId, terminal);
+      },
+      () => {
+        replayPendingFrames(sessionId, state);
+      },
+      (error) => {
+        // Once xterm itself is open, optional input/rendering/link/search setup
+        // must never prevent buffered PTY output from becoming visible.
+        log.warn(() => `Terminal ${sessionId} optional initialization failed: ${String(error)}`);
+      },
     );
-    syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
-    syncTerminalRgbBackgroundTransparency(state, settings);
 
-    // ImageAddon needs the opened terminal and its active renderer. Loading it
-    // after the WebGL/canvas selection keeps the image renderer bound to the
-    // renderer that will actually paint the session, including replayed output.
-    // Capability discovery itself is answered by mthost so it also works before
-    // a browser attaches. Keep decoded memory and individual payloads bounded.
-    try {
-      terminal.loadAddon(
-        new ImageAddon({
-          enableSizeReports: true,
-          pixelLimit: 4_194_304,
-          storageLimit: 32,
-          showPlaceholder: true,
-          kittySupport: true,
-          kittySizeLimit: 16_777_216,
-          sixelSupport: true,
-          sixelSizeLimit: 16_777_216,
-          iipSupport: true,
-          iipSizeLimit: 16_777_216,
-        }),
-      );
-    } catch (error) {
-      // Graphics are progressive enhancement. A future xterm/addon mismatch
-      // must degrade to text instead of making the session unusable.
-      log.warn(() => `Terminal ${sessionId} graphics initialization failed: ${String(error)}`);
-    }
+    window.setTimeout(() => {
+      const currentState = sessionTerminals.get(sessionId);
+      if (!currentState?.opened) return;
 
-    // Load Web-Links addon for clickable URLs
-    try {
-      const webLinksAddon = new WebLinksAddon(openTerminalWebLinkInNewTab);
-      terminal.loadAddon(webLinksAddon);
-    } catch {
-      // Web-Links addon failed to load
-    }
-
-    // Register file link provider for clickable file paths
-    registerFileLinkProvider(terminal, sessionId);
-
-    // Load Search addon for Ctrl+F search
-    initSearchForTerminal(sessionId, terminal);
-
-    // Replay any WebSocket frames that arrived before terminal was opened
-    replayPendingFrames(sessionId, state);
+      const renderedSequence = getBrowserTransportSnapshot(sessionId)?.renderedSeq ?? null;
+      if (shouldRequestInitialTerminalReplay(renderedSequence)) {
+        log.warn(() => `Terminal ${sessionId} rendered no startup output; requesting full replay`);
+        requestBufferRefresh(sessionId, 'fullReplay', 'terminal_open_without_rendered_output');
+      }
+    }, 500);
 
     // Defer resize to next frame - xterm.js needs a frame to fully initialize after open()
     requestAnimationFrame(() => {
@@ -1314,7 +1339,7 @@ function replayPendingFrames(sessionId: string, state: TerminalState): void {
     const frames = pendingOutputFrames.get(sessionId);
     if (frames && frames.length > 0) {
       frames.forEach((payload) => {
-        writeOutputFrame(sessionId, state, payload);
+        writeMuxOutputFrame(sessionId, state, payload);
       });
     }
     pendingOutputFrames.delete(sessionId);
@@ -1333,45 +1358,6 @@ function replayPendingFrames(sessionId: string, state: TerminalState): void {
   }
 
   replayFrames();
-}
-
-/**
- * Write an output frame to the terminal, handling dimension updates
- */
-export function writeOutputFrame(
-  _sessionId: string,
-  state: TerminalState,
-  payload: Uint8Array,
-): void {
-  const frame = parseOutputFrame(payload);
-
-  // Ensure terminal matches frame dimensions before writing
-  if (frame.valid && state.opened) {
-    const currentCols = state.terminal.cols;
-    const currentRows = state.terminal.rows;
-
-    if (currentCols !== frame.cols || currentRows !== frame.rows) {
-      try {
-        state.terminal.resize(frame.cols, frame.rows);
-        state.serverCols = frame.cols;
-        state.serverRows = frame.rows;
-        // Double-rAF: let resize paint before measuring for scaling
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            applyTerminalScalingSync(state);
-            focusActiveTerminal();
-          });
-        });
-      } catch {
-        // Ignore resize errors - terminal may not be fully initialized
-      }
-    }
-  }
-
-  // Write terminal data
-  if (frame.data.length > 0) {
-    state.terminal.write(frame.data);
-  }
 }
 
 /**

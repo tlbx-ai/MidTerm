@@ -240,6 +240,12 @@ public static partial class SessionApiEndpoints
         {
             var cols = request?.Cols ?? 120;
             var rows = request?.Rows ?? 30;
+            const int maxLaunchCommandLength = 8192;
+            var launchCommand = request?.LaunchCommand?.Trim();
+            if (launchCommand?.Length > maxLaunchCommandLength)
+            {
+                return Results.BadRequest($"launchCommand must not exceed {maxLaunchCommandLength} characters.");
+            }
 
             ShellType? shellType = null;
             if (!string.IsNullOrEmpty(request?.Shell) && Enum.TryParse<ShellType>(request.Shell, true, out var parsed))
@@ -248,7 +254,12 @@ public static partial class SessionApiEndpoints
             }
 
             var creation = await sessionManager.CreateSessionDetailedAsync(
-                shellType?.ToString(), cols, rows, request?.WorkingDirectory, ct);
+                shellType?.ToString(),
+                cols,
+                rows,
+                request?.WorkingDirectory,
+                string.IsNullOrWhiteSpace(launchCommand) ? null : launchCommand,
+                ct);
 
             if (!creation.Succeeded)
             {
@@ -284,6 +295,7 @@ public static partial class SessionApiEndpoints
                 request.Rows,
                 request.WorkingDirectory,
                 applyTerminalEnvironmentVariables: false,
+                initialCommand: null,
                 ct);
 
             if (!creation.Succeeded)

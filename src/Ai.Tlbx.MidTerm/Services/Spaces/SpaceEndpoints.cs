@@ -176,6 +176,7 @@ public static class SpaceEndpoints
                 request.Rows,
                 workspacePath,
                 applyTerminalEnvironmentVariables: false,
+                initialCommand: null,
                 ct).ConfigureAwait(false);
             if (!workerCreation.Succeeded)
             {

@@ -403,6 +403,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             rows,
             workingDirectory,
             applyTerminalEnvironmentVariables,
+            initialCommand: null,
             ct).ConfigureAwait(false)).Session;
     }
 
@@ -419,6 +420,25 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             rows,
             workingDirectory,
             applyTerminalEnvironmentVariables: true,
+            initialCommand: null,
+            ct);
+    }
+
+    internal Task<SessionCreationResult> CreateSessionDetailedAsync(
+        string? shellType,
+        int cols,
+        int rows,
+        string? workingDirectory,
+        string? initialCommand,
+        CancellationToken ct = default)
+    {
+        return CreateSessionDetailedAsync(
+            shellType,
+            cols,
+            rows,
+            workingDirectory,
+            applyTerminalEnvironmentVariables: true,
+            initialCommand,
             ct);
     }
 
@@ -428,6 +448,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         int rows,
         string? workingDirectory,
         bool applyTerminalEnvironmentVariables,
+        string? initialCommand = null,
         CancellationToken ct = default)
     {
         var creationTimer = Stopwatch.StartNew();
@@ -461,7 +482,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             _mtPort,
             mtToken,
             paneIndex,
-            _tmuxBinDir);
+            _tmuxBinDir,
+            initialCommand);
         if (!spawnResult.Succeeded)
         {
             return SessionCreationResult.Failed(spawnResult.Failure!);

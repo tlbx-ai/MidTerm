@@ -4080,6 +4080,7 @@ export interface components {
       spaceId?: null | string;
       workspacePath?: null | string;
       surface?: null | string;
+      launchCommand?: null | string;
     };
     CreateShareLinkRequest: {
       sessionId: string;

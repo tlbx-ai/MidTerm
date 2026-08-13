@@ -27,6 +27,7 @@ public static class TtyHostSpawner
 {
     private const string MtBinaryPathEnvironmentVariable = "MT_BINARY_PATH";
     internal const string TtyHostPathEnvironmentVariable = "MIDTERM_TTYHOST_PATH";
+    internal const string InitialCommandEnvironmentVariable = "MIDTERM_TTYHOST_INITIAL_COMMAND_BASE64";
     private static readonly string TtyHostPath = GetTtyHostPath();
     private static bool _integrityVerified;
     private static readonly object _verifyLock = new();
@@ -223,7 +224,8 @@ public static class TtyHostSpawner
         int? mtPort = null,
         string? mtToken = null,
         int? paneIndex = null,
-        string? tmuxBinDir = null)
+        string? tmuxBinDir = null,
+        string? initialCommand = null)
     {
         if (!File.Exists(TtyHostPath))
         {
@@ -243,7 +245,7 @@ public static class TtyHostSpawner
 
         var args = BuildArgs(sessionId, shellType, workingDirectory, cols, rows,
             instanceId, ownerToken, scrollbackBytes, mtPort, mtToken, paneIndex, tmuxBinDir);
-        var ttyHostEnvironmentOverrides = AddTerminalEnvironmentOverrideKeyMarker(environmentOverrides);
+        var ttyHostEnvironmentOverrides = AddTtyHostEnvironmentOverrides(environmentOverrides, initialCommand);
 
 #pragma warning disable CA1416 // Validate platform compatibility (compile-time guard via WINDOWS constant)
 #if WINDOWS
@@ -254,24 +256,28 @@ public static class TtyHostSpawner
 #pragma warning restore CA1416
     }
 
-    private static IReadOnlyDictionary<string, string?>? AddTerminalEnvironmentOverrideKeyMarker(
-        IReadOnlyDictionary<string, string?>? environmentOverrides)
+    internal static IReadOnlyDictionary<string, string?>? AddTtyHostEnvironmentOverrides(
+        IReadOnlyDictionary<string, string?>? environmentOverrides,
+        string? initialCommand)
     {
-        if (environmentOverrides is null || environmentOverrides.Count == 0)
+        if ((environmentOverrides is null || environmentOverrides.Count == 0) && initialCommand is null)
         {
             return environmentOverrides;
         }
 
-        var serializedKeys = TerminalEnvironmentOverrides.SerializeOverrideKeys(environmentOverrides.Keys);
-        if (string.IsNullOrEmpty(serializedKeys))
+        var marked = environmentOverrides is null
+            ? new Dictionary<string, string?>(StringComparer.Ordinal)
+            : new Dictionary<string, string?>(environmentOverrides, StringComparer.Ordinal);
+        var serializedKeys = TerminalEnvironmentOverrides.SerializeOverrideKeys(marked.Keys);
+        if (!string.IsNullOrEmpty(serializedKeys))
         {
-            return environmentOverrides;
+            marked[TerminalEnvironmentOverrides.OverrideKeysEnvironmentVariable] = serializedKeys;
         }
 
-        var marked = new Dictionary<string, string?>(environmentOverrides, StringComparer.Ordinal)
+        if (initialCommand is not null)
         {
-            [TerminalEnvironmentOverrides.OverrideKeysEnvironmentVariable] = serializedKeys
-        };
+            marked[InitialCommandEnvironmentVariable] = Convert.ToBase64String(Encoding.UTF8.GetBytes(initialCommand));
+        }
         return marked;
     }
 

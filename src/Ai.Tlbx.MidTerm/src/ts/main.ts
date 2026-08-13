@@ -98,12 +98,12 @@ import {
   type LaunchEntry,
 } from './modules/history';
 import { linkAndReplayRemoteBookmark } from './modules/history/remoteBookmarkLaunch';
+import { buildLocalBookmarkLaunchRequest } from './modules/history/bookmarkLaunch';
 import {
   isAppServerControlHistoryEntry,
   normalizeHistoryAppServerControlProfile,
 } from './modules/history/launchMode';
 import { getForegroundInfo, addProcessStateListener } from './modules/process';
-import { buildReplayCommand } from './modules/sidebar/processDisplay';
 import {
   initTouchController,
   dismissTouchController,
@@ -982,25 +982,13 @@ async function spawnFromHistory(
     }
   }
 
-  apiCreateSession({
-    cols,
-    rows,
-    shell: entry.shellType || null,
-    workingDirectory: entry.workingDirectory || null,
-  })
+  apiCreateSession(buildLocalBookmarkLaunchRequest(entry, cols, rows))
     .then(({ data }) => {
       if (!data) return;
       setSession(data);
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
       attachBookmarkToSession(data.id, entry.id, entry.label ?? null, entry.notes ?? null);
-
-      if (entry.commandLine) {
-        const replayCmd = buildReplayCommand(entry.executable, entry.commandLine);
-        setTimeout(() => {
-          sendInput(data.id, replayCmd + '\r');
-        }, 100);
-      }
     })
     .catch((e: unknown) => {
       log.error(() => `Failed to spawn from history: ${String(e)}`);
