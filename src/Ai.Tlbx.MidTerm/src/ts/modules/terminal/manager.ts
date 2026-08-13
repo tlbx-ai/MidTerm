@@ -112,10 +112,19 @@ import { handleOsc7Cwd } from '../process';
 import { recordTerminalKeyLog } from '../diagnostics';
 import { getActiveTab } from '../sessionTabs';
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
+import {
+  registerTerminalNotificationHandlers,
+  type TerminalNotificationSignal,
+} from './terminalNotifications';
 
-let showBellNotification: (sessionId: string) => void = () => {};
-export function setShowBellCallback(cb: (sessionId: string) => void): void {
-  showBellNotification = cb;
+let showTerminalNotification: (
+  sessionId: string,
+  signal: TerminalNotificationSignal,
+) => void = () => {};
+export function setShowTerminalNotificationCallback(
+  cb: (sessionId: string, signal: TerminalNotificationSignal) => void,
+): void {
+  showTerminalNotification = cb;
 }
 
 // Debounce timers for auto-rename from shell title
@@ -1395,8 +1404,8 @@ export function setupTerminalEvents(
   );
 
   disposables.push(
-    terminal.onBell(() => {
-      showBellNotification(sessionId);
+    ...registerTerminalNotificationHandlers(terminal, (signal) => {
+      showTerminalNotification(sessionId, signal);
     }),
   );
 

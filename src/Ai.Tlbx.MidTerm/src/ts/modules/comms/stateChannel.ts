@@ -53,6 +53,7 @@ import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { isSharedSessionRoute } from '../share';
 import { checkVersionAndReload } from '../../utils/versionCheck';
 import type { MobileDeviceAction } from '../web/mobileDeviceBridge';
+import type { TerminalNotificationSignal } from '../terminal/terminalNotifications';
 
 interface TmuxDockMessage {
   type: 'tmux-dock';
@@ -115,12 +116,20 @@ interface CommandResponseMessage {
   error?: string;
 }
 
+interface TerminalNotificationMessage extends TerminalNotificationSignal {
+  type: 'terminal-notification';
+  sessionId: string;
+}
+
+type DirectStateMessage = BrowserUiMessage | TerminalNotificationMessage;
+
 type StateWsMessage =
   | TmuxDockMessage
   | TmuxFocusMessage
   | TmuxSwapMessage
   | MainBrowserStatusMessage
   | BrowserUiMessage
+  | TerminalNotificationMessage
   | StateUpdateMessage
   | CommandResponseMessage;
 
@@ -201,6 +210,11 @@ let selectSession: (
   options?: { closeSettingsPanel?: boolean; focusTerminal?: boolean },
 ) => void = () => {};
 
+let handleTerminalNotification: (
+  sessionId: string,
+  signal: TerminalNotificationSignal,
+) => void = () => {};
+
 export function setSelectSessionCallback(
   cb: (
     sessionId: string,
@@ -215,6 +229,12 @@ export function requestSelectSession(
   options?: { closeSettingsPanel?: boolean; focusTerminal?: boolean },
 ): void {
   selectSession(sessionId, options);
+}
+
+export function setTerminalNotificationCallback(
+  callback: (sessionId: string, signal: TerminalNotificationSignal) => void,
+): void {
+  handleTerminalNotification = callback;
 }
 
 function handleTmuxDockMessage(data: TmuxDockMessage): void {
@@ -259,6 +279,24 @@ function handleTmuxFocusMessage(data: TmuxFocusMessage): void {
   }
 }
 
+function handleDirectStateMessage(data: StateWsMessage): data is DirectStateMessage {
+  if (data.type === 'browser-ui') {
+    void handleBrowserUiCommand(data);
+    return true;
+  }
+
+  if (data.type === 'terminal-notification') {
+    handleTerminalNotification(data.sessionId, {
+      protocol: data.protocol,
+      ...(data.title ? { title: data.title } : {}),
+      ...(data.body ? { body: data.body } : {}),
+    });
+    return true;
+  }
+
+  return false;
+}
+
 function handleStateSocketMessage(data: StateWsMessage): void {
   if (data.type === 'response') {
     handleCommandResponse(data);
@@ -288,8 +326,7 @@ function handleStateSocketMessage(data: StateWsMessage): void {
     return;
   }
 
-  if (data.type === 'browser-ui') {
-    void handleBrowserUiCommand(data);
+  if (handleDirectStateMessage(data)) {
     return;
   }
 
@@ -1013,6 +1050,7 @@ export function resetStateChannelRuntimeForTests(): void {
   stateWsHasConnected = false;
   lastUpdateInfoSignature = '';
   selectSession = () => {};
+  handleTerminalNotification = () => {};
   lastReportedBrowserActivity = undefined;
   terminalInteractionReportAt.clear();
   closeWebSocket(stateWs, setStateWs);

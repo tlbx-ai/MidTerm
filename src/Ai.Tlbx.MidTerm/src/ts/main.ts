@@ -17,6 +17,7 @@ import {
   connectSettingsWebSocket,
   handleStateUpdate,
   setSelectSessionCallback,
+  setTerminalNotificationCallback,
   sendInput,
   requestBufferRefresh,
   updateTerminalVisibility,
@@ -29,7 +30,7 @@ import { initBadges } from './modules/badges';
 import {
   preloadTerminalFont,
   initCalibrationTerminal,
-  setShowBellCallback,
+  setShowTerminalNotificationCallback,
   setupResizeObserver,
   setupVisualViewport,
   bindSearchEvents,
@@ -207,6 +208,11 @@ import {
   setSessionNotes,
 } from './api/client';
 import type { ShellType } from './api/types';
+import {
+  buildTerminalNotificationBody,
+  shouldShowDesktopTerminalNotification,
+  type TerminalNotificationSignal,
+} from './modules/terminal/terminalNotifications';
 
 // Create logger for main module
 const log = createLogger('main');
@@ -458,7 +464,7 @@ async function init(): Promise<void> {
   // Single bootstrap call replaces: fetchVersion, fetchNetworks, fetchSettings,
   // checkAuthStatus, checkUpdateResult, and checkSystemHealth
   void fetchBootstrap();
-  requestNotificationPermission();
+  bindNotificationPermissionRequest();
   initDiagnosticsPanel();
   bindHubSettings();
 
@@ -498,7 +504,10 @@ async function initShared(): Promise<void> {
   await initializeTabIdentity();
 
   setSelectSessionCallback(selectSession);
-  setShowBellCallback(showBellNotification);
+  setTerminalNotificationCallback(showTerminalNotification);
+  setShowTerminalNotificationCallback((sessionId, signal) => {
+    if (isHubSessionId(sessionId)) showTerminalNotification(sessionId, signal);
+  });
   addProcessStateListener((sessionId, state) => {
     setProcessState(sessionId, { ...state });
   });
@@ -614,7 +623,10 @@ function bindTerminalVisibilitySync(): void {
 
 function registerCallbacks(): void {
   setSelectSessionCallback(selectSession);
-  setShowBellCallback(showBellNotification);
+  setTerminalNotificationCallback(showTerminalNotification);
+  setShowTerminalNotificationCallback((sessionId, signal) => {
+    if (isHubSessionId(sessionId)) showTerminalNotification(sessionId, signal);
+  });
 
   addProcessStateListener((sessionId, state) => {
     setProcessState(sessionId, { ...state });
@@ -1071,7 +1083,20 @@ function requestNotificationPermission(): void {
   }
 }
 
-function showBellNotification(sessionId: string): void {
+function bindNotificationPermissionRequest(): void {
+  const bellStyle = document.getElementById('setting-bell-style');
+  if (!(bellStyle instanceof HTMLSelectElement)) return;
+
+  const requestForNotificationStyle = (): void => {
+    if (bellStyle.value === 'notification' || bellStyle.value === 'both') {
+      requestNotificationPermission();
+    }
+  };
+  bellStyle.addEventListener('pointerdown', requestForNotificationStyle);
+  bellStyle.addEventListener('change', requestForNotificationStyle);
+}
+
+function showTerminalNotification(sessionId: string, signal: TerminalNotificationSignal): void {
   const settings = $currentSettings.get();
   if (!settings) return;
   if (bellNotificationsSuppressed) return;
@@ -1082,8 +1107,13 @@ function showBellNotification(sessionId: string): void {
 
   if (
     (bellStyle === 'notification' || bellStyle === 'both') &&
+    'Notification' in window &&
     Notification.permission === 'granted' &&
-    document.hidden
+    shouldShowDesktopTerminalNotification({
+      documentHidden: document.hidden,
+      documentFocused: document.hasFocus(),
+      sourceSessionActive: $activeSessionId.get() === sessionId,
+    })
   ) {
     // Close existing notification for this session (deduplication)
     const existing = activeNotifications.get(sessionId);
@@ -1091,24 +1121,34 @@ function showBellNotification(sessionId: string): void {
       existing.close();
     }
 
-    const notification = new Notification(title, {
-      body: 'Needs your attention',
-      icon: '/favicon.ico',
-      tag: `midterm-bell-${sessionId}`,
-    });
+    let notification: Notification;
+    try {
+      notification = new Notification(title, {
+        body: buildTerminalNotificationBody(signal),
+        icon: '/favicon.ico',
+        tag: `tlbx-terminal-${sessionId}`,
+      });
+    } catch {
+      return;
+    }
 
     activeNotifications.set(sessionId, notification);
 
     notification.onclick = () => {
       window.focus();
+      selectSession(sessionId);
       notification.close();
-      activeNotifications.delete(sessionId);
+      if (activeNotifications.get(sessionId) === notification) {
+        activeNotifications.delete(sessionId);
+      }
     };
 
     // Auto-close after 15 seconds
     setTimeout(() => {
       notification.close();
-      activeNotifications.delete(sessionId);
+      if (activeNotifications.get(sessionId) === notification) {
+        activeNotifications.delete(sessionId);
+      }
     }, 15000);
   }
 

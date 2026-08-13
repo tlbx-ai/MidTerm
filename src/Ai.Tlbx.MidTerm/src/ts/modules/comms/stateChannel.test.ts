@@ -172,6 +172,7 @@ let handleStateUpdate: typeof import('./stateChannel').handleStateUpdate;
 let reportBrowserActivity: typeof import('./stateChannel').reportBrowserActivity;
 let resetStateChannelRuntimeForTests: typeof import('./stateChannel').resetStateChannelRuntimeForTests;
 let setSelectSessionCallback: typeof import('./stateChannel').setSelectSessionCallback;
+let setTerminalNotificationCallback: typeof import('./stateChannel').setTerminalNotificationCallback;
 const stateChannelModulePromise = import('./stateChannel');
 const stateModulePromise = import('../../state');
 const storesModulePromise = import('../../stores');
@@ -241,6 +242,7 @@ describe('stateChannel browser-ui handling', () => {
       reportBrowserActivity,
       resetStateChannelRuntimeForTests,
       setSelectSessionCallback,
+      setTerminalNotificationCallback,
     } = await stateChannelModulePromise);
   });
 
@@ -298,6 +300,30 @@ describe('stateChannel browser-ui handling', () => {
       active: true,
       targetRevision: 1,
     });
+  });
+
+  it('delivers transient terminal notifications without turning them into state snapshots', async () => {
+    const { ws } = await loadHarness();
+    const notify = vi.fn();
+    setTerminalNotificationCallback(notify);
+
+    ws.onmessage?.(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'terminal-notification',
+          sessionId: 'agent5678',
+          protocol: 'osc9',
+          body: 'Agent turn complete',
+        }),
+      }),
+    );
+
+    expect(notify).toHaveBeenCalledOnce();
+    expect(notify).toHaveBeenCalledWith('agent5678', {
+      protocol: 'osc9',
+      body: 'Agent turn complete',
+    });
+    expect(mocks.createTerminalForSession).not.toHaveBeenCalled();
   });
 
   it('defers browser open commands when a frontend reload was requested', async () => {

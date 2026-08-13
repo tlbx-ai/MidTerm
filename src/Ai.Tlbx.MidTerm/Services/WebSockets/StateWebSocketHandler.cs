@@ -36,6 +36,7 @@ public sealed class StateWebSocketHandler
     private readonly TerminalSizeControlService _terminalSizeControlService;
     private readonly SessionLayoutStateService _sessionLayoutStateService;
     private readonly ManagerBarQueueService _managerBarQueueService;
+    private readonly SessionTelemetryService _sessionTelemetryService;
     private readonly TmuxLayoutBridge? _tmuxLayoutBridge;
     private readonly BrowserUiBridge? _browserUiBridge;
 
@@ -52,6 +53,7 @@ public sealed class StateWebSocketHandler
         TerminalSizeControlService terminalSizeControlService,
         SessionLayoutStateService sessionLayoutStateService,
         ManagerBarQueueService managerBarQueueService,
+        SessionTelemetryService sessionTelemetryService,
         TmuxLayoutBridge? tmuxLayoutBridge = null,
         BrowserUiBridge? browserUiBridge = null)
     {
@@ -67,6 +69,7 @@ public sealed class StateWebSocketHandler
         _terminalSizeControlService = terminalSizeControlService;
         _sessionLayoutStateService = sessionLayoutStateService;
         _managerBarQueueService = managerBarQueueService;
+        _sessionTelemetryService = sessionTelemetryService;
         _tmuxLayoutBridge = tmuxLayoutBridge;
         _browserUiBridge = browserUiBridge;
     }
@@ -336,10 +339,23 @@ public sealed class StateWebSocketHandler
             RequestCoalescedStateSend();
         }
 
+        void OnTerminalNotification(TerminalNotificationMessage notification)
+        {
+            if (isSizeControlOnly ||
+                (shareAccess is not null &&
+                 !string.Equals(notification.SessionId, shareAccess.SessionId, StringComparison.Ordinal)))
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(notification, AppJsonContext.Default.TerminalNotificationMessage);
+        }
+
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
         _sessionLayoutStateService.OnChanged += OnLayoutChanged;
         _managerBarQueueService.OnChanged += OnManagerBarQueueChanged;
+        _sessionTelemetryService.TerminalNotificationReceived += OnTerminalNotification;
         var browserUiListenerId = Guid.NewGuid().ToString("N");
 
         void OnDockRequested(string newSessionId, string relativeToSessionId, string position)
@@ -568,6 +584,7 @@ public sealed class StateWebSocketHandler
             _updateService.RemoveUpdateListener(updateListenerId);
             _sessionLayoutStateService.OnChanged -= OnLayoutChanged;
             _managerBarQueueService.OnChanged -= OnManagerBarQueueChanged;
+            _sessionTelemetryService.TerminalNotificationReceived -= OnTerminalNotification;
             if (shareAccess is null)
             {
                 _terminalSizeControlService.OnChanged -= OnTerminalSizeControlChanged;

@@ -32,20 +32,25 @@ public sealed class SessionTelemetryService
         public DateTimeOffset? LastInputAt { get; set; }
         public DateTimeOffset? LastOutputAt { get; set; }
         public DateTimeOffset? LastBellAt { get; set; }
+        public TerminalNotificationStreamParser NotificationParser { get; } = new();
     }
 
     private readonly ConcurrentDictionary<string, SessionTelemetryState> _sessions = new(StringComparer.Ordinal);
+
+    public event Action<TerminalNotificationMessage>? TerminalNotificationReceived;
 
     public void RecordOutput(string sessionId, ReadOnlySpan<byte> data)
     {
         var state = _sessions.GetOrAdd(sessionId, _ => new SessionTelemetryState());
         var now = DateTimeOffset.UtcNow;
         var unixSecond = now.ToUnixTimeSeconds();
-        var bellCount = TerminalOutputSanitizer.CountBellEvents(data);
         var heatUnits = TerminalOutputSanitizer.CountVisibleTextUnits(data);
+        IReadOnlyList<TerminalNotificationMessage> notifications;
 
         lock (state.SyncRoot)
         {
+            notifications = state.NotificationParser.Parse(sessionId, data);
+            var bellCount = notifications.Count(notification => notification.Protocol == "bel");
             state.TotalOutputBytes += data.Length;
             state.LastOutputAt = now;
             AddBytes(state, unixSecond, data.Length, heatUnits);
@@ -61,6 +66,11 @@ public sealed class SessionTelemetryService
                 });
                 TrimBells(state);
             }
+        }
+
+        foreach (var notification in notifications)
+        {
+            TerminalNotificationReceived?.Invoke(notification);
         }
     }
 

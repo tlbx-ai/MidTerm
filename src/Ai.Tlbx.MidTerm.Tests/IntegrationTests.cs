@@ -98,6 +98,29 @@ public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Progr
     }
 
     [Fact]
+    public async Task WebSocket_State_ForwardsLiveTerminalNotifications()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var telemetry = scope.ServiceProvider.GetRequiredService<SessionTelemetryService>();
+        using var ws = await ConnectWebSocketAsync("/ws/state");
+
+        _ = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
+        await DrainAvailableTextMessagesAsync(ws, TimeSpan.FromMilliseconds(100));
+
+        telemetry.RecordOutput("session-notify", Encoding.UTF8.GetBytes("\x1b]9;Agent turn complete\a"));
+
+        var json = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
+        var message = System.Text.Json.JsonSerializer.Deserialize(
+            json,
+            AppJsonContext.Default.TerminalNotificationMessage);
+        Assert.NotNull(message);
+        Assert.Equal("terminal-notification", message.Type);
+        Assert.Equal("session-notify", message.SessionId);
+        Assert.Equal("osc9", message.Protocol);
+        Assert.Equal("Agent turn complete", message.Body);
+    }
+
+    [Fact]
     public async Task WebSocket_State_InitialPayload_IncludesSupervisorForCodexSessions()
     {
         using var scope = _factory.Services.CreateScope();
