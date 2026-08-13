@@ -380,6 +380,21 @@ try {
     Write-Host "Supply-chain audit gate succeeded." -ForegroundColor Green
 
     Write-Host ""
+    Write-Host "Preparing publish frontend for runtime verification..." -ForegroundColor Cyan
+    $frontendRoot = Join-Path $PSScriptRoot "../src/Ai.Tlbx.MidTerm"
+    Push-Location $frontendRoot
+    try {
+        & pwsh -NoProfile -ExecutionPolicy Bypass -File frontend-build.ps1 -Version $newVersion -Publish -DevRelease -SkipVerify
+        if ($LASTEXITCODE -ne 0) {
+            throw "Frontend publish build failed for runtime verification"
+        }
+    }
+    finally {
+        Pop-Location
+    }
+    Write-Host "Runtime verification frontend succeeded." -ForegroundColor Green
+
+    Write-Host ""
     Write-Host "Running .NET test suite..." -ForegroundColor Cyan
     & $dotnetTestSuiteScript -Configuration Release -WarnAsError
     Write-Host ".NET tests succeeded." -ForegroundColor Green
