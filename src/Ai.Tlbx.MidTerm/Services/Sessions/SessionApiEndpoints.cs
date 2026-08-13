@@ -692,6 +692,24 @@ public static partial class SessionApiEndpoints
             return Results.Json(response, AppJsonContext.Default.SessionActivityResponse);
         });
 
+        app.MapPost("/api/notifications", (TerminalNotificationRequest request) =>
+        {
+            var sessionId = request.SessionId?.Trim();
+            if (string.IsNullOrEmpty(sessionId))
+            {
+                return Results.BadRequest("sessionId required");
+            }
+
+            if (sessionManager.GetSession(sessionId) is null)
+            {
+                return Results.NotFound();
+            }
+
+            return sessionTelemetry.TryPublishAdHocNotification(sessionId, request.Title, request.Body)
+                ? Results.NoContent()
+                : Results.BadRequest("body required");
+        });
+
         app.MapGet("/api/sessions/{id}/agent", async (
             string id,
             int tailLines = 80,

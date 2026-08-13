@@ -11,4 +11,5 @@ public sealed class TerminalNotificationMessage
     public required string Protocol { get; init; }
     public string? Title { get; init; }
     public string? Body { get; init; }
+    public bool Force { get; init; }
 }

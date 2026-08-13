@@ -326,6 +326,32 @@ describe('stateChannel browser-ui handling', () => {
     expect(mocks.createTerminalForSession).not.toHaveBeenCalled();
   });
 
+  it('preserves the force flag on explicit CLI notifications', async () => {
+    const { ws } = await loadHarness();
+    const notify = vi.fn();
+    setTerminalNotificationCallback(notify);
+
+    ws.onmessage?.(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'terminal-notification',
+          sessionId: 'agent5678',
+          protocol: 'cli',
+          title: 'tlbx',
+          body: 'Release complete',
+          force: true,
+        }),
+      }),
+    );
+
+    expect(notify).toHaveBeenCalledWith('agent5678', {
+      protocol: 'cli',
+      title: 'tlbx',
+      body: 'Release complete',
+      force: true,
+    });
+  });
+
   it('defers browser open commands when a frontend reload was requested', async () => {
     const { ws } = await loadHarness();
     mocks.checkVersionAndReload.mockResolvedValueOnce(true);

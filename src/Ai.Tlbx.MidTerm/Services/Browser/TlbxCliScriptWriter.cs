@@ -681,6 +681,23 @@ public static class TlbxCliScriptWriter
           [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
           _MC -X POST "$_MT/api/sessions/$sid/inject-guidance"
         }
+        # mt_notify [--title TITLE] [--session SESSION_ID] TEXT...  — send an immediate desktop notification
+        mt_notify() {
+          local title="tlbx" sid="" body
+          while [ $# -gt 0 ]; do
+            case "$1" in
+              --title) [ $# -ge 2 ] || { echo "--title requires a value." >&2; return 1; }; title="$2"; shift 2 ;;
+              --session) [ $# -ge 2 ] || { echo "--session requires a value." >&2; return 1; }; sid="$2"; shift 2 ;;
+              --) shift; break ;;
+              *) break ;;
+            esac
+          done
+          body="$*"
+          [ -n "$sid" ] || sid="$(_MSID)"
+          [ -n "$sid" ] || { echo "Session id required. Use --session or mt_context." >&2; return 1; }
+          [ -n "$body" ] || { echo "Notification text required." >&2; return 1; }
+          _MJ -d "{\"sessionId\":\"$(_MJE "$sid")\",\"title\":\"$(_MJE "$title")\",\"body\":\"$(_MJE "$body")\"}" "$_MT/api/notifications"
+        }
         # mt_activity [SESSION_ID] [SECONDS] [BELL_LIMIT]  — output heatmap + bell history as JSON
         mt_activity() {
           local sid seconds bells
@@ -1685,6 +1702,17 @@ public static class TlbxCliScriptWriter
             if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
             _MC -X POST "$script:_MT/api/sessions/$($resolved.SessionId)/inject-guidance"
         }
+        # Mt-Notify [-Message] TEXT [-Title TITLE] [-SessionId SESSION_ID]  — send an immediate desktop notification
+        function Mt-Notify {
+            param(
+                [Parameter(Mandatory=$true, Position=0)][string]$Message,
+                [string]$Title = "tlbx",
+                [string]$SessionId
+            )
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required. Use -SessionId or Mt-Context."; return }
+            _MJ -d (_MH @{ sessionId=$SessionId; title=$Title; body=$Message }) "$script:_MT/api/notifications"
+        }
         # Mt-Activity [SESSION_ID] [SECONDS] [BELL_LIMIT]  — output heatmap + bell history as JSON
         function Mt-Activity {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
@@ -1997,6 +2025,7 @@ public static class TlbxCliScriptWriter
         Set-Alias -Name mt_left -Value Mt-Left
         Set-Alias -Name mt_right -Value Mt-Right
         Set-Alias -Name mt_inject -Value Mt-Inject
+        Set-Alias -Name mt_notify -Value Mt-Notify
         Set-Alias -Name mt_activity -Value Mt-Activity
         Set-Alias -Name mt_attention -Value Mt-Attention
         Set-Alias -Name mt_control_plane -Value Mt-ControlPlane

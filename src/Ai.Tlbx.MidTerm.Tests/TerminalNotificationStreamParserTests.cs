@@ -111,6 +111,25 @@ public sealed class TerminalNotificationStreamParserTests
         Assert.Equal(1, snapshot.TotalBellCount);
     }
 
+    [Fact]
+    public void Telemetry_PublishesSanitizedForcedAdHocNotification()
+    {
+        var telemetry = new SessionTelemetryService();
+        TerminalNotificationMessage? received = null;
+        telemetry.TerminalNotificationReceived += notification => received = notification;
+
+        var published = telemetry.TryPublishAdHocNotification(
+            "session",
+            " tlbx\n",
+            "Release \x1b[31mcomplete");
+
+        Assert.True(published);
+        Assert.NotNull(received);
+        AssertMessage(received, "cli", "tlbx", "Release complete");
+        Assert.True(received.Force);
+        Assert.False(telemetry.TryPublishAdHocNotification("session", "tlbx", "   "));
+    }
+
     private static void AssertMessage(
         TerminalNotificationMessage message,
         string protocol,

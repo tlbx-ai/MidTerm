@@ -121,6 +121,55 @@ public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Progr
     }
 
     [Fact]
+    public async Task Api_Notify_ForwardsForcedNotificationToStateWebSocket()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<TtyHostSessionManager>();
+        const string sessionId = "notify-s1";
+        SeedSession(manager, new SessionInfo
+        {
+            Id = sessionId,
+            Pid = 42,
+            HostPid = 43,
+            ShellType = "Pwsh",
+            CreatedAt = DateTime.UtcNow,
+            IsRunning = true,
+            CurrentDirectory = @"Q:\repos\Jpa"
+        }, order: 0);
+
+        try
+        {
+            using var ws = await ConnectWebSocketAsync("/ws/state");
+            _ = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
+            await DrainAvailableTextMessagesAsync(ws, TimeSpan.FromMilliseconds(100));
+
+            using var response = await _client.PostAsJsonAsync(
+                "/api/notifications",
+                new TerminalNotificationRequest
+                {
+                    SessionId = sessionId,
+                    Title = "tlbx",
+                    Body = "Ad hoc test"
+                },
+                AppJsonContext.Default.TerminalNotificationRequest);
+
+            Assert.Equal(System.Net.HttpStatusCode.NoContent, response.StatusCode);
+            var json = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
+            var message = System.Text.Json.JsonSerializer.Deserialize(
+                json,
+                AppJsonContext.Default.TerminalNotificationMessage);
+            Assert.NotNull(message);
+            Assert.Equal("cli", message.Protocol);
+            Assert.Equal("Ad hoc test", message.Body);
+            Assert.True(message.Force);
+        }
+        finally
+        {
+            RemoveSeedSession(manager, sessionId);
+        }
+    }
+
+    [Fact]
     public async Task WebSocket_State_InitialPayload_IncludesSupervisorForCodexSessions()
     {
         using var scope = _factory.Services.CreateScope();

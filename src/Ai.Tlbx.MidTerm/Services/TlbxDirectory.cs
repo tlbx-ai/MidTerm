@@ -338,6 +338,7 @@ public static class TlbxDirectory
         | `mt_up` / `mt_down` / `mt_left` / `mt_right` | Convenience cursor-key sends |
         | `mt_inject [id]` | Ensure `.tlbx` + tlbx_cli helpers in the target cwd |
         | `mt_activity [id] [seconds] [bellLimit]` | Output heatmap + bell history as JSON |
+        | `mt_notify [--title TITLE] [--session ID] TEXT` | Send an immediate desktop notification |
         | `mt_attention [agentOnly]` | Ranked fleet view for which worker sessions need attention |
         | `mt_control_plane [machineId]` | Read local or Hub-machine agent-published work, session status, and checkpoints as JSON |
         | `mt_agent_capabilities [machineId]` | Discover exact product features and per-session prompt modes from runtime flags |

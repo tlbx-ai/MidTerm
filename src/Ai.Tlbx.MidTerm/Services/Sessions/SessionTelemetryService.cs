@@ -86,6 +86,21 @@ public sealed class SessionTelemetryService
         }
     }
 
+    public bool TryPublishAdHocNotification(string sessionId, string? title, string body)
+    {
+        var notification = TerminalNotificationStreamParser.CreateAdHocNotification(
+            sessionId,
+            title,
+            body);
+        if (notification is null)
+        {
+            return false;
+        }
+
+        TerminalNotificationReceived?.Invoke(notification);
+        return true;
+    }
+
     public void ClearSession(string sessionId)
     {
         _sessions.TryRemove(sessionId, out _);

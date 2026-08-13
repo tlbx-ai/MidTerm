@@ -148,6 +148,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(SessionBellEvent))]
 [JsonSerializable(typeof(List<SessionBellEvent>))]
 [JsonSerializable(typeof(TerminalNotificationMessage))]
+[JsonSerializable(typeof(TerminalNotificationRequest))]
 [JsonSerializable(typeof(AgentSessionVibeResponse))]
 [JsonSerializable(typeof(AgentSessionVibeHeader))]
 [JsonSerializable(typeof(AgentSessionVibeChip))]
@@ -382,7 +383,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

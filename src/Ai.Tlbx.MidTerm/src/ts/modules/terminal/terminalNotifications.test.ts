@@ -98,4 +98,21 @@ describe('desktop terminal notification policy', () => {
     ).toBe('Codex: Agent turn complete');
     expect(buildTerminalNotificationBody({ protocol: 'bel' })).toBe('Needs your attention');
   });
+
+  it('keeps explicit CLI notifications distinguishable from terminal output', () => {
+    expect(
+      buildTerminalNotificationBody({
+        protocol: 'cli',
+        title: 'tlbx',
+        body: 'Release complete',
+        force: true,
+      }),
+    ).toBe('tlbx: Release complete');
+    expect(
+      shouldShowDesktopTerminalNotification(
+        { documentHidden: false, documentFocused: true, sourceSessionActive: true },
+        true,
+      ),
+    ).toBe(true);
+  });
 });

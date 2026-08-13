@@ -1109,11 +1109,14 @@ function showTerminalNotification(sessionId: string, signal: TerminalNotificatio
     (bellStyle === 'notification' || bellStyle === 'both') &&
     'Notification' in window &&
     Notification.permission === 'granted' &&
-    shouldShowDesktopTerminalNotification({
-      documentHidden: document.hidden,
-      documentFocused: document.hasFocus(),
-      sourceSessionActive: $activeSessionId.get() === sessionId,
-    })
+    shouldShowDesktopTerminalNotification(
+      {
+        documentHidden: document.hidden,
+        documentFocused: document.hasFocus(),
+        sourceSessionActive: $activeSessionId.get() === sessionId,
+      },
+      signal.force === true,
+    )
   ) {
     // Close existing notification for this session (deduplication)
     const existing = activeNotifications.get(sessionId);

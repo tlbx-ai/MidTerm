@@ -290,6 +290,7 @@ function handleDirectStateMessage(data: StateWsMessage): data is DirectStateMess
       protocol: data.protocol,
       ...(data.title ? { title: data.title } : {}),
       ...(data.body ? { body: data.body } : {}),
+      ...(data.force ? { force: true } : {}),
     });
     return true;
   }

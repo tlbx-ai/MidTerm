@@ -144,6 +144,28 @@ public sealed class TerminalNotificationStreamParser
         _utf8ContinuationBytesRemaining = 0;
     }
 
+    public static TerminalNotificationMessage? CreateAdHocNotification(
+        string sessionId,
+        string? title,
+        string body)
+    {
+        var normalizedTitle = NormalizeText(title ?? "", MaxTitleTextElements);
+        var normalizedBody = NormalizeText(body, MaxBodyTextElements);
+        if (normalizedBody is null)
+        {
+            return null;
+        }
+
+        return new TerminalNotificationMessage
+        {
+            SessionId = sessionId,
+            Protocol = "cli",
+            Title = normalizedTitle,
+            Body = normalizedBody,
+            Force = true
+        };
+    }
+
     private void BeginOsc()
     {
         _oscPayload.Clear();

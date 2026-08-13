@@ -1,11 +1,12 @@
 import type { IDisposable, Terminal } from '@xterm/xterm';
 
-export type TerminalNotificationProtocol = 'bel' | 'osc9' | 'osc777';
+export type TerminalNotificationProtocol = 'bel' | 'osc9' | 'osc777' | 'cli';
 
 export interface TerminalNotificationSignal {
   protocol: TerminalNotificationProtocol;
   title?: string;
   body?: string;
+  force?: boolean;
 }
 
 export interface DesktopNotificationVisibility {
@@ -133,7 +134,9 @@ export function registerTerminalNotificationHandlers(
 
 export function shouldShowDesktopTerminalNotification(
   visibility: DesktopNotificationVisibility,
+  force = false,
 ): boolean {
+  if (force) return true;
   return (
     visibility.documentHidden || !visibility.documentFocused || !visibility.sourceSessionActive
   );
