@@ -78,6 +78,8 @@ async function installPageProbe(page) {
         },
       ],
       errors: [],
+      rendererObjects: new WeakMap(),
+      nextRendererObjectId: 1,
     };
     try {
       const observer = new PerformanceObserver((list) => {
@@ -110,6 +112,37 @@ async function installPageProbe(page) {
     };
     state.raf = requestAnimationFrame(frame);
     window.__tlbxBackgroundProbe = state;
+  });
+}
+
+async function readRendererState(page) {
+  return page.evaluate(() => {
+    const sessionId = window.mmDebug?.activeId ?? null;
+    const state = sessionId
+      ? window.mmDebug?.terminals?.get(sessionId)
+      : null;
+    const probe = window.__tlbxBackgroundProbe;
+    const identity = (value) => {
+      if (!value || !probe) return null;
+      let id = probe.rendererObjects.get(value);
+      if (!id) {
+        id = probe.nextRendererObjectId++;
+        probe.rendererObjects.set(value, id);
+      }
+      return id;
+    };
+    const buffer = state?.terminal?.buffer?.active;
+    return {
+      sessionId,
+      hasWebgl: state?.hasWebgl === true,
+      addonId: identity(state?.webglAddon),
+      canvasId: identity(state?.container?.querySelector(".xterm-screen canvas")),
+      bufferLength: buffer?.length ?? null,
+      baseY: buffer?.baseY ?? null,
+      viewportY: buffer?.viewportY ?? null,
+      terminalCanvasCount:
+        state?.container?.querySelectorAll(".xterm-screen canvas").length ?? 0,
+    };
   });
 }
 
@@ -256,15 +289,19 @@ async function measureGraphWheel(page) {
 
 async function runCycle({
   page,
-  blankPage,
   client,
   lane,
   index,
   frozen,
   backgroundMs,
 }) {
-  await blankPage.bringToFront();
-  await blankPage.waitForTimeout(250);
+  const rendererBefore = await readRendererState(page);
+  const browserWindow = await client.send("Browser.getWindowForTarget");
+  await client.send("Browser.setWindowBounds", {
+    windowId: browserWindow.windowId,
+    bounds: { windowState: "minimized" },
+  });
+  await page.waitForTimeout(250);
   const hiddenBeforeFreeze = await page.evaluate(
     () => document.visibilityState,
   );
@@ -276,10 +313,23 @@ async function runCycle({
   if (frozen) {
     await client.send("Page.setWebLifecycleState", { state: "active" });
   }
+  await client.send("Browser.setWindowBounds", {
+    windowId: browserWindow.windowId,
+    bounds: {
+      windowState:
+        browserWindow.bounds.windowState === "maximized" ? "maximized" : "normal",
+    },
+  });
   await page.bringToFront();
+  // Headless/automation Chrome does not consistently expose OS window
+  // minimization through the Page Visibility API. Dispatch the same foreground
+  // lifecycle event emitted by Chrome so the application path remains covered;
+  // the optional CDP freeze above still exercises suspended compositor work.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   const twoRaf = await twoRafWithDeadline(page);
   const resumeWallMs = Date.now() - resumeWallStartedAt;
   await page.waitForTimeout(500);
+  const rendererAfter = await readRendererState(page);
   const after = await snapshot(page, client, `${lane}-${index}-after`);
   const wheel = lane === "graph" ? await measureGraphWheel(page) : null;
   const result = {
@@ -291,11 +341,23 @@ async function runCycle({
     resumeWallMs,
     twoRaf,
     wheel,
+    rendererBefore,
+    rendererAfter,
+    rendererRecreated:
+      !rendererBefore.hasWebgl ||
+      (rendererAfter.hasWebgl &&
+        rendererAfter.addonId !== rendererBefore.addonId &&
+        rendererAfter.canvasId !== rendererBefore.canvasId),
+    bufferPreserved:
+      rendererAfter.bufferLength === rendererBefore.bufferLength &&
+      rendererAfter.baseY === rendererBefore.baseY &&
+      rendererAfter.viewportY === rendererBefore.viewportY,
     after,
   };
   console.log(
     `CYCLE lane=${lane} index=${index} frozen=${frozen} ` +
       `twoRafOk=${twoRaf.ok} twoRafMs=${twoRaf.wallMs} ` +
+      `rendererRecreated=${result.rendererRecreated} bufferPreserved=${result.bufferPreserved} ` +
       `nodes=${after.dom.nodes} listeners=${after.dom.jsEventListeners} ` +
       `longTasks=${after.browser.longTaskCount} maxLongTaskMs=${after.browser.maxLongTaskMs}`,
   );
@@ -303,29 +365,14 @@ async function runCycle({
 }
 
 async function runStalledRafRecovery(page) {
-  const readRendererState = () =>
-    page.evaluate(() => {
-      const sessionId = window.mmDebug?.activeId ?? null;
-      const state = sessionId
-        ? window.mmDebug?.terminals?.get(sessionId)
-        : null;
-      return {
-        sessionId,
-        hasWebgl: state?.hasWebgl === true,
-        terminalCanvasCount:
-          state?.container?.querySelectorAll(".xterm-screen canvas").length ??
-          0,
-      };
-    });
-
-  const before = await readRendererState();
+  const before = await readRendererState(page);
   await page.evaluate(() => {
     window.__tlbxProbeOriginalRaf = window.requestAnimationFrame;
     window.requestAnimationFrame = () => 1;
     window.dispatchEvent(new Event("focus"));
   });
   await new Promise((resolve) => setTimeout(resolve, 350));
-  const afterWatchdog = await readRendererState();
+  const afterWatchdog = await readRendererState(page);
   await page.evaluate(() => {
     if (window.__tlbxProbeOriginalRaf) {
       window.requestAnimationFrame = window.__tlbxProbeOriginalRaf;
@@ -334,7 +381,7 @@ async function runStalledRafRecovery(page) {
     window.dispatchEvent(new Event("focus"));
   });
   await page.waitForTimeout(500);
-  const afterLaterFocus = await readRendererState();
+  const afterLaterFocus = await readRendererState(page);
 
   const marker = `foreground-dom-recovery-${Date.now()}`;
   const markerRendered = await page.evaluate(
@@ -368,17 +415,17 @@ async function runStalledRafRecovery(page) {
     afterWatchdog,
     afterLaterFocus,
     markerRendered,
-    stickyDomFallback:
+    deterministicRecovery:
       before.hasWebgl &&
-      !afterWatchdog.hasWebgl &&
-      !afterLaterFocus.hasWebgl &&
-      afterWatchdog.terminalCanvasCount < before.terminalCanvasCount &&
-      afterLaterFocus.terminalCanvasCount === afterWatchdog.terminalCanvasCount,
+      afterWatchdog.hasWebgl &&
+      afterLaterFocus.hasWebgl &&
+      afterWatchdog.addonId !== before.addonId &&
+      afterLaterFocus.addonId !== afterWatchdog.addonId,
   };
   console.log(
-    `STALL_RECOVERY sticky=${result.stickyDomFallback} ` +
+    `STALL_RECOVERY deterministic=${result.deterministicRecovery} ` +
       `webgl=${before.hasWebgl}->${afterWatchdog.hasWebgl}->${afterLaterFocus.hasWebgl} ` +
-      `canvases=${before.terminalCanvasCount}->${afterWatchdog.terminalCanvasCount}->${afterLaterFocus.terminalCanvasCount}`,
+      `addons=${before.addonId}->${afterWatchdog.addonId}->${afterLaterFocus.addonId}`,
   );
   return result;
 }
@@ -463,11 +510,24 @@ try {
   await client.send("DOM.enable");
   await client.send("Profiler.enable");
   await client.send("Profiler.start");
-  const blankPage = await context.newPage();
-  await blankPage.goto("about:blank");
-
   await page.bringToFront();
   await page.waitForTimeout(3000);
+  await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const sessionId = window.mmDebug?.activeId ?? null;
+        const terminal = sessionId
+          ? window.mmDebug?.terminals?.get(sessionId)?.terminal
+          : null;
+        if (!terminal) throw new Error("No active terminal for cursorless TUI probe.");
+        terminal.write(
+          "\r\n\x1b[?25l\x1b[44;97m CURSORLESS TUI " +
+            " ".repeat(180) +
+            "\x1b[0m\r\n",
+          resolve,
+        );
+      }),
+  );
   const before = await snapshot(page, client, "before");
   if (backgroundCommand) {
     await page.evaluate(async (command) => {
@@ -490,7 +550,6 @@ try {
     cycles.push(
       await runCycle({
         page,
-        blankPage,
         client,
         lane: "terminal",
         index,
@@ -517,7 +576,6 @@ try {
       cycles.push(
         await runCycle({
           page,
-          blankPage,
           client,
           lane: "graph",
           index,
@@ -560,9 +618,12 @@ try {
 
   const summary = {
     ok:
-      cycles.every((cycle) => cycle.twoRaf.ok) &&
+      cycles.every(
+        (cycle) =>
+          cycle.twoRaf.ok && cycle.rendererRecreated && cycle.bufferPreserved,
+      ) &&
       (!stallRecovery ||
-        (stallRecovery.stickyDomFallback && stallRecovery.markerRendered)) &&
+        (stallRecovery.deterministicRecovery && stallRecovery.markerRendered)) &&
       (expectedTerminalTextVisible ?? true),
     url,
     runDir,
@@ -574,6 +635,7 @@ try {
     includeGraph,
     includeStall,
     forceTemporarySession,
+    cursorlessTuiProbe: true,
     backgroundCommandStarted: Boolean(backgroundCommand),
     expectedTerminalText,
     expectedTerminalTextVisible,

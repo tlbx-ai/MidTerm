@@ -1263,17 +1263,17 @@ function retryForegroundResizeRecovery(generation: number): void {
 
   if (foregroundResizeRecoveryRetryCount === 0) {
     // A busy foreground tab can easily miss the initial 250 ms window while
-    // Chromium wakes the compositor and xterm rebuilds its glyph atlas. Refresh
-    // the current renderer without treating that ordinary delay as a WebGL
-    // failure.
+    // Chromium wakes the compositor. Run the deterministic recovery pass even
+    // before animation frames resume; this does not depend on cursor activity
+    // or terminal contents.
     runForegroundResizeRecoveryPass();
   }
   foregroundResizeRecoveryRetryCount += 1;
 
   if (foregroundResizeRecoveryRetryCount >= FOREGROUND_RESIZE_RECOVERY_MAX_RETRIES) {
     // Only fall back to the DOM renderer after more than five seconds without
-    // a single animation frame. The manager restores WebGL automatically once
-    // animation frames resume.
+    // a single animation frame. The next real foreground lifecycle restores
+    // WebGL after Chromium's compositor is responsive again.
     foregroundResizeRecoveryNeedsEmergencyFallback = true;
     finishForegroundResizeRecovery(generation);
     return;
