@@ -94,7 +94,8 @@ import {
 import { syncWebglTerminalCellBackgroundAlpha } from './webglCellBackgroundAlpha';
 import { shouldOwnWebglContext, shouldUseWebglRenderer } from './webglSupport';
 import { detachTerminalLigatureState, syncTerminalLigatureState } from './ligatures';
-import { refreshTerminalRenderer } from './presentationRefresh';
+import { isTerminalVisible, refreshTerminalRenderer } from './presentationRefresh';
+import { getStalledRendererRecoveryAction, inspectTerminalRendererPaint } from './rendererHealth';
 import type { TerminalKeyLogEntryInput } from '../diagnostics/terminalKeyLog';
 import {
   captureTerminalInputData,
@@ -538,6 +539,123 @@ function syncAllTerminalCursorActivity(forceInactive = false, refreshVisible = f
 
 let foregroundCursorRecoveryTimer: number | null = null;
 
+interface TerminalRendererHealthState {
+  consecutiveFailures: number;
+  lastReplayAtMs: number;
+}
+
+const terminalRendererHealthStates = new Map<string, TerminalRendererHealthState>();
+const TERMINAL_RENDERER_HEALTH_INTERVAL_MS = 1500;
+const TERMINAL_RENDERER_REPLAY_COOLDOWN_MS = 10000;
+let terminalRendererHealthInterval: number | null = null;
+let terminalRendererHealthCheckTimer: number | null = null;
+
+function shouldCheckTerminalRendererHealth(state: TerminalState): boolean {
+  return (
+    state.opened &&
+    isTerminalVisible(state) &&
+    !state.reconnectFreezeOverlay &&
+    !state.pendingVisualRefresh
+  );
+}
+
+function recordHealthyTerminalRenderer(sessionId: string): void {
+  const previous = terminalRendererHealthStates.get(sessionId);
+  if (previous?.consecutiveFailures) {
+    log.info(
+      () =>
+        `Terminal ${sessionId} renderer recovered after ${previous.consecutiveFailures} failed health checks`,
+    );
+  }
+  terminalRendererHealthStates.delete(sessionId);
+}
+
+function recoverStalledTerminalRenderer(
+  sessionId: string,
+  state: TerminalState,
+  healthState: TerminalRendererHealthState,
+): void {
+  const action = getStalledRendererRecoveryAction(healthState.consecutiveFailures);
+  if (action === 'refresh') {
+    log.warn(() => `Terminal ${sessionId} renderer appears blank; repainting visible viewport`);
+    refreshVisibleTerminalViewport(state);
+    return;
+  }
+  if (action === 'quarantine-webgl') {
+    log.warn(
+      () =>
+        `Terminal ${sessionId} renderer remained blank; quarantining WebGL and rebuilding presentation`,
+    );
+    recoverTerminalRendererAfterForeground(sessionId, state, { preferDomRenderer: true });
+    return;
+  }
+
+  const now = performance.now();
+  if (
+    healthState.lastReplayAtMs > 0 &&
+    now - healthState.lastReplayAtMs < TERMINAL_RENDERER_REPLAY_COOLDOWN_MS
+  ) {
+    refreshTerminalRenderer(state);
+    return;
+  }
+
+  healthState.lastReplayAtMs = now;
+  log.error(
+    () =>
+      `Terminal ${sessionId} renderer still blank after reconstruction; requesting canonical replay`,
+  );
+  requestBufferRefresh(sessionId, 'fullReplay', 'visible_renderer_health_stalled');
+}
+
+function checkTerminalRendererHealth(sessionId: string, state: TerminalState): void {
+  if (!shouldCheckTerminalRendererHealth(state)) {
+    terminalRendererHealthStates.delete(sessionId);
+    return;
+  }
+
+  const paintHealth = inspectTerminalRendererPaint(state.terminal, state.container);
+  if (paintHealth === 'healthy') {
+    recordHealthyTerminalRenderer(sessionId);
+    return;
+  }
+  if (paintHealth === 'indeterminate') {
+    terminalRendererHealthStates.delete(sessionId);
+    return;
+  }
+
+  const previous = terminalRendererHealthStates.get(sessionId);
+  const healthState: TerminalRendererHealthState = {
+    consecutiveFailures: (previous?.consecutiveFailures ?? 0) + 1,
+    lastReplayAtMs: previous?.lastReplayAtMs ?? 0,
+  };
+  terminalRendererHealthStates.set(sessionId, healthState);
+  recoverStalledTerminalRenderer(sessionId, state, healthState);
+}
+
+export function runVisibleTerminalRendererHealthCheck(): void {
+  if (document.visibilityState === 'hidden' || !isDocumentFocused()) return;
+  sessionTerminals.forEach((state, sessionId) => {
+    checkTerminalRendererHealth(sessionId, state);
+  });
+}
+
+function scheduleTerminalRendererHealthCheck(delayMs = 350): void {
+  if (terminalRendererHealthCheckTimer !== null) {
+    window.clearTimeout(terminalRendererHealthCheckTimer);
+  }
+  terminalRendererHealthCheckTimer = window.setTimeout(() => {
+    terminalRendererHealthCheckTimer = null;
+    runVisibleTerminalRendererHealthCheck();
+  }, delayMs);
+}
+
+function ensureTerminalRendererHealthMonitor(): void {
+  if (terminalRendererHealthInterval !== null) return;
+  terminalRendererHealthInterval = window.setInterval(() => {
+    runVisibleTerminalRendererHealthCheck();
+  }, TERMINAL_RENDERER_HEALTH_INTERVAL_MS);
+}
+
 function recoverTerminalCursorsAfterForeground(): void {
   // Chromium may discard a WebGL framebuffer while another application owns
   // the foreground. Cursor blinking used to repaint it accidentally; now that
@@ -800,29 +918,6 @@ function scheduleWebglReattach(sessionId: string, state: TerminalState, delayMs:
   }, delayMs);
 }
 
-function restoreWebglAfterForegroundRecovery(sessionId: string, state: TerminalState): void {
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      foregroundDomRendererRecovery.delete(state);
-      if (
-        sessionTerminals.get(sessionId) !== state ||
-        !state.opened ||
-        !shouldUseWebglRenderer($currentSettings.get()) ||
-        !hasWebglPriority(sessionId, state)
-      ) {
-        return;
-      }
-
-      if (attachWebglAddon(sessionId, state)) {
-        log.info(() => `Terminal ${sessionId} restored WebGL after foreground recovery`);
-        refreshTerminalRenderer(state, { preserveTextureAtlas: true });
-      } else {
-        scheduleWebglReattach(sessionId, state, WEBGL_REATTACH_BASE_DELAY_MS);
-      }
-    });
-  });
-}
-
 function detachWebglAddon(sessionId: string, state: TerminalState): void {
   detachTerminalLigatureState(state);
   const addon = state.webglAddon;
@@ -969,11 +1064,11 @@ export function recoverTerminalRendererAfterForeground(
 
   const settings = $currentSettings.get();
   if (options.preferDomRenderer) {
-    // This emergency path is reached only after the foreground compositor has
-    // produced no animation frame for more than five seconds. Use the DOM
-    // renderer while it is stalled, then restore WebGL automatically after two
-    // healthy animation frames instead of quarantining the terminal for the
-    // rest of the page lifetime.
+    // A confirmed visual stall is stronger evidence than a healthy animation
+    // frame: Chromium can keep producing frames while a WebGL framebuffer stays
+    // blank. Quarantine WebGL for this terminal instance and keep the fallback
+    // renderer until reload or an explicit WebGL off/on settings cycle.
+    let quarantinedWebgl = false;
     if (
       state.hasWebgl &&
       shouldUseWebglRenderer(settings) &&
@@ -985,11 +1080,28 @@ export function recoverTerminalRendererAfterForeground(
       );
       foregroundDomRendererRecovery.add(state);
       detachWebglAddon(sessionId, state);
-      restoreWebglAfterForegroundRecovery(sessionId, state);
+      quarantinedWebgl = true;
     }
     syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
     syncTerminalRgbBackgroundTransparency(state, settings);
     refreshTerminalRenderer(state);
+    if (quarantinedWebgl) {
+      // WebglAddon disposal swaps xterm's renderer asynchronously. An immediate
+      // refresh can still target the renderer being disposed, so repaint once
+      // the fallback renderer owns the DOM and once more after its first layout.
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (state.opened && foregroundDomRendererRecovery.has(state)) {
+            refreshTerminalRenderer(state);
+          }
+        });
+      });
+      window.setTimeout(() => {
+        if (state.opened && foregroundDomRendererRecovery.has(state)) {
+          refreshTerminalRenderer(state);
+        }
+      }, 250);
+    }
     return;
   }
 
@@ -1095,19 +1207,25 @@ function shouldSkipGlobalFocusReclaim(target: HTMLElement): boolean {
 export function setupGlobalFocusReclaim(): void {
   if (!globalTerminalEnterOverrideInstalled) {
     globalTerminalEnterOverrideInstalled = true;
+    ensureTerminalRendererHealthMonitor();
 
     window.addEventListener('blur', () => {
       syncAllTerminalCursorActivity(true);
     });
     window.addEventListener('focus', () => {
       recoverTerminalCursorsAfterForeground();
+      scheduleTerminalRendererHealthCheck();
     });
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') {
         syncAllTerminalCursorActivity(true);
       } else {
         recoverTerminalCursorsAfterForeground();
+        scheduleTerminalRendererHealthCheck();
       }
+    });
+    window.addEventListener('pageshow', () => {
+      scheduleTerminalRendererHealthCheck();
     });
 
     document.addEventListener(
@@ -1714,6 +1832,7 @@ export function destroyTerminalForSession(sessionId: string): void {
   state.terminal.dispose();
   state.container.remove();
   sessionTerminals.delete(sessionId);
+  terminalRendererHealthStates.delete(sessionId);
   forgetMuxSession(sessionId);
 }
 
