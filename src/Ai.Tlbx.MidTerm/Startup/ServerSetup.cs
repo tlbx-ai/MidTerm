@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -267,6 +268,50 @@ public static class ServerSetup
 
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
 
+        app.Use(async (context, next) =>
+        {
+            if ((!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+                || !IsLocalDevAssetRequest(context.Request)
+                || !StaticAssetCacheHeaders.TryNormalizeLoopbackAssetOrigin(
+                    context.Request.Query["devAssets"].ToString(),
+                    out var devAssetOrigin))
+            {
+                await next();
+                return;
+            }
+
+            var path = context.Request.Path.Value ?? string.Empty;
+            if (!StaticAssetCacheHeaders.IsHtmlEntryPoint(path))
+            {
+                await next();
+                return;
+            }
+
+            var fileInfo = fileProvider.GetFileInfo(path);
+            if (!fileInfo.Exists)
+            {
+                await next();
+                return;
+            }
+
+            await using var stream = fileInfo.CreateReadStream();
+            using var reader = new StreamReader(stream);
+            var html = await reader.ReadToEndAsync(context.RequestAborted);
+            var version = string.Create(CultureInfo.InvariantCulture, $"dev-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}");
+            var rewrittenHtml = StaticAssetCacheHeaders.RewriteDevAssetUrls(
+                StaticAssetCacheHeaders.StampHtmlAssetUrls(html, version),
+                devAssetOrigin);
+
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+            context.Response.Headers.Pragma = "no-cache";
+            if (!HttpMethods.IsHead(context.Request.Method))
+            {
+                await context.Response.WriteAsync(rewrittenHtml, context.RequestAborted);
+            }
+        });
+
         if (sourceDevMode && fileProvider is PhysicalFileProvider)
         {
             app.Use(async (context, next) =>
@@ -418,8 +463,15 @@ public static class ServerSetup
             headers["X-Content-Type-Options"] = "nosniff";
             headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
 
+            var devAssetOrigin = IsLocalDevAssetRequest(context.Request)
+                && StaticAssetCacheHeaders.TryNormalizeLoopbackAssetOrigin(
+                    context.Request.Query["devAssets"].ToString(),
+                    out var normalizedDevAssetOrigin)
+                    ? normalizedDevAssetOrigin
+                    : null;
             headers.ContentSecurityPolicy = BuildContentSecurityPolicy(
-                previewOriginService.GetOrigin(context.Request));
+                previewOriginService.GetOrigin(context.Request),
+                devAssetOrigin);
 
             await next();
         });
@@ -427,7 +479,7 @@ public static class ServerSetup
         ConfigureStaticFiles(app);
     }
 
-    internal static string BuildContentSecurityPolicy(string? previewOrigin = null)
+    internal static string BuildContentSecurityPolicy(string? previewOrigin = null, string? devAssetOrigin = null)
     {
         var frameSources = new List<string> { "'self'", "blob:", "data:" };
         if (!string.IsNullOrWhiteSpace(previewOrigin))
@@ -435,14 +487,19 @@ public static class ServerSetup
             frameSources.Add(previewOrigin);
         }
 
+        var devAssetSource = string.IsNullOrWhiteSpace(devAssetOrigin) ? string.Empty : " " + devAssetOrigin;
         return "default-src 'self'; " +
-               "script-src 'self' 'wasm-unsafe-eval'; " +
+               $"script-src 'self' 'wasm-unsafe-eval'{devAssetSource}; " +
                "worker-src 'self' blob:; " +
-               "style-src 'self' 'unsafe-inline'; " +
+               $"style-src 'self' 'unsafe-inline'{devAssetSource}; " +
                "img-src 'self' data:; " +
-               "font-src 'self' data:; " +
+               $"font-src 'self' data:{devAssetSource}; " +
                "connect-src 'self' ws: wss: https://api.github.com https://api.tlbx.ai https://midterm.tlbx.ai; " +
                $"frame-src {string.Join(' ', frameSources)}; " +
                "frame-ancestors 'self'";
     }
+
+    private static bool IsLocalDevAssetRequest(HttpRequest request) =>
+        request.HttpContext.Connection.RemoteIpAddress is { } remoteAddress
+        && IPAddress.IsLoopback(remoteAddress);
 }

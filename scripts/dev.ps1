@@ -498,6 +498,9 @@ Write-Host "  tlbx Local Source Dev" -ForegroundColor Cyan
 Write-Host "  ───────────────────────────────────────────" -ForegroundColor DarkGray
 Write-Host "  Stable service : https://localhost:2000 ($stableVersion, kept alive)" -ForegroundColor DarkGray
 Write-Host "  Source server  : https://$BindAddress`:$Port" -ForegroundColor DarkGray
+if ($BindAddress -eq "127.0.0.1") {
+    Write-Host "  Stable overlay : https://localhost:2000/?devAssets=https://127.0.0.1:$Port" -ForegroundColor DarkGray
+}
 if ($Tailnet) {
     Write-Host "  Exposure       : tailnet only, authentication preflight passed" -ForegroundColor DarkGray
 }
@@ -518,7 +521,11 @@ try {
     $serverState = Start-DevServer -resolvedTtyHostPath $resolvedTtyHostPath
 
     Write-Host ""
-    Write-Host "[4/4] Dev loop active. Open https://$BindAddress`:$Port in the tlbx dev browser." -ForegroundColor Green
+    if ($BindAddress -eq "127.0.0.1") {
+        Write-Host "[4/4] Dev loop active. Open https://localhost:2000/?devAssets=https://127.0.0.1:$Port to keep stable sessions." -ForegroundColor Green
+    } else {
+        Write-Host "[4/4] Dev loop active. Open https://$BindAddress`:$Port in the tlbx dev browser." -ForegroundColor Green
+    }
     Write-Host ""
 
     while ($true) {

@@ -437,6 +437,52 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
     }
 
     [Fact]
+    public void WriteScripts_PowerShellRunIsolated_RemovesExpiredCompletedRuns()
+    {
+        var powershellPath = ResolvePowerShellPath();
+        if (powershellPath is null)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+        var expiredRun = Path.Combine(_tempDir, "runs", "expired-run");
+        Directory.CreateDirectory(expiredRun);
+        Directory.SetLastWriteTimeUtc(expiredRun, DateTime.UtcNow.AddDays(-15));
+
+        var startInfo = new ProcessStartInfo(powershellPath)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(Path.Combine(_tempDir, "tlbx_cli.ps1"));
+        startInfo.ArgumentList.Add("mt_run_isolated");
+        startInfo.ArgumentList.Add(powershellPath);
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add("exit 0");
+
+        using var process = Process.Start(startInfo)!;
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.True(process.ExitCode == 0, error + output);
+        Assert.False(Directory.Exists(expiredRun));
+
+        var shell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.sh"));
+        var powershell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.ps1"));
+        Assert.Contains("max_completed_runs=100", shell, StringComparison.Ordinal);
+        Assert.Contains("max_completed_kib=1048576", shell, StringComparison.Ordinal);
+        Assert.Contains("$maxCompletedRuns = 100", powershell, StringComparison.Ordinal);
+        Assert.Contains("$maxCompletedBytes = 1GB", powershell, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WriteScripts_WritesNormalizedDirectExecutionHelpers()
     {
         Directory.CreateDirectory(_tempDir);

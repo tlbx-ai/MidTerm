@@ -73,6 +73,41 @@ public class StaticAssetCacheHeadersTests
         Assert.DoesNotContain("oldhash", stamped, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("https://localhost:2100", "https://localhost:2100")]
+    [InlineData("https://127.0.0.1:2100/", "https://127.0.0.1:2100")]
+    public void TryNormalizeLoopbackAssetOrigin_AcceptsLocalHttpsOrigin(string value, string expected)
+    {
+        Assert.True(StaticAssetCacheHeaders.TryNormalizeLoopbackAssetOrigin(value, out var origin));
+        Assert.Equal(expected, origin);
+    }
+
+    [Theory]
+    [InlineData("http://localhost:2100")]
+    [InlineData("https://example.com:2100")]
+    [InlineData("https://localhost:2100/assets")]
+    [InlineData("https://localhost:443")]
+    public void TryNormalizeLoopbackAssetOrigin_RejectsUnsafeOrigin(string value)
+    {
+        Assert.False(StaticAssetCacheHeaders.TryNormalizeLoopbackAssetOrigin(value, out _));
+    }
+
+    [Fact]
+    public void RewriteDevAssetUrls_OnlyMovesScriptsAndStyles()
+    {
+        const string html = """
+            <link rel="stylesheet" href="/css/app.css?v=stable">
+            <script src='/js/terminal.min.js?v=stable'></script>
+            <img src="/img/logo.svg?v=stable">
+            """;
+
+        var rewritten = StaticAssetCacheHeaders.RewriteDevAssetUrls(html, "https://localhost:2100");
+
+        Assert.Contains("href=\"https://localhost:2100/css/app.css?v=stable\"", rewritten, StringComparison.Ordinal);
+        Assert.Contains("src='https://localhost:2100/js/terminal.min.js?v=stable'", rewritten, StringComparison.Ordinal);
+        Assert.Contains("src=\"/img/logo.svg?v=stable\"", rewritten, StringComparison.Ordinal);
+    }
+
     private sealed class TestFileInfo : IFileInfo
     {
         public TestFileInfo(long length, DateTimeOffset lastModified)

@@ -176,6 +176,38 @@ public static class TlbxCliScriptWriter
           esac
         }
 
+        _M_CLEAN_RUNS() {
+          local runs_root="$1" run_dir run_pid run_size_kib
+          local max_completed_runs=100 max_completed_kib=1048576 completed_count=0 completed_kib=0
+          [ -d "$runs_root" ] || return 0
+          while IFS= read -r -d '' run_dir; do
+            run_pid=""
+            [ -f "$run_dir/pid" ] && IFS= read -r run_pid <"$run_dir/pid"
+            if [[ "$run_pid" =~ ^[0-9]+$ ]] && kill -0 "$run_pid" 2>/dev/null; then
+              continue
+            fi
+            if [ -n "$(find "$run_dir" -maxdepth 0 -mtime +14 -print -quit 2>/dev/null)" ]; then
+              rm -rf -- "$run_dir"
+            fi
+          done < <(find "$runs_root" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+
+          while IFS= read -r run_dir; do
+            [ -n "$run_dir" ] || continue
+            run_pid=""
+            [ -f "$run_dir/pid" ] && IFS= read -r run_pid <"$run_dir/pid"
+            if [[ "$run_pid" =~ ^[0-9]+$ ]] && kill -0 "$run_pid" 2>/dev/null; then
+              continue
+            fi
+            completed_count=$((completed_count + 1))
+            run_size_kib="$(du -sk "$run_dir" 2>/dev/null | awk '{print $1}')"
+            [[ "$run_size_kib" =~ ^[0-9]+$ ]] || run_size_kib=0
+            completed_kib=$((completed_kib + run_size_kib))
+            if [ "$completed_count" -gt "$max_completed_runs" ] || [ "$completed_kib" -gt "$max_completed_kib" ]; then
+              rm -rf -- "$run_dir"
+            fi
+          done < <(find "$runs_root" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort -r)
+        }
+
         # mt_run_isolated EXECUTABLE [ARG ...]  — start a non-interactive child without inheriting terminal stdio
         mt_run_isolated() {
           if [ $# -lt 1 ] || [ -z "${1:-}" ]; then
@@ -195,6 +227,7 @@ public static class TlbxCliScriptWriter
 
           local runs_root="$_MTDIR/runs" run_dir run_id stdout_path stderr_path pid
           mkdir -p -- "$runs_root" || return $?
+          _M_CLEAN_RUNS "$runs_root"
           run_dir="$(mktemp -d "$runs_root/$(date -u +%Y%m%dT%H%M%SZ)-XXXXXXXX")" || return $?
           run_id="${run_dir##*/}"
           stdout_path="$run_dir/stdout.log"
@@ -203,6 +236,7 @@ public static class TlbxCliScriptWriter
 
           (exec nohup "$executable" "$@") </dev/null >>"$stdout_path" 2>>"$stderr_path" &
           pid=$!
+          (umask 077; printf '%s\n' "$pid" >"$run_dir/pid")
           disown "$pid" 2>/dev/null || true
           printf '{"pid":%s,"runId":"%s","stdoutPath":"%s","stderrPath":"%s"}\n' \
             "$pid" "$(_MJSONESC "$run_id")" "$(_MJSONESC "$stdout_path")" "$(_MJSONESC "$stderr_path")"
@@ -1190,6 +1224,51 @@ public static class TlbxCliScriptWriter
             }
         }
 
+        function _MCleanRuns {
+            param([string]$RunsRoot)
+            if (-not (Test-Path -LiteralPath $RunsRoot -PathType Container)) {
+                return
+            }
+
+            $cutoff = [DateTime]::UtcNow.AddDays(-14)
+            foreach ($runDirectory in Get-ChildItem -LiteralPath $RunsRoot -Directory -ErrorAction SilentlyContinue) {
+                $runPid = 0
+                $pidPath = Join-Path $runDirectory.FullName "pid"
+                if (Test-Path -LiteralPath $pidPath -PathType Leaf) {
+                    [void][int]::TryParse((Get-Content -LiteralPath $pidPath -Raw).Trim(), [ref]$runPid)
+                }
+                if ($runPid -gt 0 -and (Get-Process -Id $runPid -ErrorAction SilentlyContinue)) {
+                    continue
+                }
+                if ($runDirectory.LastWriteTimeUtc -lt $cutoff) {
+                    Remove-Item -LiteralPath $runDirectory.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+
+            $maxCompletedRuns = 100
+            $maxCompletedBytes = 1GB
+            $completedCount = 0
+            [long]$completedBytes = 0
+            foreach ($runDirectory in Get-ChildItem -LiteralPath $RunsRoot -Directory -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTimeUtc -Descending) {
+                $runPid = 0
+                $pidPath = Join-Path $runDirectory.FullName "pid"
+                if (Test-Path -LiteralPath $pidPath -PathType Leaf) {
+                    [void][int]::TryParse((Get-Content -LiteralPath $pidPath -Raw).Trim(), [ref]$runPid)
+                }
+                if ($runPid -gt 0 -and (Get-Process -Id $runPid -ErrorAction SilentlyContinue)) {
+                    continue
+                }
+
+                $completedCount++
+                $completedBytes += [long](Get-ChildItem -LiteralPath $runDirectory.FullName -File -Recurse -ErrorAction SilentlyContinue |
+                    Measure-Object Length -Sum).Sum
+                if ($completedCount -gt $maxCompletedRuns -or $completedBytes -gt $maxCompletedBytes) {
+                    Remove-Item -LiteralPath $runDirectory.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+
         # Mt-RunIsolated EXECUTABLE [ARG ...]  — start a non-interactive child without inheriting terminal stdio
         function Mt-RunIsolated {
             [CmdletBinding()]
@@ -1211,6 +1290,7 @@ public static class TlbxCliScriptWriter
             }
 
             $runsRoot = Join-Path $PSScriptRoot "runs"
+            _MCleanRuns $runsRoot
             $runId = "{0:yyyyMMddTHHmmssfffZ}-{1}" -f [DateTime]::UtcNow, ([Guid]::NewGuid().ToString("N").Substring(0, 8))
             $runDirectory = Join-Path $runsRoot $runId
             $stdoutPath = Join-Path $runDirectory "stdout.log"
@@ -1237,6 +1317,7 @@ public static class TlbxCliScriptWriter
 
             try {
                 $process = Start-Process @startParameters
+                [IO.File]::WriteAllText((Join-Path $runDirectory "pid"), "$($process.Id)`n")
             } catch {
                 Remove-Item -LiteralPath $runDirectory -Recurse -Force -ErrorAction SilentlyContinue
                 throw

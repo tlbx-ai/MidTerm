@@ -301,6 +301,28 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
     }
 
     [Fact]
+    public void GenerateUpdateScript_Windows_OnlyControlsServiceThatOwnsUpdatedBinary()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var scriptText = ReadScript(
+            UpdateScriptGenerator.GenerateUpdateScript(
+                _extractedDir,
+                _currentBinaryPath,
+                _settingsDir,
+                UpdateType.Full,
+                deleteSourceAfter: true));
+
+        Assert.Contains("function GetOwnedService", scriptText, StringComparison.Ordinal);
+        Assert.Contains("Get-CimInstance Win32_Service", scriptText, StringComparison.Ordinal);
+        Assert.Contains("this update owns '$CurrentMt'", scriptText, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Count(scriptText, @"\$service\s*=\s*GetOwnedService", RegexOptions.IgnoreCase, RegexTimeout));
+    }
+
+    [Fact]
     public void GenerateUpdateScript_Linux_StoresBackupsOutsideInstallDirectory()
     {
         if (OperatingSystem.IsWindows())
