@@ -178,20 +178,32 @@ public static class Program
             var previousShutdownCts = Interlocked.Exchange(ref _shutdownCts, shutdownCts);
             previousShutdownCts?.Dispose();
             var ptyReadTask = session.StartReadLoopAsync(shutdownCts.Token);
+            var deferredInitialInputTask = Task.CompletedTask;
 
             if (!deferredInitialInput.IsEmpty)
             {
-                await session.WaitForFirstOutputAsync(
-                    TimeSpan.FromMilliseconds(500),
-                    shutdownCts.Token).ConfigureAwait(false);
-                await Task.Delay(25, shutdownCts.Token).ConfigureAwait(false);
-                await session.SendInputAsync(deferredInitialInput, shutdownCts.Token).ConfigureAwait(false);
+                // mthost owns the launch command, so it remains atomic even if no browser
+                // is attached. Let IPC clients attach while the shell becomes input-ready;
+                // otherwise a full-screen command can clear the buffered prompt before the
+                // browser ever paints it, recreating a multi-second blank startup state.
+                deferredInitialInputTask = SendDeferredInitialInputAsync(
+                    session,
+                    deferredInitialInput,
+                    shutdownCts.Token);
             }
 
             // Accept client connections (mt.exe)
             await AcceptClientsAsync(session, endpoint, shutdownCts.Token).ConfigureAwait(false);
 
             shutdownCts.Cancel();
+            try
+            {
+                await deferredInitialInputTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
+            {
+                // Session shutdown won the race with shell startup.
+            }
             await ptyReadTask.ConfigureAwait(false);
         }
         finally
@@ -232,6 +244,29 @@ public static class Program
         }
     }
 
+    private static async Task SendDeferredInitialInputAsync(
+        TerminalSession session,
+        ReadOnlyMemory<byte> deferredInitialInput,
+        CancellationToken ct)
+    {
+        try
+        {
+            await session.WaitForInputReadyAsync(
+                TimeSpan.FromMilliseconds(750),
+                ct).ConfigureAwait(false);
+            await session.SendInputAsync(deferredInitialInput, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Exception(ex, "Deferred initial terminal command");
+            _shutdownCts?.Cancel();
+        }
+    }
+
     internal static (string[] Arguments, ReadOnlyMemory<byte> DeferredInput) BuildShellLaunch(
         IShellConfiguration shellConfig,
         string? initialCommand)
@@ -241,18 +276,15 @@ public static class Program
             return (shellConfig.Arguments, ReadOnlyMemory<byte>.Empty);
         }
 
-        if (shellConfig.ShellType is ShellType.Pwsh or ShellType.PowerShell)
-        {
-            var arguments = shellConfig.Arguments.ToArray();
-            arguments[^1] = arguments[^1] + ";" + initialCommand;
-            return (arguments, ReadOnlyMemory<byte>.Empty);
-        }
-
         if (shellConfig.ShellType == ShellType.Cmd)
         {
             return (["/K", initialCommand], ReadOnlyMemory<byte>.Empty);
         }
 
+        // Keep bookmark launch atomic inside mthost, but let interactive shells render
+        // their real startup prompt before the command begins. Embedding a command in
+        // PowerShell's -Command argument suppresses the prompt and leaves a completely
+        // blank terminal while full-screen CLIs initialize.
         return (shellConfig.Arguments, Encoding.UTF8.GetBytes(initialCommand + "\r"));
     }
 
@@ -1370,6 +1402,39 @@ public static class Program
         string? TmuxBinDir = null);
 }
 
+internal sealed class TerminalInputReadinessDetector
+{
+    private static readonly byte[] BracketedPasteEnabled = "\u001b[?2004h"u8.ToArray();
+    private int _matchedBytes;
+    private bool _ready;
+
+    public bool Observe(ReadOnlySpan<byte> data)
+    {
+        if (_ready)
+        {
+            return true;
+        }
+
+        foreach (var value in data)
+        {
+            if (value == BracketedPasteEnabled[_matchedBytes])
+            {
+                _matchedBytes++;
+                if (_matchedBytes == BracketedPasteEnabled.Length)
+                {
+                    _ready = true;
+                    return true;
+                }
+                continue;
+            }
+
+            _matchedBytes = value == BracketedPasteEnabled[0] ? 1 : 0;
+        }
+
+        return false;
+    }
+}
+
 internal sealed class TerminalSession : IDisposable
 {
     internal const int DefaultBufferCapacity = 2 * 1024 * 1024; // 2MB fixed buffer
@@ -1402,7 +1467,8 @@ internal sealed class TerminalSession : IDisposable
     private readonly SemaphoreSlim _ptyWriteLock = new(1, 1);
     private readonly KittyGraphicsCapabilityResponder _kittyGraphicsResponder = new();
     private readonly TerminalColorQueryGuard _terminalColorQueryGuard = new();
-    private readonly TaskCompletionSource _firstOutput = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _inputReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TerminalInputReadinessDetector _inputReadinessDetector = new();
     private readonly int _scrollbackBytes;
     private readonly Action<ForegroundProcessInfo>? _foregroundChangedHandler;
     private TtyHostTransportInfo _transportInfo;
@@ -1548,7 +1614,10 @@ internal sealed class TerminalSession : IDisposable
                     _transportInfo.SourceSeq = sequenceEndExclusive;
                 }
 
-                _firstOutput.TrySetResult();
+                if (_inputReadinessDetector.Observe(data.Span))
+                {
+                    _inputReady.TrySetResult();
+                }
                 MarkInputTracePtyOutputRead(sequenceEndExclusive, ptyOutputReadAtMs);
                 OnOutput?.Invoke(sequenceStart, data);
             }
@@ -1560,17 +1629,17 @@ internal sealed class TerminalSession : IDisposable
         }
     }
 
-    public async Task WaitForFirstOutputAsync(TimeSpan timeout, CancellationToken ct)
+    public async Task WaitForInputReadyAsync(TimeSpan timeout, CancellationToken ct)
     {
         try
         {
-            await _firstOutput.Task.WaitAsync(timeout, ct).ConfigureAwait(false);
+            await _inputReady.Task.WaitAsync(timeout, ct).ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
             Log.Warn(() => string.Create(
                 CultureInfo.InvariantCulture,
-                $"Shell produced no startup output within {timeout.TotalMilliseconds} ms; sending initial input anyway."));
+                $"Shell did not advertise bracketed-paste input readiness within {timeout.TotalMilliseconds} ms; sending initial input anyway."));
         }
     }
 
