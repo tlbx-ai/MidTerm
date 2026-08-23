@@ -1041,19 +1041,33 @@ public static class TlbxCliScriptWriter
         $script:_MK = "mm-session={{token}}"
 
         function script:_MC {
-            if ($env:MT_API_KEY) {
-                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @args
+            $output = if ($env:MT_API_KEY) {
+                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @args 2>&1
             } else {
-                & curl.exe --fail-with-body -sSk -b $script:_MK @args
+                & curl.exe --fail-with-body -sSk -b $script:_MK @args 2>&1
             }
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) {
+                $detail = ($output | Out-String).Trim()
+                if ($detail) { throw "tlbx API request failed (curl exit $exitCode): $detail" }
+                throw "tlbx API request failed (curl exit $exitCode)."
+            }
+            $output
         }
         function script:_MJ { _MC -X POST -H "Content-Type: application/json" @args }
         function script:_MBR {
-            if ($env:MT_API_KEY) {
-                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @args
+            $output = if ($env:MT_API_KEY) {
+                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @args 2>&1
             } else {
-                & curl.exe --fail-with-body -sSk -b $script:_MK @args
+                & curl.exe --fail-with-body -sSk -b $script:_MK @args 2>&1
             }
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) {
+                $detail = ($output | Out-String).Trim()
+                if ($detail) { throw "tlbx API request failed (curl exit $exitCode): $detail" }
+                throw "tlbx API request failed (curl exit $exitCode)."
+            }
+            $output
         }
         function script:_MJR { _MBR -X POST -H "Content-Type: application/json" @args }
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)

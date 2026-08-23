@@ -60,6 +60,8 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("Authorization: Bearer $($env:MT_API_KEY)", powershell, StringComparison.Ordinal);
         Assert.Contains("& curl.exe --fail-with-body -sSk -H", powershell, StringComparison.Ordinal);
         Assert.Contains("& curl.exe --fail-with-body -sSk -b", powershell, StringComparison.Ordinal);
+        Assert.Contains("if ($exitCode -ne 0)", powershell, StringComparison.Ordinal);
+        Assert.Contains("throw \"tlbx API request failed (curl exit $exitCode): $detail\"", powershell, StringComparison.Ordinal);
         Assert.Contains("Treat it like a local session secret", powershell, StringComparison.Ordinal);
     }
 

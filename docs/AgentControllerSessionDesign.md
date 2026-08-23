@@ -222,6 +222,7 @@ The canonical history contract must satisfy the following:
 - Streaming state should feel low-latency and in-place instead of replacing one row with a later unrelated row.
 - Agent Controller Session should keep canonical live state current on every patch, but the expensive browser-side timeline paint path should explicitly coalesce fast live patch bursts to a bounded cadence of roughly 4 fps so long assistant output does not trigger a full markdown rerender on every incoming delta.
 - Starting a new turn while the provider already has an active turn must be rejected explicitly. Appending instructions to the active turn is a distinct `turn.steer` operation; callers must not depend on provider-specific implicit steering behavior.
+- Expected Agent Controller command-state conflicts must cross the REST boundary as `409 Conflict` with the actionable runtime message. Generated PowerShell helpers must turn non-zero HTTP client exits into terminating errors that retain that response body so scripts cannot mistake a rejected command for success.
 - Provider `turn.started` notifications may omit model or effort. Missing values must preserve the established quick settings and seed the current-turn display from those settings rather than clearing operator-visible state.
 
 ### 10. Scroll-follow discipline

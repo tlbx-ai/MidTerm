@@ -686,7 +686,15 @@ public static partial class SessionApiEndpoints
                 return Results.Conflict("Agent Controller runtime is not available for this session.");
             }
 
-            var response = await appServerControlRuntime.StartTurnAsync(id, request, ct).ConfigureAwait(false);
+            AppServerControlTurnStartResponse response;
+            try
+            {
+                response = await appServerControlRuntime.StartTurnAsync(id, request, ct).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(ex.Message);
+            }
             RecordPromptHistory(id, request, InputHistorySources.SessionPrompt, InputHistorySurfaces.AgentControl);
             return Results.Json(response, AppJsonContext.Default.AppServerControlTurnStartResponse);
         });
