@@ -65,6 +65,10 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                     continue;
                 case "model/list":
                     RecordMethod(launchCapture, method);
+                    var modelCursor = root.TryGetProperty("params", out var modelListParams) &&
+                                      modelListParams.ValueKind == JsonValueKind.Object
+                        ? GetString(modelListParams, "cursor")
+                        : null;
                     PersistLaunchCapture(capturePath, launchCapture);
                     await WriteJsonAsync(new
                     {
@@ -72,21 +76,36 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         id = root.GetProperty("id").ToString(),
                         result = new
                         {
-                            data = new[]
-                            {
-                                new
+                            data = modelCursor is null
+                                ? new[]
                                 {
-                                    id = "gpt-5.3-codex",
-                                    displayName = "GPT-5.3 Codex",
-                                    isDefault = true,
-                                    supportedReasoningEfforts = new[]
+                                    new
                                     {
-                                        new { reasoningEffort = "low" },
-                                        new { reasoningEffort = "medium" },
-                                        new { reasoningEffort = "high" }
+                                        id = "gpt-5.3-codex",
+                                        displayName = "GPT-5.3 Codex",
+                                        isDefault = true,
+                                        supportedReasoningEfforts = new[]
+                                        {
+                                            new { reasoningEffort = "low" },
+                                            new { reasoningEffort = "medium" },
+                                            new { reasoningEffort = "high" }
+                                        }
                                     }
                                 }
-                            }
+                                : new[]
+                                {
+                                    new
+                                    {
+                                        id = "gpt-5.6-sol",
+                                        displayName = "GPT-5.6 Sol",
+                                        isDefault = false,
+                                        supportedReasoningEfforts = new[]
+                                        {
+                                            new { reasoningEffort = "high" }
+                                        }
+                                    }
+                                },
+                            nextCursor = modelCursor is null ? "models-page-2" : null
                         }
                     }).ConfigureAwait(false);
                     continue;
@@ -130,6 +149,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         launchCapture.ThreadResumeApprovalPolicy = GetString(threadResumeParams, "approvalPolicy");
                         launchCapture.ThreadResumeSandbox = GetString(threadResumeParams, "sandbox");
                         launchCapture.ThreadResumePersistExtendedHistory = GetBoolean(threadResumeParams, "persistExtendedHistory");
+                        launchCapture.ThreadResumeExcludeTurns = GetBoolean(threadResumeParams, "excludeTurns");
                     }
 
                     PersistLaunchCapture(capturePath, launchCapture);
@@ -637,4 +657,6 @@ internal sealed class FakeCodexLaunchCapture
     public string? ThreadResumeSandbox { get; set; }
 
     public bool? ThreadResumePersistExtendedHistory { get; set; }
+
+    public bool? ThreadResumeExcludeTurns { get; set; }
 }

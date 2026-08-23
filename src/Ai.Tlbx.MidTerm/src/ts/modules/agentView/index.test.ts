@@ -2541,9 +2541,9 @@ describe('agentView dev errors', () => {
   });
 
   it('does not request a viewport-centered refetch when a short retained window already covers full history', async () => {
-    const { resolveViewportCenteredWindowRequest } = await import('../../utils/virtualizer');
+    const { resolveKernelWindowRequest } = await import('../../utils/virtualizer');
 
-    const request = resolveViewportCenteredWindowRequest({
+    const request = resolveKernelWindowRequest({
       items: Array.from({ length: 29 }, (_value, index) => ({
         id: `row-${index + 1}`,
         heightPx: 96,
@@ -2560,7 +2560,6 @@ describe('agentView dev errors', () => {
       },
       fetchAheadItems: 20,
       resolveItemSize: (item) => item.heightPx,
-      observedSizes: [],
     });
 
     expect(request).toBeNull();
@@ -6596,56 +6595,6 @@ describe('agentView dev errors', () => {
     expect(entryIds.at(-1)).toBe('assistant:assistant-massive-5080');
   });
 
-  it('subtracts older-history top spacer height before resolving the visible window', async () => {
-    const { computeHistoryVisibleRange } = await import('./historyViewport');
-    const { resolveHistoryWindowViewportMetrics } = await import('./historyRender');
-
-    const entries = Array.from({ length: 80 }, (_, index) => ({
-      id: `row-${index}`,
-      order: index + 41,
-      kind: 'assistant',
-      tone: 'info',
-      label: 'Assistant',
-      title: '',
-      body: `Row ${index + 41}`,
-      meta: 'now',
-    })) as any;
-
-    const viewportMetrics = resolveHistoryWindowViewportMetrics(
-      entries,
-      {
-        snapshot: {
-          historyWindowStart: 40,
-          historyWindowEnd: 120,
-          historyCount: 200,
-        },
-        historyObservedHeights: new Map(),
-      } as any,
-      {
-        scrollTop: 4350,
-        clientHeight: 600,
-        clientWidth: 900,
-      },
-      () => 100,
-    );
-
-    expect(viewportMetrics.offWindowTopSpacerPx).toBe(2800);
-    expect(viewportMetrics.effectiveOffWindowTopSpacerPx).toBe(2800);
-    expect(viewportMetrics.scrollTop).toBe(1550);
-
-    const visibleRange = computeHistoryVisibleRange(
-      entries,
-      viewportMetrics.scrollTop,
-      viewportMetrics.clientHeight,
-      viewportMetrics.clientWidth,
-      () => 100,
-    );
-    const unadjustedRange = computeHistoryVisibleRange(entries, 4350, 600, 900, () => 100);
-
-    expect(visibleRange.start).toBe(15);
-    expect(unadjustedRange.start).toBe(43);
-  });
-
   it('resolves the actual visible history slice even when the retained window stays below the DOM virtualization threshold', async () => {
     const { computeHistoryVisibleRange } = await import('./historyViewport');
 
@@ -6664,43 +6613,6 @@ describe('agentView dev errors', () => {
 
     expect(visibleRange.start).toBe(18);
     expect(visibleRange.end).toBe(24);
-  });
-
-  it('caps the viewport-aligned off-window top spacer when estimates exceed the current scroll offset', async () => {
-    const { resolveHistoryWindowViewportMetrics } = await import('./historyRender');
-
-    const entries = Array.from({ length: 80 }, (_, index) => ({
-      id: `row-${index}`,
-      order: index + 41,
-      kind: 'assistant',
-      tone: 'info',
-      label: 'Assistant',
-      title: '',
-      body: `Row ${index + 41}`,
-      meta: 'now',
-    })) as any;
-
-    const viewportMetrics = resolveHistoryWindowViewportMetrics(
-      entries,
-      {
-        snapshot: {
-          historyWindowStart: 40,
-          historyWindowEnd: 120,
-          historyCount: 200,
-        },
-        historyObservedHeights: new Map(),
-      } as any,
-      {
-        scrollTop: 240,
-        clientHeight: 600,
-        clientWidth: 900,
-      },
-      () => 100,
-    );
-
-    expect(viewportMetrics.offWindowTopSpacerPx).toBe(2800);
-    expect(viewportMetrics.effectiveOffWindowTopSpacerPx).toBe(240);
-    expect(viewportMetrics.scrollTop).toBe(0);
   });
 
   it('keeps the pending prepend anchor inside a bounded render corridor', async () => {

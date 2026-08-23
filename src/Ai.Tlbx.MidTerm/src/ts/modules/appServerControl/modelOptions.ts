@@ -4,17 +4,6 @@ export interface AppServerControlModelOption {
   description?: string | null;
 }
 
-const CODEX_MODEL_PRESETS = [
-  'gpt-5.5',
-  'gpt-5.4',
-  'gpt-5.4-mini',
-  'gpt-5.3-codex',
-  'gpt-5.3-codex-spark',
-  'gpt-5.2',
-  'gpt-5',
-  'gpt-5.4-codex',
-] as const;
-
 const CLAUDE_MODEL_PRESETS = ['sonnet', 'opus', 'claude-sonnet-4-6', 'claude-opus-4-6'] as const;
 const GROK_MODEL_PRESETS = [
   'grok-4.20-0309-non-reasoning',
@@ -71,7 +60,7 @@ export function getAppServerControlModelOptions(args: {
     options.push({ value: normalized, label: normalized });
   }
 
-  return isCodex ? [defaultOption, ...sortModelOptions(options.slice(1))] : options;
+  return options;
 }
 
 export function getAppServerControlEffortOptions(args: {
@@ -154,37 +143,7 @@ function normalizeModelCatalogOptions(
     });
   }
 
-  return sortModelOptions(options);
-}
-
-function sortModelOptions(options: AppServerControlModelOption[]): AppServerControlModelOption[] {
-  return [...options].sort((a, b) => {
-    const byKnownOrder = getCodexModelSortKey(a.value).localeCompare(getCodexModelSortKey(b.value));
-    return byKnownOrder || a.value.localeCompare(b.value);
-  });
-}
-
-function getCodexModelSortKey(value: string): string {
-  switch (getModelOptionKey(value)) {
-    case 'gpt-5.5':
-      return '000';
-    case 'gpt-5.4':
-      return '010';
-    case 'gpt-5.4-mini':
-      return '020';
-    case 'gpt-5.3-codex':
-      return '030';
-    case 'gpt-5.3-codex-spark':
-      return '040';
-    case 'gpt-5.2':
-      return '050';
-    case 'gpt-5':
-      return '060';
-    case 'gpt-5.4-codex':
-      return '070';
-    default:
-      return `900:${getModelOptionKey(value)}`;
-  }
+  return options;
 }
 
 function modelOptionKeysEqual(left: string, right: string): boolean {
@@ -224,7 +183,7 @@ function getProviderModelPresets(provider: string | null | undefined): readonly 
   }
 
   if (provider === 'codex') {
-    return CODEX_MODEL_PRESETS;
+    return [];
   }
 
   if (provider === 'grok') {

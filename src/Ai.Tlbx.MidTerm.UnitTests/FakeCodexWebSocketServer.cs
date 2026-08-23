@@ -71,6 +71,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public int TurnCompletionDelayMs { get; }
 
+    public bool? LastThreadResumeExcludeTurns { get; private set; }
+
     public static FakeCodexWebSocketServer Start(
         string loadedThreadId,
         string assistantReply,
@@ -280,6 +282,12 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                         break;
 
                     case "thread/resume" when id is not null:
+                        LastThreadResumeExcludeTurns =
+                            @params.ValueKind == JsonValueKind.Object &&
+                            @params.TryGetProperty("excludeTurns", out var excludeTurnsElement) &&
+                            excludeTurnsElement.ValueKind is JsonValueKind.True or JsonValueKind.False
+                                ? excludeTurnsElement.GetBoolean()
+                                : null;
                         await SendJsonAsync(socket, new
                         {
                             id,

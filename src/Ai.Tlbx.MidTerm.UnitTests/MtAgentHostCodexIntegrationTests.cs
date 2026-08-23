@@ -53,7 +53,6 @@ public sealed class MtAgentHostCodexIntegrationTests
                     process.StandardOutput,
                     pendingPatches,
                     "cmd-attach-control")).Status);
-
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-turn-control",
@@ -69,6 +68,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                 pendingPatches,
                 "cmd-turn-control");
             Assert.Equal("accepted", turnResult.Status);
+            Assert.True(fakeServer.LastThreadResumeExcludeTurns);
             var activeTurnId = Assert.IsType<string>(turnResult.Accepted?.TurnId);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
@@ -391,7 +391,7 @@ public sealed class MtAgentHostCodexIntegrationTests
             var attachResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-cold-launch");
             Assert.Equal("accepted", attachResult.Status);
 
-            _ = await WaitForReadyWindowAsync(
+            var readyWindow = await WaitForReadyWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
@@ -406,6 +406,7 @@ public sealed class MtAgentHostCodexIntegrationTests
             Assert.Equal(fakeCodex.Root, capture.ProcessWorkingDirectory);
             Assert.Contains("initialize", capture.Methods);
             Assert.Contains("initialized", capture.Methods);
+            Assert.Equal(2, capture.Methods.Count(static method => method == "model/list"));
             Assert.Contains("thread/start", capture.Methods);
             Assert.DoesNotContain("thread/resume", capture.Methods);
             Assert.Equal("midterm", capture.InitializeClientName);
@@ -417,6 +418,9 @@ public sealed class MtAgentHostCodexIntegrationTests
             Assert.Equal("workspace-write", capture.ThreadStartSandbox);
             Assert.False(capture.ThreadStartExperimentalRawEvents);
             Assert.False(capture.ThreadStartPersistExtendedHistory);
+            Assert.Contains(
+                readyWindow.QuickSettings.ModelOptions,
+                static option => option.Value == "gpt-5.6-sol");
         }
         finally
         {

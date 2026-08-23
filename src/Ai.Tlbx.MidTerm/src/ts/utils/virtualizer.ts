@@ -2,7 +2,6 @@ const VIRTUALIZER_MEASUREMENT_WIDTH_BUCKET_SIZE_PX = 40;
 const VIRTUALIZER_MEASUREMENT_MIN_WIDTH_PX = 240;
 const VIRTUALIZER_HEIGHT_SAMPLE_LIMIT = 6;
 const DEFAULT_REPRESENTATIVE_ITEM_SIZE_PX = 72;
-const UNSEEN_ITEM_SIZE_VARIANCE_LIMIT = 0.2;
 
 export interface VirtualizerIndexRange {
   start: number;
@@ -26,15 +25,6 @@ export interface VirtualizerRetainedWindowDescriptor {
   windowStart: number;
   windowEnd: number;
   totalCount: number;
-}
-
-export interface VirtualizerWindowViewportMetrics extends VirtualizerViewportMetrics {
-  retainedWindowStart: number;
-  retainedWindowEnd: number;
-  totalCount: number;
-  offWindowTopSpacerPx: number;
-  effectiveOffWindowTopSpacerPx: number;
-  offWindowBottomSpacerPx: number;
 }
 
 export interface VirtualizerAnchor<TKey extends string = string> {
@@ -66,7 +56,6 @@ export interface VirtualizerMeasuredItemChange {
 }
 
 type SizeResolver<TItem> = (item: TItem, index: number) => number;
-type OptionalSizeResolver<TItem> = (item: TItem, index: number) => number | null | undefined;
 
 interface LayoutModel {
   prefixSizes: number[];
@@ -94,59 +83,6 @@ function resolveMedian(sample: readonly number[], fallback: number): number {
 
   numericSample.sort((left, right) => left - right);
   return numericSample[Math.floor(numericSample.length / 2)] ?? fallback;
-}
-
-function countFiniteSizes(observedSizes: Iterable<number> | null | undefined): number {
-  let count = 0;
-  if (!observedSizes) {
-    return 0;
-  }
-
-  for (const value of observedSizes) {
-    if (Number.isFinite(value) && value > 0) {
-      count += 1;
-    }
-  }
-
-  return count;
-}
-
-function resolveAverageFromResolver<TItem>(
-  items: readonly TItem[],
-  resolveSize: OptionalSizeResolver<TItem> | undefined,
-): number | null {
-  if (!resolveSize || items.length === 0) {
-    return null;
-  }
-
-  let totalSize = 0;
-  let count = 0;
-  for (let index = 0; index < items.length; index += 1) {
-    const item = items[index];
-    if (item === undefined) {
-      continue;
-    }
-
-    const resolvedSize = resolveSize(item, index);
-    if (!Number.isFinite(resolvedSize) || (resolvedSize ?? 0) <= 0) {
-      continue;
-    }
-
-    totalSize += resolvedSize ?? 0;
-    count += 1;
-  }
-
-  if (count === 0) {
-    return null;
-  }
-
-  return Math.max(1, totalSize / count);
-}
-
-function clampUnseenItemSizeEstimate(sampleSize: number, representativeSize: number): number {
-  const minimum = representativeSize * (1 - UNSEEN_ITEM_SIZE_VARIANCE_LIMIT);
-  const maximum = representativeSize * (1 + UNSEEN_ITEM_SIZE_VARIANCE_LIMIT);
-  return Math.max(1, Math.min(maximum, Math.max(minimum, sampleSize)));
 }
 
 function buildLayoutModel<TItem>(
@@ -196,189 +132,6 @@ function findFirstEndAtOrAfter(prefixSizes: readonly number[], targetBottom: num
   }
 
   return Math.max(1, Math.min(prefixSizes.length - 1, low));
-}
-
-function resolveAverageUnseenItemSize<TItem>(
-  items: readonly TItem[],
-  observedSizes: Iterable<number> | null | undefined,
-  resolveItemSize: SizeResolver<TItem>,
-  resolveEstimatedItemSize: OptionalSizeResolver<TItem> | undefined,
-): number {
-  const representativeSize = resolveRepresentativeItemSize(observedSizes);
-  const observedCount = countFiniteSizes(observedSizes);
-  if (items.length === 0) {
-    return representativeSize;
-  }
-
-  const estimatedAverage =
-    resolveAverageFromResolver(items, resolveEstimatedItemSize) ??
-    resolveAverageFromResolver(items, resolveItemSize);
-  if (estimatedAverage === null) {
-    return representativeSize;
-  }
-
-  if (observedCount === 0) {
-    return estimatedAverage;
-  }
-
-  return clampUnseenItemSizeEstimate(estimatedAverage, representativeSize);
-}
-
-function estimateOffWindowSpacerPx<TItem>(args: {
-  items: readonly TItem[];
-  observedSizes?: Iterable<number> | null | undefined;
-  unseenItemCount: number;
-  resolveItemSize: SizeResolver<TItem>;
-  resolveEstimatedItemSize?: OptionalSizeResolver<TItem> | undefined;
-}): number {
-  if (args.unseenItemCount <= 0) {
-    return 0;
-  }
-
-  const averageSize = resolveAverageUnseenItemSize(
-    args.items,
-    args.observedSizes,
-    args.resolveItemSize,
-    args.resolveEstimatedItemSize,
-  );
-  return Math.max(0, Math.round(averageSize * args.unseenItemCount));
-}
-
-function resolveSpacerAverageItemSize(spacerPx: number, itemCount: number): number | null {
-  if (itemCount <= 0 || spacerPx <= 0) {
-    return null;
-  }
-
-  return Math.max(1, spacerPx / itemCount);
-}
-
-function resolveAbsoluteIndexAtOffset(args: {
-  offsetPx: number;
-  retainedWindow: VirtualizerRetainedWindowDescriptor;
-  retainedTopPx: number;
-  retainedBottomPx: number;
-  totalEstimatedHeightPx: number;
-  retainedLayout: LayoutModel;
-  topSpacerAverageItemSize: number | null;
-  bottomSpacerAverageItemSize: number | null;
-}): number {
-  const {
-    offsetPx,
-    retainedWindow,
-    retainedTopPx,
-    retainedBottomPx,
-    totalEstimatedHeightPx,
-    retainedLayout,
-    topSpacerAverageItemSize,
-    bottomSpacerAverageItemSize,
-  } = args;
-  const clampedOffset = Math.max(0, Math.min(totalEstimatedHeightPx, offsetPx));
-  const offWindowTopCount = Math.max(0, retainedWindow.windowStart);
-  const offWindowBottomCount = Math.max(0, retainedWindow.totalCount - retainedWindow.windowEnd);
-
-  if (clampedOffset < retainedTopPx && offWindowTopCount > 0 && topSpacerAverageItemSize !== null) {
-    return Math.max(
-      0,
-      Math.min(
-        retainedWindow.windowStart - 1,
-        Math.floor(clampedOffset / topSpacerAverageItemSize),
-      ),
-    );
-  }
-
-  if (clampedOffset < retainedBottomPx) {
-    const retainedOffset = Math.max(0, clampedOffset - retainedTopPx);
-    return Math.max(
-      retainedWindow.windowStart,
-      Math.min(
-        retainedWindow.totalCount - 1,
-        retainedWindow.windowStart +
-          findFirstIntersectingIndex(retainedLayout.prefixSizes, retainedOffset),
-      ),
-    );
-  }
-
-  if (
-    offWindowBottomCount > 0 &&
-    bottomSpacerAverageItemSize !== null &&
-    retainedWindow.windowEnd < retainedWindow.totalCount
-  ) {
-    return Math.max(
-      retainedWindow.windowEnd,
-      Math.min(
-        retainedWindow.totalCount - 1,
-        retainedWindow.windowEnd +
-          Math.floor((clampedOffset - retainedBottomPx) / bottomSpacerAverageItemSize),
-      ),
-    );
-  }
-
-  return Math.max(0, retainedWindow.totalCount - 1);
-}
-
-function resolveAbsoluteEndIndexAtOffset(args: {
-  offsetPx: number;
-  retainedWindow: VirtualizerRetainedWindowDescriptor;
-  retainedTopPx: number;
-  retainedBottomPx: number;
-  totalEstimatedHeightPx: number;
-  retainedLayout: LayoutModel;
-  topSpacerAverageItemSize: number | null;
-  bottomSpacerAverageItemSize: number | null;
-}): number {
-  const {
-    offsetPx,
-    retainedWindow,
-    retainedTopPx,
-    retainedBottomPx,
-    totalEstimatedHeightPx,
-    retainedLayout,
-    topSpacerAverageItemSize,
-    bottomSpacerAverageItemSize,
-  } = args;
-  const clampedOffset = Math.max(0, Math.min(totalEstimatedHeightPx, offsetPx));
-  const offWindowTopCount = Math.max(0, retainedWindow.windowStart);
-  const offWindowBottomCount = Math.max(0, retainedWindow.totalCount - retainedWindow.windowEnd);
-
-  if (
-    clampedOffset <= retainedTopPx &&
-    offWindowTopCount > 0 &&
-    topSpacerAverageItemSize !== null
-  ) {
-    return Math.max(
-      0,
-      Math.min(retainedWindow.windowStart, Math.ceil(clampedOffset / topSpacerAverageItemSize)),
-    );
-  }
-
-  if (clampedOffset <= retainedBottomPx) {
-    const retainedOffset = Math.max(0, clampedOffset - retainedTopPx);
-    return Math.max(
-      retainedWindow.windowStart,
-      Math.min(
-        retainedWindow.totalCount,
-        retainedWindow.windowStart +
-          findFirstEndAtOrAfter(retainedLayout.prefixSizes, retainedOffset),
-      ),
-    );
-  }
-
-  if (
-    offWindowBottomCount > 0 &&
-    bottomSpacerAverageItemSize !== null &&
-    retainedWindow.windowEnd < retainedWindow.totalCount
-  ) {
-    return Math.max(
-      retainedWindow.windowEnd,
-      Math.min(
-        retainedWindow.totalCount,
-        retainedWindow.windowEnd +
-          Math.ceil((clampedOffset - retainedBottomPx) / bottomSpacerAverageItemSize),
-      ),
-    );
-  }
-
-  return retainedWindow.totalCount;
 }
 
 export function resolveVirtualizerMeasurementWidthBucket(clientWidth: number): number {
@@ -514,55 +267,6 @@ export function buildVirtualizerWindowKey(window: VirtualizerWindow): string {
   return `${window.start}:${window.end}`;
 }
 
-export function resolveRetainedWindowViewportMetrics<TItem>(args: {
-  items: readonly TItem[];
-  viewportMetrics: VirtualizerViewportMetrics;
-  retainedWindow: VirtualizerRetainedWindowDescriptor;
-  observedSizes?: Iterable<number> | null | undefined;
-  resolveItemSize: SizeResolver<TItem>;
-  resolveEstimatedItemSize?: OptionalSizeResolver<TItem> | undefined;
-}): VirtualizerWindowViewportMetrics {
-  const {
-    items,
-    viewportMetrics,
-    retainedWindow,
-    observedSizes,
-    resolveItemSize,
-    resolveEstimatedItemSize,
-  } = args;
-  const offWindowTopCount = Math.max(0, retainedWindow.windowStart);
-  const offWindowBottomCount = Math.max(0, retainedWindow.totalCount - retainedWindow.windowEnd);
-  const offWindowTopSpacerPx = estimateOffWindowSpacerPx({
-    items,
-    observedSizes,
-    unseenItemCount: offWindowTopCount,
-    resolveItemSize,
-    resolveEstimatedItemSize,
-  });
-  const effectiveOffWindowTopSpacerPx = Math.min(
-    offWindowTopSpacerPx,
-    Math.max(0, viewportMetrics.scrollTop),
-  );
-  const offWindowBottomSpacerPx = estimateOffWindowSpacerPx({
-    items,
-    observedSizes,
-    unseenItemCount: offWindowBottomCount,
-    resolveItemSize,
-    resolveEstimatedItemSize,
-  });
-
-  return {
-    ...viewportMetrics,
-    scrollTop: Math.max(0, viewportMetrics.scrollTop - effectiveOffWindowTopSpacerPx),
-    retainedWindowStart: retainedWindow.windowStart,
-    retainedWindowEnd: retainedWindow.windowEnd,
-    totalCount: retainedWindow.totalCount,
-    offWindowTopSpacerPx,
-    effectiveOffWindowTopSpacerPx,
-    offWindowBottomSpacerPx,
-  };
-}
-
 export function resolveViewportDrivenWindowCount(args: {
   viewport: Pick<HTMLDivElement, 'clientHeight'> | null | undefined;
   fetchAheadItems: number;
@@ -582,118 +286,78 @@ export function resolveViewportDrivenWindowCount(args: {
   );
 }
 
-export function resolveViewportCenteredWindowRequest<TItem>(args: {
+/**
+ * Resolves the next retained item window for a native, kernel-local pixel scroller.
+ *
+ * This function never maps local scroll pixels onto estimated off-window history.
+ * The browser scrolls only the
+ * currently retained kernel; crossing either kernel margin requests an overlapping
+ * canonical index window and the caller restores a concrete visible item anchor.
+ */
+export function resolveKernelWindowRequest<TItem>(args: {
   items: readonly TItem[];
   viewportMetrics: VirtualizerViewportMetrics;
   retainedWindow: VirtualizerRetainedWindowDescriptor;
   fetchAheadItems: number;
   resolveItemSize: SizeResolver<TItem>;
-  observedSizes?: Iterable<number> | null | undefined;
   anchorAbsoluteIndex?: number | null | undefined;
-  resolveEstimatedItemSize?: OptionalSizeResolver<TItem>;
 }): { startIndex: number; count: number } | null {
-  const {
-    items,
-    viewportMetrics,
-    retainedWindow,
-    fetchAheadItems,
-    resolveItemSize,
-    observedSizes,
-    resolveEstimatedItemSize,
-  } = args;
-  if (items.length === 0) {
+  const { items, viewportMetrics, retainedWindow, resolveItemSize } = args;
+  if (items.length === 0 || retainedWindow.totalCount <= 0) {
     return null;
   }
 
-  if (retainedWindow.windowStart <= 0 && retainedWindow.windowEnd >= retainedWindow.totalCount) {
+  const visibleRange = computeVisibleRange({
+    items,
+    scrollTop: Math.max(0, viewportMetrics.scrollTop),
+    clientHeight: Math.max(1, viewportMetrics.clientHeight),
+    overscanItems: 0,
+    resolveItemSize,
+  });
+  const absoluteVisibleStart = retainedWindow.windowStart + visibleRange.start;
+  const absoluteVisibleEnd = retainedWindow.windowStart + visibleRange.end;
+  const marginItems = Math.max(0, Math.floor(args.fetchAheadItems));
+  const needsEarlierWindow =
+    retainedWindow.windowStart > 0 &&
+    absoluteVisibleStart < retainedWindow.windowStart + marginItems;
+  const needsLaterWindow =
+    retainedWindow.windowEnd < retainedWindow.totalCount &&
+    absoluteVisibleEnd > retainedWindow.windowEnd - marginItems;
+  if (!needsEarlierWindow && !needsLaterWindow) {
     return null;
   }
 
-  const windowMetrics = resolveRetainedWindowViewportMetrics({
-    items,
-    viewportMetrics,
-    retainedWindow,
-    observedSizes,
-    resolveItemSize,
-    resolveEstimatedItemSize,
-  });
-  const retainedLayout = buildLayoutModel(items, resolveItemSize);
-  const retainedTopPx = windowMetrics.offWindowTopSpacerPx;
-  const retainedBottomPx = retainedTopPx + retainedLayout.totalSize;
-  const totalEstimatedHeightPx = retainedBottomPx + windowMetrics.offWindowBottomSpacerPx;
-  const viewportTopPx = Math.max(0, Math.min(totalEstimatedHeightPx, viewportMetrics.scrollTop));
-  const viewportBottomPx = Math.max(
-    viewportTopPx + 1,
-    Math.min(
-      totalEstimatedHeightPx,
-      viewportMetrics.scrollTop + Math.max(1, viewportMetrics.clientHeight),
-    ),
-  );
-  const topSpacerAverageItemSize = resolveSpacerAverageItemSize(
-    windowMetrics.offWindowTopSpacerPx,
-    retainedWindow.windowStart,
-  );
-  const bottomSpacerAverageItemSize = resolveSpacerAverageItemSize(
-    windowMetrics.offWindowBottomSpacerPx,
-    Math.max(0, retainedWindow.totalCount - retainedWindow.windowEnd),
-  );
-  const absoluteVisibleStart = resolveAbsoluteIndexAtOffset({
-    offsetPx: viewportTopPx,
-    retainedWindow,
-    retainedTopPx,
-    retainedBottomPx,
-    totalEstimatedHeightPx,
-    retainedLayout,
-    topSpacerAverageItemSize,
-    bottomSpacerAverageItemSize,
-  });
-  const absoluteVisibleEnd = Math.max(
-    absoluteVisibleStart + 1,
-    resolveAbsoluteEndIndexAtOffset({
-      offsetPx: viewportBottomPx,
-      retainedWindow,
-      retainedTopPx,
-      retainedBottomPx,
-      totalEstimatedHeightPx,
-      retainedLayout,
-      topSpacerAverageItemSize,
-      bottomSpacerAverageItemSize,
-    }),
-  );
+  const currentCount = Math.max(1, retainedWindow.windowEnd - retainedWindow.windowStart);
   const visibleCount = Math.max(1, absoluteVisibleEnd - absoluteVisibleStart);
-  const marginItems = Math.max(0, fetchAheadItems);
-  const safeStart = retainedWindow.windowStart + marginItems;
-  const safeEnd = retainedWindow.windowEnd - marginItems;
-  const needsShift =
-    absoluteVisibleStart < safeStart ||
-    absoluteVisibleEnd > safeEnd ||
-    retainedWindow.windowEnd - retainedWindow.windowStart > visibleCount + marginItems * 2;
-  if (!needsShift) {
-    return null;
-  }
+  const requestedCount = Math.min(
+    retainedWindow.totalCount,
+    Math.max(currentCount, visibleCount + marginItems * 2),
+  );
+  const visibleCenter = (absoluteVisibleStart + absoluteVisibleEnd) / 2;
+  let startIndex = Math.round(visibleCenter - requestedCount / 2);
+  startIndex = Math.max(0, Math.min(retainedWindow.totalCount - requestedCount, startIndex));
 
-  const desiredStart = Math.max(0, absoluteVisibleStart - marginItems);
-  const desiredEnd = Math.min(retainedWindow.totalCount, absoluteVisibleEnd + marginItems);
   const anchorAbsoluteIndex =
     typeof args.anchorAbsoluteIndex === 'number' && Number.isFinite(args.anchorAbsoluteIndex)
       ? Math.max(0, Math.min(retainedWindow.totalCount - 1, args.anchorAbsoluteIndex))
       : null;
-  const anchoredStart =
-    anchorAbsoluteIndex === null ? desiredStart : Math.min(desiredStart, anchorAbsoluteIndex);
-  const anchoredEnd =
-    anchorAbsoluteIndex === null ? desiredEnd : Math.max(desiredEnd, anchorAbsoluteIndex + 1);
-  const desiredCount = Math.max(1, anchoredEnd - anchoredStart);
-  const maxStart = Math.max(0, retainedWindow.totalCount - desiredCount);
-  const startIndex = Math.max(0, Math.min(anchoredStart, maxStart));
-  const count = Math.min(retainedWindow.totalCount - startIndex, desiredCount);
+  if (anchorAbsoluteIndex !== null) {
+    if (anchorAbsoluteIndex < startIndex) {
+      startIndex = anchorAbsoluteIndex;
+    } else if (anchorAbsoluteIndex >= startIndex + requestedCount) {
+      startIndex = anchorAbsoluteIndex - requestedCount + 1;
+    }
+    startIndex = Math.max(0, Math.min(retainedWindow.totalCount - requestedCount, startIndex));
+  }
+
   if (
     startIndex === retainedWindow.windowStart &&
-    count === retainedWindow.windowEnd - retainedWindow.windowStart
+    requestedCount === retainedWindow.windowEnd - retainedWindow.windowStart
   ) {
     return null;
   }
 
-  return { startIndex, count };
+  return { startIndex, count: requestedCount };
 }
 
 export function syncViewportScrollPosition(

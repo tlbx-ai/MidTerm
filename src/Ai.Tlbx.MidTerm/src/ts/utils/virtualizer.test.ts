@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   computeVirtualWindow,
-  resolveRetainedWindowViewportMetrics,
+  resolveKernelWindowRequest,
   resolveScrollCompensationDelta,
-  resolveViewportCenteredWindowRequest,
   resolveViewportDrivenWindowCount,
 } from './virtualizer';
 
@@ -57,127 +56,6 @@ describe('virtualizer', () => {
     expect(count).toBe(64);
   });
 
-  it('recenters the retained window around the visible range when the viewport nears an edge', () => {
-    const items = Array.from({ length: 20 }, (_, index) => ({ id: `row-${index}` }));
-
-    const request = resolveViewportCenteredWindowRequest({
-      items,
-      viewportMetrics: {
-        scrollTop: 1500,
-        clientHeight: 300,
-        clientWidth: 900,
-      },
-      retainedWindow: {
-        windowStart: 0,
-        windowEnd: 20,
-        totalCount: 60,
-      },
-      fetchAheadItems: 5,
-      resolveItemSize: () => 100,
-    });
-
-    expect(request).toEqual({
-      startIndex: 10,
-      count: 13,
-    });
-  });
-
-  it('stabilizes unseen spacer estimates around the global observed representative', () => {
-    const metrics = resolveRetainedWindowViewportMetrics({
-      items: Array.from({ length: 10 }, (_, index) => ({ id: `row-${index}` })),
-      viewportMetrics: {
-        scrollTop: 0,
-        clientHeight: 600,
-        clientWidth: 900,
-      },
-      retainedWindow: {
-        windowStart: 50,
-        windowEnd: 60,
-        totalCount: 100,
-      },
-      observedSizes: [100, 102, 98, 101, 99],
-      resolveItemSize: () => 220,
-      resolveEstimatedItemSize: () => 210,
-    });
-
-    expect(metrics.offWindowTopSpacerPx).toBe(6000);
-    expect(metrics.effectiveOffWindowTopSpacerPx).toBe(0);
-    expect(metrics.offWindowBottomSpacerPx).toBe(4800);
-  });
-
-  it('caps the viewport-aligned off-window top spacer so visible rows remain reachable', () => {
-    const metrics = resolveRetainedWindowViewportMetrics({
-      items: Array.from({ length: 10 }, (_, index) => ({ id: `row-${index}` })),
-      viewportMetrics: {
-        scrollTop: 240,
-        clientHeight: 600,
-        clientWidth: 900,
-      },
-      retainedWindow: {
-        windowStart: 50,
-        windowEnd: 60,
-        totalCount: 100,
-      },
-      observedSizes: [100, 102, 98, 101, 99],
-      resolveItemSize: () => 220,
-      resolveEstimatedItemSize: () => 210,
-    });
-
-    expect(metrics.offWindowTopSpacerPx).toBe(6000);
-    expect(metrics.effectiveOffWindowTopSpacerPx).toBe(240);
-    expect(metrics.scrollTop).toBe(0);
-  });
-
-  it('targets the absolute viewport position when the reader is still inside unseen older-history space', () => {
-    const request = resolveViewportCenteredWindowRequest({
-      items: Array.from({ length: 10 }, (_, index) => ({ id: `row-${index}` })),
-      viewportMetrics: {
-        scrollTop: 240,
-        clientHeight: 600,
-        clientWidth: 900,
-      },
-      retainedWindow: {
-        windowStart: 50,
-        windowEnd: 60,
-        totalCount: 100,
-      },
-      fetchAheadItems: 5,
-      observedSizes: [100, 102, 98, 101, 99],
-      resolveItemSize: () => 220,
-      resolveEstimatedItemSize: () => 210,
-    });
-
-    expect(request).toEqual({
-      startIndex: 0,
-      count: 12,
-    });
-  });
-
-  it('targets a bounded centered fetch window inside a 10k retained history', () => {
-    const request = resolveViewportCenteredWindowRequest({
-      items: Array.from({ length: 80 }, (_, index) => ({ id: `row-${index}` })),
-      viewportMetrics: {
-        scrollTop: 460000,
-        clientHeight: 780,
-        clientWidth: 390,
-      },
-      retainedWindow: {
-        windowStart: 4950,
-        windowEnd: 5030,
-        totalCount: 10000,
-      },
-      fetchAheadItems: 30,
-      observedSizes: [132, 148, 156, 144, 168, 152],
-      resolveItemSize: (_item, index) => 120 + (index % 5) * 12,
-      resolveEstimatedItemSize: () => 148,
-    });
-
-    expect(request).not.toBeNull();
-    expect(request?.count).toBeLessThanOrEqual(68);
-    expect(request?.startIndex).toBeGreaterThanOrEqual(3000);
-    expect(request?.startIndex).toBeLessThan(7000);
-  });
-
   it('computes scroll compensation from size changes above the current browse anchor', () => {
     const delta = resolveScrollCompensationDelta({
       anchorAbsoluteIndex: 25,
@@ -189,5 +67,56 @@ describe('virtualizer', () => {
     });
 
     expect(delta).toBe(22);
+  });
+
+  it('shifts an overlapping kernel backward without inventing off-window pixel space', () => {
+    const request = resolveKernelWindowRequest({
+      items: Array.from({ length: 60 }, (_, index) => index),
+      viewportMetrics: { scrollTop: 0, clientHeight: 500, clientWidth: 900 },
+      retainedWindow: { windowStart: 200, windowEnd: 260, totalCount: 1000 },
+      fetchAheadItems: 20,
+      resolveItemSize: () => 100,
+      anchorAbsoluteIndex: 200,
+    });
+
+    expect(request).toEqual({ startIndex: 174, count: 60 });
+    expect(request!.startIndex).toBeLessThanOrEqual(200);
+    expect(request!.startIndex + request!.count).toBeGreaterThan(200);
+  });
+
+  it('shifts the same bounded kernel forward and eventually reaches the live tail', () => {
+    const request = resolveKernelWindowRequest({
+      items: Array.from({ length: 60 }, (_, index) => index),
+      viewportMetrics: { scrollTop: 5500, clientHeight: 500, clientWidth: 900 },
+      retainedWindow: { windowStart: 200, windowEnd: 260, totalCount: 300 },
+      fetchAheadItems: 20,
+      resolveItemSize: () => 100,
+      anchorAbsoluteIndex: 255,
+    });
+
+    expect(request).toEqual({ startIndex: 228, count: 60 });
+
+    const tailRequest = resolveKernelWindowRequest({
+      items: Array.from({ length: 60 }, (_, index) => index),
+      viewportMetrics: { scrollTop: 5500, clientHeight: 500, clientWidth: 900 },
+      retainedWindow: { windowStart: 228, windowEnd: 288, totalCount: 300 },
+      fetchAheadItems: 20,
+      resolveItemSize: () => 100,
+      anchorAbsoluteIndex: 283,
+    });
+    expect(tailRequest).toEqual({ startIndex: 240, count: 60 });
+    expect(tailRequest!.startIndex + tailRequest!.count).toBe(300);
+  });
+
+  it('does not refetch at a canonical bound when the loaded kernel already covers it', () => {
+    expect(
+      resolveKernelWindowRequest({
+        items: Array.from({ length: 60 }, (_, index) => index),
+        viewportMetrics: { scrollTop: 0, clientHeight: 500, clientWidth: 900 },
+        retainedWindow: { windowStart: 0, windowEnd: 60, totalCount: 300 },
+        fetchAheadItems: 20,
+        resolveItemSize: () => 100,
+      }),
+    ).toBeNull();
   });
 });

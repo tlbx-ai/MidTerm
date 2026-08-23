@@ -2066,27 +2066,79 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
     {
         try
         {
-            var result = await SendCodexRequestAsync(
-                "model/list",
-                BuildCodexModelListRequest,
-                ct,
-                TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-            var modelOptions = ReadCodexModelOptions(result);
+            var pages = new List<JsonElement>();
+            var modelOptions = new List<AppServerControlQuickSettingsOption>();
+            var seenModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seenCursors = new HashSet<string>(StringComparer.Ordinal);
+            string? cursor = null;
+            do
+            {
+                var result = await SendCodexRequestAsync(
+                    "model/list",
+                    id => BuildCodexModelListRequest(id, cursor),
+                    ct,
+                    TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+                pages.Add(result.Clone());
+                foreach (var option in ReadCodexModelOptions(result))
+                {
+                    if (seenModels.Add(option.Value))
+                    {
+                        modelOptions.Add(option);
+                    }
+                }
+
+                cursor = AppServerControlQuickSettings.NormalizeOptionalValue(GetString(result, "nextCursor"));
+            }
+            while (cursor is not null && seenCursors.Add(cursor) && pages.Count < 100);
+
             if (modelOptions.Count == 0)
             {
                 return;
             }
 
             _quickSettings.ModelOptions = modelOptions;
-            _quickSettings.EffortOptions = ReadCodexEffortOptions(
-                result,
-                _quickSettings.Model,
-                modelOptions.FirstOrDefault(static option => option.IsDefault)?.Value);
+            var defaultModel = modelOptions.FirstOrDefault(static option => option.IsDefault)?.Value;
+            _quickSettings.Model ??= defaultModel;
+            var effortCatalogPage = pages.FirstOrDefault(page =>
+                ContainsCodexModel(page, _quickSettings.Model ?? defaultModel));
+            if (effortCatalogPage.ValueKind != JsonValueKind.Undefined)
+            {
+                _quickSettings.EffortOptions = ReadCodexEffortOptions(
+                    effortCatalogPage,
+                    _quickSettings.Model,
+                    defaultModel);
+            }
         }
         catch
         {
-            // Codex may run older app-server builds. Keep the static frontend fallback quiet.
+            // Codex may run older app-server builds. Keep the current model usable without
+            // presenting a stale hard-coded catalog as provider truth.
         }
+    }
+
+    private static bool ContainsCodexModel(JsonElement result, string? selectedModel)
+    {
+        if (string.IsNullOrWhiteSpace(selectedModel) ||
+            !result.TryGetProperty("data", out var data) ||
+            data.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        using var models = data.EnumerateArray();
+        while (models.MoveNext())
+        {
+            var model = models.Current;
+            if (string.Equals(
+                    GetString(model, "id") ?? GetString(model, "model"),
+                    selectedModel,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static List<AppServerControlQuickSettingsOption> ReadCodexModelOptions(JsonElement result)
@@ -2132,10 +2184,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             }
         }
 
-        return options
-            .OrderBy(static option => GetCodexModelSortKey(option.Value), StringComparer.Ordinal)
-            .ThenBy(static option => option.Value, StringComparer.Ordinal)
-            .ToList();
+        return options;
     }
 
     private static List<AppServerControlQuickSettingsOption> ReadCodexEffortOptions(
@@ -2342,7 +2391,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
         });
     }
 
-    private static string BuildCodexModelListRequest(string id)
+    private static string BuildCodexModelListRequest(string id, string? cursor = null)
     {
         return BuildJsonString(writer =>
         {
@@ -2353,6 +2402,10 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             writer.WritePropertyName("params");
             writer.WriteStartObject();
             writer.WriteBoolean("includeHidden", false);
+            if (!string.IsNullOrWhiteSpace(cursor))
+            {
+                writer.WriteString("cursor", cursor);
+            }
             writer.WriteEndObject();
             writer.WriteEndObject();
         });
@@ -2414,6 +2467,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             writer.WriteString("approvalPolicy", ResolveCodexApprovalPolicy(permissionMode));
             writer.WriteString("sandbox", ResolveCodexSandbox(permissionMode));
             writer.WriteBoolean("persistExtendedHistory", false);
+            writer.WriteBoolean("excludeTurns", true);
             writer.WriteEndObject();
             writer.WriteEndObject();
         });
@@ -3838,22 +3892,6 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             "high" => "High",
             "xhigh" => "Extra high",
             _ => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(effort.Replace('_', ' ').Trim())
-        };
-    }
-
-    private static string GetCodexModelSortKey(string value)
-    {
-        return value.Trim().ToLowerInvariant() switch
-        {
-            "gpt-5.5" => "000",
-            "gpt-5.4" => "010",
-            "gpt-5.4-mini" => "020",
-            "gpt-5.3-codex" => "030",
-            "gpt-5.3-codex-spark" => "040",
-            "gpt-5.2" => "050",
-            "gpt-5" => "060",
-            "gpt-5.4-codex" => "070",
-            _ => "900:" + value.Trim().ToLowerInvariant()
         };
     }
 

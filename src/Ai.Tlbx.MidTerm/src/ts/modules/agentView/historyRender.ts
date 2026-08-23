@@ -1,7 +1,6 @@
 import { t } from '../i18n';
 import { resolveHistoryBadgeLabel } from './activationHelpers';
 import {
-  resolveHistoryEstimatedEntryHeight,
   pruneHistoryMeasurementCache,
   recordHistoryMeasuredHeight,
   resolveHistoryViewportEntryHeight,
@@ -25,14 +24,12 @@ import type {
 } from '../../api/client';
 import {
   captureViewportAnchor,
-  resolveRetainedWindowViewportMetrics,
+  resolveKernelWindowRequest,
   resolveScrollCompensationDelta,
-  resolveViewportCenteredWindowRequest,
   restoreViewportAnchor,
   syncViewportScrollPosition,
   type VirtualizerAnchor,
   type VirtualizerMeasuredItemChange,
-  type VirtualizerWindowViewportMetrics,
 } from '../../utils/virtualizer';
 import type {
   ArtifactClusterInfo,
@@ -114,8 +111,6 @@ const HISTORY_PLACEHOLDER_MAX_BLOCKS = 10;
 const PROGRAMMATIC_HISTORY_VIEWPORT_SYNC_SUPPRESS_MS = 200;
 const USER_HISTORY_GAP_RECOVERY_GRACE_MS = 900;
 
-export type HistoryWindowViewportMetrics = VirtualizerWindowViewportMetrics;
-
 function resolveContiguousHistoryEntryWindow(entries: readonly AppServerControlHistoryEntry[]): {
   windowStart: number;
   windowEnd: number;
@@ -176,24 +171,6 @@ export function resolveHistoryRetainedWindowDescriptor(
     windowEnd: contiguousWindow.windowEnd,
     totalCount: Math.max(snapshotTotalCount, contiguousWindow.windowEnd),
   };
-}
-
-export function resolveHistoryWindowViewportMetrics(
-  entries: readonly AppServerControlHistoryEntry[],
-  state: SessionAppServerControlViewState | undefined,
-  metrics: HistoryViewportMetrics,
-  resolveEntryHeight: (entry: AppServerControlHistoryEntry) => number,
-): HistoryWindowViewportMetrics {
-  const retainedWindow = resolveHistoryRetainedWindowDescriptor(entries, state);
-  return resolveRetainedWindowViewportMetrics({
-    items: entries,
-    viewportMetrics: metrics,
-    retainedWindow,
-    observedSizes: state?.historyObservedHeights.values(),
-    resolveItemSize: (entry) => resolveEntryHeight(entry),
-    resolveEstimatedItemSize: (entry) =>
-      resolveHistoryEstimatedEntryHeight(entry, metrics.clientWidth),
-  });
 }
 
 function toHistoryViewportAnchor(
@@ -1133,17 +1110,11 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     const resolveEntryHeight = (entry: AppServerControlHistoryEntry) =>
       resolveHistoryEntryHeight(entry, state, metrics.clientWidth);
-    const windowMetrics = resolveHistoryWindowViewportMetrics(
-      entries,
-      state,
-      metrics,
-      resolveEntryHeight,
-    );
     const virtualWindow = computeHistoryVirtualWindow(
       entries,
-      windowMetrics.scrollTop,
-      windowMetrics.clientHeight,
-      windowMetrics.clientWidth,
+      metrics.scrollTop,
+      metrics.clientHeight,
+      metrics.clientWidth,
       resolveEntryHeight,
     );
     const renderedWindow = expandHistoryVirtualWindowForPendingAnchor({
@@ -1152,20 +1123,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       state,
       resolveEntryHeight,
     });
-    const retainedWindowStart = windowMetrics.retainedWindowStart;
-    const retainedWindowEnd = windowMetrics.retainedWindowEnd;
+    const retainedWindow = resolveHistoryRetainedWindowDescriptor(entries, state);
+    const retainedWindowStart = retainedWindow.windowStart;
     const leadingPlaceholders = [
-      ...buildHistoryPlaceholderBlocks({
-        keyPrefix: 'history-off-window-earlier',
-        heightPx: windowMetrics.effectiveOffWindowTopSpacerPx,
-        itemCount: retainedWindowStart,
-        direction: 'earlier',
-        label: appServerControlText(
-          'appServerControl.history.placeholderEarlier',
-          'Earlier history',
-        ),
-        absoluteStart: 0,
-      }),
       ...buildHistoryPlaceholderBlocks({
         keyPrefix: 'history-retained-earlier',
         heightPx: renderedWindow.topSpacerPx,
@@ -1189,14 +1149,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
           'Buffered later rows',
         ),
         absoluteStart: retainedWindowStart + renderedWindow.end,
-      }),
-      ...buildHistoryPlaceholderBlocks({
-        keyPrefix: 'history-off-window-later',
-        heightPx: windowMetrics.offWindowBottomSpacerPx,
-        itemCount: Math.max(0, windowMetrics.totalCount - retainedWindowEnd),
-        direction: 'later',
-        label: appServerControlText('appServerControl.history.placeholderLater', 'Later history'),
-        absoluteStart: retainedWindowEnd,
       }),
     ];
 
@@ -1830,18 +1782,12 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     const metrics = readHistoryViewportMetrics(viewport, state);
-    const windowMetrics = resolveHistoryWindowViewportMetrics(
-      state.historyEntries,
-      state,
-      metrics,
-      (entry) => resolveHistoryEntryHeight(entry, state, metrics.clientWidth),
-    );
     const virtualWindow = computeHistoryVirtualWindow(
       state.historyEntries,
-      windowMetrics.scrollTop,
-      windowMetrics.clientHeight,
-      windowMetrics.clientWidth,
-      (entry) => resolveHistoryEntryHeight(entry, state, windowMetrics.clientWidth),
+      metrics.scrollTop,
+      metrics.clientHeight,
+      metrics.clientWidth,
+      (entry) => resolveHistoryEntryHeight(entry, state, metrics.clientWidth),
     );
     return buildHistoryVirtualWindowKey(virtualWindow) !== state.historyLastVirtualWindowKey;
   }
@@ -1863,16 +1809,13 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const resolveEntryHeight = (entry: AppServerControlHistoryEntry) =>
       resolveHistoryEntryHeight(entry, state, metrics.clientWidth);
     const retainedWindow = resolveHistoryRetainedWindowDescriptor(state.historyEntries, state);
-    const request = resolveViewportCenteredWindowRequest({
+    const request = resolveKernelWindowRequest({
       items: state.historyEntries,
       viewportMetrics: metrics,
       retainedWindow,
       fetchAheadItems: options.fetchAheadItems,
       resolveItemSize: (entry) => resolveEntryHeight(entry),
-      observedSizes: state.historyObservedHeights.values(),
       anchorAbsoluteIndex: options.anchorAbsoluteIndex,
-      resolveEstimatedItemSize: (entry) =>
-        resolveHistoryEstimatedEntryHeight(entry, metrics.clientWidth),
     });
     return request;
   }

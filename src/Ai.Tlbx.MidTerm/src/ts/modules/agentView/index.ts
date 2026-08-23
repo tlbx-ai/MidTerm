@@ -1276,6 +1276,27 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
       ),
     );
   };
+  const queueKernelEdgeWindowSync = (deltaYPx: number) => {
+    const current = viewStates.get(sessionId);
+    const currentViewport = current?.historyViewport;
+    if (
+      !current ||
+      !currentViewport ||
+      current.historyAutoScrollPinned ||
+      typeof currentViewport.getBoundingClientRect !== 'function'
+    ) {
+      return;
+    }
+
+    const distanceFromBottom =
+      currentViewport.scrollHeight - currentViewport.clientHeight - currentViewport.scrollTop;
+    const crossedKernelEdge =
+      (deltaYPx < 0 && currentViewport.scrollTop <= 1 && current.snapshot?.hasOlderHistory) ||
+      (deltaYPx > 0 && distanceFromBottom <= 1 && current.snapshot?.hasNewerHistory);
+    if (crossedKernelEdge) {
+      queueHistoryWindowViewportSync(sessionId, current);
+    }
+  };
   viewport.addEventListener(
     'wheel',
     (event) => {
@@ -1302,6 +1323,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
       if (deltaYPx < 0) {
         detachFollowForExplicitBrowseIntent();
       }
+      queueKernelEdgeWindowSync(deltaYPx);
     },
     { passive: true },
   );
@@ -2139,7 +2161,10 @@ async function syncHistoryWindowToViewport(
   }
 
   const isBackwardShift = requestedWindow.startIndex < state.historyWindowStart;
-  if (isBackwardShift && hasAnchor && !state.historyAutoScrollPinned) {
+  const isWindowShift =
+    requestedWindow.startIndex !== state.historyWindowStart ||
+    requestedWindow.count !== state.historyWindowCount;
+  if (isWindowShift && hasAnchor && !state.historyAutoScrollPinned) {
     setHistoryScrollMode(state, 'restore-anchor');
     state.historyNavigatorMode = 'browse';
   }
