@@ -1673,7 +1673,7 @@ function scheduleLiveHistoryRender(sessionId: string): void {
   }
 
   state.renderDirty = true;
-  if (!isAppServerControlViewVisible(sessionId, state) || state.historyRenderBatchHandle !== null) {
+  if (!isAppServerControlViewVisible(sessionId) || state.historyRenderBatchHandle !== null) {
     return;
   }
 
@@ -1851,7 +1851,7 @@ async function compactHiddenAppServerControlSessionHistory(
       }
 
       if (applyFetchedAppServerControlHistoryWindow(sessionId, current, latestSnapshot)) {
-        if (isAppServerControlViewVisible(sessionId, current)) {
+        if (isAppServerControlViewVisible(sessionId)) {
           renderCurrentAgentView(sessionId, { immediate: true });
         }
       }
@@ -2185,7 +2185,7 @@ function renderCurrentAgentView(
   clearPendingHistoryRenderBatch(state);
   state.renderDirty = true;
 
-  if (!options.force && !isAppServerControlViewVisible(sessionId, state)) {
+  if (!options.force && !isAppServerControlViewVisible(sessionId)) {
     return;
   }
 
@@ -2220,7 +2220,7 @@ function commitAgentViewRender(sessionId: string, force = false): void {
     return;
   }
 
-  if (!force && !isAppServerControlViewVisible(sessionId, state)) {
+  if (!force && !isAppServerControlViewVisible(sessionId)) {
     return;
   }
 
@@ -2250,6 +2250,15 @@ function bindActiveAppServerControlSessionRendering(): void {
   }
 
   $activeSessionId.subscribe((sessionId) => {
+    for (const [candidateSessionId, candidateState] of viewStates) {
+      if (candidateSessionId === sessionId) {
+        continue;
+      }
+
+      releaseHiddenAppServerControlRenderState(candidateState);
+      void compactHiddenAppServerControlSessionHistory(candidateSessionId, candidateState);
+    }
+
     if (!sessionId) {
       return;
     }
@@ -2275,7 +2284,7 @@ function bindAppServerControlSelectionGuard(): void {
 
   document.addEventListener('selectionchange', () => {
     for (const [sessionId, state] of viewStates) {
-      if (!state.renderDirty || !isAppServerControlViewVisible(sessionId, state)) {
+      if (!state.renderDirty || !isAppServerControlViewVisible(sessionId)) {
         continue;
       }
 
@@ -2301,7 +2310,7 @@ function bindAppServerControlSettingsRendering(): void {
   window.addEventListener('midterm:agent-view-settings-changed', () => {
     for (const [sessionId, state] of viewStates) {
       state.renderDirty = true;
-      if (isAppServerControlViewVisible(sessionId, state)) {
+      if (isAppServerControlViewVisible(sessionId)) {
         renderCurrentAgentView(sessionId, { immediate: true });
       }
     }
@@ -2309,14 +2318,7 @@ function bindAppServerControlSettingsRendering(): void {
   appServerControlSettingsRenderBound = true;
 }
 
-function isAppServerControlViewVisible(
-  sessionId: string,
-  state: SessionAppServerControlViewState,
-): boolean {
-  if (state.debugScenarioActive) {
-    return true;
-  }
-
+function isAppServerControlViewVisible(sessionId: string): boolean {
   if (getActiveTab(sessionId) !== 'agent') {
     return false;
   }

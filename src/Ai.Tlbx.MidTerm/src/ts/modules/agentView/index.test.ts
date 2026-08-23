@@ -443,6 +443,22 @@ describe('agentView dev errors', () => {
     expect(panel.classList.add).toHaveBeenCalledWith('agent-view-panel');
   });
 
+  it('releases debug scenario history when another session becomes active', async () => {
+    const panel = createPanel();
+    getTabPanel.mockReturnValue(panel);
+
+    const { initAgentView, showAppServerControlDebugScenario } = await import('./index');
+    initAgentView();
+
+    expect(showAppServerControlDebugScenario('s1', 'massive')).toBe(true);
+    const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
+    expect(historyHost.childNodes.length).toBeGreaterThan(0);
+
+    setActiveAppServerControlSession('s2');
+
+    expect(historyHost.childNodes).toHaveLength(0);
+  });
+
   it('renders Codex AppServerControl as a full-width left layout', async () => {
     getAppServerControlHistoryWindow.mockResolvedValue(
       createSnapshot({
@@ -1922,7 +1938,7 @@ describe('agentView dev errors', () => {
     expect(disconnectStream).not.toHaveBeenCalled();
   });
 
-  it('releases hidden history DOM and collapses background history back to a latest window', async () => {
+  it('releases inactive-session history DOM and collapses background history to a latest window', async () => {
     const disconnectStream = vi.fn();
     openAppServerControlHistoryStream.mockReturnValue(disconnectStream);
     attachSessionAppServerControl.mockResolvedValue(undefined);
@@ -2059,11 +2075,7 @@ describe('agentView dev errors', () => {
     const activate = onTabActivated.mock.calls[0]?.[1] as
       | ((sessionId: string, panel: HTMLDivElement) => void)
       | undefined;
-    const deactivate = onTabDeactivated.mock.calls[0]?.[1] as
-      | ((sessionId: string) => void)
-      | undefined;
     expect(activate).toBeTypeOf('function');
-    expect(deactivate).toBeTypeOf('function');
 
     const panel = createPanel();
     activate?.('s1', panel);
@@ -2075,7 +2087,7 @@ describe('agentView dev errors', () => {
     const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
     historyHost.replaceChildren.mockClear();
 
-    deactivate?.('s1');
+    setActiveAppServerControlSession('s2');
 
     await vi.waitFor(() => {
       expect(getAppServerControlHistoryWindow.mock.calls).toContainEqual([
@@ -2672,6 +2684,8 @@ describe('agentView dev errors', () => {
     historyHost.replaceChildren.mockClear();
 
     setActiveAppServerControlSession('s2');
+    expect(historyHost.replaceChildren).toHaveBeenCalledTimes(1);
+    historyHost.replaceChildren.mockClear();
 
     const streamCallbacks = openAppServerControlHistoryStream.mock.calls[0]?.[5] as
       | { onPatch(delta: unknown): void }
