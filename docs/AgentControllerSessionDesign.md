@@ -207,7 +207,7 @@ The canonical history contract must satisfy the following:
 
 - Agent Controller Session must remain fully usable on mobile-sized viewports.
 - Mobile Agent Controller Session should preserve history hierarchy, composer usability, and request/approval handling without forcing pinch-zoom or horizontal history reading.
-- On touch-sized viewports, the progress navigator should expose at least a 44px touch target while keeping the visible track/thumb visually quiet; the hit target should not read as a separate glowing sidebar.
+- On touch-sized viewports, the progress navigator should expose at least a 44px touch target while keeping the visible track/thumb visually quiet; that hit target should overlay reserved right-side history padding instead of consuming a separate layout column, and it should not read as a glowing sidebar.
 - Responsive behavior must be designed, not treated as desktop shrinkage.
 
 ### 8. Internationalized tlbx UI copy
@@ -456,6 +456,7 @@ The canonical history contract must satisfy the following:
 - tlbx's dock chrome should stay relatively boxy: tighter corner radii, compact control heights, and restrained padding rather than oversized capsule pills.
 - Prompt-side utility buttons, automation chips, quick-setting pills, and status controls should all use restrained tonal surfaces instead of individual glow or shadow gimmicks.
 - On mobile, Agent Controller Session should keep model/effort/plan awareness always visible in the dock status rail and may reveal only those three editable controls from that status row. The expanded mobile sheet must stay keyboard-safe: one compact row of three buttons, not a multi-row settings form.
+- Mobile Agent Controller Session actions, composer controls, quick-setting controls, table sort/filter controls, and live-edge recovery must expose 44px-class touch targets without forcing horizontal page overflow.
 - When the mobile soft keyboard is open, Agent Controller Session should keep that compact status rail ahead of the composer so model/effort/plan awareness stays reachable without hiding the prompt.
 - When desktop width becomes constrained enough that the inline quick-settings rail would overflow, Agent Controller Session should fall back to that same summary-plus-sheet pattern instead of letting controls spill off screen.
 - Manager automation should occupy at most one dock row and one visual line, with overflow or truncation behavior instead of wrapping into a second toolbar band.
@@ -686,7 +687,7 @@ Status in this branch/work item:
 - implemented: Agent Controller Session history navigation now uses a dedicated progress navigator keyed directly to canonical item indexes instead of DOM height or a synthetic total-height scroll host
 - implemented: the separate progress navigator now keeps a visible thumb/track treatment even when accent variables or advanced color functions are unavailable, so the Agent Controller Session-owned scrollbar does not disappear into a transparent rail
 - implemented: the progress navigator now stays in layout as a stateful Agent Controller Session rail instead of relying on `hidden` attribute toggles for visibility, which prevents reused session shells from collapsing the navigator out of existence
-- implemented: touch-sized Agent Controller Session layouts now widen the progress navigator to a 44px-class hit target without adding a visible side slab, so direct scrubbing does not require precision taps
+- implemented: touch-sized Agent Controller Session layouts now overlay the 44px-class progress-navigator hit target on reserved right-side history padding instead of spending a separate content-width column, so direct scrubbing stays easy without narrowing the reading lane
 - implemented: the Agent Controller Session "Back to bottom" control now clears the reserved Command Bay footprint so mobile prompt chrome does not overlap that live-edge action
 - implemented: desktop and touch-sized Agent Controller Session progress navigation now use a thinner low-chrome rail with a darker thumb, preserving the 44px-class interaction target on touch-sized layouts without making the navigator visually dominant
 - implemented: the progress navigator thumb now top-clamps when the first canonical history item is top-aligned in the pane and bottom-clamps when the latest item is bottom-aligned, instead of always presenting the visible-range midpoint
