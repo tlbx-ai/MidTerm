@@ -172,6 +172,7 @@ let handleStateUpdate: typeof import('./stateChannel').handleStateUpdate;
 let reportBrowserActivity: typeof import('./stateChannel').reportBrowserActivity;
 let resetStateChannelRuntimeForTests: typeof import('./stateChannel').resetStateChannelRuntimeForTests;
 let setSelectSessionCallback: typeof import('./stateChannel').setSelectSessionCallback;
+let setInitialStateHydratedCallback: typeof import('./stateChannel').setInitialStateHydratedCallback;
 let setTerminalNotificationCallback: typeof import('./stateChannel').setTerminalNotificationCallback;
 const stateChannelModulePromise = import('./stateChannel');
 const stateModulePromise = import('../../state');
@@ -242,6 +243,7 @@ describe('stateChannel browser-ui handling', () => {
       reportBrowserActivity,
       resetStateChannelRuntimeForTests,
       setSelectSessionCallback,
+      setInitialStateHydratedCallback,
       setTerminalNotificationCallback,
     } = await stateChannelModulePromise);
   });
@@ -675,6 +677,58 @@ describe('stateChannel browser-ui handling', () => {
     expect(mocks.selectSession).toHaveBeenCalledWith('session-b', {
       closeSettingsPanel: false,
     });
+  });
+
+  it('prefers a running bookmarked process when no active session was remembered', async () => {
+    const { stores } = await loadHarness();
+    stores.$activeSessionId.set(null);
+
+    handleStateUpdate([
+      {
+        id: 'agent-session',
+        cols: 120,
+        rows: 30,
+        appServerControlOnly: true,
+        bookmarkId: null,
+        currentDirectory: 'Q:/repos/MidTerm',
+      } as any,
+      {
+        id: 'bookmarked-terminal',
+        cols: 120,
+        rows: 30,
+        appServerControlOnly: false,
+        bookmarkId: 'bookmark-1',
+        currentDirectory: 'Q:/repos/Jpa',
+      } as any,
+    ]);
+
+    expect(mocks.selectSession).toHaveBeenCalledWith('bookmarked-terminal', {
+      closeSettingsPanel: false,
+    });
+  });
+
+  it('announces initial state hydration only after session selection is synchronized', async () => {
+    const { stores } = await loadHarness();
+    stores.$activeSessionId.set(null);
+    const hydrated = vi.fn(() => {
+      expect(mocks.selectSession).toHaveBeenCalledWith('session-a', {
+        closeSettingsPanel: false,
+      });
+    });
+    setInitialStateHydratedCallback(hydrated);
+
+    handleStateUpdate([
+      {
+        id: 'session-a',
+        cols: 120,
+        rows: 30,
+        appServerControlOnly: false,
+        currentDirectory: 'Q:/repos/MidTerm',
+      } as any,
+    ]);
+    handleStateUpdate([]);
+
+    expect(hydrated).toHaveBeenCalledOnce();
   });
 
   it('applies server layout snapshots from state updates', async () => {

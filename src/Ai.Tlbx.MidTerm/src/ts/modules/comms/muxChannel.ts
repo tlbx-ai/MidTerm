@@ -181,6 +181,10 @@ interface ActiveSessionRecovery {
 }
 
 const replaySuppressedSessions = new Map<string, { quietUntilMs: number; hardUntilMs: number }>();
+const pendingBufferRefreshes = new Map<
+  string,
+  { mode: 'fullReplay' | 'quickResume'; recoveryCause: string }
+>();
 const browserTransportSnapshots = new Map<string, BrowserTransportSnapshot>();
 const activeSessionRecoveries = new Map<string, ActiveSessionRecovery>();
 const recoveryRequestsInFlight = new Set<string>();
@@ -555,6 +559,7 @@ export function forgetMuxSession(sessionId: string): void {
   discardSessionRecovery(sessionId);
   recoveryRequestsInFlight.delete(sessionId);
   recoveryFollowupCauses.delete(sessionId);
+  pendingBufferRefreshes.delete(sessionId);
   bracketedPasteState.delete(sessionId);
   clearBracketedPasteScanState(sessionId);
   sessionOutputGenerations.delete(sessionId);
@@ -1519,6 +1524,12 @@ export function connectMuxWebSocket(): void {
     sendVisibleSessionsHint(currentVisibleSessionIds);
     sendBackgroundSessionsHint(currentBackgroundSessionIds);
 
+    const queuedRefreshes = [...pendingBufferRefreshes.entries()];
+    pendingBufferRefreshes.clear();
+    queuedRefreshes.forEach(([sessionId, request]) => {
+      requestBufferRefresh(sessionId, request.mode, request.recoveryCause);
+    });
+
     // Flush any input buffered during disconnection
     flushPendingInput();
   };
@@ -1762,6 +1773,10 @@ export function requestBufferRefresh(
     return;
   }
 
+  if (queueBufferRefreshUntilMuxOpens(sessionId, mode, recoveryCause)) {
+    return;
+  }
+
   beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
   _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
   const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
@@ -1771,8 +1786,6 @@ export function requestBufferRefresh(
   }
   snapshot.lastReplayReason =
     mode === 'quickResume' ? 'quick_resume_tail_replay' : 'buffer_refresh_tail_replay';
-  if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
-
   recoveryRequestsInFlight.add(sessionId);
   snapshot.recoveryRequested += 1;
   snapshot.lastRecoveryCause = recoveryCause;
@@ -1790,6 +1803,23 @@ export function requestBufferRefresh(
     resumeSequence,
   );
   sendFrame(frame);
+}
+
+function queueBufferRefreshUntilMuxOpens(
+  sessionId: string,
+  mode: 'fullReplay' | 'quickResume',
+  recoveryCause: string,
+): boolean {
+  if (muxWs?.readyState === WebSocket.OPEN) {
+    return false;
+  }
+
+  const pending = pendingBufferRefreshes.get(sessionId);
+  pendingBufferRefreshes.set(sessionId, {
+    mode: pending?.mode === 'fullReplay' || mode === 'fullReplay' ? 'fullReplay' : 'quickResume',
+    recoveryCause: mode === 'fullReplay' || !pending ? recoveryCause : pending.recoveryCause,
+  });
+  return true;
 }
 
 function requestSessionRecovery(sessionId: string, cause: string): void {
@@ -2010,6 +2040,7 @@ export function resetMuxChannelRuntimeForTests(): void {
   pendingOutputFrames.clear();
   pendingTerminalReplayModes.clear();
   sessionsNeedingResync.clear();
+  pendingBufferRefreshes.clear();
   closeWebSocket(muxWs, setMuxWs);
 }
 

@@ -196,6 +196,8 @@ import {
 let layoutHydrated = false;
 let stateWsHasConnected = false;
 let lastUpdateInfoSignature = '';
+let initialStateHydrated = false;
+let handleInitialStateHydrated: (() => void) | null = null;
 
 // Pending dock instructions for sessions that haven't appeared in state yet
 interface PendingDock {
@@ -235,6 +237,13 @@ export function setTerminalNotificationCallback(
   callback: (sessionId: string, signal: TerminalNotificationSignal) => void,
 ): void {
   handleTerminalNotification = callback;
+}
+
+export function setInitialStateHydratedCallback(callback: (() => void) | null): void {
+  handleInitialStateHydrated = callback;
+  if (callback && initialStateHydrated) {
+    callback();
+  }
 }
 
 function handleTmuxDockMessage(data: TmuxDockMessage): void {
@@ -498,7 +507,11 @@ function syncActiveSessionSelection(): void {
       rememberedActiveId !== null
         ? sessionList.find((session) => session.id === rememberedActiveId)
         : undefined;
-    selectSession((rememberedSession ?? firstSession).id, { closeSettingsPanel: false });
+    const bookmarkedSession = sessionList.find((session) => !!session.bookmarkId?.trim());
+    const terminalSession = sessionList.find((session) => !session.appServerControlOnly);
+    selectSession((rememberedSession ?? bookmarkedSession ?? terminalSession ?? firstSession).id, {
+      closeSettingsPanel: false,
+    });
   }
 
   if (activeId && !sessionList.find((s) => s.id === activeId)) {
@@ -531,6 +544,10 @@ export function handleStateUpdate(
   if (sessionsChanged) {
     syncActiveSessionSelection();
     updateMobileTitle();
+  }
+  if (!initialStateHydrated) {
+    initialStateHydrated = true;
+    handleInitialStateHydrated?.();
   }
 }
 
@@ -1052,6 +1069,8 @@ export function resetStateChannelRuntimeForTests(): void {
   layoutHydrated = false;
   stateWsHasConnected = false;
   lastUpdateInfoSignature = '';
+  initialStateHydrated = false;
+  handleInitialStateHydrated = null;
   selectSession = () => {};
   handleTerminalNotification = () => {};
   lastReportedBrowserActivity = undefined;

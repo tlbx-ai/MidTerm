@@ -26,6 +26,7 @@ import {
   setSuppressHeatCallback,
   reportBrowserActivity,
 } from './modules/comms';
+import { connectInitialSessionTransports } from './modules/comms/initialMuxConnection';
 import { initBadges } from './modules/badges';
 import {
   preloadTerminalFont,
@@ -413,11 +414,13 @@ async function init(): Promise<void> {
   void fontPromise.then(() => initCalibrationTerminal());
 
   registerCallbacks();
+  initSessionTabs();
+  initAgentView();
+  initFileBrowser();
   getOrCreateClientId(); // Ensure mt-client-id cookie exists before WS upgrade
   await initializeTabIdentity();
   bindTerminalVisibilitySync();
-  connectStateWebSocket();
-  connectMuxWebSocket();
+  connectInitialSessionTransports();
   connectSettingsWebSocket();
 
   bindEvents();
@@ -438,9 +441,6 @@ async function init(): Promise<void> {
   initMobilePiP();
   initDevSoftKeyboardSimulator();
   initManagerBar();
-  initSessionTabs();
-  initAgentView();
-  initFileBrowser();
   initGitPanel();
   connectGitWebSocket();
   initCommandsPanel();

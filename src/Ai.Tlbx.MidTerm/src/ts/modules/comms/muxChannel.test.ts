@@ -576,6 +576,24 @@ describe('muxChannel', () => {
     expect(frame?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
   });
 
+  it('flushes a startup replay request that was made before the mux opened', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    harness.ws.readyState = MockWebSocket.CONNECTING;
+    harness.ws.send.mockClear();
+
+    requestBufferRefresh('sess1234', 'fullReplay', 'terminal_open_without_rendered_output');
+    expect(harness.ws.send).not.toHaveBeenCalled();
+
+    harness.ws.readyState = MockWebSocket.OPEN;
+    harness.ws.onopen?.(new Event('open'));
+
+    const bufferRequests = harness.ws.send.mock.calls
+      .map((call) => call[0] as Uint8Array)
+      .filter((frame) => frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST);
+    expect(bufferRequests).toHaveLength(1);
+    expect(harness.decodeSessionId(bufferRequests[0]!, 1)).toBe('sess1234');
+  });
+
   it('includes local replay rows in quick-resume buffer refresh requests', async () => {
     const harness = await loadHarness([0, 0, 0, 0]);
     attachFakeTerminal(harness.sessionTerminals, 'sess1234', 41);
