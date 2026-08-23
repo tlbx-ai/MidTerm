@@ -1170,12 +1170,21 @@ public sealed partial class SessionAppServerControlHistoryService
         state.CurrentTurn.TurnId = appServerControlEvent.TurnId;
         state.CurrentTurn.State = "running";
         state.CurrentTurn.StateLabel = "Running";
-        state.CurrentTurn.Model = appServerControlEvent.TurnStarted?.Model;
-        state.CurrentTurn.Effort = appServerControlEvent.TurnStarted?.Effort;
+        var model = AppServerControlQuickSettings.NormalizeOptionalValue(appServerControlEvent.TurnStarted?.Model);
+        var effort = AppServerControlQuickSettings.NormalizeOptionalValue(appServerControlEvent.TurnStarted?.Effort);
+        state.CurrentTurn.Model = model ?? state.QuickSettings.Model;
+        state.CurrentTurn.Effort = effort ?? state.QuickSettings.Effort;
         state.CurrentTurn.StartedAt = appServerControlEvent.CreatedAt;
         state.CurrentTurn.CompletedAt = null;
-        state.QuickSettings.Model = AppServerControlQuickSettings.NormalizeOptionalValue(appServerControlEvent.TurnStarted?.Model);
-        state.QuickSettings.Effort = AppServerControlQuickSettings.NormalizeOptionalValue(appServerControlEvent.TurnStarted?.Effort);
+        if (model is not null)
+        {
+            state.QuickSettings.Model = model;
+        }
+
+        if (effort is not null)
+        {
+            state.QuickSettings.Effort = effort;
+        }
     }
 
     private static void ApplyTurnCompleted(AppServerControlConversationState state, AppServerControlProviderEvent appServerControlEvent)
@@ -4060,7 +4069,6 @@ public sealed class SessionAppServerControlHistoryPatchSubscription : IDisposabl
         _state.Close();
     }
 }
-
 
 
 

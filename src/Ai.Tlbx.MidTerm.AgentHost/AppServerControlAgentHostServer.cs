@@ -307,7 +307,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             Provider = turnStarted.Provider,
             ThreadId = turnStarted.ThreadId,
             TurnId = turnStarted.TurnId,
-            ItemId = $"user:{turnStarted.TurnId ?? Guid.NewGuid().ToString("N")}",
+            ItemId = $"local-user:{turnStarted.TurnId ?? Guid.NewGuid().ToString("N")}",
             CreatedAt = DateTimeOffset.UtcNow,
             Type = "item.completed",
             Item = new AppServerControlProviderItemPayload
@@ -737,7 +737,6 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
     }
 }
-
 
 
 

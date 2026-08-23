@@ -17,6 +17,40 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
     private static SettingsService CreateSettingsService(string directory) => new(directory);
 
     [Fact]
+    public void ResolveConfiguredHostPath_UsesExplicitShadowBuildAndRejectsMissingPath()
+    {
+        var previous = Environment.GetEnvironmentVariable(
+            SessionAppServerControlHostRuntimeService.AgentHostPathEnvironmentVariable);
+        var root = Path.Combine(Path.GetTempPath(), "midterm-agenthost-override-tests", Guid.NewGuid().ToString("N"));
+        var hostPath = Path.Combine(root, "mtagenthost.dll");
+        Directory.CreateDirectory(root);
+        File.WriteAllText(hostPath, "shadow host");
+
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                SessionAppServerControlHostRuntimeService.AgentHostPathEnvironmentVariable,
+                hostPath);
+            Assert.Equal(
+                Path.GetFullPath(hostPath),
+                SessionAppServerControlHostRuntimeService.ResolveConfiguredHostPath());
+
+            Environment.SetEnvironmentVariable(
+                SessionAppServerControlHostRuntimeService.AgentHostPathEnvironmentVariable,
+                Path.Combine(root, "missing.dll"));
+            Assert.Throws<FileNotFoundException>(
+                SessionAppServerControlHostRuntimeService.ResolveConfiguredHostPath);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                SessionAppServerControlHostRuntimeService.AgentHostPathEnvironmentVariable,
+                previous);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ResolveDevHostDllPath_PrefersCurrentBuildConfiguration()
     {
         var repoRoot = Path.Combine(Path.GetTempPath(), "midterm-agenthost-resolver-tests", Guid.NewGuid().ToString("N"));
@@ -1040,4 +1074,3 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
         return found ? args[1] : null;
     }
 }
-

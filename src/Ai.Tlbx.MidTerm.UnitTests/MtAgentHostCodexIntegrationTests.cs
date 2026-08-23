@@ -13,7 +13,8 @@ public sealed class MtAgentHostCodexIntegrationTests
     {
         await using var fakeServer = FakeCodexWebSocketServer.Start(
             loadedThreadId: "thread-control-1",
-            assistantReply: "Controlled.");
+            assistantReply: "Controlled.",
+            turnCompletionDelayMs: 1_500);
         var hostDll = ResolveAgentHostDll();
         using var process = StartAgentHost(hostDll);
         var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
@@ -55,12 +56,46 @@ public sealed class MtAgentHostCodexIntegrationTests
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
+                CommandId = "cmd-turn-control",
+                SessionId = "session-control",
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest
+                {
+                    Text = "Keep this turn open briefly."
+                }
+            });
+            var turnResult = await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput,
+                pendingPatches,
+                "cmd-turn-control");
+            Assert.Equal("accepted", turnResult.Status);
+            var activeTurnId = Assert.IsType<string>(turnResult.Accepted?.TurnId);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-second-turn-control",
+                SessionId = "session-control",
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest
+                {
+                    Text = "This must not become implicit steering."
+                }
+            });
+            var secondTurnResult = await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput,
+                pendingPatches,
+                "cmd-second-turn-control");
+            Assert.Equal("rejected", secondTurnResult.Status);
+            Assert.Contains("turn.steer", secondTurnResult.Message, StringComparison.Ordinal);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
                 CommandId = "cmd-steer",
                 SessionId = "session-control",
                 Type = "turn.steer",
                 SteerTurn = new AppServerControlSteerRequest
                 {
-                    ExpectedTurnId = "turn-control-1",
+                    ExpectedTurnId = activeTurnId,
                     Text = "Append this instruction."
                 }
             });
@@ -69,7 +104,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                 pendingPatches,
                 "cmd-steer");
             Assert.Equal("accepted", steerResult.Status);
-            Assert.Equal("turn-control-1", steerResult.Accepted?.TurnId);
+            Assert.Equal(activeTurnId, steerResult.Accepted?.TurnId);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -198,6 +233,12 @@ public sealed class MtAgentHostCodexIntegrationTests
                 "session-1",
                 "completed");
             Assert.Contains(resolveWindow.Requests, entry => entry.RequestId == request.RequestId && entry.Decision == "accept");
+            var userItem = Assert.Single(resolveWindow.Items, item => item.ItemType == "user_message");
+            Assert.StartsWith("local-user:", userItem.ItemId, StringComparison.Ordinal);
+            Assert.Equal("completed", userItem.Status);
+            Assert.Contains(
+                resolveWindow.History,
+                entry => entry.Kind == "user" && entry.Status == "completed");
         }
         finally
         {

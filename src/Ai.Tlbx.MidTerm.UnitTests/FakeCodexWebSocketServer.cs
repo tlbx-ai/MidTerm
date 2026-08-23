@@ -27,7 +27,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         bool emitUnknownAgentNotification,
         bool emitBackgroundTerminalWaitNotification,
         bool emitMcpStartupStatus,
-        bool emitProtocolV2Surface)
+        bool emitProtocolV2Surface,
+        int turnCompletionDelayMs)
     {
         Endpoint = endpoint;
         LoadedThreadId = loadedThreadId;
@@ -40,6 +41,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         EmitBackgroundTerminalWaitNotification = emitBackgroundTerminalWaitNotification;
         EmitMcpStartupStatus = emitMcpStartupStatus;
         EmitProtocolV2Surface = emitProtocolV2Surface;
+        TurnCompletionDelayMs = turnCompletionDelayMs;
         _listener.Prefixes.Add(ToHttpPrefix(endpoint));
         _listener.Start();
         _acceptLoopTask = Task.Run(AcceptLoopAsync, _shutdown.Token);
@@ -67,6 +69,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public bool EmitProtocolV2Surface { get; }
 
+    public int TurnCompletionDelayMs { get; }
+
     public static FakeCodexWebSocketServer Start(
         string loadedThreadId,
         string assistantReply,
@@ -77,7 +81,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         bool emitUnknownAgentNotification = false,
         bool emitBackgroundTerminalWaitNotification = false,
         bool emitMcpStartupStatus = false,
-        bool emitProtocolV2Surface = false)
+        bool emitProtocolV2Surface = false,
+        int turnCompletionDelayMs = 0)
     {
         var endpoint = string.Create(CultureInfo.InvariantCulture, $"ws://127.0.0.1:{GetFreePort()}/");
         return new FakeCodexWebSocketServer(
@@ -91,7 +96,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
             emitUnknownAgentNotification,
             emitBackgroundTerminalWaitNotification,
             emitMcpStartupStatus,
-            emitProtocolV2Surface);
+            emitProtocolV2Surface,
+            turnCompletionDelayMs);
     }
 
     public async ValueTask DisposeAsync()
@@ -529,6 +535,11 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }, _shutdown.Token).ConfigureAwait(false);
                         }
+                        if (TurnCompletionDelayMs > 0)
+                        {
+                            await Task.Delay(TurnCompletionDelayMs, _shutdown.Token).ConfigureAwait(false);
+                        }
+
                         await SendJsonAsync(socket, new
                         {
                             method = "item/agentMessage/delta",

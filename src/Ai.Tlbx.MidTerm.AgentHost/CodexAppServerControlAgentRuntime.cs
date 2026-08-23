@@ -239,6 +239,12 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
     private async Task<HostCommandOutcome> StartTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
         EnsureAttached();
+        if (!string.IsNullOrWhiteSpace(_activeTurnId))
+        {
+            throw new InvalidOperationException(
+                "Codex already has an active turn. Use turn.steer to append input or interrupt the active turn first.");
+        }
+
         if (_pendingUserInputs.Count > 0)
         {
             throw new InvalidOperationException("Codex is waiting for structured user input. Resolve that request before starting another turn.");
@@ -803,7 +809,10 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                     _quickSettings.Model = model;
                 }
 
-                _quickSettings.Effort = effort;
+                if (effort is not null)
+                {
+                    _quickSettings.Effort = effort;
+                }
                 _emit(CreateQuickSettingsUpdatedEvent(
                     _quickSettings,
                     "codex.app-server.notification",

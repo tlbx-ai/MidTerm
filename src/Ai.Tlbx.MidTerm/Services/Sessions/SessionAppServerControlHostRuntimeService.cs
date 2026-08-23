@@ -19,6 +19,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 {
+    internal const string AgentHostPathEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_AGENTHOST_PATH";
     internal delegate bool RedirectedProcessLauncher(
         string fileName,
         IReadOnlyList<string> args,
@@ -1767,6 +1768,34 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
     private static bool TryResolveLaunch(string profile, string mode, string settingsDirectory, out HostLaunch launch)
     {
+        var configuredHostPath = ResolveConfiguredHostPath();
+        if (!string.IsNullOrWhiteSpace(configuredHostPath))
+        {
+            if (string.Equals(Path.GetExtension(configuredHostPath), ".dll", StringComparison.OrdinalIgnoreCase))
+            {
+                var dotnetHost = ResolveDotNetHostPath();
+                if (string.IsNullOrWhiteSpace(dotnetHost))
+                {
+                    launch = default;
+                    return false;
+                }
+
+                launch = new HostLaunch(
+                    dotnetHost,
+                    string.Equals(mode, SyntheticMode, StringComparison.Ordinal)
+                        ? [configuredHostPath, "--stdio", "--synthetic", profile]
+                        : [configuredHostPath, "--stdio"]);
+                return true;
+            }
+
+            launch = new HostLaunch(
+                configuredHostPath,
+                string.Equals(mode, SyntheticMode, StringComparison.Ordinal)
+                    ? ["--stdio", "--synthetic", profile]
+                    : ["--stdio"]);
+            return true;
+        }
+
         var baseDir = AppContext.BaseDirectory;
         var installedExecutable = ResolveInstalledHostExecutablePath(settingsDirectory, baseDir);
         if (!string.IsNullOrWhiteSpace(installedExecutable))
@@ -1780,6 +1809,25 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
 
         return TryResolveDevLaunch(profile, mode, baseDir, out launch);
+    }
+
+    internal static string? ResolveConfiguredHostPath()
+    {
+        var configured = Environment.GetEnvironmentVariable(AgentHostPathEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return null;
+        }
+
+        var resolved = Path.GetFullPath(configured.Trim());
+        if (!File.Exists(resolved))
+        {
+            throw new FileNotFoundException(
+                $"Configured mtagenthost path does not exist: {resolved}",
+                resolved);
+        }
+
+        return resolved;
     }
 
     private static IEnumerable<string> EnumerateInstalledHostExecutableCandidates(string baseDir, string settingsDirectory, string executableName)

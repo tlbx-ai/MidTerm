@@ -402,11 +402,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-30T08:00:01Z"),
             Type = "turn.started",
-            TurnStarted = new AppServerControlProviderTurnStartedPayload
-            {
-                Model = "gpt-5.4",
-                Effort = "high"
-            }
+            TurnStarted = new AppServerControlProviderTurnStartedPayload()
         });
 
         var snapshot = service.GetSnapshot("s-settings");
@@ -415,6 +411,8 @@ public sealed class SessionAppServerControlHistoryServiceTests
         Assert.NotNull(snapshot);
         Assert.Equal("gpt-5.4", snapshot!.QuickSettings.Model);
         Assert.Equal("high", snapshot.QuickSettings.Effort);
+        Assert.Equal("gpt-5.4", snapshot.CurrentTurn.Model);
+        Assert.Equal("high", snapshot.CurrentTurn.Effort);
         Assert.Equal("on", snapshot.QuickSettings.PlanMode);
         Assert.Equal("auto", snapshot.QuickSettings.PermissionMode);
         Assert.Contains(
@@ -2302,7 +2300,6 @@ public sealed class SessionAppServerControlHistoryServiceTests
 
     private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
 }
-
 
 
 

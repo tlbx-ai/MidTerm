@@ -104,6 +104,7 @@ Naming rule:
 - `mtagenthost` must own the canonical in-memory Agent Controller Session history for a session. `mt` should broker access to that history, not build and own a second competing canonical reducer.
 - Agent Controller Sessions must be immune to `mt` restarts. Restarting or replacing `mt` must not destroy, reset, or orphan canonical state for an attached supported provider runtime.
 - All canonical Agent Controller Session state needed for recovery after an `mt` restart must live in the owning `mtagenthost` instance for that Agent Controller Session.
+- The source development loop must exercise that restart boundary instead of hiding it: C# rebuilds replace only the source `mt` process, preserve its existing `mthost` and `mtagenthost` children, and launch newly created Agent Controller Sessions from a fresh shadow-built `mtagenthost` generation so Windows file locks cannot block the next build.
 - The intended runtime cardinality is one dedicated `mtagenthost` process per explicit Agent Controller Session.
 - Canonical Agent Controller Session history must be optimized for human consumption. Transport noise, fluff, superseded chatter, and non-view-affecting provider detail should be discarded as early as possible to save memory.
 - If `mtagenthost` attach fails, Agent Controller Session should surface that failure and remain unattached rather than switching to a second provider ingestion path with different behavior.
@@ -132,6 +133,7 @@ The canonical history contract must satisfy the following:
 - canonical history should include special interactive item types when the agent expects dedicated UI treatment rather than plain text rendering
 - one required draft interactive type is an `interview` item where the agent emits a list of questions and the frontend renders a dedicated response widget
 - canonical recovery after an `mt` restart must come from `mtagenthost` state, not from rebuilding browser-visible history inside a fresh `mt` process from partial browser caches
+- a submitted user item may be synthesized locally for immediate feedback, but its stable identity must use the `local-user:<turn-id>` namespace so the provider-backed completion can reconcile that same item instead of appending a duplicate or leaving it in progress
 
 ## Core Principles
 
@@ -219,6 +221,8 @@ The canonical history contract must satisfy the following:
 - The UI must not depend on a final assistant message before showing useful user feedback.
 - Streaming state should feel low-latency and in-place instead of replacing one row with a later unrelated row.
 - Agent Controller Session should keep canonical live state current on every patch, but the expensive browser-side timeline paint path should explicitly coalesce fast live patch bursts to a bounded cadence of roughly 4 fps so long assistant output does not trigger a full markdown rerender on every incoming delta.
+- Starting a new turn while the provider already has an active turn must be rejected explicitly. Appending instructions to the active turn is a distinct `turn.steer` operation; callers must not depend on provider-specific implicit steering behavior.
+- Provider `turn.started` notifications may omit model or effort. Missing values must preserve the established quick settings and seed the current-turn display from those settings rather than clearing operator-visible state.
 
 ### 10. Scroll-follow discipline
 
