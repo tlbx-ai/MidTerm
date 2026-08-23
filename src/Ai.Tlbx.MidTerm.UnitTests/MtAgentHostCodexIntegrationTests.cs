@@ -437,6 +437,87 @@ public sealed class MtAgentHostCodexIntegrationTests
     }
 
     [Fact]
+    public async Task MtAgentHost_SendsSelectedCodexModelAndAuthoritativeRuntimeContextPerTurn()
+    {
+        var originalDefaultModel = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL");
+        Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL", "gpt-5.5");
+
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-model-selection",
+                SessionId = "session-model-selection",
+                Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = "session-model-selection",
+                    Provider = "codex",
+                    WorkingDirectory = fakeCodex.Root
+                }
+            });
+            Assert.Equal(
+                "accepted",
+                (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput,
+                    pendingPatches,
+                    "cmd-attach-model-selection")).Status);
+            _ = await WaitForReadyWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                "session-model-selection");
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-model-selection",
+                SessionId = "session-model-selection",
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest
+                {
+                    Text = "Which model is active?",
+                    Model = "gpt-5.6-sol",
+                    Effort = "medium"
+                }
+            });
+            Assert.Equal(
+                "accepted",
+                (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput,
+                    pendingPatches,
+                    "cmd-turn-model-selection")).Status);
+
+            var capture = await WaitForFakeCodexLaunchCaptureAsync(
+                fakeCodex.CapturePath,
+                static launch => !string.IsNullOrWhiteSpace(launch.TurnStartRuntimeContextValue));
+
+            Assert.Equal("gpt-5.6-sol", capture.TurnStartModel);
+            Assert.Equal("medium", capture.TurnStartEffort);
+            Assert.Equal("application", capture.TurnStartRuntimeContextKind);
+            Assert.Contains("\"selectedModel\":\"gpt-5.6-sol\"", capture.TurnStartRuntimeContextValue, StringComparison.Ordinal);
+            Assert.Contains("\"selectedReasoningEffort\":\"medium\"", capture.TurnStartRuntimeContextValue, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"selectedModel\":\"gpt-5.5\"", capture.TurnStartRuntimeContextValue, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL", originalDefaultModel);
+        }
+    }
+
+    [Fact]
     public async Task MtAgentHost_AllowsExplicitRemoteCompactionFeatureDisable()
     {
         var originalYoloDefault = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT");
@@ -1666,5 +1747,13 @@ public sealed class MtAgentHostCodexIntegrationTests
         public bool? ThreadStartExperimentalRawEvents { get; set; }
 
         public bool? ThreadStartPersistExtendedHistory { get; set; }
+
+        public string? TurnStartModel { get; set; }
+
+        public string? TurnStartEffort { get; set; }
+
+        public string? TurnStartRuntimeContextKind { get; set; }
+
+        public string? TurnStartRuntimeContextValue { get; set; }
     }
 }

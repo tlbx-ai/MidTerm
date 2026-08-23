@@ -175,6 +175,21 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 case "turn/start":
                 {
                     RecordMethod(launchCapture, method);
+                    if (root.TryGetProperty("params", out var turnStartParams))
+                    {
+                        launchCapture.TurnStartModel = GetString(turnStartParams, "model");
+                        launchCapture.TurnStartEffort = GetString(turnStartParams, "effort");
+                        launchCapture.TurnStartRuntimeContextKind = GetString(
+                            turnStartParams,
+                            "additionalContext",
+                            "tlbx.agent-controller.runtime",
+                            "kind");
+                        launchCapture.TurnStartRuntimeContextValue = GetString(
+                            turnStartParams,
+                            "additionalContext",
+                            "tlbx.agent-controller.runtime",
+                            "value");
+                    }
                     PersistLaunchCapture(capturePath, launchCapture);
                     var (imageCount, hasFileRef, textValue) = GetInputStats(root);
                     lastAssistant = $"Fake Codex reply. images={imageCount.ToString(CultureInfo.InvariantCulture)} fileRefs={hasFileRef.ToString().ToLowerInvariant()} text={textValue}";
@@ -647,6 +662,14 @@ internal sealed class FakeCodexLaunchCapture
     public bool? ThreadStartExperimentalRawEvents { get; set; }
 
     public bool? ThreadStartPersistExtendedHistory { get; set; }
+
+    public string? TurnStartModel { get; set; }
+
+    public string? TurnStartEffort { get; set; }
+
+    public string? TurnStartRuntimeContextKind { get; set; }
+
+    public string? TurnStartRuntimeContextValue { get; set; }
 
     public string? ThreadResumeCwd { get; set; }
 

@@ -239,7 +239,7 @@ Agent Controller Session quick settings are a separate settings surface shown on
 
 | Control | Backing key / source | Persistence | Applies | What it does |
 | --- | --- | --- | --- | --- |
-| Model | session draft plus `codexDefaultAppServerControlModel` / `claudeDefaultAppServerControlModel` | provider-sticky plus `settings.json` for remembered default model | Next turn | Chooses the model sent with the next Agent Controller Session turn. The dropdown is provider-specific and includes presets plus current custom values. Changing it also updates the stored default model for that provider. |
+| Model | session draft plus `codexDefaultAppServerControlModel` / `claudeDefaultAppServerControlModel` | provider-sticky plus `settings.json` for remembered default model | Next turn | Chooses the model sent with the next Agent Controller Session turn. For Codex, tlbx also supplies this exact turn selection as trusted runtime context so the agent does not confuse it with a global default. The dropdown is provider-specific and includes presets plus current custom values. Changing it also updates the stored default model for that provider. |
 | Effort | session draft | provider-sticky in `localStorage` | Next turn | Chooses the next-turn reasoning effort (`Default`, `Low`, `Medium`, `High`). |
 | Plan | session draft | provider-sticky in `localStorage` | Next turn | Chooses whether the next Agent Controller Session turn starts with plan mode off or on. |
 | Permissions | session draft | provider-sticky in `localStorage` | Next turn | Chooses `Manual` vs `Auto` approval mode for the next Agent Controller Session turn. Defaults are seeded from `codexYoloDefault` or `claudeDangerouslySkipPermissionsDefault`. |

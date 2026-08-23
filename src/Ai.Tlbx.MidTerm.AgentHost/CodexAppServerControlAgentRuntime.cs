@@ -14,6 +14,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
     private const int MaxInlineImageBytes = 10 * 1024 * 1024;
     private const int CodexStderrBlockFlushDelayMs = 175;
     private const string CodexRemoteCompactionDisabledEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED";
+    private const string TlbxRuntimeContextKey = "tlbx.agent-controller.runtime";
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly HashSet<string> SupportedApprovalDecisions = new(StringComparer.Ordinal)
     {
@@ -2537,7 +2538,54 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                 writer.WriteString("effort", effort);
             }
 
+            WriteCodexRuntimeContext(writer, model, effort);
+
             writer.WriteEndObject();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static void WriteCodexRuntimeContext(Utf8JsonWriter writer, string? model, string? effort)
+    {
+        var selectedModel = AppServerControlQuickSettings.NormalizeOptionalValue(model);
+        var selectedEffort = AppServerControlQuickSettings.NormalizeOptionalValue(effort);
+        if (selectedModel is null && selectedEffort is null)
+        {
+            return;
+        }
+
+        writer.WritePropertyName("additionalContext");
+        writer.WriteStartObject();
+        writer.WritePropertyName(TlbxRuntimeContextKey);
+        writer.WriteStartObject();
+        writer.WriteString("kind", "application");
+        writer.WriteString(
+            "value",
+            BuildCodexRuntimeContextValue(selectedModel, selectedEffort));
+        writer.WriteEndObject();
+        writer.WriteEndObject();
+    }
+
+    private static string BuildCodexRuntimeContextValue(string? model, string? effort)
+    {
+        return BuildJsonString(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("source", "tlbx-agent-controller");
+            writer.WriteString("authority", "current-turn-selection");
+            if (model is not null)
+            {
+                writer.WriteString("selectedModel", model);
+            }
+
+            if (effort is not null)
+            {
+                writer.WriteString("selectedReasoningEffort", effort);
+            }
+
+            writer.WriteString(
+                "guidance",
+                "When asked about the active model or effort, use this turn selection instead of process arguments, environment defaults, or global tlbx settings.");
             writer.WriteEndObject();
         });
     }

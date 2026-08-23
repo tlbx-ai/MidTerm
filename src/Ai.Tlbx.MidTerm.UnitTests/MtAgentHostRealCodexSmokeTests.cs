@@ -28,6 +28,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
         using var process = StartAgentHost(hostDll);
         var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
         var marker = "MIDTERM_REAL_CODEX_SMOKE_" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        const string selectedModel = "gpt-5.6-sol";
 
         try
         {
@@ -64,7 +65,9 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 Type = "turn.start",
                 StartTurn = new AppServerControlTurnRequest
                 {
-                    Text = $"Reply with exactly {marker} and nothing else.",
+                    Text = $"Reply with exactly {marker}:<selected-model> and nothing else. Replace <selected-model> with the model selected for this turn in the authoritative tlbx runtime context.",
+                    Model = selectedModel,
+                    Effort = "low",
                     Attachments = []
                 }
             });
@@ -79,7 +82,11 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 pendingPatches,
                 "session-real-codex",
                 "completed");
-            Assert.Contains(marker, AppServerControlHostTestClient.CollectAssistantText(turnWindow), StringComparison.Ordinal);
+            Assert.Equal(selectedModel, turnWindow.CurrentTurn.Model);
+            Assert.Contains(
+                $"{marker}:{selectedModel}",
+                AppServerControlHostTestClient.CollectAssistantText(turnWindow),
+                StringComparison.OrdinalIgnoreCase);
             Assert.True(
                 turnWindow.History.Any(item => item.Streaming || item.ItemType is not null),
                 "Expected canonical history items in the completed real Codex turn.");
