@@ -634,6 +634,119 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
+        app.MapGet("/api/sessions/{id}/agent-control/history", async (
+            string id,
+            int? startIndex = null,
+            int? count = null,
+            int? viewportWidth = null,
+            CancellationToken ct = default) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var session = GetSessionListDto(sessionManager, sessionSupervisor, appServerControlRuntime)
+                .Sessions.First(item => item.Id == id);
+
+            if (!appServerControlRuntime.IsAttached(id)
+                && !await appServerControlRuntime.EnsureAttachedAsync(id, session, ct: ct).ConfigureAwait(false)
+                && !appServerControlRuntime.HasHistory(id))
+            {
+                return Results.Conflict("Agent Controller runtime is not available for this session.");
+            }
+
+            var history = await appServerControlRuntime.GetHistoryWindowAsync(
+                id,
+                startIndex,
+                count,
+                viewportWidth,
+                ct).ConfigureAwait(false);
+            return history is null
+                ? Results.NotFound()
+                : Results.Json(history, AppJsonContext.Default.AppServerControlHistoryWindowResponse);
+        });
+
+        app.MapPost("/api/sessions/{id}/agent-control/turn", async (
+            string id,
+            AppServerControlTurnRequest request,
+            CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var session = GetSessionListDto(sessionManager, sessionSupervisor, appServerControlRuntime)
+                .Sessions.First(item => item.Id == id);
+
+            if (!appServerControlRuntime.IsAttached(id)
+                && !await appServerControlRuntime.EnsureAttachedAsync(id, session, ct: ct).ConfigureAwait(false))
+            {
+                return Results.Conflict("Agent Controller runtime is not available for this session.");
+            }
+
+            var response = await appServerControlRuntime.StartTurnAsync(id, request, ct).ConfigureAwait(false);
+            RecordPromptHistory(id, request, InputHistorySources.SessionPrompt, InputHistorySurfaces.AgentControl);
+            return Results.Json(response, AppJsonContext.Default.AppServerControlTurnStartResponse);
+        });
+
+        app.MapPost("/api/sessions/{id}/agent-control/interrupt", async (
+            string id,
+            AppServerControlInterruptRequest request,
+            CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (!appServerControlRuntime.IsAttached(id))
+            {
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            }
+
+            var response = await appServerControlRuntime.InterruptTurnAsync(id, request, ct).ConfigureAwait(false);
+            return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+        });
+
+        app.MapPost("/api/sessions/{id}/agent-control/steer", async (
+            string id,
+            AppServerControlSteerRequest request,
+            CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (!appServerControlRuntime.IsAttached(id))
+            {
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            }
+
+            var response = await appServerControlRuntime.SteerTurnAsync(id, request, ct).ConfigureAwait(false);
+            return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+        });
+
+        app.MapPost("/api/sessions/{id}/agent-control/compact", async (
+            string id,
+            CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (!appServerControlRuntime.IsAttached(id))
+            {
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            }
+
+            var response = await appServerControlRuntime.CompactThreadAsync(id, ct).ConfigureAwait(false);
+            return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+        });
+
         app.MapGet("/api/sessions/{id}/buffer/text", async (string id, bool includeBase64 = false, CancellationToken ct = default) =>
         {
             if (sessionManager.GetSession(id) is null)

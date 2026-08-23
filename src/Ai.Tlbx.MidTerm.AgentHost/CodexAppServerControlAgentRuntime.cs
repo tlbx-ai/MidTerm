@@ -117,7 +117,9 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             {
                 "runtime.attach" => await AttachAsync(command, ct).ConfigureAwait(false),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
+                "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
+                "thread.compact" => await CompactThreadAsync(command, ct).ConfigureAwait(false),
                 "thread.goal.set" => await SetGoalAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolveRequestAsync(command, ct).ConfigureAwait(false),
                 "user-input.resolve" => await ResolveUserInputAsync(command, ct).ConfigureAwait(false),
@@ -333,6 +335,55 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                 Status = "accepted",
                 TurnId = turnId
             });
+    }
+
+    private async Task<HostCommandOutcome> SteerTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    {
+        EnsureAttached();
+        var request = command.SteerTurn ?? throw new InvalidOperationException("turn.steer payload is required.");
+        var turnId = string.IsNullOrWhiteSpace(request.ExpectedTurnId) ? _activeTurnId : request.ExpectedTurnId;
+        if (string.IsNullOrWhiteSpace(turnId))
+        {
+            throw new InvalidOperationException("Codex does not have an active turn to steer.");
+        }
+
+        var input = await CreateCodexTurnInputAsync(
+            new AppServerControlTurnRequest
+            {
+                Text = request.Text,
+                Attachments = request.Attachments
+            },
+            AppServerControlQuickSettings.PlanModeOff,
+            ct).ConfigureAwait(false);
+        if (input.Count == 0)
+        {
+            throw new InvalidOperationException("Agent Controller steer input must include text or attachments.");
+        }
+
+        var result = await SendCodexRequestAsync(
+            "turn/steer",
+            id => BuildCodexTurnSteerRequest(id, _providerThreadId!, turnId, input),
+            ct).ConfigureAwait(false);
+        var acceptedTurnId = GetString(result, "turnId") ?? turnId;
+        return Accepted(
+            command.CommandId,
+            command.SessionId,
+            accepted: new AppServerControlCommandAcceptedResponse
+            {
+                SessionId = command.SessionId,
+                Status = "accepted",
+                TurnId = acceptedTurnId
+            });
+    }
+
+    private async Task<HostCommandOutcome> CompactThreadAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    {
+        EnsureAttached();
+        await SendCodexRequestAsync(
+            "thread/compact/start",
+            id => BuildCodexThreadCompactRequest(id, _providerThreadId!),
+            ct).ConfigureAwait(false);
+        return Accepted(command.CommandId, command.SessionId);
     }
 
     private async Task<HostCommandOutcome> SetGoalAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -741,12 +792,32 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                 break;
             }
 
+            case "thread/settings/updated":
+            {
+                var model = AppServerControlQuickSettings.NormalizeOptionalValue(
+                    GetString(payload, "threadSettings", "model"));
+                var effort = AppServerControlQuickSettings.NormalizeOptionalValue(
+                    GetString(payload, "threadSettings", "effort"));
+                if (model is not null)
+                {
+                    _quickSettings.Model = model;
+                }
+
+                _quickSettings.Effort = effort;
+                _emit(CreateQuickSettingsUpdatedEvent(
+                    _quickSettings,
+                    "codex.app-server.notification",
+                    method,
+                    payload));
+                break;
+            }
+
             case "thread/tokenUsage/updated":
             {
                 var detail = BuildCodexTokenUsageDetail(payload);
                 _emit(CreateEvent("thread.token-usage.updated", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
-                    appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
+                    appServerControlEvent.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
                     {
                         Message = "Codex context window updated.",
                         Detail = detail
@@ -1353,7 +1424,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             {
                 _emit(CreateEvent("account.updated", null, null, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
-                    appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
+                    appServerControlEvent.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
                     {
                         Message = "Codex account details updated.",
                         Detail = BuildCompactJsonDetail(payload)
@@ -1366,7 +1437,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             {
                 _emit(CreateEvent("account.rate-limits.updated", null, null, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
-                    appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
+                    appServerControlEvent.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
                     {
                         Message = "Codex rate limits updated.",
                         Detail = BuildCompactJsonDetail(payload)
@@ -1408,11 +1479,19 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                     payload,
                     appServerControlEvent =>
                     {
-                        appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
+                        var startupMessage = new AppServerControlProviderRuntimeMessagePayload
                         {
                             Message = BuildCodexMcpStartupStatusMessage(serverName, status, error),
                             Detail = hasError ? error : null
                         };
+                        if (hasError)
+                        {
+                            appServerControlEvent.RuntimeMessage = startupMessage;
+                        }
+                        else
+                        {
+                            appServerControlEvent.RuntimeNoticeOnly = startupMessage;
+                        }
                     }));
                 break;
             }
@@ -2412,6 +2491,65 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             writer.WriteStartObject();
             writer.WriteString("threadId", threadId);
             writer.WriteString("turnId", turnId);
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static string BuildCodexTurnSteerRequest(
+        string id,
+        string threadId,
+        string expectedTurnId,
+        IReadOnlyList<CodexTurnInputEntry> input)
+    {
+        return BuildJsonString(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("jsonrpc", "2.0");
+            writer.WriteString("id", id);
+            writer.WriteString("method", "turn/steer");
+            writer.WritePropertyName("params");
+            writer.WriteStartObject();
+            writer.WriteString("threadId", threadId);
+            writer.WriteString("expectedTurnId", expectedTurnId);
+            writer.WritePropertyName("input");
+            writer.WriteStartArray();
+            foreach (var entry in input)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("type", entry.Type);
+                if (string.Equals(entry.Type, "image", StringComparison.Ordinal))
+                {
+                    writer.WriteString("url", entry.Url);
+                }
+                else
+                {
+                    writer.WriteString("text", entry.Text);
+                    writer.WritePropertyName("text_elements");
+                    writer.WriteStartArray();
+                    writer.WriteEndArray();
+                }
+
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static string BuildCodexThreadCompactRequest(string id, string threadId)
+    {
+        return BuildJsonString(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("jsonrpc", "2.0");
+            writer.WriteString("id", id);
+            writer.WriteString("method", "thread/compact/start");
+            writer.WritePropertyName("params");
+            writer.WriteStartObject();
+            writer.WriteString("threadId", threadId);
             writer.WriteEndObject();
             writer.WriteEndObject();
         });

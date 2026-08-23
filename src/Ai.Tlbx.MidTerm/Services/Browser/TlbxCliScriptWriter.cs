@@ -923,6 +923,56 @@ public static class TlbxCliScriptWriter
           body+='}'
           _MJ -d "$body" "$_MT/api/workers/bootstrap"
         }
+        # mt_acp_new NAME CWD [PROFILE]  — create a native Agent Controller session
+        mt_acp_new() {
+          [ $# -ge 2 ] || { echo "Usage: mt_acp_new NAME CWD [PROFILE]" >&2; return 1; }
+          local name="$1" cwd="$2" profile="${3:-codex}"
+          local body="{\"name\":\"$(_MJE "$name")\",\"workingDirectory\":\"$(_MJE "$cwd")\",\"profile\":\"$(_MJE "$profile")\",\"agentControlled\":true,\"injectGuidance\":true,\"appServerControlOnly\":true}"
+          _MJ -d "$body" "$_MT/api/workers/bootstrap"
+        }
+        # mt_acp_history [SESSION_ID] [START_INDEX] [COUNT] [VIEWPORT_WIDTH]
+        mt_acp_history() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then sid="$1"; shift; else sid="$(_MSID)"; fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          local start="${1:-}" count="${2:-}" width="${3:-}"
+          local query="?"
+          [ -n "$start" ] && query+="startIndex=$start&"
+          [ -n "$count" ] && query+="count=$count&"
+          [ -n "$width" ] && query+="viewportWidth=$width&"
+          _MC "$_MT/api/sessions/$sid/agent-control/history$query"
+        }
+        # mt_acp_turn [SESSION_ID] TEXT  — submit a structured turn; configure with MT_ACP_MODEL/EFFORT/PLAN_MODE/PERMISSION_MODE
+        mt_acp_turn() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then sid="$1"; shift; else sid="$(_MSID)"; fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -gt 0 ] || { echo "Text required." >&2; return 1; }
+          local body="{\"text\":\"$(_MJE "$*")\",\"model\":\"$(_MJE "${MT_ACP_MODEL:-}")\",\"effort\":\"$(_MJE "${MT_ACP_EFFORT:-}")\",\"planMode\":\"$(_MJE "${MT_ACP_PLAN_MODE:-}")\",\"permissionMode\":\"$(_MJE "${MT_ACP_PERMISSION_MODE:-}")\"}"
+          _MJ -d "$body" "$_MT/api/sessions/$sid/agent-control/turn"
+        }
+        # mt_acp_interrupt [SESSION_ID] [TURN_ID]
+        mt_acp_interrupt() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then sid="$1"; shift; else sid="$(_MSID)"; fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MJ -d "{\"turnId\":\"$(_MJE "${1:-}")\"}" "$_MT/api/sessions/$sid/agent-control/interrupt"
+        }
+        # mt_acp_steer [SESSION_ID] EXPECTED_TURN_ID TEXT
+        mt_acp_steer() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then sid="$1"; shift; else sid="$(_MSID)"; fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -ge 2 ] || { echo "Expected turn id and text required." >&2; return 1; }
+          local turn_id="$1"; shift
+          _MJ -d "{\"expectedTurnId\":\"$(_MJE "$turn_id")\",\"text\":\"$(_MJE "$*")\"}" "$_MT/api/sessions/$sid/agent-control/steer"
+        }
+        # mt_acp_compact [SESSION_ID]
+        mt_acp_compact() {
+          local sid="${1:-$(_MSID)}"
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MJ -d '{}' "$_MT/api/sessions/$sid/agent-control/compact"
+        }
         # mt_new_session [SHELL] [CWD]  — create a new terminal session, returns JSON with session id
         mt_new_session() {
           local shell="${1:-}" cwd="${2:-}"
@@ -2014,6 +2064,73 @@ public static class TlbxCliScriptWriter
                 slashCommands = $SlashCommands
             }) "$script:_MT/api/workers/bootstrap"
         }
+        # Mt-AcpNew -Name NAME -Cwd PATH [-Profile PROFILE]  — create a native Agent Controller session
+        function Mt-AcpNew {
+            param(
+                [Parameter(Mandatory=$true)][string]$Name,
+                [Parameter(Mandatory=$true)][string]$Cwd,
+                [string]$Profile = "codex"
+            )
+            _MJ -d (_MH @{
+                name = $Name
+                workingDirectory = $Cwd
+                profile = $Profile
+                agentControlled = $true
+                injectGuidance = $true
+                appServerControlOnly = $true
+            }) "$script:_MT/api/workers/bootstrap"
+        }
+        # Mt-AcpHistory [-SessionId ID] [-StartIndex N] [-Count N] [-ViewportWidth N]
+        function Mt-AcpHistory {
+            param([string]$SessionId, [int]$StartIndex = -1, [int]$Count = -1, [int]$ViewportWidth = -1)
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            $query = [System.Web.HttpUtility]::ParseQueryString('')
+            if ($StartIndex -ge 0) { $query['startIndex'] = $StartIndex }
+            if ($Count -gt 0) { $query['count'] = $Count }
+            if ($ViewportWidth -gt 0) { $query['viewportWidth'] = $ViewportWidth }
+            $suffix = if ($query.Count -gt 0) { "?$($query.ToString())" } else { '' }
+            _MC "$script:_MT/api/sessions/$SessionId/agent-control/history$suffix"
+        }
+        # Mt-AcpTurn TEXT [-SessionId ID] [-Model MODEL] [-Effort LEVEL] [-PlanMode MODE] [-PermissionMode MODE]
+        function Mt-AcpTurn {
+            param(
+                [Parameter(Mandatory=$true, Position=0)][string]$Text,
+                [string]$SessionId,
+                [string]$Model = $env:MT_ACP_MODEL,
+                [string]$Effort = $env:MT_ACP_EFFORT,
+                [string]$PlanMode = $env:MT_ACP_PLAN_MODE,
+                [string]$PermissionMode = $env:MT_ACP_PERMISSION_MODE
+            )
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            _MJ -d (_MH @{ text=$Text; model=$Model; effort=$Effort; planMode=$PlanMode; permissionMode=$PermissionMode }) "$script:_MT/api/sessions/$SessionId/agent-control/turn"
+        }
+        # Mt-AcpInterrupt [-SessionId ID] [-TurnId ID]
+        function Mt-AcpInterrupt {
+            param([string]$SessionId, [string]$TurnId)
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            _MJ -d (_MH @{ turnId=$TurnId }) "$script:_MT/api/sessions/$SessionId/agent-control/interrupt"
+        }
+        # Mt-AcpSteer -ExpectedTurnId ID -Text TEXT [-SessionId ID]
+        function Mt-AcpSteer {
+            param(
+                [Parameter(Mandatory=$true)][string]$ExpectedTurnId,
+                [Parameter(Mandatory=$true)][string]$Text,
+                [string]$SessionId
+            )
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            _MJ -d (_MH @{ expectedTurnId=$ExpectedTurnId; text=$Text }) "$script:_MT/api/sessions/$SessionId/agent-control/steer"
+        }
+        # Mt-AcpCompact [-SessionId ID]
+        function Mt-AcpCompact {
+            param([string]$SessionId)
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            _MJ -d '{}' "$script:_MT/api/sessions/$SessionId/agent-control/compact"
+        }
         # Mt-NewSession [-Shell SHELL] [-Cwd PATH]  — create a new terminal session
         function Mt-NewSession {
             param([string]$Shell, [string]$Cwd)
@@ -2136,6 +2253,12 @@ public static class TlbxCliScriptWriter
         Set-Alias -Name mt_input_history_delete -Value Mt-InputHistoryDelete
         Set-Alias -Name mt_input_history_clear -Value Mt-InputHistoryClear
         Set-Alias -Name mt_bootstrap -Value Mt-Bootstrap
+        Set-Alias -Name mt_acp_new -Value Mt-AcpNew
+        Set-Alias -Name mt_acp_history -Value Mt-AcpHistory
+        Set-Alias -Name mt_acp_turn -Value Mt-AcpTurn
+        Set-Alias -Name mt_acp_interrupt -Value Mt-AcpInterrupt
+        Set-Alias -Name mt_acp_steer -Value Mt-AcpSteer
+        Set-Alias -Name mt_acp_compact -Value Mt-AcpCompact
         Set-Alias -Name mt_new_session -Value Mt-NewSession
         Set-Alias -Name mt_split -Value Mt-Split
         Set-Alias -Name mt_detach -Value Mt-Detach

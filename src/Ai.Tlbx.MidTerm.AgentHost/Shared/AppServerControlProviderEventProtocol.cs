@@ -31,6 +31,7 @@ public sealed class AppServerControlProviderEvent
     public AppServerControlProviderUserInputRequestedPayload? UserInputRequested { get; set; }
     public AppServerControlProviderUserInputResolvedPayload? UserInputResolved { get; set; }
     public AppServerControlProviderRuntimeMessagePayload? RuntimeMessage { get; set; }
+    public AppServerControlProviderRuntimeMessagePayload? RuntimeNoticeOnly { get; set; }
 }
 
 public sealed class AppServerControlProviderEventRaw

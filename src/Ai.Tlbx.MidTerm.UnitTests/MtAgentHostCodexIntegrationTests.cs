@@ -9,6 +9,94 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MtAgentHostCodexIntegrationTests
 {
     [Fact]
+    public async Task MtAgentHost_CanSteerAndCompactFakeCodexThread()
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start(
+            loadedThreadId: "thread-control-1",
+            assistantReply: "Controlled.");
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+
+        try
+        {
+            var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Contains("turn.steer", hello.Capabilities);
+            Assert.Contains("thread.compact", hello.Capabilities);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-control",
+                SessionId = "session-control",
+                Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = "session-control",
+                    Provider = "codex",
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    AttachPoint = new SessionAgentAttachPoint
+                    {
+                        Provider = SessionAgentAttachPoint.CodexProvider,
+                        TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                        Endpoint = fakeServer.Endpoint,
+                        SharedRuntime = true,
+                        Source = "test",
+                        PreferredThreadId = "thread-control-1"
+                    },
+                    ResumeThreadId = "thread-control-1"
+                }
+            });
+            Assert.Equal(
+                "accepted",
+                (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput,
+                    pendingPatches,
+                    "cmd-attach-control")).Status);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-steer",
+                SessionId = "session-control",
+                Type = "turn.steer",
+                SteerTurn = new AppServerControlSteerRequest
+                {
+                    ExpectedTurnId = "turn-control-1",
+                    Text = "Append this instruction."
+                }
+            });
+            var steerResult = await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput,
+                pendingPatches,
+                "cmd-steer");
+            Assert.Equal("accepted", steerResult.Status);
+            Assert.Equal("turn-control-1", steerResult.Accepted?.TurnId);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-compact",
+                SessionId = "session-control",
+                Type = "thread.compact"
+            });
+            Assert.Equal(
+                "accepted",
+                (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput,
+                    pendingPatches,
+                    "cmd-compact")).Status);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
     public async Task MtAgentHost_CanDriveFakeCodexAttachTurnApprovalAndAttachments()
     {
         using var fakeCodex = FakeCodexPathScope.Create();

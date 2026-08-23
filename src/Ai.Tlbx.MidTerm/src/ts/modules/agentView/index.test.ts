@@ -6562,7 +6562,7 @@ describe('agentView dev errors', () => {
     expect(mobileWindow.bottomSpacerPx).toBeGreaterThan(0);
   });
 
-  it('keeps the 10k AppServerControl debug history keyed per retained item', async () => {
+  it('keeps the 10k AppServerControl debug history in a bounded keyed client window', async () => {
     const { buildAppServerControlDebugScenario } = await import('./debugScenario');
 
     const { snapshot } = buildAppServerControlDebugScenario(
@@ -6572,11 +6572,14 @@ describe('agentView dev errors', () => {
     );
     const entryIds = snapshot.history.map((entry) => entry.entryId);
 
-    expect(snapshot.history).toHaveLength(10000);
+    expect(snapshot.historyCount).toBe(10000);
+    expect(snapshot.historyWindowStart).toBe(4920);
+    expect(snapshot.historyWindowEnd).toBe(5080);
+    expect(snapshot.history).toHaveLength(160);
     expect(new Set(entryIds).size).toBe(entryIds.length);
-    expect(entryIds[0]).toBe('user:user-massive-1');
-    expect(entryIds[1]).toBe('assistant:assistant-massive-2');
-    expect(entryIds.at(-1)).toBe('assistant:assistant-massive-10000');
+    expect(entryIds[0]).toBe('user:user-massive-4921');
+    expect(entryIds[1]).toBe('assistant:assistant-massive-4922');
+    expect(entryIds.at(-1)).toBe('assistant:assistant-massive-5080');
   });
 
   it('subtracts older-history top spacer height before resolving the visible window', async () => {

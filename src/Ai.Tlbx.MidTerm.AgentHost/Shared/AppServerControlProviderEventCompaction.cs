@@ -123,6 +123,11 @@ public static class AppServerControlProviderEventCompaction
             {
                 Message = source.RuntimeMessage.Message,
                 Detail = CompactTextMiddle(source.RuntimeMessage.Detail, MaxRuntimeDetailChars)
+            },
+            RuntimeNoticeOnly = source.RuntimeNoticeOnly is null ? null : new AppServerControlProviderRuntimeMessagePayload
+            {
+                Message = source.RuntimeNoticeOnly.Message,
+                Detail = CompactTextMiddle(source.RuntimeNoticeOnly.Detail, MaxRuntimeDetailChars)
             }
         };
     }

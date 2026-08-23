@@ -635,6 +635,21 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
                         break;
 
+                    case "turn/steer" when id is not null:
+                        await SendJsonAsync(socket, new
+                        {
+                            id,
+                            result = new
+                            {
+                                turnId = GetString(@params, "expectedTurnId") ?? "turn-remote-1"
+                            }
+                        }, _shutdown.Token).ConfigureAwait(false);
+                        break;
+
+                    case "thread/compact/start" when id is not null:
+                        await SendJsonAsync(socket, new { id, result = new { } }, _shutdown.Token).ConfigureAwait(false);
+                        break;
+
                     case "turn/interrupt" when id is not null:
                         await SendJsonAsync(socket, new { id, result = new { } }, _shutdown.Token).ConfigureAwait(false);
                         await SendJsonAsync(socket, new

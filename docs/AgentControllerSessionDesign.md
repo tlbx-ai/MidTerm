@@ -486,6 +486,16 @@ The canonical history contract must satisfy the following:
 - The busy-indicator hint `(Press Esc to cancel)` implies a surface-wide shortcut, not a composer-only shortcut.
 - If the user queued follow-up Agent Controller Session turns while a turn was still running, the first `Esc` should let that queued work drain next, and a second `Esc` should cancel the remaining queued drain.
 
+## Operator API And CLI
+
+- Agent Controller Session automation must use first-class session APIs rather than browser DOM scripting or terminal keystroke injection when the requested operation is available through the App Server Protocol.
+- The REST control surface is session-scoped: `GET /api/sessions/{id}/agent-control/history` and `POST` operations for `turn`, `interrupt`, `steer`, and `compact`.
+- History reads accept canonical `startIndex` and `count` windows and return the same bounded canonical history contract used by the browser.
+- Starting a turn may attach the runtime on demand. Steering requires the expected active turn identity and appends input to that turn through the provider's native `turn/steer` operation; it must not masquerade as a new turn.
+- Compaction must use the provider's native thread-compaction operation and remain observable as canonical history/state instead of rewriting browser-local history.
+- The generated shell and PowerShell helpers expose the same operations as `mt_acp_new`, `mt_acp_history`, `mt_acp_turn`, `mt_acp_interrupt`, `mt_acp_steer`, and `mt_acp_compact` (with corresponding `Mt-Acp*` commands). These helpers are the preferred repeatable dev-loop surface for real Agent Controller Session test runs.
+- Provider telemetry such as token usage, rate limits, account state, settings updates, and healthy startup bookkeeping belongs in bounded runtime notices/stats, not the human conversation timeline. Provider errors remain visible history items.
+
 ## Performance Rules
 
 - Streaming must not cause full history/timeline rerenders.
@@ -682,6 +692,10 @@ Status in this branch/work item:
 - implemented: ordinary local pane scrolling no longer force-refreshes the already loaded history window when no window shift is needed; forced same-window refetch is reserved for urgent void-recovery cases where the viewport has lost all intersecting concrete rows
 - implemented: direct progress-nav scrubs now jump to a tiny centered preview window first and then hydrate into a normal browse window after drag idle, so large jumps do not try to materialize the traversed span
 - implemented: canonical interactive request/question flows are first-class `interview` history items with embedded questions and answers; the frontend prefers that self-renderable payload and retains request-summary lookup only as a compatibility fallback
+- implemented: session-scoped REST and generated CLI control surfaces now support bounded canonical history reads, turn submission, interruption, active-turn steering, and provider-native thread compaction without browser automation
+- implemented: Codex `thread/settings/updated`, token-usage, account, rate-limit, and healthy MCP startup bookkeeping now update bounded runtime notices/quick settings without producing timeline noise; MCP/provider failures remain visible
+- implemented: the massive-history debug scenario now models a 10,000-item canonical history through a bounded 160-item browser window instead of allocating all 10,000 history objects in the page
+- implemented: Agent Controller Session time rendering reuses one locale formatter, avoiding formatter construction for every row during virtualization; the repeatable 10,000-item scroll profile retained at most 35 concrete rows with no blank samples and reduced long tasks from 24 to 2 in the measured comparison
 
 Still mandatory after this work whenever Agent Controller Session evolves:
 

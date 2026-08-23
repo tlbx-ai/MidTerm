@@ -200,6 +200,14 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("api/input-history?sessionId=", shell, StringComparison.Ordinal);
         Assert.Contains("[ -n \"$sid\" ] || { echo \"Session id required.\"", shell, StringComparison.Ordinal);
         Assert.Contains("mt_bootstrap()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_acp_new()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_acp_history()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_acp_turn()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_acp_interrupt()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_acp_steer()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_acp_compact()", shell, StringComparison.Ordinal);
+        Assert.Contains("appServerControlOnly", shell, StringComparison.Ordinal);
+        Assert.Contains("/agent-control/turn", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("mt_supervise", shell, StringComparison.Ordinal);
         Assert.Contains("mt_ctrlc()", shell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Redraw", powershell, StringComparison.Ordinal);
@@ -208,6 +216,13 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-SendText", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Paste", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Prompt", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-AcpNew", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-AcpHistory", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-AcpTurn", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-AcpInterrupt", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-AcpSteer", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-AcpCompact", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_acp_turn -Value Mt-AcpTurn", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-PromptNow", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Slash", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Wake", powershell, StringComparison.Ordinal);

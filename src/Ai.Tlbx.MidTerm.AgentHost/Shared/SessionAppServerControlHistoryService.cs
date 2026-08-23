@@ -787,7 +787,12 @@ public sealed partial class SessionAppServerControlHistoryService
 
         if (appServerControlEvent.RuntimeMessage is not null)
         {
-            ApplyRuntimeNotice(state, appServerControlEvent);
+            ApplyRuntimeNotice(state, appServerControlEvent, appServerControlEvent.RuntimeMessage, timelineVisible: true);
+        }
+
+        if (appServerControlEvent.RuntimeNoticeOnly is not null)
+        {
+            ApplyRuntimeNotice(state, appServerControlEvent, appServerControlEvent.RuntimeNoticeOnly, timelineVisible: false);
         }
     }
 
@@ -1887,15 +1892,14 @@ public sealed partial class SessionAppServerControlHistoryService
         entry.UpdatedAt = appServerControlEvent.CreatedAt;
     }
 
-    private static void ApplyRuntimeNotice(AppServerControlConversationState state, AppServerControlProviderEvent appServerControlEvent)
+    private static void ApplyRuntimeNotice(
+        AppServerControlConversationState state,
+        AppServerControlProviderEvent appServerControlEvent,
+        AppServerControlProviderRuntimeMessagePayload runtimeMessage,
+        bool timelineVisible)
     {
-        if (appServerControlEvent.RuntimeMessage is null)
-        {
-            return;
-        }
-
-        var message = AppServerControlHistoryTextSanitizer.Sanitize(appServerControlEvent.RuntimeMessage.Message);
-        var detail = AppServerControlHistoryTextSanitizer.Sanitize(appServerControlEvent.RuntimeMessage.Detail);
+        var message = AppServerControlHistoryTextSanitizer.Sanitize(runtimeMessage.Message);
+        var detail = AppServerControlHistoryTextSanitizer.Sanitize(runtimeMessage.Detail);
         state.Notices.Add(new AppServerControlRuntimeNotice
         {
             EventId = appServerControlEvent.EventId,
@@ -1907,6 +1911,11 @@ public sealed partial class SessionAppServerControlHistoryService
         if (state.Notices.Count > 64)
         {
             state.Notices.RemoveRange(0, state.Notices.Count - 64);
+        }
+
+        if (!timelineVisible)
+        {
+            return;
         }
 
         var entry = EnsureHistoryEntry(
@@ -2033,6 +2042,11 @@ public sealed partial class SessionAppServerControlHistoryService
             {
                 Message = source.RuntimeMessage.Message,
                 Detail = source.RuntimeMessage.Detail
+            },
+            RuntimeNoticeOnly = source.RuntimeNoticeOnly is null ? null : new AppServerControlProviderRuntimeMessagePayload
+            {
+                Message = source.RuntimeNoticeOnly.Message,
+                Detail = source.RuntimeNoticeOnly.Detail
             }
         };
     }
@@ -2431,7 +2445,7 @@ public sealed partial class SessionAppServerControlHistoryService
     private static HashSet<string> CollectTouchedNoticeIds(AppServerControlProviderEvent appServerControlEvent)
     {
         var noticeIds = new HashSet<string>(StringComparer.Ordinal);
-        if (appServerControlEvent.RuntimeMessage is not null)
+        if (appServerControlEvent.RuntimeMessage is not null || appServerControlEvent.RuntimeNoticeOnly is not null)
         {
             noticeIds.Add(appServerControlEvent.EventId);
         }
@@ -4046,10 +4060,6 @@ public sealed class SessionAppServerControlHistoryPatchSubscription : IDisposabl
         _state.Close();
     }
 }
-
-
-
-
 
 
 

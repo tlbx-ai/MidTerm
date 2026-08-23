@@ -371,7 +371,9 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 [
                     "attach",
                     "turn.start",
+                    "turn.steer",
                     "turn.interrupt",
+                    "thread.compact",
                     "thread.goal.set",
                     "request.resolve",
                     "user-input.resolve",
@@ -589,6 +591,11 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 Message = appServerControlEvent.RuntimeMessage.Message,
                 Detail = appServerControlEvent.RuntimeMessage.Detail
+            },
+            RuntimeNoticeOnly = appServerControlEvent.RuntimeNoticeOnly is null ? null : new AppServerControlProviderRuntimeMessagePayload
+            {
+                Message = appServerControlEvent.RuntimeNoticeOnly.Message,
+                Detail = appServerControlEvent.RuntimeNoticeOnly.Detail
             }
         };
     }
@@ -730,8 +737,6 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
     }
 }
-
-
 
 
 

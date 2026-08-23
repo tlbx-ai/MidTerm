@@ -364,6 +364,13 @@ public sealed class AppServerControlInterruptRequest
     public string? TurnId { get; set; }
 }
 
+public sealed class AppServerControlSteerRequest
+{
+    public string? Text { get; set; }
+    public string? ExpectedTurnId { get; set; }
+    public List<AppServerControlAttachmentReference> Attachments { get; set; } = [];
+}
+
 public sealed class AppServerControlRequestDecisionRequest
 {
     public string Decision { get; set; } = "accept";
@@ -500,6 +507,7 @@ public sealed class AppServerControlHostCommandEnvelope
     public string Type { get; set; } = string.Empty;
     public AppServerControlAttachRuntimeRequest? AttachRuntime { get; set; }
     public AppServerControlTurnRequest? StartTurn { get; set; }
+    public AppServerControlSteerRequest? SteerTurn { get; set; }
     public AppServerControlInterruptRequest? InterruptTurn { get; set; }
     public AppServerControlRequestResolutionCommand? ResolveRequest { get; set; }
     public AppServerControlUserInputResolutionCommand? ResolveUserInput { get; set; }
@@ -548,6 +556,7 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 [JsonSerializable(typeof(AppServerControlRequestResolutionCommand))]
 [JsonSerializable(typeof(AppServerControlUserInputResolutionCommand))]
 [JsonSerializable(typeof(AppServerControlTurnRequest))]
+[JsonSerializable(typeof(AppServerControlSteerRequest))]
 [JsonSerializable(typeof(AppServerControlGoalSetRequest))]
 [JsonSerializable(typeof(AppServerControlAttachmentReference))]
 [JsonSerializable(typeof(AppServerControlTurnStartResponse))]
@@ -595,7 +604,6 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 public partial class AppServerControlHostJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

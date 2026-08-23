@@ -35,6 +35,8 @@ interface DebugScenarioContent {
   assistantText: string;
   currentTurnState: AppServerControlHistorySnapshot['currentTurn']['state'];
   currentTurnStateLabel: string;
+  historyCount?: number;
+  historyWindowStart?: number;
 }
 
 function cloneHistoryAttachments(
@@ -236,8 +238,10 @@ function buildMassiveDebugScenario(
   at: (offsetMs: number) => string,
 ): DebugScenarioContent {
   return {
-    items: Array.from({ length: 10000 }, (_value, index) => {
-      const ordinal = index + 1;
+    // Mirror the real host contract: the browser retains one bounded canonical
+    // window while historyCount describes the full 10k-thread extent.
+    items: Array.from({ length: 160 }, (_value, index) => {
+      const ordinal = 4921 + index;
       const isUser = index % 4 === 0;
       const isTable = ordinal % 31 === 0;
       const detail = isUser
@@ -269,6 +273,8 @@ function buildMassiveDebugScenario(
     assistantText: '',
     currentTurnState: 'completed',
     currentTurnStateLabel: 'Completed',
+    historyCount: 10000,
+    historyWindowStart: 4920,
   };
 }
 
@@ -444,8 +450,15 @@ export function buildAppServerControlDebugScenario(
     updatedAt,
   });
 
-  const { items, requests, assistantText, currentTurnState, currentTurnStateLabel } =
-    buildAppServerControlDebugScenarioContent(scenario, createItem, at, heroImageUrl);
+  const {
+    items,
+    requests,
+    assistantText,
+    currentTurnState,
+    currentTurnStateLabel,
+    historyCount = items.length,
+    historyWindowStart = 0,
+  } = buildAppServerControlDebugScenarioContent(scenario, createItem, at, heroImageUrl);
   const reasoningText =
     scenario === 'workflow'
       ? 'Need the operator choice before touching the file so the patch posture is explicit.'
@@ -472,11 +485,11 @@ export function buildAppServerControlDebugScenario(
       provider: 'codex',
       generatedAt: at(0),
       latestSequence: 500,
-      historyCount: items.length,
-      historyWindowStart: 0,
-      historyWindowEnd: items.length,
-      hasOlderHistory: false,
-      hasNewerHistory: false,
+      historyCount,
+      historyWindowStart,
+      historyWindowEnd: historyWindowStart + items.length,
+      hasOlderHistory: historyWindowStart > 0,
+      hasNewerHistory: historyWindowStart + items.length < historyCount,
       session: {
         state: currentTurnState === 'running' ? 'running' : 'ready',
         stateLabel: currentTurnState === 'running' ? 'Running' : 'Ready',

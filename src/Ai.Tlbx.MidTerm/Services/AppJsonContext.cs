@@ -115,6 +115,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(ProviderResumeCatalogEntryDto))]
 [JsonSerializable(typeof(List<ProviderResumeCatalogEntryDto>))]
 [JsonSerializable(typeof(AppServerControlTurnRequest))]
+[JsonSerializable(typeof(AppServerControlSteerRequest))]
 [JsonSerializable(typeof(AppServerControlGoalSetRequest))]
 [JsonSerializable(typeof(AppServerControlAttachmentReference))]
 [JsonSerializable(typeof(List<AppServerControlAttachmentReference>))]
@@ -384,7 +385,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

@@ -448,6 +448,69 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
     }
 
+    public async Task<AppServerControlCommandAcceptedResponse> SteerTurnAsync(
+        string sessionId,
+        AppServerControlSteerRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var state = GetRequiredState(sessionId);
+
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(
+                state,
+                commandId => new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "turn.steer",
+                    SteerTurn = request
+                },
+                ct).ConfigureAwait(false);
+            return result.Accepted ?? new AppServerControlCommandAcceptedResponse
+            {
+                SessionId = sessionId,
+                Status = result.Status,
+                TurnId = request.ExpectedTurnId
+            };
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    public async Task<AppServerControlCommandAcceptedResponse> CompactThreadAsync(
+        string sessionId,
+        CancellationToken ct = default)
+    {
+        var state = GetRequiredState(sessionId);
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(
+                state,
+                commandId => new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "thread.compact"
+                },
+                ct).ConfigureAwait(false);
+            return result.Accepted ?? new AppServerControlCommandAcceptedResponse
+            {
+                SessionId = sessionId,
+                Status = result.Status
+            };
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
     public async Task<AppServerControlCommandAcceptedResponse> ResolveRequestAsync(
         string sessionId,
         string requestId,
@@ -2167,4 +2230,3 @@ internal sealed class SubscriptionState
         }
     }
 }
-
