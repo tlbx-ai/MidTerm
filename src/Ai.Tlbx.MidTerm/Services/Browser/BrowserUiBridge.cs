@@ -67,51 +67,72 @@ public sealed class BrowserUiBridge
             return new AgentHistoryWheelResult { Error = "sessionId required" };
         }
 
-        if (!TryGetTargetListener(sessionId, null, out var target, out var error))
-        {
-            return new AgentHistoryWheelResult { SessionId = sessionId, Error = error };
-        }
-
-        if (target.AgentWheel is null)
-        {
-            return new AgentHistoryWheelResult
-            {
-                SessionId = sessionId,
-                Error = "The connected tlbx browser UI does not support ACP wheel control. Reload it and retry."
-            };
-        }
-
-        var requestId = Guid.NewGuid().ToString("N");
-        var completion = new TaskCompletionSource<AgentHistoryWheelResult>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        ListenerRegistration[] targets;
         lock (_lock)
         {
-            _pendingAgentWheels[requestId] = completion;
+            targets = _listeners.Values
+                .Where(listener => listener.AgentWheel is not null)
+                .ToArray();
         }
 
-        try
-        {
-            target.AgentWheel(requestId, sessionId, deltaY, Math.Clamp(steps, 1, 100));
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(15));
-            return await completion.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        if (targets.Length == 0)
         {
             return new AgentHistoryWheelResult
             {
-                RequestId = requestId,
                 SessionId = sessionId,
-                Error = "Timed out waiting for the tlbx browser UI to complete the ACP wheel command."
+                Error = ConnectedBrowserCount == 0
+                    ? "No tlbx browser UI is connected. Open the tlbx browser tab containing the ACP session and retry."
+                    : "The connected tlbx browser UI does not support ACP wheel control. Reload it and retry."
             };
         }
-        finally
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        AgentHistoryWheelResult? lastFailure = null;
+        foreach (var target in targets)
         {
+            var requestId = Guid.NewGuid().ToString("N");
+            var completion = new TaskCompletionSource<AgentHistoryWheelResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
             lock (_lock)
             {
-                _pendingAgentWheels.Remove(requestId);
+                _pendingAgentWheels[requestId] = completion;
+            }
+
+            try
+            {
+                target.AgentWheel!(requestId, sessionId, deltaY, Math.Clamp(steps, 1, 100));
+                var result = await completion.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
+                if (result.Success)
+                {
+                    return result;
+                }
+
+                lastFailure = result;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return new AgentHistoryWheelResult
+                {
+                    RequestId = requestId,
+                    SessionId = sessionId,
+                    Error = "Timed out waiting for a tlbx browser UI to complete the ACP wheel command."
+                };
+            }
+            finally
+            {
+                lock (_lock)
+                {
+                    _pendingAgentWheels.Remove(requestId);
+                }
             }
         }
+
+        return lastFailure ?? new AgentHistoryWheelResult
+        {
+            SessionId = sessionId,
+            Error = "No connected tlbx browser UI could find the requested ACP history."
+        };
     }
 
     public bool CompleteAgentWheel(AgentHistoryWheelResult result)

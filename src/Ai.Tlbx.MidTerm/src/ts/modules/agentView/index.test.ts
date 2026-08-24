@@ -6820,7 +6820,7 @@ describe('agentView dev errors', () => {
       historyLastVirtualWindowKey: null,
       historyAutoScrollPinned: false,
       historyNavigatorMode: 'browse',
-      historyNavigatorAnchorIndex: null,
+      historyNavigatorAnchorIndex: 7,
       historyNavigatorDragTargetIndex: null,
       historyNavigatorQueuedTargetIndex: null,
       historyNavigatorQueuedRequestKind: null,
@@ -6881,6 +6881,7 @@ describe('agentView dev errors', () => {
     expect(progressNav.dataset.ready).toBe('true');
     expect(progressNav.tabIndex).toBe(0);
     expect(progressNav.setAttribute).toHaveBeenCalledWith('aria-disabled', 'false');
+    expect(progressNav.setAttribute).toHaveBeenCalledWith('aria-valuenow', '1');
     expect(String(progressThumb.style.height)).not.toBe('');
     expect(String(progressThumb.style.top)).toBe('6px');
 

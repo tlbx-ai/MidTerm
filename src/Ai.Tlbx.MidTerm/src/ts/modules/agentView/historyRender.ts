@@ -1122,7 +1122,16 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       });
     }
     finalizeRenderedHistoryState(sessionId, panel, viewport, entries, state, measurementChanged);
-    syncHistoryProgressNavigatorUi(state);
+    const snapshot = state?.snapshot;
+    const distanceFromBottom = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
+    const reachedCanonicalEdge =
+      state !== undefined &&
+      !state.historyAutoScrollPinned &&
+      ((viewport.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX &&
+        snapshot?.historyWindowStart === 0) ||
+        (distanceFromBottom <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX &&
+          (snapshot?.historyWindowEnd ?? 0) >= (snapshot?.historyCount ?? 0)));
+    syncHistoryProgressNavigatorUi(state, { refreshAnchorFromViewport: reachedCanonicalEdge });
   }
 
   function buildHistoryRenderPlan(

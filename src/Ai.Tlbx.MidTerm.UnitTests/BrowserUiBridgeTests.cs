@@ -1,3 +1,4 @@
+using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Xunit;
@@ -73,6 +74,54 @@ public sealed class BrowserUiBridgeTests
 
         Assert.False(ok);
         Assert.Contains("Unsupported", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RequestAgentWheelAsync_UsesTheBrowserThatActuallyShowsTheAcpSession()
+    {
+        var bridge = new BrowserUiBridge(new MainBrowserService());
+        var dispatched = 0;
+
+        bridge.RegisterListener(
+            "hidden",
+            "browser-a:tab-hidden",
+            (_, _) => { },
+            (_, _) => { },
+            (_, _, _, _) => { },
+            (_, _, _, _) => { },
+            agentWheel: (requestId, sessionId, _, _) =>
+            {
+                dispatched++;
+                bridge.CompleteAgentWheel(new AgentHistoryWheelResult
+                {
+                    RequestId = requestId,
+                    SessionId = sessionId,
+                    Success = false,
+                    Error = "The requested ACP history is not visible in this tlbx browser UI."
+                });
+            });
+        bridge.RegisterListener(
+            "visible",
+            "browser-b:tab-visible",
+            (_, _) => { },
+            (_, _) => { },
+            (_, _, _, _) => { },
+            (_, _, _, _) => { },
+            agentWheel: (requestId, sessionId, _, _) =>
+            {
+                dispatched++;
+                bridge.CompleteAgentWheel(new AgentHistoryWheelResult
+                {
+                    RequestId = requestId,
+                    SessionId = sessionId,
+                    Success = true
+                });
+            });
+
+        var result = await bridge.RequestAgentWheelAsync("session-a", -320, 1, default);
+
+        Assert.True(result.Success);
+        Assert.Equal(2, dispatched);
     }
 
     [Fact]
