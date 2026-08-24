@@ -1396,7 +1396,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
       (deltaYPx < 0 && currentViewport.scrollTop <= 1 && current.snapshot?.hasOlderHistory) ||
       (deltaYPx > 0 && distanceFromBottom <= 1 && current.snapshot?.hasNewerHistory);
     if (crossedKernelEdge) {
-      queueHistoryWindowViewportSync(sessionId, current);
+      queueUrgentHistoryWindowViewportSync(sessionId, current);
     }
   };
   viewport.addEventListener(
@@ -2162,6 +2162,9 @@ function queueHistoryWindowViewportSyncInternal(
   state.historyViewportSyncForcePending ||= forceRequest;
 
   if (state.historyViewportSyncPending) {
+    if (!state.refreshInFlight) {
+      flushPendingHistoryWindowViewportSync(sessionId, state);
+    }
     return;
   }
 
