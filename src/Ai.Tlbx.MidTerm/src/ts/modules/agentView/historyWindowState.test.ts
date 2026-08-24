@@ -69,6 +69,40 @@ describe('historyWindowState', () => {
     expect(updateAppServerControlHistoryStreamWindow).not.toHaveBeenCalled();
   });
 
+  it('rejects unversioned stream windows after the browser has issued a window revision', async () => {
+    const { applyFetchedAppServerControlHistoryWindow } = await import('./historyWindowState');
+
+    const state = {
+      snapshot: {
+        latestSequence: 12,
+        historyWindowStart: 80,
+        historyWindowEnd: 100,
+        history: [{ entryId: 'assistant:kept', order: 95, body: 'kept' }],
+      },
+      historyWindowStart: 80,
+      historyWindowCount: 20,
+      historyWindowRevision: 'rev-current',
+      disconnectStream: vi.fn(),
+    } as any;
+
+    const applied = applyFetchedAppServerControlHistoryWindow(
+      'session-1',
+      state,
+      {
+        latestSequence: 12,
+        historyWindowStart: 20,
+        historyWindowEnd: 40,
+        history: [{ entryId: 'assistant:stale', order: 35, body: 'stale' }],
+      } as any,
+      { requireRevisionMatch: true },
+    );
+
+    expect(applied).toBe(false);
+    expect(state.snapshot.historyWindowStart).toBe(80);
+    expect(state.snapshot.history[0]?.entryId).toBe('assistant:kept');
+    expect(updateAppServerControlHistoryStreamWindow).not.toHaveBeenCalled();
+  });
+
   it('keeps a nonzero stream window when a metadata-only snapshot reports retained history', async () => {
     const { applyFetchedAppServerControlHistoryWindow } = await import('./historyWindowState');
 

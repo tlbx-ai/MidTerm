@@ -107,10 +107,7 @@ function applyHistoryWindowDelta(
   const requiresWindowRefresh = resolveHistoryWindowRefreshRequirement(
     wasLiveEdge,
     currentWindowStart,
-    currentWindowEnd,
     upserts,
-    removals,
-    entryIndexById,
   );
 
   applyHistoryEntryRemovals(nextEntries, entryIndexById, removals);
@@ -149,22 +146,21 @@ function applyHistoryWindowDelta(
 function resolveHistoryWindowRefreshRequirement(
   wasLiveEdge: boolean,
   currentWindowStart: number,
-  currentWindowEnd: number,
   upserts: readonly AppServerControlHistoryItem[],
-  removals: readonly string[],
-  entryIndexById: ReadonlyMap<string, number>,
 ): boolean {
   if (wasLiveEdge) {
     return false;
   }
 
-  const hasOffWindowUpsert = upserts.some((upsert) => {
+  const hasEarlierOffWindowUpsert = upserts.some((upsert) => {
     const absoluteIndex = Math.max(0, upsert.order - 1);
-    return absoluteIndex < currentWindowStart || absoluteIndex >= currentWindowEnd;
+    return absoluteIndex < currentWindowStart;
   });
-  const hasOffWindowRemoval =
-    removals.length > 0 && removals.some((entryId) => !entryIndexById.has(entryId));
-  return hasOffWindowUpsert || hasOffWindowRemoval;
+  // An unknown removal is normally a provisional live-tail entry that was canonicalized outside
+  // the retained browse window. Refreshing the reader's window for it causes the viewport to jump.
+  // Concrete removals inside the retained window are applied above; off-window changes reconcile
+  // naturally on the next explicit kernel-edge fetch.
+  return hasEarlierOffWindowUpsert;
 }
 
 function applyHistoryEntryRemovals(

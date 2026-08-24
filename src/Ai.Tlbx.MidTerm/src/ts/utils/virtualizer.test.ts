@@ -108,6 +108,44 @@ describe('virtualizer', () => {
     expect(tailRequest!.startIndex + tailRequest!.count).toBe(300);
   });
 
+  it('uses canonical indexes for sparse visual items when choosing a forward window', () => {
+    const items = Array.from({ length: 20 }, (_, index) => ({
+      visualIndex: index,
+      canonicalIndex: 100 + index * 3,
+    }));
+    const request = resolveKernelWindowRequest({
+      items,
+      viewportMetrics: { scrollTop: 1500, clientHeight: 500, clientWidth: 900 },
+      retainedWindow: { windowStart: 100, windowEnd: 160, totalCount: 220 },
+      fetchAheadItems: 20,
+      resolveItemSize: () => 100,
+      resolveAbsoluteIndex: (item) => item.canonicalIndex,
+      anchorAbsoluteIndex: 157,
+    });
+
+    expect(request).not.toBeNull();
+    expect(request!.startIndex).toBeGreaterThan(100);
+    expect(request!.startIndex + request!.count).toBeGreaterThan(157);
+  });
+
+  it('moves forward from a physical kernel edge even when later canonical items are filtered out', () => {
+    const request = resolveKernelWindowRequest({
+      items: Array.from({ length: 20 }, (_, index) => ({ canonicalIndex: 100 + index })),
+      viewportMetrics: { scrollTop: 1500, clientHeight: 500, clientWidth: 900 },
+      retainedWindow: { windowStart: 80, windowEnd: 160, totalCount: 240 },
+      fetchAheadItems: 20,
+      resolveItemSize: () => 100,
+      resolveAbsoluteIndex: (item) => item.canonicalIndex,
+      edgeDirection: 'later',
+      anchorAbsoluteIndex: 119,
+    });
+
+    expect(request).not.toBeNull();
+    expect(request!.startIndex).toBeGreaterThan(80);
+    expect(request!.startIndex).toBeLessThanOrEqual(119);
+    expect(request!.startIndex + request!.count).toBeGreaterThan(119);
+  });
+
   it('does not refetch at a canonical bound when the loaded kernel already covers it', () => {
     expect(
       resolveKernelWindowRequest({

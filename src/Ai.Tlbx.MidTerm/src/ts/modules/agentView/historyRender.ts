@@ -217,7 +217,13 @@ function resolveMeasurementBrowseAnchor(
   state: SessionAppServerControlViewState,
   viewport: HTMLDivElement,
 ): VirtualizerAnchor | null {
-  if (state.historyAutoScrollPinned || state.pendingHistoryPrependAnchor !== null) {
+  const userScrollInProgress =
+    Date.now() - state.historyLastUserScrollIntentAt <= USER_HISTORY_GAP_RECOVERY_GRACE_MS;
+  if (
+    state.historyAutoScrollPinned ||
+    state.pendingHistoryPrependAnchor !== null ||
+    userScrollInProgress
+  ) {
     return null;
   }
 
@@ -416,6 +422,11 @@ function resolveAnchorAbsoluteIndex(
   entryId: string,
 ): number {
   const relativeIndex = state.historyEntries.findIndex((entry) => entry.id === entryId);
+  const entryOrder = relativeIndex >= 0 ? state.historyEntries[relativeIndex]?.order : undefined;
+  if (typeof entryOrder === 'number' && Number.isFinite(entryOrder) && entryOrder > 0) {
+    return Math.max(0, Math.round(entryOrder) - 1);
+  }
+
   const historyWindowStart = resolveHistoryRetainedWindowDescriptor(
     state.historyEntries,
     state,
@@ -539,7 +550,11 @@ function resolveHistoryNavigatorEstimatedAnchorIndex(
   const visibleStart = Math.max(0, firstVisibleEntry.order - 1);
   const visibleEnd = Math.max(visibleStart, lastVisibleEntry.order - 1);
 
-  if (metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX) {
+  const retainedWindow = resolveHistoryRetainedWindowDescriptor(state.historyEntries, state);
+  if (
+    metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX &&
+    retainedWindow.windowStart === 0
+  ) {
     return 0;
   }
 
@@ -563,12 +578,15 @@ function resolveHistoryNavigatorConcreteAnchorIndex(
   }
 
   const metrics = readHistoryScrollMetrics(viewport, state);
-  if (metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX) {
+  const retainedWindow = resolveHistoryRetainedWindowDescriptor(state.historyEntries, state);
+  if (
+    metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX &&
+    retainedWindow.windowStart === 0
+  ) {
     return 0;
   }
 
   const distanceFromBottom = metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop;
-  const retainedWindow = resolveHistoryRetainedWindowDescriptor(state.historyEntries, state);
   if (
     distanceFromBottom <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX &&
     retainedWindow.windowEnd >= totalCount
@@ -621,11 +639,23 @@ function resolveHistoryNavigatorAnchorIndex(
     return clampHistoryAbsoluteIndex(concreteAnchorIndex, retainedWindow.totalCount);
   }
 
-  if (
-    state.historyNavigatorAnchorIndex !== null &&
-    Number.isFinite(state.historyNavigatorAnchorIndex)
-  ) {
-    return clampHistoryAbsoluteIndex(state.historyNavigatorAnchorIndex, retainedWindow.totalCount);
+  if (options.refreshFromViewport) {
+    const estimatedAnchorIndex = resolveHistoryNavigatorEstimatedAnchorIndex(
+      state,
+      viewport,
+      retainedWindow.totalCount,
+    );
+    if (estimatedAnchorIndex !== null && Number.isFinite(estimatedAnchorIndex)) {
+      return clampHistoryAbsoluteIndex(estimatedAnchorIndex, retainedWindow.totalCount);
+    }
+  }
+
+  const cachedAnchorIndex = resolveCachedHistoryNavigatorAnchorIndex(
+    state,
+    retainedWindow.totalCount,
+  );
+  if (cachedAnchorIndex !== null) {
+    return cachedAnchorIndex;
   }
 
   const estimatedAnchorIndex = resolveHistoryNavigatorEstimatedAnchorIndex(
@@ -641,6 +671,16 @@ function resolveHistoryNavigatorAnchorIndex(
     retainedWindow.windowStart + Math.floor(state.historyEntries.length / 2),
     retainedWindow.totalCount,
   );
+}
+
+function resolveCachedHistoryNavigatorAnchorIndex(
+  state: SessionAppServerControlViewState,
+  totalCount: number,
+): number | null {
+  const anchorIndex = state.historyNavigatorAnchorIndex;
+  return anchorIndex !== null && Number.isFinite(anchorIndex)
+    ? clampHistoryAbsoluteIndex(anchorIndex, totalCount)
+    : null;
 }
 
 function prepareHistoryProgressNavigator(
@@ -1006,28 +1046,14 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     state: SessionAppServerControlViewState | undefined,
     entryCount: number,
   ): boolean {
-    if (!state) {
-      return entryCount > HISTORY_VIRTUALIZE_AFTER;
-    }
-
-    const snapshot = state.snapshot;
-    const historyCount = snapshot?.historyCount ?? entryCount;
-    if (historyCount > HISTORY_VIRTUALIZE_AFTER) {
-      return true;
-    }
-
-    if (
-      state.historyLeadingPlaceholders.length > 0 ||
-      state.historyTrailingPlaceholders.length > 0
-    ) {
-      return true;
-    }
-
-    if (!snapshot) {
-      return false;
-    }
-
-    return snapshot.historyWindowStart > 0 || snapshot.historyWindowEnd < snapshot.historyCount;
+    // The server window already pages off-kernel canonical history. Row virtualization must be
+    // driven by the concrete retained rows only; using the global history count here made a small,
+    // filtered kernel re-render on every wheel tick and restore its anchor back to the local edge.
+    return (
+      entryCount > HISTORY_VIRTUALIZE_AFTER ||
+      (state?.historyLeadingPlaceholders.length ?? 0) > 0 ||
+      (state?.historyTrailingPlaceholders.length ?? 0) > 0
+    );
   }
 
   function renderActivationView(
@@ -1067,8 +1093,17 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     const viewport = container as HTMLDivElement;
     const metrics = readHistoryViewportMetrics(viewport, state);
+    const preserveActiveWheelScrollTop =
+      state !== undefined &&
+      !state.historyAutoScrollPinned &&
+      state.pendingHistoryPrependAnchor === null &&
+      state.pendingHistoryLayoutAnchor === null &&
+      Date.now() - state.historyLastUserScrollIntentAt <= USER_HISTORY_GAP_RECOVERY_GRACE_MS;
     const renderPlan = buildHistoryRenderPlan(entries, metrics, state);
     reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
+    if (preserveActiveWheelScrollTop) {
+      syncViewportScrollPosition(viewport, metrics.scrollTop);
+    }
     const measurementChanged = state
       ? measureRenderedHistoryHeights(
           sessionId,
@@ -1295,7 +1330,16 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       state.historyLastVoidSyncScrollTop = null;
     }
 
-    if (state && !state.historyAutoScrollPinned && entries.length > 0 && !viewportHasConcreteRows) {
+    const userScrollInProgress =
+      state !== undefined &&
+      Date.now() - state.historyLastUserScrollIntentAt <= USER_HISTORY_GAP_RECOVERY_GRACE_MS;
+    if (
+      state &&
+      !state.historyAutoScrollPinned &&
+      entries.length > 0 &&
+      !viewportHasConcreteRows &&
+      !userScrollInProgress
+    ) {
       const roundedScrollTop = Math.round(viewport.scrollTop);
       if (state.historyLastVoidSyncScrollTop !== roundedScrollTop) {
         state.historyLastVoidSyncScrollTop = roundedScrollTop;
@@ -1809,12 +1853,21 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const resolveEntryHeight = (entry: AppServerControlHistoryEntry) =>
       resolveHistoryEntryHeight(entry, state, metrics.clientWidth);
     const retainedWindow = resolveHistoryRetainedWindowDescriptor(state.historyEntries, state);
+    const distanceFromBottom = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
+    const edgeDirection =
+      viewport.scrollTop <= 1 && snapshot.hasOlderHistory
+        ? 'earlier'
+        : distanceFromBottom <= 1 && snapshot.hasNewerHistory
+          ? 'later'
+          : null;
     const request = resolveKernelWindowRequest({
       items: state.historyEntries,
       viewportMetrics: metrics,
       retainedWindow,
       fetchAheadItems: options.fetchAheadItems,
       resolveItemSize: (entry) => resolveEntryHeight(entry),
+      resolveAbsoluteIndex: (entry) => Math.max(0, Math.round(entry.order) - 1),
+      edgeDirection,
       anchorAbsoluteIndex: options.anchorAbsoluteIndex,
     });
     return request;

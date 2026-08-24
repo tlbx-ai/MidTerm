@@ -1,9 +1,12 @@
 namespace Ai.Tlbx.MidTerm.Services.Browser;
 
+using Ai.Tlbx.MidTerm.Models.Browser;
+
 public sealed class BrowserUiBridge
 {
     private readonly Lock _lock = new();
     private readonly Dictionary<string, ListenerRegistration> _listeners = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TaskCompletionSource<AgentHistoryWheelResult>> _pendingAgentWheels = new(StringComparer.Ordinal);
     private readonly MainBrowserService _mainBrowserService;
     private readonly BrowserPreviewOwnerService? _previewOwnerService;
 
@@ -33,7 +36,8 @@ public sealed class BrowserUiBridge
         Action<string?, string?> dock,
         Action<string?, string?, int, int> viewport,
         Action<string?, string?, string, bool> open,
-        Action<string?, string?, string, string?>? mobileDevice = null)
+        Action<string?, string?, string, string?>? mobileDevice = null,
+        Action<string, string, double, int>? agentWheel = null)
     {
         lock (_lock)
         {
@@ -46,9 +50,79 @@ public sealed class BrowserUiBridge
                 Viewport = viewport,
                 Open = open,
                 MobileDevice = mobileDevice,
+                AgentWheel = agentWheel,
                 ConnectedAtUtc = DateTimeOffset.UtcNow
             };
         }
+    }
+
+    public async Task<AgentHistoryWheelResult> RequestAgentWheelAsync(
+        string sessionId,
+        double deltaY,
+        int steps,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return new AgentHistoryWheelResult { Error = "sessionId required" };
+        }
+
+        if (!TryGetTargetListener(sessionId, null, out var target, out var error))
+        {
+            return new AgentHistoryWheelResult { SessionId = sessionId, Error = error };
+        }
+
+        if (target.AgentWheel is null)
+        {
+            return new AgentHistoryWheelResult
+            {
+                SessionId = sessionId,
+                Error = "The connected tlbx browser UI does not support ACP wheel control. Reload it and retry."
+            };
+        }
+
+        var requestId = Guid.NewGuid().ToString("N");
+        var completion = new TaskCompletionSource<AgentHistoryWheelResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_lock)
+        {
+            _pendingAgentWheels[requestId] = completion;
+        }
+
+        try
+        {
+            target.AgentWheel(requestId, sessionId, deltaY, Math.Clamp(steps, 1, 100));
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            return await completion.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new AgentHistoryWheelResult
+            {
+                RequestId = requestId,
+                SessionId = sessionId,
+                Error = "Timed out waiting for the tlbx browser UI to complete the ACP wheel command."
+            };
+        }
+        finally
+        {
+            lock (_lock)
+            {
+                _pendingAgentWheels.Remove(requestId);
+            }
+        }
+    }
+
+    public bool CompleteAgentWheel(AgentHistoryWheelResult result)
+    {
+        TaskCompletionSource<AgentHistoryWheelResult>? completion;
+        lock (_lock)
+        {
+            _pendingAgentWheels.TryGetValue(result.RequestId, out completion);
+        }
+
+        return completion?.TrySetResult(result) == true;
     }
 
     public void UnregisterListener(string connectionId)
@@ -388,6 +462,7 @@ public sealed class BrowserUiBridge
         public required Action<string?, string?, int, int> Viewport { get; init; }
         public required Action<string?, string?, string, bool> Open { get; init; }
         public Action<string?, string?, string, string?>? MobileDevice { get; init; }
+        public Action<string, string, double, int>? AgentWheel { get; init; }
         public DateTimeOffset ConnectedAtUtc { get; init; }
     }
 }

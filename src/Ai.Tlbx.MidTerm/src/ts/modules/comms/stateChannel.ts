@@ -91,6 +91,9 @@ interface BrowserUiMessage {
   activateSession?: boolean;
   deviceAction?: string;
   deviceProfile?: string;
+  requestId?: string;
+  deltaY?: number;
+  steps?: number;
 }
 
 interface LayoutStateMessage {
@@ -757,8 +760,46 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
           });
       }
       break;
+    case 'agent-wheel':
+      await handleAgentWheelBrowserUiCommand(msg);
+      break;
     default:
       log.warn(() => `Unknown browser-ui command: ${msg.command}`);
+  }
+}
+
+async function handleAgentWheelBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
+  if (!msg.requestId || !msg.sessionId) {
+    return;
+  }
+
+  let result: unknown;
+  try {
+    const { wheelAgentHistory } = await import('../agentView');
+    result = await wheelAgentHistory({
+      requestId: msg.requestId,
+      sessionId: msg.sessionId,
+      deltaY: msg.deltaY ?? 120,
+      steps: msg.steps ?? 1,
+    });
+  } catch (error) {
+    result = {
+      requestId: msg.requestId,
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      sessionId: msg.sessionId,
+      cancelledSteps: 0,
+      samples: [],
+    };
+  }
+
+  const response = await fetch('/api/browser/agent-wheel/result', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(result),
+  });
+  if (!response.ok) {
+    log.warn(() => `ACP wheel result delivery failed: HTTP ${response.status}`);
   }
 }
 

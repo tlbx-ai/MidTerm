@@ -84,9 +84,10 @@ function buildDebugScenarioHistory(args: {
   commandOutput: string;
   fileChangeOutput: string;
   unifiedDiff: string;
+  orderOffset?: number;
 }): AppServerControlHistoryItem[] {
   const historyEntries: AppServerControlHistoryItem[] = [];
-  let order = 1;
+  let order = Math.max(0, args.orderOffset ?? 0) + 1;
 
   for (const item of args.items) {
     historyEntries.push({
@@ -542,6 +543,7 @@ export function buildAppServerControlDebugScenario(
         commandOutput,
         fileChangeOutput,
         unifiedDiff,
+        orderOffset: historyWindowStart,
       }),
       items,
       requests,

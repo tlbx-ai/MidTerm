@@ -289,6 +289,7 @@ public static class TlbxDirectory
         | `mt_fill <sel> <val>` | Fill input field |
         | `mt_submit [sel]` | Submit form (default: first form) |
         | `mt_scroll [sel] [deltaY\|top\|bottom] [deltaX]` | Scroll page or a scrollable container |
+        | `mt_wheel [sel] [up\|down\|deltaY] [steps]` | Send mouse-wheel-style input and return measured scroll position/progress |
         | `mt_exec <js>` | Execute JS in page context |
         | `mt_wait <sel> [timeout]` | Wait for element (default 5s) |
         | `mt_log [error\|warn\|all]` | Console log buffer |
@@ -334,6 +335,7 @@ public static class TlbxDirectory
         | `mt_queue [id]` | List queued one-shot and recurring prompts/actions |
         | `mt_wake_cancel <queueId>` | Cancel a queued wake/prompt/action item by queue id |
         | `mt_sendkeys [id] <keys...>` | Send named keys like `Enter`, `C-c`, `Escape`, `Up` |
+        | `mt_agent_wheel [up|down|deltaY] [steps] [id]` | Wheel a visible ACP history and return measured top/bottom/progress state |
         | `mt_enter` / `mt_ctrlc` / `mt_escape` | Convenience key sends for the current or target session |
         | `mt_up` / `mt_down` / `mt_left` / `mt_right` | Convenience cursor-key sends |
         | `mt_inject [id]` | Ensure `.tlbx` + tlbx_cli helpers in the target cwd |

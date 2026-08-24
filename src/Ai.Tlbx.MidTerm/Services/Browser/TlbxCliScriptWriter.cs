@@ -290,6 +290,22 @@ public static class TlbxCliScriptWriter
           fi
           if [ -n "$dx" ]; then _MBB scroll "$selector" "$value" "$dx"; else _MBB scroll "$selector" "$value"; fi
         }
+        # mt_wheel [SELECTOR] [up|down|DELTA_Y] [STEPS]  — send wheel events and report measured scroll progress
+        mt_wheel() {
+          local selector="${1:-window}" direction="${2:-down}" steps="${3:-1}"
+          if [[ "$selector" =~ ^(up|down|-?[0-9]+([.][0-9]+)?)$ ]]; then
+            steps="${2:-1}"
+            direction="$selector"
+            selector="window"
+          fi
+          _MBB wheel "$selector" "$direction" "$steps"
+        }
+        # mt_agent_wheel [up|down|DELTA_Y] [STEPS] [SESSION_ID]  — wheel the visible ACP history and return measured position
+        mt_agent_wheel() {
+          local direction="${1:-down}" steps="${2:-1}" sid="${3:-$(_MSID)}" delta="120"
+          if [ "$direction" = "up" ]; then delta="-120"; elif [ "$direction" != "down" ]; then delta="$direction"; fi
+          _MJR -d "{\"sessionId\":\"$(_ME "$sid")\",\"deltaY\":$delta,\"steps\":$steps}" "$_MT/api/browser/agent-wheel"
+        }
         # mt_submit [FORM_SELECTOR]  — submit form via JS (default: first form)
         mt_submit()  { local s="${1:-form}"; _MBB submit "$s"; }
         # mt_url  — upstream page URL (not proxy URL)
@@ -1447,6 +1463,22 @@ public static class TlbxCliScriptWriter
             }
             _MBB scroll $Selector $value
         }
+        # Mt-Wheel [-Selector CSS_SELECTOR] [-Direction up|down|DELTA_Y] [-Steps N]  — send wheel events and report measured scroll progress
+        function Mt-Wheel {
+            param([string]$Selector = "window", [string]$Direction = "down", [int]$Steps = 1)
+            if ($Selector -match '^(up|down|-?[0-9]+([.][0-9]+)?)$') {
+                $Steps = if ($Direction -match '^\d+$') { [int]$Direction } else { $Steps }
+                $Direction = $Selector
+                $Selector = "window"
+            }
+            _MBB wheel $Selector $Direction $Steps
+        }
+        # Mt-AgentWheel [-Direction up|down|DELTA_Y] [-Steps N] [-SessionId ID]  — wheel the visible ACP history and return measured position
+        function Mt-AgentWheel {
+            param([string]$Direction = "down", [int]$Steps = 1, [string]$SessionId = (_MSID))
+            $delta = if ($Direction -eq "up") { -120 } elseif ($Direction -eq "down") { 120 } else { [double]::Parse($Direction, [System.Globalization.CultureInfo]::InvariantCulture) }
+            _MJR -d (_MH @{sessionId=$SessionId; deltaY=$delta; steps=$Steps}) "$script:_MT/api/browser/agent-wheel"
+        }
         # Mt-Submit [-Selector FORM_SELECTOR]  — submit form via JS (default: first form)
         function Mt-Submit  { param([string]$Selector = "form") _MBB submit $Selector }
         # Mt-Url  — upstream page URL (not proxy URL)
@@ -2198,6 +2230,8 @@ public static class TlbxCliScriptWriter
         Set-Alias -Name mt_log -Value Mt-Log
         Set-Alias -Name mt_text -Value Mt-Text
         Set-Alias -Name mt_scroll -Value Mt-Scroll
+        Set-Alias -Name mt_wheel -Value Mt-Wheel
+        Set-Alias -Name mt_agent_wheel -Value Mt-AgentWheel
         Set-Alias -Name mt_submit -Value Mt-Submit
         Set-Alias -Name mt_url -Value Mt-Url
         Set-Alias -Name mt_links -Value Mt-Links

@@ -1419,6 +1419,74 @@
         }
       }
     },
+    "/api/browser/wheel": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserCommandResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/browser/agent-wheel": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentHistoryWheelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentHistoryWheelResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentHistoryWheelResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/browser/main": {
       "post": {
         "tags": [
@@ -3042,6 +3110,136 @@
           }
         }
       },
+      "AgentHistoryScrollMetrics": {
+        "required": [
+          "scrollTop",
+          "scrollHeight",
+          "clientHeight",
+          "atTop",
+          "atBottom",
+          "progress",
+          "navigatorValue",
+          "navigatorMaximum"
+        ],
+        "type": "object",
+        "properties": {
+          "scrollTop": {
+            "type": "number",
+            "format": "double"
+          },
+          "scrollHeight": {
+            "type": "number",
+            "format": "double"
+          },
+          "clientHeight": {
+            "type": "number",
+            "format": "double"
+          },
+          "atTop": {
+            "type": "boolean"
+          },
+          "atBottom": {
+            "type": "boolean"
+          },
+          "progress": {
+            "type": "number",
+            "format": "double"
+          },
+          "navigatorValue": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "navigatorMaximum": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "AgentHistoryWheelRequest": {
+        "required": [
+          "sessionId"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "deltaY": {
+            "type": [
+              "null",
+              "number"
+            ],
+            "format": "double"
+          },
+          "steps": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "AgentHistoryWheelResult": {
+        "required": [
+          "requestId",
+          "success",
+          "error",
+          "sessionId",
+          "cancelledSteps",
+          "before",
+          "after",
+          "samples"
+        ],
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "cancelledSteps": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "before": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentHistoryScrollMetrics"
+              }
+            ]
+          },
+          "after": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentHistoryScrollMetrics"
+              }
+            ]
+          },
+          "samples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentHistoryScrollMetrics"
+            }
+          }
+        }
+      },
       "AgentSessionFeedResponse": {
         "required": [
           "sessionId",
@@ -3773,6 +3971,27 @@
               "null",
               "string"
             ]
+          },
+          "deltaX": {
+            "type": [
+              "null",
+              "number"
+            ],
+            "format": "double"
+          },
+          "deltaY": {
+            "type": [
+              "null",
+              "number"
+            ],
+            "format": "double"
+          },
+          "steps": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
           }
         }
       },

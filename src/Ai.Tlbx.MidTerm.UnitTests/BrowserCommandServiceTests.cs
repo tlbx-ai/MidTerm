@@ -65,6 +65,40 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
+    public async Task ExecuteCommandAsync_Wheel_PreservesDeltaAndStepCount()
+    {
+        var service = new BrowserCommandService();
+        BrowserWsMessage? captured = null;
+        Assert.True(service.TryRegisterClient("c1", "session-a", "default", "preview-a", msg =>
+        {
+            captured = msg;
+            service.ReceiveResult(new BrowserWsResult
+            {
+                Id = msg.Id,
+                Success = true,
+                Result = "ok",
+                PreviewId = "preview-a"
+            });
+        }));
+
+        var result = await service.ExecuteCommandAsync(new BrowserCommandRequest
+        {
+            Command = "wheel",
+            SessionId = "session-a",
+            Selector = ".agent-history",
+            DeltaX = 4,
+            DeltaY = -240,
+            Steps = 3
+        }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotNull(captured);
+        Assert.Equal(4, captured!.DeltaX);
+        Assert.Equal(-240, captured.DeltaY);
+        Assert.Equal(3, captured.Steps);
+    }
+
+    [Fact]
     public async Task ExecuteCommandAsync_WithMatchingSession_RoutesToCorrectPreview()
     {
         var service = new BrowserCommandService();

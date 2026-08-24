@@ -286,6 +286,42 @@ export function resolveViewportDrivenWindowCount(args: {
   );
 }
 
+function resolveKernelAbsoluteIndex<TItem>(args: {
+  items: readonly TItem[];
+  relativeIndex: number;
+  retainedWindow: VirtualizerRetainedWindowDescriptor;
+  resolveAbsoluteIndex: ((item: TItem, relativeIndex: number) => number) | undefined;
+}): number {
+  const item = args.items[args.relativeIndex];
+  const fallback = args.retainedWindow.windowStart + args.relativeIndex;
+  const resolved =
+    item === undefined || !args.resolveAbsoluteIndex
+      ? fallback
+      : args.resolveAbsoluteIndex(item, args.relativeIndex);
+  return Number.isFinite(resolved)
+    ? Math.max(0, Math.min(args.retainedWindow.totalCount - 1, Math.round(resolved)))
+    : fallback;
+}
+
+function resolveKernelWindowEdges(args: {
+  retainedWindow: VirtualizerRetainedWindowDescriptor;
+  edgeDirection: 'earlier' | 'later' | null | undefined;
+  absoluteVisibleStart: number;
+  absoluteVisibleEnd: number;
+  marginItems: number;
+}): { needsEarlierWindow: boolean; needsLaterWindow: boolean } {
+  return {
+    needsEarlierWindow:
+      args.retainedWindow.windowStart > 0 &&
+      (args.edgeDirection === 'earlier' ||
+        args.absoluteVisibleStart < args.retainedWindow.windowStart + args.marginItems),
+    needsLaterWindow:
+      args.retainedWindow.windowEnd < args.retainedWindow.totalCount &&
+      (args.edgeDirection === 'later' ||
+        args.absoluteVisibleEnd > args.retainedWindow.windowEnd - args.marginItems),
+  };
+}
+
 /**
  * Resolves the next retained item window for a native, kernel-local pixel scroller.
  *
@@ -300,6 +336,8 @@ export function resolveKernelWindowRequest<TItem>(args: {
   retainedWindow: VirtualizerRetainedWindowDescriptor;
   fetchAheadItems: number;
   resolveItemSize: SizeResolver<TItem>;
+  resolveAbsoluteIndex?: (item: TItem, relativeIndex: number) => number;
+  edgeDirection?: 'earlier' | 'later' | null;
   anchorAbsoluteIndex?: number | null | undefined;
 }): { startIndex: number; count: number } | null {
   const { items, viewportMetrics, retainedWindow, resolveItemSize } = args;
@@ -314,15 +352,24 @@ export function resolveKernelWindowRequest<TItem>(args: {
     overscanItems: 0,
     resolveItemSize,
   });
-  const absoluteVisibleStart = retainedWindow.windowStart + visibleRange.start;
-  const absoluteVisibleEnd = retainedWindow.windowStart + visibleRange.end;
+  const resolveAbsoluteIndex = (relativeIndex: number): number =>
+    resolveKernelAbsoluteIndex({
+      items,
+      relativeIndex,
+      retainedWindow,
+      resolveAbsoluteIndex: args.resolveAbsoluteIndex,
+    });
+  const absoluteVisibleStart = resolveAbsoluteIndex(visibleRange.start);
+  const absoluteVisibleEnd =
+    resolveAbsoluteIndex(Math.max(visibleRange.start, visibleRange.end - 1)) + 1;
   const marginItems = Math.max(0, Math.floor(args.fetchAheadItems));
-  const needsEarlierWindow =
-    retainedWindow.windowStart > 0 &&
-    absoluteVisibleStart < retainedWindow.windowStart + marginItems;
-  const needsLaterWindow =
-    retainedWindow.windowEnd < retainedWindow.totalCount &&
-    absoluteVisibleEnd > retainedWindow.windowEnd - marginItems;
+  const { needsEarlierWindow, needsLaterWindow } = resolveKernelWindowEdges({
+    retainedWindow,
+    edgeDirection: args.edgeDirection,
+    absoluteVisibleStart,
+    absoluteVisibleEnd,
+    marginItems,
+  });
   if (!needsEarlierWindow && !needsLaterWindow) {
     return null;
   }
@@ -335,6 +382,15 @@ export function resolveKernelWindowRequest<TItem>(args: {
   );
   const visibleCenter = (absoluteVisibleStart + absoluteVisibleEnd) / 2;
   let startIndex = Math.round(visibleCenter - requestedCount / 2);
+  startIndex = Math.max(0, Math.min(retainedWindow.totalCount - requestedCount, startIndex));
+
+  const overlapItems = Math.max(marginItems, Math.ceil(requestedCount / 3));
+  const edgeShiftItems = Math.max(1, requestedCount - overlapItems);
+  if (args.edgeDirection === 'earlier') {
+    startIndex = Math.min(startIndex, retainedWindow.windowStart - edgeShiftItems);
+  } else if (args.edgeDirection === 'later') {
+    startIndex = Math.max(startIndex, retainedWindow.windowStart + edgeShiftItems);
+  }
   startIndex = Math.max(0, Math.min(retainedWindow.totalCount - requestedCount, startIndex));
 
   const anchorAbsoluteIndex =

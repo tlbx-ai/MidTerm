@@ -449,6 +449,19 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
+        void OnAgentWheel(string requestId, string sessionId, double deltaY, int steps)
+        {
+            var instruction = new Models.Browser.BrowserUiInstruction
+            {
+                Command = "agent-wheel",
+                RequestId = requestId,
+                SessionId = sessionId,
+                DeltaY = deltaY,
+                Steps = steps
+            };
+            _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
+        }
+
         if (shareAccess is null && !isSizeControlOnly)
         {
             _browserUiBridge?.RegisterListener(
@@ -458,7 +471,8 @@ public sealed class StateWebSocketHandler
                 dock: OnBrowserDock,
                 viewport: OnBrowserViewport,
                 open: OnBrowserOpen,
-                mobileDevice: OnMobileDevice);
+                mobileDevice: OnMobileDevice,
+                agentWheel: OnAgentWheel);
         }
 
         try

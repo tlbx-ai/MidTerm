@@ -1351,6 +1351,29 @@ describe('agentView dev errors', () => {
     ).toBe('browse');
   });
 
+  it('does not treat the bottom of an older retained kernel as the live edge', async () => {
+    const { resolveHistoryScrollMode } = await import('./index');
+
+    expect(
+      resolveHistoryScrollMode({
+        previousMode: 'browse',
+        previous: {
+          scrollTop: 1200,
+          clientHeight: 600,
+          scrollHeight: 1800,
+        },
+        current: {
+          scrollTop: 1400,
+          clientHeight: 600,
+          scrollHeight: 2000,
+        },
+        userInitiated: true,
+        pendingAnchorRestore: false,
+        hasNewerHistory: true,
+      }),
+    ).toBe('browse');
+  });
+
   it('keeps a dedicated restore-anchor mode while a prepend anchor is pending', async () => {
     const { resolveHistoryScrollMode } = await import('./index');
 
@@ -2920,7 +2943,7 @@ describe('agentView dev errors', () => {
     expect(requestAnimationFrameMock).toHaveBeenCalledTimes(1);
   });
 
-  it('routes off-window live history changes through browse viewport sync', async () => {
+  it('keeps a browsed history window stable when live history appends beyond it', async () => {
     const disconnectStream = vi.fn();
     openAppServerControlHistoryStream.mockReturnValue(disconnectStream);
     attachSessionAppServerControl.mockResolvedValue(undefined);
@@ -3099,10 +3122,9 @@ describe('agentView dev errors', () => {
       noticeUpserts: [],
     });
 
-    await vi.waitFor(() => {
-      expect(getAppServerControlHistoryWindow).toHaveBeenCalled();
-    });
-    expect(getAppServerControlHistoryWindow.mock.calls[0]?.[1]).not.toBe(40);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getAppServerControlHistoryWindow).not.toHaveBeenCalled();
   });
 
   it('classifies a busy terminal attach failure into a readonly handoff issue', async () => {
@@ -7319,7 +7341,7 @@ describe('agentView dev errors', () => {
     render.renderActivationView('s1', panel, state, entries);
 
     expect(historyViewport.scrollTop).toBe(2000);
-    expect(syncViewportHistoryWindow).toHaveBeenCalledWith('s1');
+    expect(syncViewportHistoryWindow).not.toHaveBeenCalled();
   });
 
   it('requests a viewport-centered history sync when placeholders fill the viewport without a concrete row', async () => {
@@ -7589,6 +7611,54 @@ describe('agentView dev errors', () => {
     expect(requestedWindow).not.toBeNull();
     expect(requestedWindow?.startIndex).toBeLessThanOrEqual(496);
     expect((requestedWindow?.startIndex ?? 0) + (requestedWindow?.count ?? 0)).toBeGreaterThan(496);
+  });
+
+  it('anchors sparse rendered history by canonical order instead of visual array position', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+    const historyViewport = createMockDomNode({
+      clientHeight: 600,
+      clientWidth: 900,
+      scrollTop: 1200,
+      getBoundingClientRect: () => ({ top: 0, bottom: 600, height: 600 }),
+    });
+    const anchorNode = createMockDomNode({
+      getBoundingClientRect: () => ({ top: -20, bottom: 120, height: 140 }),
+    });
+    const state = {
+      historyViewport,
+      historyEntries: [
+        { id: 'visual-1', order: 131 },
+        { id: 'visual-2', order: 145 },
+      ],
+      historyRenderedNodes: new Map([
+        [
+          'visual-1',
+          {
+            node: createMockDomNode({
+              getBoundingClientRect: () => ({ top: -200, bottom: -50, height: 150 }),
+            }),
+          },
+        ],
+        ['visual-2', { node: anchorNode }],
+      ]),
+      snapshot: { historyWindowStart: 100, historyWindowEnd: 150, historyCount: 180 },
+      historyAutoScrollPinned: false,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+    } as any;
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn(),
+      createHistorySpacer: vi.fn(),
+      createRequestActionBlock: vi.fn(),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    expect(render.captureHistoryViewportAnchor(state)).toBe(true);
+    expect(state.pendingHistoryPrependAnchor?.absoluteIndex).toBe(144);
   });
 
   it('estimates taller history rows for narrow viewports', async () => {
@@ -8918,7 +8988,7 @@ describe('agentView dev errors', () => {
     expect(state.historyWindowTargetCount).toBe(80);
   });
 
-  it('requests a snapshot refresh when off-window history changes arrive while browsing older history', async () => {
+  it('does not refresh a browsed snapshot for a new tail entry outside its retained window', async () => {
     const { applyCanonicalAppServerControlDelta } = await import('./index');
 
     const snapshot = {
@@ -9039,7 +9109,7 @@ describe('agentView dev errors', () => {
       noticeUpserts: [],
     });
 
-    expect(requiresWindowRefresh).toBe(true);
+    expect(requiresWindowRefresh).toBe(false);
     expect(snapshot.estimatedHistoryBeforeWindowPx).toBe(4200);
     expect(snapshot.estimatedHistoryAfterWindowPx).toBe(3000);
   });
@@ -9160,7 +9230,7 @@ describe('agentView dev errors', () => {
       noticeUpserts: [],
     });
 
-    expect(requiresWindowRefresh).toBe(true);
+    expect(requiresWindowRefresh).toBe(false);
     expect(snapshot.historyWindowStart).toBe(0);
     expect(snapshot.historyWindowEnd).toBe(64);
     expect(snapshot.history[0]?.entryId).toBe('assistant:1');

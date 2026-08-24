@@ -362,6 +362,9 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(BrowserWsMessage))]
 [JsonSerializable(typeof(BrowserWsResult))]
 [JsonSerializable(typeof(BrowserUiInstruction))]
+[JsonSerializable(typeof(AgentHistoryWheelRequest))]
+[JsonSerializable(typeof(AgentHistoryWheelResult))]
+[JsonSerializable(typeof(AgentHistoryScrollMetrics))]
 [JsonSerializable(typeof(MobileDeviceRequest))]
 [JsonSerializable(typeof(ViewportRequest))]
 
@@ -385,6 +388,5 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 
 

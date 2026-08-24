@@ -1737,6 +1737,93 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/browser/wheel': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['BrowserCommandRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['BrowserCommandResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/browser/agent-wheel': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['AgentHistoryWheelRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AgentHistoryWheelResult'];
+          };
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AgentHistoryWheelResult'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/browser/main': {
     parameters: {
       query?: never;
@@ -3799,6 +3886,40 @@ export interface components {
     ActiveShareGrantListResponse: {
       shares: components['schemas']['ActiveShareGrantInfo'][];
     };
+    AgentHistoryScrollMetrics: {
+      /** Format: double */
+      scrollTop: number;
+      /** Format: double */
+      scrollHeight: number;
+      /** Format: double */
+      clientHeight: number;
+      atTop: boolean;
+      atBottom: boolean;
+      /** Format: double */
+      progress: number;
+      /** Format: int32 */
+      navigatorValue: number;
+      /** Format: int32 */
+      navigatorMaximum: number;
+    };
+    AgentHistoryWheelRequest: {
+      sessionId: string;
+      /** Format: double */
+      deltaY?: null | number;
+      /** Format: int32 */
+      steps?: null | number;
+    };
+    AgentHistoryWheelResult: {
+      requestId: string;
+      success: boolean;
+      error: null | string;
+      sessionId: string;
+      /** Format: int32 */
+      cancelledSteps: number;
+      before: null | components['schemas']['AgentHistoryScrollMetrics'];
+      after: null | components['schemas']['AgentHistoryScrollMetrics'];
+      samples: components['schemas']['AgentHistoryScrollMetrics'][];
+    };
     AgentSessionFeedResponse: {
       sessionId: string;
       source: string;
@@ -3964,6 +4085,12 @@ export interface components {
       sessionId?: null | string;
       previewName?: null | string;
       previewId?: null | string;
+      /** Format: double */
+      deltaX?: null | number;
+      /** Format: double */
+      deltaY?: null | number;
+      /** Format: int32 */
+      steps?: null | number;
     };
     BrowserCommandResponse: {
       success: boolean;

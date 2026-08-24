@@ -12,6 +12,9 @@ public sealed class BrowserUiInstruction
     public bool? ActivateSession { get; set; }
     public string? DeviceAction { get; set; }
     public string? DeviceProfile { get; set; }
+    public string? RequestId { get; set; }
+    public double? DeltaY { get; set; }
+    public int? Steps { get; set; }
 }
 
 public sealed class MobileDeviceRequest

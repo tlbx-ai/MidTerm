@@ -733,6 +733,53 @@ public sealed partial class WebPreviewProxyMiddleware
                     clientWidth:el.clientWidth
                   });
                   break;}
+                case"wheel":{
+                  var s=(msg.selector||"").trim();
+                  var el=!s||s==="window"||s==="document"||s==="body"
+                    ? (document.scrollingElement||document.documentElement)
+                    : document.querySelector(s);
+                  if(!el){res.success=false;res.error="wheel target not found: "+s;break;}
+                  var dy=Number.isFinite(msg.deltaY)?msg.deltaY:120;
+                  var dx=Number.isFinite(msg.deltaX)?msg.deltaX:0;
+                  var steps=Math.max(1,Math.min(100,Math.trunc(msg.steps||1)));
+                  var metrics=function(){
+                    var maxTop=Math.max(0,el.scrollHeight-el.clientHeight);
+                    var maxLeft=Math.max(0,el.scrollWidth-el.clientWidth);
+                    return {
+                      scrollTop:el.scrollTop,
+                      scrollLeft:el.scrollLeft,
+                      scrollHeight:el.scrollHeight,
+                      scrollWidth:el.scrollWidth,
+                      clientHeight:el.clientHeight,
+                      clientWidth:el.clientWidth,
+                      maxScrollTop:maxTop,
+                      atTop:el.scrollTop<=1,
+                      atBottom:maxTop-el.scrollTop<=1,
+                      progress:maxTop>0?el.scrollTop/maxTop:1
+                    };
+                  };
+                  (async function(){
+                    try{
+                      var before=metrics(),samples=[],cancelled=0;
+                      for(var i=0;i<steps;i++){
+                        var accepted=el.dispatchEvent(new WheelEvent("wheel",{
+                          bubbles:true,cancelable:true,composed:true,
+                          deltaX:dx,deltaY:dy,deltaMode:WheelEvent.DOM_DELTA_PIXEL
+                        }));
+                        if(!accepted){cancelled++;}
+                        else if(typeof el.scrollBy==="function")el.scrollBy({top:dy,left:dx,behavior:"instant"});
+                        else{el.scrollTop+=dy;el.scrollLeft+=dx;}
+                        await new Promise(function(resolve){requestAnimationFrame(function(){requestAnimationFrame(resolve);});});
+                        samples.push(metrics());
+                      }
+                      res.result=JSON.stringify({
+                        selector:s||"window",deltaX:dx,deltaY:dy,steps:steps,
+                        synthetic:true,cancelledSteps:cancelled,before:before,after:metrics(),samples:samples
+                      });
+                    }catch(e){res.success=false;res.error="wheel failed: "+(e.message||String(e));}
+                    bws.send(JSON.stringify(res));
+                  })();
+                  return;}
                 case"fill":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
                   var el=document.querySelector(msg.selector);
