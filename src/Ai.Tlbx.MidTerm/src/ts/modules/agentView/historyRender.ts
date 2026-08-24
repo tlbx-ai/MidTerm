@@ -1850,6 +1850,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     options: {
       fetchAheadItems: number;
       anchorAbsoluteIndex?: number | null;
+      navigationDirection?: 'earlier' | 'later' | null | undefined;
     },
   ): { startIndex: number; count: number } | null {
     const viewport = state.historyViewport;
@@ -1877,6 +1878,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       resolveItemSize: (entry) => resolveEntryHeight(entry),
       resolveAbsoluteIndex: (entry) => Math.max(0, Math.round(entry.order) - 1),
       edgeDirection,
+      navigationDirection: options.navigationDirection,
       anchorAbsoluteIndex: options.anchorAbsoluteIndex,
     });
     return request;

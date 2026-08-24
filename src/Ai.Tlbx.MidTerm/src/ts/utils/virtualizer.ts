@@ -309,17 +309,37 @@ function resolveKernelWindowEdges(args: {
   absoluteVisibleStart: number;
   absoluteVisibleEnd: number;
   marginItems: number;
+  navigationDirection?: 'earlier' | 'later' | null | undefined;
 }): { needsEarlierWindow: boolean; needsLaterWindow: boolean } {
+  const allowEarlier = args.navigationDirection !== 'later';
+  const allowLater = args.navigationDirection !== 'earlier';
   return {
     needsEarlierWindow:
+      allowEarlier &&
       args.retainedWindow.windowStart > 0 &&
       (args.edgeDirection === 'earlier' ||
         args.absoluteVisibleStart < args.retainedWindow.windowStart + args.marginItems),
     needsLaterWindow:
+      allowLater &&
       args.retainedWindow.windowEnd < args.retainedWindow.totalCount &&
       (args.edgeDirection === 'later' ||
         args.absoluteVisibleEnd > args.retainedWindow.windowEnd - args.marginItems),
   };
+}
+
+function resolveKernelWindowShiftDirection(args: {
+  edgeDirection: 'earlier' | 'later' | null | undefined;
+  navigationDirection?: 'earlier' | 'later' | null | undefined;
+  needsEarlierWindow: boolean;
+  needsLaterWindow: boolean;
+}): 'earlier' | 'later' | null | undefined {
+  if (args.navigationDirection === 'earlier' && args.needsEarlierWindow) {
+    return 'earlier';
+  }
+  if (args.navigationDirection === 'later' && args.needsLaterWindow) {
+    return 'later';
+  }
+  return args.edgeDirection;
 }
 
 /**
@@ -338,6 +358,7 @@ export function resolveKernelWindowRequest<TItem>(args: {
   resolveItemSize: SizeResolver<TItem>;
   resolveAbsoluteIndex?: (item: TItem, relativeIndex: number) => number;
   edgeDirection?: 'earlier' | 'later' | null;
+  navigationDirection?: 'earlier' | 'later' | null | undefined;
   anchorAbsoluteIndex?: number | null | undefined;
 }): { startIndex: number; count: number } | null {
   const { items, viewportMetrics, retainedWindow, resolveItemSize } = args;
@@ -369,6 +390,7 @@ export function resolveKernelWindowRequest<TItem>(args: {
     absoluteVisibleStart,
     absoluteVisibleEnd,
     marginItems,
+    navigationDirection: args.navigationDirection,
   });
   if (!needsEarlierWindow && !needsLaterWindow) {
     return null;
@@ -386,9 +408,15 @@ export function resolveKernelWindowRequest<TItem>(args: {
 
   const overlapItems = Math.max(marginItems, Math.ceil(requestedCount / 3));
   const edgeShiftItems = Math.max(1, requestedCount - overlapItems);
-  if (args.edgeDirection === 'earlier') {
+  const shiftDirection = resolveKernelWindowShiftDirection({
+    edgeDirection: args.edgeDirection,
+    navigationDirection: args.navigationDirection,
+    needsEarlierWindow,
+    needsLaterWindow,
+  });
+  if (shiftDirection === 'earlier') {
     startIndex = Math.min(startIndex, retainedWindow.windowStart - edgeShiftItems);
-  } else if (args.edgeDirection === 'later') {
+  } else if (shiftDirection === 'later') {
     startIndex = Math.max(startIndex, retainedWindow.windowStart + edgeShiftItems);
   }
   startIndex = Math.max(0, Math.min(retainedWindow.totalCount - requestedCount, startIndex));

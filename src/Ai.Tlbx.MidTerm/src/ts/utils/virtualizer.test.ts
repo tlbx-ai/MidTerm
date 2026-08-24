@@ -146,6 +146,38 @@ describe('virtualizer', () => {
     expect(request!.startIndex + request!.count).toBeGreaterThan(119);
   });
 
+  it('does not reverse a backward browse into the newer kernel margin after anchor restore', () => {
+    const request = resolveKernelWindowRequest({
+      items: Array.from({ length: 60 }, (_, index) => index),
+      viewportMetrics: { scrollTop: 5500, clientHeight: 500, clientWidth: 900 },
+      retainedWindow: { windowStart: 160, windowEnd: 220, totalCount: 300 },
+      fetchAheadItems: 20,
+      resolveItemSize: () => 100,
+      navigationDirection: 'earlier',
+      anchorAbsoluteIndex: 215,
+    });
+
+    expect(request).toBeNull();
+  });
+
+  it('shifts backward when sparse retained rows look near both local edges', () => {
+    const request = resolveKernelWindowRequest({
+      items: Array.from({ length: 12 }, (_, index) => ({ canonicalIndex: 900 + index })),
+      viewportMetrics: { scrollTop: 700, clientHeight: 500, clientWidth: 900 },
+      retainedWindow: { windowStart: 900, windowEnd: 996, totalCount: 1512 },
+      fetchAheadItems: 20,
+      resolveItemSize: () => 100,
+      resolveAbsoluteIndex: (item) => item.canonicalIndex,
+      edgeDirection: 'later',
+      navigationDirection: 'earlier',
+      anchorAbsoluteIndex: 909,
+    });
+
+    expect(request).not.toBeNull();
+    expect(request!.startIndex).toBeLessThan(900);
+    expect(request!.startIndex + request!.count).toBeGreaterThan(909);
+  });
+
   it('does not refetch at a canonical bound when the loaded kernel already covers it', () => {
     expect(
       resolveKernelWindowRequest({

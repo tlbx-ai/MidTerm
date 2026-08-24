@@ -910,6 +910,7 @@ function getOrCreateViewState(
     historyAutoScrollPinned: true,
     historyLastScrollMetrics: null,
     historyLastUserScrollIntentAt: 0,
+    historyLastUserScrollDirection: 0,
     historyLastVoidSyncScrollTop: null,
     historyWindowRevision: null,
     historyWindowViewportWidth: null,
@@ -1338,13 +1339,16 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
 
   viewport.dataset.appServerControlScrollBound = 'true';
   let lastTouchClientY: number | null = null;
-  const markUserScrollIntent = () => {
+  const markUserScrollIntent = (direction: -1 | 0 | 1 = 0) => {
     const current = viewStates.get(sessionId);
     if (!current) {
       return;
     }
 
     current.historyLastUserScrollIntentAt = Date.now();
+    if (direction !== 0) {
+      current.historyLastUserScrollDirection = direction;
+    }
     current.historyViewportSyncSuppressUntil = 0;
   };
   const detachFollowForExplicitBrowseIntent = () => {
@@ -1402,8 +1406,8 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
   viewport.addEventListener(
     'wheel',
     (event) => {
-      markUserScrollIntent();
       const deltaYPx = resolveHistoryWheelDeltaYPx(event, viewport);
+      markUserScrollIntent(deltaYPx < 0 ? -1 : deltaYPx > 0 ? 1 : 0);
       const fastWheelThresholdPx = Math.max(
         HISTORY_FAST_WHEEL_DELTA_MIN_PX,
         Math.round(Math.max(1, viewport.clientHeight) * 0.75),
@@ -1440,8 +1444,16 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
   viewport.addEventListener(
     'touchmove',
     (event) => {
-      markUserScrollIntent();
       const nextTouchClientY = event.touches[0]?.clientY ?? null;
+      const touchDirection =
+        typeof nextTouchClientY === 'number' && typeof lastTouchClientY === 'number'
+          ? nextTouchClientY > lastTouchClientY + 1
+            ? -1
+            : nextTouchClientY < lastTouchClientY - 1
+              ? 1
+              : 0
+          : 0;
+      markUserScrollIntent(touchDirection);
       if (
         typeof nextTouchClientY === 'number' &&
         typeof lastTouchClientY === 'number' &&
@@ -1467,10 +1479,22 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
     },
     { passive: true },
   );
-  viewport.addEventListener('pointerdown', markUserScrollIntent, { passive: true });
+  viewport.addEventListener(
+    'pointerdown',
+    () => {
+      markUserScrollIntent();
+    },
+    { passive: true },
+  );
   /* eslint-disable complexity -- key-driven index scrolling intentionally handles the compact browse command set in one place. */
   viewport.addEventListener('keydown', (event) => {
-    markUserScrollIntent();
+    const navigationDirection =
+      event.key === 'ArrowUp' || event.key === 'PageUp' || event.key === 'Home'
+        ? -1
+        : event.key === 'ArrowDown' || event.key === 'PageDown' || event.key === 'End'
+          ? 1
+          : 0;
+    markUserScrollIntent(navigationDirection);
     const current = viewStates.get(sessionId);
     const keyboardStepPx = current ? resolveHistoryKeyboardStepPx(current) : 40;
     const pageStepPx = Math.max(1, current?.historyViewport?.clientHeight ?? 0);
@@ -2231,11 +2255,20 @@ async function syncHistoryWindowToViewport(
   const anchorAbsoluteIndex = hasAnchor
     ? (state.pendingHistoryPrependAnchor?.absoluteIndex ?? null)
     : null;
+  const navigationDirection =
+    Date.now() - state.historyLastUserScrollIntentAt <= USER_HISTORY_SCROLL_INTENT_WINDOW_MS
+      ? state.historyLastUserScrollDirection < 0
+        ? 'earlier'
+        : state.historyLastUserScrollDirection > 0
+          ? 'later'
+          : null
+      : null;
   const requestedWindow = historyRender.getViewportCenteredHistoryWindowRequest(state, {
     fetchAheadItems: resolveAppServerControlHistoryFetchAheadItems(
       DEFAULT_APP_SERVER_CONTROL_HISTORY_VIRTUALIZER_CONFIG,
     ),
     anchorAbsoluteIndex,
+    navigationDirection,
   });
   if (!requestedWindow) {
     if (forceRequest) {
