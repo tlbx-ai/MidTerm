@@ -83,8 +83,26 @@ public sealed class BrowserUiBridgeTests
         var dispatched = 0;
 
         bridge.RegisterListener(
+            "visible",
+            "browser-a:tab-visible",
+            (_, _) => { },
+            (_, _) => { },
+            (_, _, _, _) => { },
+            (_, _, _, _) => { },
+            agentWheel: (requestId, sessionId, _, _) =>
+            {
+                dispatched++;
+                bridge.CompleteAgentWheel(new AgentHistoryWheelResult
+                {
+                    RequestId = requestId,
+                    SessionId = sessionId,
+                    Success = true
+                });
+            });
+        await Task.Delay(5);
+        bridge.RegisterListener(
             "hidden",
-            "browser-a:tab-hidden",
+            "browser-b:tab-hidden",
             (_, _) => { },
             (_, _) => { },
             (_, _, _, _) => { },
@@ -98,23 +116,6 @@ public sealed class BrowserUiBridgeTests
                     SessionId = sessionId,
                     Success = false,
                     Error = "The requested ACP history is not visible in this tlbx browser UI."
-                });
-            });
-        bridge.RegisterListener(
-            "visible",
-            "browser-b:tab-visible",
-            (_, _) => { },
-            (_, _) => { },
-            (_, _, _, _) => { },
-            (_, _, _, _) => { },
-            agentWheel: (requestId, sessionId, _, _) =>
-            {
-                dispatched++;
-                bridge.CompleteAgentWheel(new AgentHistoryWheelResult
-                {
-                    RequestId = requestId,
-                    SessionId = sessionId,
-                    Success = true
                 });
             });
 

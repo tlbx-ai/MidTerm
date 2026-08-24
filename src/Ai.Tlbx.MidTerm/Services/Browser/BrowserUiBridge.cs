@@ -72,6 +72,7 @@ public sealed class BrowserUiBridge
         {
             targets = _listeners.Values
                 .Where(listener => listener.AgentWheel is not null)
+                .OrderByDescending(listener => listener.ConnectedAtUtc)
                 .ToArray();
         }
 
@@ -102,13 +103,26 @@ public sealed class BrowserUiBridge
             try
             {
                 target.AgentWheel!(requestId, sessionId, deltaY, Math.Clamp(steps, 1, 100));
-                var result = await completion.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
+                using var attemptTimeout = CancellationTokenSource.CreateLinkedTokenSource(
+                    timeout.Token);
+                attemptTimeout.CancelAfter(ResolveAgentWheelAttemptTimeout(steps));
+                var result = await completion.Task.WaitAsync(attemptTimeout.Token).ConfigureAwait(false);
                 if (result.Success)
                 {
                     return result;
                 }
 
                 lastFailure = result;
+            }
+            catch (OperationCanceledException) when (
+                !cancellationToken.IsCancellationRequested && !timeout.IsCancellationRequested)
+            {
+                lastFailure = new AgentHistoryWheelResult
+                {
+                    RequestId = requestId,
+                    SessionId = sessionId,
+                    Error = "The tlbx browser UI did not answer the ACP wheel command; trying another connected UI."
+                };
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -133,6 +147,12 @@ public sealed class BrowserUiBridge
             SessionId = sessionId,
             Error = "No connected tlbx browser UI could find the requested ACP history."
         };
+    }
+
+    private static TimeSpan ResolveAgentWheelAttemptTimeout(int steps)
+    {
+        var boundedSteps = Math.Clamp(steps, 1, 100);
+        return TimeSpan.FromSeconds(Math.Min(10, 2 + boundedSteps * 0.06));
     }
 
     public bool CompleteAgentWheel(AgentHistoryWheelResult result)
