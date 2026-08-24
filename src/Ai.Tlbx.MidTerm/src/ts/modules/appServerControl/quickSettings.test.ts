@@ -68,7 +68,7 @@ describe('appServerControl quick settings', () => {
     vi.unstubAllGlobals();
   });
 
-  it('defaults new codex drafts to gpt-5.5 when no stored model exists', () => {
+  it('leaves the codex model automatic and defaults effort to medium', () => {
     $sessions.set({
       'codex-default': {
         id: 'codex-default',
@@ -76,11 +76,14 @@ describe('appServerControl quick settings', () => {
       } as never,
     });
 
-    expect(getAppServerControlQuickSettingsDraft('codex-default').model).toBe('gpt-5.5');
+    expect(getAppServerControlQuickSettingsDraft('codex-default')).toMatchObject({
+      model: null,
+      effort: 'medium',
+    });
   });
 
-  it('resolves the concrete provider model for default codex AppServerControl sessions', () => {
-    expect(getAppServerControlResolvedProviderModel('codex')).toBe('gpt-5.5');
+  it('does not invent a concrete codex model when no user default exists', () => {
+    expect(getAppServerControlResolvedProviderModel('codex')).toBeNull();
   });
 
   it('maps obsolete Grok Build sticky model aliases to the current Grok default', () => {

@@ -333,10 +333,10 @@ The correct architectural direction is therefore:
 - Agent Controller Session stays provider-runtime-native through `mtagenthost` plus provider APIs and structured protocols intended for rich UI clients
 - `mthost` owns real PTY behavior; `mtagenthost` exclusively owns explicit provider Agent Controller behavior even where shared lifecycle plumbing still allocates an unused PTY sidecar
 - canonical Agent Controller Session events bridge the runtime and the web UI
-- each Codex turn carries the user-selected model and reasoning effort both as
-  provider overrides and as trusted application context; this lets the agent
-  answer runtime-identity questions from the exact session selection instead of
-  inferring from process arguments, environment defaults, or global settings
+- each Codex turn carries its effective model and reasoning effort both as
+  provider overrides and as trusted application context; an explicit user
+  selection wins, while automatic mode resolves the current provider-catalog
+  default with medium reasoning instead of relying on a hard-coded model name
 
 ### Agent Controller Session Sync Transport
 

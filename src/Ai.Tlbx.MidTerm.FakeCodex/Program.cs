@@ -83,7 +83,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                                     {
                                         id = "gpt-5.3-codex",
                                         displayName = "GPT-5.3 Codex",
-                                        isDefault = true,
+                                        isDefault = false,
                                         supportedReasoningEfforts = new[]
                                         {
                                             new { reasoningEffort = "low" },
@@ -98,9 +98,10 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                                     {
                                         id = "gpt-5.6-sol",
                                         displayName = "GPT-5.6 Sol",
-                                        isDefault = false,
+                                        isDefault = true,
                                         supportedReasoningEfforts = new[]
                                         {
+                                            new { reasoningEffort = "medium" },
                                             new { reasoningEffort = "high" }
                                         }
                                     }

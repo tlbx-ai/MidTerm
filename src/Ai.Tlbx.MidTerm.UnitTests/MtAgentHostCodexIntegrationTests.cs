@@ -361,8 +361,10 @@ public sealed class MtAgentHostCodexIntegrationTests
     public async Task MtAgentHost_SpawnsFakeCodexAppServerWithExpectedColdAttachParameters()
     {
         var originalYoloDefault = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT");
+        var originalDefaultModel = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL");
         var originalRemoteCompactionDisabled = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED");
         Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", "false");
+        Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL", null);
         Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED", null);
 
         using var fakeCodex = FakeCodexPathScope.Create();
@@ -421,6 +423,35 @@ public sealed class MtAgentHostCodexIntegrationTests
             Assert.Contains(
                 readyWindow.QuickSettings.ModelOptions,
                 static option => option.Value == "gpt-5.6-sol");
+            Assert.Equal("gpt-5.6-sol", readyWindow.QuickSettings.Model);
+            Assert.Equal("medium", readyWindow.QuickSettings.Effort);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-provider-default",
+                SessionId = "session-cold-launch",
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest
+                {
+                    Text = "Use the automatic defaults.",
+                    Model = "",
+                    Effort = ""
+                }
+            });
+            Assert.Equal(
+                "accepted",
+                (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput,
+                    pendingPatches,
+                    "cmd-turn-provider-default")).Status);
+
+            capture = await WaitForFakeCodexLaunchCaptureAsync(
+                fakeCodex.CapturePath,
+                static launch => !string.IsNullOrWhiteSpace(launch.TurnStartRuntimeContextValue));
+            Assert.Equal("gpt-5.6-sol", capture.TurnStartModel);
+            Assert.Equal("medium", capture.TurnStartEffort);
+            Assert.Contains("\"selectedModel\":\"gpt-5.6-sol\"", capture.TurnStartRuntimeContextValue, StringComparison.Ordinal);
+            Assert.Contains("\"selectedReasoningEffort\":\"medium\"", capture.TurnStartRuntimeContextValue, StringComparison.Ordinal);
         }
         finally
         {
@@ -432,6 +463,7 @@ public sealed class MtAgentHostCodexIntegrationTests
             _ = await process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
             Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", originalYoloDefault);
+            Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL", originalDefaultModel);
             Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED", originalRemoteCompactionDisabled);
         }
     }

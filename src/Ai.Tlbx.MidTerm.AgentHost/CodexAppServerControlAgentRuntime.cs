@@ -2854,7 +2854,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             : AppServerControlQuickSettings.PermissionModeManual;
         return AppServerControlQuickSettings.CreateSummary(
             AppServerControlProviderRuntimeConfiguration.GetCodexDefaultModel(),
-            null,
+            "medium",
             AppServerControlQuickSettings.PlanModeOff,
             defaultPermissionMode,
             defaultPermissionMode);
@@ -2866,8 +2866,12 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             ? AppServerControlQuickSettings.PermissionModeAuto
             : AppServerControlQuickSettings.PermissionModeManual;
         var quickSettings = AppServerControlQuickSettings.CreateSummary(
-            request.Model ?? AppServerControlProviderRuntimeConfiguration.GetCodexDefaultModel(),
-            request.Effort,
+            AppServerControlQuickSettings.NormalizeOptionalValue(request.Model) ??
+            _quickSettings.Model ??
+            AppServerControlProviderRuntimeConfiguration.GetCodexDefaultModel(),
+            AppServerControlQuickSettings.NormalizeOptionalValue(request.Effort) ??
+            _quickSettings.Effort ??
+            "medium",
             request.PlanMode,
             request.PermissionMode,
             defaultPermissionMode);

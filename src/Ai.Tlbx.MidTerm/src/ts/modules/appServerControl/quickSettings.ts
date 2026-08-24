@@ -218,11 +218,7 @@ function resolveRememberedProviderModel(
       : null;
 
   if (provider === 'codex') {
-    return (
-      normalizeOptionalValue(currentSettings?.codexDefaultAppServerControlModel) ??
-      legacyModel ??
-      'gpt-5.5'
-    );
+    return normalizeOptionalValue(currentSettings?.codexDefaultAppServerControlModel);
   }
 
   if (provider === 'claude') {
@@ -361,7 +357,7 @@ function normalizeQuickSettings(
 ): AppServerControlQuickSettingsSummary {
   return {
     model: normalizeProviderModel(provider, settings?.model),
-    effort: normalizeOptionalValue(settings?.effort),
+    effort: normalizeOptionalValue(settings?.effort) ?? (provider === 'codex' ? 'medium' : null),
     planMode: normalizePlanMode(settings?.planMode ?? DEFAULT_PLAN_MODE),
     permissionMode: normalizePermissionMode(
       settings?.permissionMode ?? resolveDefaultPermissionMode(provider),
