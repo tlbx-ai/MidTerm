@@ -2,7 +2,6 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text.Json;
-using System.Threading.Channels;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.WebSockets;
@@ -75,10 +74,10 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
     private const int MaxInputLatencyTraces = 256;
     private const long InputLatencyTraceTimeoutMs = 10_000;
     private const int MaxQueuedOutputs = 1000;
-    private const int OutputQueuePriorityBatchSize = 256;
-    private readonly Channel<PooledOutputItem> _outputQueue =
-        Channel.CreateBounded<PooledOutputItem>(
-            new BoundedChannelOptions(MaxQueuedOutputs) { FullMode = BoundedChannelFullMode.Wait });
+    private const int OutputQueueDrainMaxItemsPerPass = 64;
+    private const int ActiveOutputBurstLimit = 32;
+    private readonly BoundedSessionOutputQueue<PooledOutputItem> _outputQueue =
+        new(MaxQueuedOutputs, ActiveOutputBurstLimit);
     private Task? _outputProcessor;
     private CancellationTokenSource? _cts;
     private readonly SettingsService _settingsService;
@@ -138,7 +137,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
 
         var sequenceEndExclusive = sequenceStart + (ulong)data.Length;
         var trace = MarkInputTraceOutputObserved(sessionId, sequenceEndExclusive);
-        if (!_outputQueue.Writer.TryWrite(new PooledOutputItem(sessionId, sequenceEndExclusive, cols, rows, shared)))
+        if (!_outputQueue.TryEnqueue(sessionId, new PooledOutputItem(sessionId, sequenceEndExclusive, cols, rows, shared)))
         {
             if (trace is not null)
             {
@@ -202,50 +201,44 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
 
     private async Task ProcessOutputQueueAsync(CancellationToken ct)
     {
-        var batch = new List<PooledOutputItem>(OutputQueuePriorityBatchSize);
-        while (await _outputQueue.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
+        try
         {
-            batch.Clear();
-            while (batch.Count < OutputQueuePriorityBatchSize && _outputQueue.Reader.TryRead(out var item))
+            while (await _outputQueue.WaitToReadAsync(ct).ConfigureAwait(false))
             {
-                batch.Add(item);
-            }
-
-            var activeInterest = new bool[batch.Count];
-            for (var i = 0; i < batch.Count; i++)
-            {
-                activeInterest[i] = HasActiveClientInterest(batch[i].SessionId);
-            }
-
-            for (var i = 0; i < batch.Count; i++)
-            {
-                if (activeInterest[i])
+                var activeSessionIds = GetActiveSessionIds();
+                var drainedItems = 0;
+                do
                 {
-                    QueueOutputToClients(batch[i]);
-                }
-            }
+                    if (!_outputQueue.TryDequeue(activeSessionIds, out var item))
+                    {
+                        break;
+                    }
 
-            for (var i = 0; i < batch.Count; i++)
-            {
-                if (!activeInterest[i])
-                {
-                    QueueOutputToClients(batch[i]);
+                    QueueOutputToClients(item);
+                    drainedItems++;
                 }
+                while (drainedItems < OutputQueueDrainMaxItemsPerPass
+                    && _outputQueue.TryAcquireAvailableItem());
             }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Normal shutdown. DisposeAsync drains and releases any remainder.
         }
     }
 
-    private bool HasActiveClientInterest(string sessionId)
+    private HashSet<string> GetActiveSessionIds()
     {
+        var activeSessionIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var client in _clients.Values)
         {
-            if (client.WebSocket.State == WebSocketState.Open && client.IsActiveSession(sessionId))
+            if (client.WebSocket.State == WebSocketState.Open && client.ActiveSessionId is { } sessionId)
             {
-                return true;
+                activeSessionIds.Add(sessionId);
             }
         }
 
-        return false;
+        return activeSessionIds;
     }
 
     private void QueueOutputToClients(PooledOutputItem item)
@@ -691,15 +684,16 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         var cts = _cts;
         _cts = null;
         cts?.Cancel();
-        _outputQueue.Writer.TryComplete();
+        _outputQueue.Complete();
         if (_outputProcessor is not null)
         {
             try { await _outputProcessor.ConfigureAwait(false); } catch { }
         }
-        while (_outputQueue.Reader.TryRead(out var item))
+        foreach (var item in _outputQueue.Drain())
         {
             item.Buffer.Release();
         }
+        _outputQueue.Dispose();
         cts?.Dispose();
 
         var clients = _clients.ToArray();

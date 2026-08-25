@@ -68,6 +68,7 @@ public sealed class MuxClient : IAsyncDisposable
     private const int BackgroundFlushThresholdBytes = 64 * 1024;
     private const int MaxBufferBytesPerSession = 256 * 1024; // 256KB per session
     private const int MaxQueuedItems = 1000;
+    private const int InputDrainMaxItemsPerPass = 64;
     private const int MaxFrameChunkBytes = 32 * 1024;
     private const int ActiveFlushMaxChunksPerPass = 8;
     private static readonly TimeSpan ActiveFlushInterval = TimeSpan.FromMilliseconds(12);
@@ -693,10 +694,13 @@ public sealed class MuxClient : IAsyncDisposable
                     }
                 }
 
-                // 2. Drain all immediately available items into buffers
-                while (reader.TryRead(out var item))
+                // 2. Bound queue work so a continuously replenished background
+                // stream cannot indefinitely postpone an active-session flush.
+                var drainedItems = 0;
+                while (drainedItems < InputDrainMaxItemsPerPass && reader.TryRead(out var item))
                 {
                     BufferOutput(item);
+                    drainedItems++;
                 }
 
                 // 3. Flush what's due (active immediately, background if threshold/time)
@@ -1085,6 +1089,8 @@ public sealed class MuxClient : IAsyncDisposable
         var activeId = _activeSessionId;
         return activeId is not null && string.Equals(activeId, sessionId, StringComparison.Ordinal);
     }
+
+    internal string? ActiveSessionId => _activeSessionId;
 
     public bool ShouldUseQuickResume()
     {
