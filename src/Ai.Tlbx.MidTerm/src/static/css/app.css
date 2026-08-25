@@ -13178,6 +13178,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --agent-appServerControl-machine-surface: transparent;
   --agent-appServerControl-machine-surface-strong: transparent;
   --agent-appServerControl-machine-border: color-mix(in srgb, var(--border-color) 72%, transparent);
+  --agent-appServerControl-assistant-text: #fff;
   --agent-appServerControl-user-text: color-mix(
     in srgb,
     var(--accent-blue) 20%,
@@ -13626,7 +13627,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-assistant.agent-history-pending .agent-history-body {
-  color: color-mix(in srgb, var(--text-primary) 96%, white 4%);
+  color: var(--agent-appServerControl-assistant-text);
 }
 
 .agent-history-assistant.agent-history-live:not(.agent-history-pending) {
@@ -13634,7 +13635,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-assistant.agent-history-live:not(.agent-history-pending) .agent-history-body {
-  color: var(--text-primary);
+  color: var(--agent-appServerControl-assistant-text);
 }
 
 .agent-history-assistant.agent-history-live:not(.agent-history-pending) .agent-history-meta {
@@ -13920,7 +13921,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-assistant .agent-history-body {
-  color: var(--text-primary);
+  color: var(--agent-appServerControl-assistant-text);
   font-family: var(--agent-history-assistant-font-family);
   font-size: var(--terminal-font-size, 16px);
   font-weight: var(--terminal-font-weight, normal);
@@ -14025,7 +14026,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-markdown {
-  overflow: hidden;
+  overflow: visible;
   line-height: 1.38;
 }
 
@@ -14220,7 +14221,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-markdown-content {
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
+  overflow-wrap: anywhere;
 }
 
 .agent-history-markdown > :first-child {
@@ -14357,7 +14359,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-markdown strong {
-  color: var(--text-primary);
+  color: var(--agent-appServerControl-assistant-text);
   font-weight: 700;
 }
 
@@ -14781,7 +14783,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-markdown h2,
 .agent-history-markdown h3,
 .agent-history-markdown h4 {
-  color: var(--text-primary);
+  color: var(--agent-appServerControl-assistant-text);
   font-weight: 650;
   line-height: 1.25;
 }

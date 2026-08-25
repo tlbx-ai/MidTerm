@@ -264,6 +264,7 @@ The canonical history contract must satisfy the following:
 - Reserve stronger styles for true hierarchy boundaries only.
 - Favor readable body text and restrained metadata styling.
 - In Codex Agent Controller Session, user and assistant prompt bodies should follow the configured terminal monospace stack and terminal font size so prompt and response text align with command-oriented work.
+- Assistant prose uses pure white for maximum legibility. Its body and markdown-content layers must allow glyph ink to overflow vertically so descenders and other font overhangs are never clipped; wide tables and code blocks keep overflow handling on their own dedicated wrappers.
 
 ### Containers
 
