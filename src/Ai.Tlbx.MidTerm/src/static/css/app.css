@@ -13178,7 +13178,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --agent-appServerControl-machine-surface: transparent;
   --agent-appServerControl-machine-surface-strong: transparent;
   --agent-appServerControl-machine-border: color-mix(in srgb, var(--border-color) 72%, transparent);
-  --agent-appServerControl-assistant-text: #fff;
+  --agent-appServerControl-assistant-text: var(--text-on-accent);
   --agent-appServerControl-user-text: color-mix(
     in srgb,
     var(--accent-blue) 20%,
