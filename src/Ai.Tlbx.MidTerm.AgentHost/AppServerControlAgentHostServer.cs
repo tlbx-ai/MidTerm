@@ -565,6 +565,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 Effort = appServerControlEvent.QuickSettingsUpdated.Effort,
                 PlanMode = AppServerControlQuickSettings.NormalizePlanMode(appServerControlEvent.QuickSettingsUpdated.PlanMode),
                 PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(appServerControlEvent.QuickSettingsUpdated.PermissionMode),
+                FastMode = AppServerControlQuickSettings.NormalizeFastMode(appServerControlEvent.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.ModelOptions),
                 EffortOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.EffortOptions)
             },
@@ -737,7 +738,6 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
     }
 }
-
 
 
 

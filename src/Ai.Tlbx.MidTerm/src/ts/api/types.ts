@@ -132,6 +132,7 @@ export interface AppServerControlQuickSettingsPayload {
   effort?: string | null;
   planMode: string;
   permissionMode: string;
+  fastMode?: string;
   modelOptions?: AppServerControlQuickSettingsOption[];
   effortOptions?: AppServerControlQuickSettingsOption[];
 }
@@ -141,6 +142,7 @@ export interface AppServerControlQuickSettingsSummary {
   effort?: string | null;
   planMode: string;
   permissionMode: string;
+  fastMode?: string;
   modelOptions?: AppServerControlQuickSettingsOption[];
   effortOptions?: AppServerControlQuickSettingsOption[];
 }
@@ -318,6 +320,7 @@ export interface AppServerControlTurnRequest {
   effort?: string | null;
   planMode?: string | null;
   permissionMode?: string | null;
+  fastMode?: string | null;
   attachments: AppServerControlAttachmentReference[];
   terminalReplay?: AppServerControlTerminalReplayStep[];
 }

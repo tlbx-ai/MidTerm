@@ -3715,6 +3715,12 @@
               "string"
             ]
           },
+          "fastMode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "attachments": {
             "type": "array",
             "items": {

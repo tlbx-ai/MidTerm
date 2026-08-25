@@ -18,6 +18,7 @@ export interface SmartInputDomRefs {
   appServerControlAttachmentHost: HTMLDivElement;
   appServerControlQuickSettingsActions: HTMLDivElement;
   appServerControlEffortSelect: HTMLSelectElement;
+  appServerControlFastToggle: HTMLButtonElement;
   appServerControlModelSelect: HTMLSelectElement;
   appServerControlPermissionSelect: HTMLSelectElement;
   appServerControlPlanSelect: HTMLSelectElement;
@@ -34,6 +35,7 @@ interface CreateSmartInputDomArgs {
   createToolsStrip: () => HTMLDivElement;
   onAttachInputChange: (files: FileList) => void;
   onAppServerControlEffortChange: () => void;
+  onAppServerControlFastToggle: () => void;
   onAppServerControlModelChange: () => void;
   onAppServerControlPermissionChange: () => void;
   onAppServerControlPlanChange: () => void;
@@ -134,6 +136,18 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
     args.onAppServerControlPermissionChange,
   );
 
+  const appServerControlFastToggle = document.createElement('button');
+  appServerControlFastToggle.type = 'button';
+  appServerControlFastToggle.className =
+    'smart-input-appServerControl-control smart-input-appServerControl-fast-toggle';
+  appServerControlFastToggle.textContent = t('smartInput.appServerControlFastModeOff');
+  appServerControlFastToggle.setAttribute('aria-pressed', 'false');
+  appServerControlFastToggle.setAttribute(
+    'aria-label',
+    t('smartInput.appServerControlFastModeCommand'),
+  );
+  appServerControlFastToggle.addEventListener('click', args.onAppServerControlFastToggle);
+
   const appServerControlModelDropdown = createAppServerControlQuickSettingsDropdown(
     appServerControlModelSelect,
   );
@@ -159,6 +173,12 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
       createAppServerControlQuickSettingsDropdown(appServerControlPermissionSelect),
     ),
   );
+  const appServerControlFastField = createAppServerControlQuickSettingsField(
+    t('smartInput.appServerControlFastMode'),
+    appServerControlFastToggle,
+  );
+  appServerControlFastField.dataset.appServerControlField = 'fast-mode';
+  appServerControlQuickSettingsRow.appendChild(appServerControlFastField);
 
   const appServerControlQuickSettingsActions = document.createElement('div');
   appServerControlQuickSettingsActions.className = 'smart-input-appServerControl-actions';
@@ -287,6 +307,7 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
     appServerControlAttachmentHost,
     appServerControlQuickSettingsActions,
     appServerControlEffortSelect,
+    appServerControlFastToggle,
     appServerControlModelSelect,
     appServerControlPermissionSelect,
     appServerControlPlanSelect,
@@ -416,6 +437,7 @@ export function createTerminalTouchToggleButton(
 
 export function formatAppServerControlQuickSettingsSummary(draft: {
   effort?: string | null;
+  fastMode?: string;
   model?: string | null;
   planMode: string;
 }): string {
@@ -424,6 +446,9 @@ export function formatAppServerControlQuickSettingsSummary(draft: {
     draft.effort?.trim() || 'Default',
     draft.planMode === 'on' ? 'PLAN ON' : 'Plan Off',
   ];
+  if (draft.fastMode === 'on') {
+    parts.push('FAST');
+  }
   return parts.join(' · ');
 }
 

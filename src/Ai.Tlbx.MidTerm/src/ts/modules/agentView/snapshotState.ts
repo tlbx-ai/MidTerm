@@ -403,6 +403,7 @@ function cloneSnapshotQuickSettingsSummary(
     effort: quickSettings?.effort ?? null,
     planMode: quickSettings?.planMode ?? 'off',
     permissionMode: quickSettings?.permissionMode ?? 'manual',
+    fastMode: quickSettings?.fastMode ?? 'off',
   };
 }
 

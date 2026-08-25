@@ -73,6 +73,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public bool? LastThreadResumeExcludeTurns { get; private set; }
 
+    public string? LastTurnServiceTier { get; private set; }
+
     public static FakeCodexWebSocketServer Start(
         string loadedThreadId,
         string assistantReply,
@@ -344,6 +346,12 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                         break;
 
                     case "turn/start" when id is not null:
+                        LastTurnServiceTier =
+                            @params.ValueKind == JsonValueKind.Object &&
+                            @params.TryGetProperty("serviceTier", out var serviceTierElement) &&
+                            serviceTierElement.ValueKind == JsonValueKind.String
+                                ? serviceTierElement.GetString()
+                                : null;
                         var turnId = "turn-remote-1";
                         var turnText = ReadTurnText(@params) ?? "Continue from the shared thread.";
                         await SendJsonAsync(socket, new

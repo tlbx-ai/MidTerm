@@ -60,7 +60,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 Type = "turn.start",
                 StartTurn = new AppServerControlTurnRequest
                 {
-                    Text = "Keep this turn open briefly."
+                    Text = "Keep this turn open briefly.",
+                    FastMode = AppServerControlQuickSettings.FastModeOn
                 }
             });
             var turnResult = await AppServerControlHostTestClient.ReadResultAsync(
@@ -69,6 +70,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                 "cmd-turn-control");
             Assert.Equal("accepted", turnResult.Status);
             Assert.True(fakeServer.LastThreadResumeExcludeTurns);
+            Assert.Equal("fast", fakeServer.LastTurnServiceTier);
             var activeTurnId = Assert.IsType<string>(turnResult.Accepted?.TurnId);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope

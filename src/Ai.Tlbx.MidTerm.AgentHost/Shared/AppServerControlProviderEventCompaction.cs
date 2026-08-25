@@ -97,6 +97,7 @@ public static class AppServerControlProviderEventCompaction
                 Effort = source.QuickSettingsUpdated.Effort,
                 PlanMode = AppServerControlQuickSettings.NormalizePlanMode(source.QuickSettingsUpdated.PlanMode),
                 PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode),
+                FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.ModelOptions),
                 EffortOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions)
             },

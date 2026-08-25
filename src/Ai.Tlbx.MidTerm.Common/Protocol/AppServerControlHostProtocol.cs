@@ -13,6 +13,7 @@ public sealed class AppServerControlQuickSettingsPayload
     public string? Effort { get; set; }
     public string PlanMode { get; set; } = AppServerControlQuickSettings.PlanModeOff;
     public string PermissionMode { get; set; } = AppServerControlQuickSettings.PermissionModeManual;
+    public string FastMode { get; set; } = AppServerControlQuickSettings.FastModeOff;
     public List<AppServerControlQuickSettingsOption> ModelOptions { get; set; } = [];
     public List<AppServerControlQuickSettingsOption> EffortOptions { get; set; } = [];
 }
@@ -123,6 +124,8 @@ public static class AppServerControlQuickSettings
     public const string PlanModeOn = "on";
     public const string PermissionModeManual = "manual";
     public const string PermissionModeAuto = "auto";
+    public const string FastModeOff = "off";
+    public const string FastModeOn = "on";
 
     public static string NormalizePlanMode(string? value)
     {
@@ -138,6 +141,13 @@ public static class AppServerControlQuickSettings
             : PermissionModeManual;
     }
 
+    public static string NormalizeFastMode(string? value)
+    {
+        return string.Equals(value?.Trim(), FastModeOn, StringComparison.OrdinalIgnoreCase)
+            ? FastModeOn
+            : FastModeOff;
+    }
+
     public static string? NormalizeOptionalValue(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -148,7 +158,8 @@ public static class AppServerControlQuickSettings
         string? effort,
         string? planMode,
         string? permissionMode,
-        string? defaultPermissionMode = null)
+        string? defaultPermissionMode = null,
+        string? fastMode = null)
     {
         return new AppServerControlQuickSettingsSummary
         {
@@ -156,7 +167,8 @@ public static class AppServerControlQuickSettings
             Effort = NormalizeOptionalValue(effort),
             PlanMode = NormalizePlanMode(planMode),
             PermissionMode = NormalizePermissionMode(
-                string.IsNullOrWhiteSpace(permissionMode) ? defaultPermissionMode : permissionMode)
+                string.IsNullOrWhiteSpace(permissionMode) ? defaultPermissionMode : permissionMode),
+            FastMode = NormalizeFastMode(fastMode)
         };
     }
 
@@ -190,6 +202,7 @@ public static class AppServerControlQuickSettings
             Effort = NormalizeOptionalValue(summary.Effort),
             PlanMode = NormalizePlanMode(summary.PlanMode),
             PermissionMode = NormalizePermissionMode(summary.PermissionMode),
+            FastMode = NormalizeFastMode(summary.FastMode),
             ModelOptions = CloneOptions(summary.ModelOptions),
             EffortOptions = CloneOptions(summary.EffortOptions)
         };
@@ -218,6 +231,7 @@ public sealed class AppServerControlQuickSettingsSummary
     public string? Effort { get; set; }
     public string PlanMode { get; set; } = AppServerControlQuickSettings.PlanModeOff;
     public string PermissionMode { get; set; } = AppServerControlQuickSettings.PermissionModeManual;
+    public string FastMode { get; set; } = AppServerControlQuickSettings.FastModeOff;
     public List<AppServerControlQuickSettingsOption> ModelOptions { get; set; } = [];
     public List<AppServerControlQuickSettingsOption> EffortOptions { get; set; } = [];
 }
@@ -323,6 +337,7 @@ public sealed class AppServerControlTurnRequest
     public string? Effort { get; set; }
     public string? PlanMode { get; set; }
     public string? PermissionMode { get; set; }
+    public string? FastMode { get; set; }
     public List<AppServerControlAttachmentReference> Attachments { get; set; } = [];
     public List<AppServerControlTerminalReplayStep> TerminalReplay { get; set; } = [];
 }
@@ -604,7 +619,6 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 public partial class AppServerControlHostJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

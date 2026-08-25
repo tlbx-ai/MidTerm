@@ -40,11 +40,13 @@ interface CurrentSettingsStoreLike {
 
 type AppServerControlPlanMode = AppServerControlQuickSettingsSummary['planMode'];
 type AppServerControlPermissionMode = AppServerControlQuickSettingsSummary['permissionMode'];
+type AppServerControlFastMode = 'off' | 'on';
 
 const QUICK_SETTINGS_PROVIDER_STORAGE_PREFIX = 'midterm:appServerControl-quick-settings:provider:';
 const DEFAULT_GROK_MODEL = 'grok-4.20-0309-non-reasoning';
 const DEFAULT_PLAN_MODE: AppServerControlPlanMode = 'off';
 const DEFAULT_PERMISSION_MODE: AppServerControlPermissionMode = 'manual';
+const DEFAULT_FAST_MODE: AppServerControlFastMode = 'off';
 const sessionStates = new Map<string, AppServerControlQuickSettingsSessionState>();
 
 function getOptionalStoreExport(key: string): unknown {
@@ -84,6 +86,10 @@ function normalizePermissionMode(value: string | null | undefined): AppServerCon
   return value?.trim().toLowerCase() === 'auto' ? 'auto' : 'manual';
 }
 
+function normalizeFastMode(value: string | null | undefined): AppServerControlFastMode {
+  return value?.trim().toLowerCase() === 'on' ? 'on' : 'off';
+}
+
 function cloneQuickSettings(
   settings: AppServerControlQuickSettingsSummary,
 ): AppServerControlQuickSettingsSummary {
@@ -92,6 +98,7 @@ function cloneQuickSettings(
     effort: settings.effort ?? null,
     planMode: normalizePlanMode(settings.planMode),
     permissionMode: normalizePermissionMode(settings.permissionMode),
+    fastMode: normalizeFastMode(settings.fastMode),
     modelOptions: cloneQuickSettingsOptions(settings.modelOptions),
     effortOptions: cloneQuickSettingsOptions(settings.effortOptions),
   };
@@ -198,6 +205,7 @@ function writeProviderStickyQuickSettings(
         effort: settings.effort ?? null,
         planMode: normalizePlanMode(settings.planMode),
         permissionMode: normalizePermissionMode(settings.permissionMode),
+        fastMode: normalizeFastMode(settings.fastMode),
       }),
     );
   } catch {
@@ -362,6 +370,7 @@ function normalizeQuickSettings(
     permissionMode: normalizePermissionMode(
       settings?.permissionMode ?? resolveDefaultPermissionMode(provider),
     ),
+    fastMode: provider === 'codex' ? normalizeFastMode(settings?.fastMode) : DEFAULT_FAST_MODE,
     modelOptions: cloneQuickSettingsOptions(settings?.modelOptions),
     effortOptions: cloneQuickSettingsOptions(settings?.effortOptions),
   };
@@ -401,7 +410,8 @@ function ensureProviderSeeded(
         providerSeed.model !== null ||
           providerSeed.effort !== null ||
           providerSeed.planMode !== DEFAULT_PLAN_MODE ||
-          providerSeed.permissionMode !== resolveDefaultPermissionMode(provider)
+          providerSeed.permissionMode !== resolveDefaultPermissionMode(provider) ||
+          providerSeed.fastMode !== DEFAULT_FAST_MODE
           ? providerSeed
           : nextEffective,
       );
@@ -511,6 +521,7 @@ export function createAppServerControlTurnRequestWithQuickSettings(
     effort: quickSettings.effort ?? null,
     planMode: quickSettings.planMode,
     permissionMode: quickSettings.permissionMode,
+    fastMode: normalizeFastMode(quickSettings.fastMode),
     attachments,
   };
 }

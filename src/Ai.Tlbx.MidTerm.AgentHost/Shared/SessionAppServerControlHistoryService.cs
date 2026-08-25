@@ -2025,6 +2025,7 @@ public sealed partial class SessionAppServerControlHistoryService
                 Effort = source.QuickSettingsUpdated.Effort,
                 PlanMode = AppServerControlQuickSettings.NormalizePlanMode(source.QuickSettingsUpdated.PlanMode),
                 PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode),
+                FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.ModelOptions),
                 EffortOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions)
             },
@@ -2180,6 +2181,7 @@ public sealed partial class SessionAppServerControlHistoryService
             Effort = AppServerControlQuickSettings.NormalizeOptionalValue(source.Effort),
             PlanMode = AppServerControlQuickSettings.NormalizePlanMode(source.PlanMode),
             PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(source.PermissionMode),
+            FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.FastMode),
             ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions),
             EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions)
         };
@@ -2191,6 +2193,7 @@ public sealed partial class SessionAppServerControlHistoryService
         target.Effort = AppServerControlQuickSettings.NormalizeOptionalValue(source.Effort);
         target.PlanMode = AppServerControlQuickSettings.NormalizePlanMode(source.PlanMode);
         target.PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(source.PermissionMode);
+        target.FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.FastMode);
         target.ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions);
         target.EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions);
     }
@@ -4069,7 +4072,6 @@ public sealed class SessionAppServerControlHistoryPatchSubscription : IDisposabl
         _state.Close();
     }
 }
-
 
 
 

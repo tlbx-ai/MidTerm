@@ -4032,6 +4032,7 @@ export interface components {
       effort?: null | string;
       planMode?: null | string;
       permissionMode?: null | string;
+      fastMode?: null | string;
       attachments: components['schemas']['AppServerControlAttachmentReference'][];
       terminalReplay: components['schemas']['AppServerControlTerminalReplayStep'][];
     };

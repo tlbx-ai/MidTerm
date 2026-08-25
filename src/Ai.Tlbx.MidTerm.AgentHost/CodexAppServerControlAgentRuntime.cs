@@ -274,7 +274,13 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
 
         var turnResult = await SendCodexRequestAsync(
             "turn/start",
-            id => BuildCodexTurnStartRequest(id, _providerThreadId!, input, quickSettings.Model, quickSettings.Effort),
+            id => BuildCodexTurnStartRequest(
+                id,
+                _providerThreadId!,
+                input,
+                quickSettings.Model,
+                quickSettings.Effort,
+                quickSettings.FastMode),
             ct).ConfigureAwait(false);
 
         _quickSettings = quickSettings;
@@ -305,6 +311,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                         Effort = _quickSettings.Effort,
                         PlanMode = _quickSettings.PlanMode,
                         PermissionMode = _quickSettings.PermissionMode,
+                        FastMode = _quickSettings.FastMode,
                         ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions),
                         EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions)
                     }
@@ -2495,7 +2502,8 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
         string threadId,
         IReadOnlyList<CodexTurnInputEntry> input,
         string? model = null,
-        string? effort = null)
+        string? effort = null,
+        string? fastMode = null)
     {
         return BuildJsonString(writer =>
         {
@@ -2536,6 +2544,18 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             if (!string.IsNullOrWhiteSpace(effort))
             {
                 writer.WriteString("effort", effort);
+            }
+
+            if (string.Equals(
+                    AppServerControlQuickSettings.NormalizeFastMode(fastMode),
+                    AppServerControlQuickSettings.FastModeOn,
+                    StringComparison.Ordinal))
+            {
+                writer.WriteString("serviceTier", "fast");
+            }
+            else
+            {
+                writer.WriteNull("serviceTier");
             }
 
             WriteCodexRuntimeContext(writer, model, effort);
@@ -2857,7 +2877,8 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             "medium",
             AppServerControlQuickSettings.PlanModeOff,
             defaultPermissionMode,
-            defaultPermissionMode);
+            defaultPermissionMode,
+            AppServerControlQuickSettings.FastModeOff);
     }
 
     private AppServerControlQuickSettingsSummary ResolveRequestedQuickSettings(AppServerControlTurnRequest request)
@@ -2874,7 +2895,8 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             "medium",
             request.PlanMode,
             request.PermissionMode,
-            defaultPermissionMode);
+            defaultPermissionMode,
+            request.FastMode);
         quickSettings.ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions);
         quickSettings.EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions);
         return quickSettings;

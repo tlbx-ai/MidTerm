@@ -90,6 +90,7 @@ export function syncAppServerControlQuickSettingsControls(args: {
   appServerControlQuickSettingsActions: HTMLDivElement | null;
   appServerControlModelSelect: HTMLSelectElement | null;
   appServerControlEffortSelect: HTMLSelectElement | null;
+  appServerControlFastToggle: HTMLButtonElement | null;
   appServerControlPlanSelect: HTMLSelectElement | null;
   appServerControlPermissionSelect: HTMLSelectElement | null;
   appServerControlSettingsSummaryBtn: HTMLButtonElement | null;
@@ -102,6 +103,7 @@ export function syncAppServerControlQuickSettingsControls(args: {
     appServerControlQuickSettingsActions,
     appServerControlModelSelect,
     appServerControlEffortSelect,
+    appServerControlFastToggle,
     appServerControlPlanSelect,
     appServerControlPermissionSelect,
     appServerControlSettingsSummaryBtn,
@@ -177,6 +179,12 @@ export function syncAppServerControlQuickSettingsControls(args: {
     appServerControlPermissionSelect,
     quickSettingsLocked,
   );
+  syncAppServerControlFastModeToggle({
+    toggle: appServerControlFastToggle,
+    available: provider === 'codex',
+    locked: quickSettingsLocked,
+    enabled: draft.fastMode === 'on',
+  });
 
   if (appServerControlSettingsSummaryBtn) {
     appServerControlSettingsSummaryBtn.textContent = formatAppServerControlQuickSettingsSummary({
@@ -185,6 +193,26 @@ export function syncAppServerControlQuickSettingsControls(args: {
     });
     appServerControlSettingsSummaryBtn.dataset.planMode = draft.planMode;
   }
+}
+
+function syncAppServerControlFastModeToggle(args: {
+  toggle: HTMLButtonElement | null;
+  available: boolean;
+  locked: boolean;
+  enabled: boolean;
+}): void {
+  if (!args.toggle) {
+    return;
+  }
+  const field = args.toggle.closest<HTMLElement>('[data-app-server-control-field="fast-mode"]');
+  if (field) {
+    field.hidden = !args.available;
+  }
+  args.toggle.disabled = args.locked || !args.available;
+  args.toggle.setAttribute('aria-pressed', args.enabled ? 'true' : 'false');
+  args.toggle.textContent = args.enabled
+    ? t('smartInput.appServerControlFastModeOn')
+    : t('smartInput.appServerControlFastModeOff');
 }
 
 function preferQuickSettingsOptions(

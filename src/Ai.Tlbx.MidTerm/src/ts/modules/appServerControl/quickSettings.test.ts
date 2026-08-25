@@ -10,6 +10,7 @@ import { $currentSettings, $sessions } from '../../stores';
 import {
   getAppServerControlResolvedProviderModel,
   getAppServerControlQuickSettingsDraft,
+  createAppServerControlTurnRequestWithQuickSettings,
   removeAppServerControlQuickSettingsSessionState,
   setAppServerControlQuickSettingsDraft,
 } from './quickSettings';
@@ -79,7 +80,27 @@ describe('appServerControl quick settings', () => {
     expect(getAppServerControlQuickSettingsDraft('codex-default')).toMatchObject({
       model: null,
       effort: 'medium',
+      fastMode: 'off',
     });
+  });
+
+  it('persists Codex fast mode and includes it in the next turn request', () => {
+    $sessions.set({
+      'codex-default': {
+        id: 'codex-default',
+        profileHint: 'codex',
+      } as never,
+    });
+
+    setAppServerControlQuickSettingsDraft('codex-default', { fastMode: 'on' });
+
+    expect(getAppServerControlQuickSettingsDraft('codex-default').fastMode).toBe('on');
+    expect(
+      createAppServerControlTurnRequestWithQuickSettings(
+        'codex-default',
+        'Use the fast service tier.',
+      ).fastMode,
+    ).toBe('on');
   });
 
   it('does not invent a concrete codex model when no user default exists', () => {

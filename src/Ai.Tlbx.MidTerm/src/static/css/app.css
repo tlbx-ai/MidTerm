@@ -9973,7 +9973,7 @@ body.shared-session-mode .session-tab-bar {
   align-items: stretch;
   box-sizing: border-box;
   width: calc(100% - 2px);
-  margin-top: 8px;
+  margin: 0 auto;
   min-height: var(--command-bay-automation-chip-height);
   padding: 0 3px;
   border-radius: var(--command-bay-pill-radius);
@@ -18332,6 +18332,26 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   font-weight: 600;
 }
 
+.smart-input-appServerControl-fast-toggle {
+  justify-content: center;
+  min-width: 56px;
+  padding-inline: 10px;
+  border: 1px solid color-mix(in srgb, var(--command-bay-border) 70%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.smart-input-appServerControl-fast-toggle[aria-pressed='true'] {
+  color: color-mix(in srgb, var(--command-bay-text) 86%, var(--accent-blue) 14%);
+  border-color: color-mix(in srgb, var(--accent-blue) 30%, var(--command-bay-border));
+  background: color-mix(in srgb, var(--accent-blue) 7%, var(--command-bay-surface-color));
+}
+
+.smart-input-appServerControl-fast-toggle:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .smart-input-appServerControl-dropdown-trigger {
   min-height: 24px;
 }
@@ -18349,7 +18369,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   flex-wrap: wrap;
   width: 100%;
-  margin-top: var(--command-bay-gap);
+  margin-top: 0;
   padding: 10px;
   overflow: visible;
   box-shadow: none;

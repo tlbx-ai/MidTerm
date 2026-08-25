@@ -177,6 +177,7 @@ describe('smartInputDraftStore', () => {
         effort: 'high',
         planMode: 'on',
         permissionMode: 'auto',
+        fastMode: 'on',
       },
     });
 
@@ -212,6 +213,7 @@ describe('smartInputDraftStore', () => {
           effort: 'high',
           planMode: 'on',
           permissionMode: 'auto',
+          fastMode: 'on',
         },
       },
     ]);

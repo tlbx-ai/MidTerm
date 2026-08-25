@@ -448,6 +448,7 @@ The canonical history contract must satisfy the following:
 - The composer is the primary action control for Agent Controller Sessions.
 - The composer textbox should remain visibly larger than surrounding automation chips, status pills, and quick-setting controls; the dock must read as one system, but the prompt should still dominate.
 - The single-line composer row should align on a shared visual centerline with its adjacent send and utility buttons, and the dock should use equal vertical spacing between the pane edge and each visible dock row.
+- The Agent Controller Session quick-settings rail must use that same dock-row spacing above it as the composer uses above the automation shortcuts; the settings surface must not add a second top margin of its own.
 - Agent Controller Session and Terminal should now share one adaptive footer dock language instead of stacking unrelated bars beneath the active pane.
 - When input is visible, the primary smart input row must always be the first row directly beneath the active pane.
 - Agent Controller Session quick settings should live in the dock status rail rather than as a separate detached manager strip.
@@ -461,7 +462,7 @@ The canonical history contract must satisfy the following:
 - Command Bay controls should use one shared visual language for typography, spacing, radius, border treatment, and hover states; avoid mixing glowy icon buttons, flat chips, and separate pill styles in the same dock.
 - tlbx's dock chrome should stay relatively boxy: tighter corner radii, compact control heights, and restrained padding rather than oversized capsule pills.
 - Prompt-side utility buttons, automation chips, quick-setting pills, and status controls should all use restrained tonal surfaces instead of individual glow or shadow gimmicks.
-- On mobile, Agent Controller Session should keep model/effort/plan awareness always visible in the dock status rail and may reveal only those three editable controls from that status row. The expanded mobile sheet must stay keyboard-safe: one compact row of three buttons, not a multi-row settings form.
+- On mobile, Agent Controller Session should keep model/effort/plan awareness always visible in the dock status rail and may reveal those three editable controls plus provider-supported compact toggles such as Codex Fast Mode. The expanded mobile sheet must stay keyboard-safe and remain a single compact row, not a multi-row settings form.
 - Mobile Agent Controller Session actions, composer controls, quick-setting controls, table sort/filter controls, and live-edge recovery must expose 44px-class touch targets without forcing horizontal page overflow.
 - When the mobile soft keyboard is open, Agent Controller Session should keep that compact status rail ahead of the composer so model/effort/plan awareness stays reachable without hiding the prompt.
 - When desktop width becomes constrained enough that the inline quick-settings rail would overflow, Agent Controller Session should fall back to that same summary-plus-sheet pattern instead of letting controls spill off screen.
@@ -656,7 +657,9 @@ Status in this branch/work item:
 - implemented: Agent Controller Session diff code lines now use one consistent old/new gutter shape across context, delete, and add rows instead of changing numbering layout per row type
 - implemented: Agent Controller Session and Terminal now share one adaptive footer dock shell with ordered primary/context/automation/status rails instead of separate smart-input and manager bars
 - implemented: the dock reserves only its collapsed footer height; multiline input growth expands upward as overlay chrome instead of shrinking the active pane
-- implemented: desktop Agent Controller Session quick settings now live in the dock status rail as a compact translucent control line, while mobile keeps a persistent summary row and reveals only three keyboard-safe controls for model, effort, and plan
+- implemented: desktop Agent Controller Session quick settings now live in the dock status rail as a compact translucent control line, while mobile keeps a persistent summary row and reveals keyboard-safe controls for model, effort, plan, and Codex Fast Mode
+- implemented: Agent Controller Session quick settings now use the shared dock row gap above the rail without an additive panel margin, matching the composer-to-automation spacing
+- implemented: Codex Agent Controller Session Fast Mode is a real quick-setting toggle and maps to App Server `turn/start.serviceTier` (`fast` when enabled, provider default when disabled)
 - implemented: mobile Agent Controller Session now orders the compact status rail ahead of the composer lane, and keyboard-visible Agent Controller Session keeps that summary rail reachable without dropping it below the prompt
 - implemented: Agent Controller Session model quick settings now use provider-scoped populated lists instead of a freeform textbox, while preserving current non-preset models already present in session state
 - implemented: Agent Controller Session quick-settings dropdowns no longer rebuild and resync on every no-op footer refresh; unchanged option lists and unchanged selected values now stay quiet so idle Agent Controller Sessions avoid repeated `midterm:options` and `midterm:sync` event churn

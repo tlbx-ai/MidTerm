@@ -1025,6 +1025,7 @@ export interface ManagerBarQueueTurn {
   effort?: string | null;
   planMode?: string | null;
   permissionMode?: string | null;
+  fastMode?: string | null;
   attachments: ManagerBarQueueAttachment[];
 }
 
