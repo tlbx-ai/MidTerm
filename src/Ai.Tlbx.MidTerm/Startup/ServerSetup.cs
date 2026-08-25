@@ -280,7 +280,8 @@ public static class ServerSetup
                 return;
             }
 
-            var path = context.Request.Path.Value ?? string.Empty;
+            var path = StaticAssetCacheHeaders.ResolveHtmlEntryPointPath(
+                context.Request.Path.Value ?? string.Empty);
             if (!StaticAssetCacheHeaders.IsHtmlEntryPoint(path))
             {
                 await next();
@@ -322,7 +323,8 @@ public static class ServerSetup
                     return;
                 }
 
-                var path = context.Request.Path.Value ?? string.Empty;
+                var path = StaticAssetCacheHeaders.ResolveHtmlEntryPointPath(
+                    context.Request.Path.Value ?? string.Empty);
                 if (!StaticAssetCacheHeaders.IsHtmlEntryPoint(path))
                 {
                     await next();

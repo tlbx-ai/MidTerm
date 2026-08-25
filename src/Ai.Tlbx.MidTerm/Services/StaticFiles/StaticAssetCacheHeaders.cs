@@ -47,6 +47,13 @@ internal static class StaticAssetCacheHeaders
         return requestPath.EndsWith(".html", StringComparison.OrdinalIgnoreCase);
     }
 
+    public static string ResolveHtmlEntryPointPath(string requestPath)
+    {
+        return string.IsNullOrEmpty(requestPath) || requestPath == "/"
+            ? "/index.html"
+            : requestPath;
+    }
+
     public static string StampHtmlAssetUrls(string html, string assetVersion)
     {
         if (string.IsNullOrWhiteSpace(html) || string.IsNullOrWhiteSpace(assetVersion))

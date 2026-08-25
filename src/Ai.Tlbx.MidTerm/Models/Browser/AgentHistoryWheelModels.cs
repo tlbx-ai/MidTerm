@@ -29,4 +29,8 @@ public sealed class AgentHistoryScrollMetrics
     public double Progress { get; init; }
     public int NavigatorValue { get; init; }
     public int NavigatorMaximum { get; init; }
+    public string? AnchorKey { get; init; }
+    public int? AnchorAbsoluteIndex { get; init; }
+    public double? AnchorTopOffsetPx { get; init; }
+    public double? AnchorResidualPx { get; init; }
 }

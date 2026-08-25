@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 import { resolveHistoryBadgeLabel } from './activationHelpers';
 import {
-  pruneHistoryMeasurementCache,
+  retainHistoryMeasurementsAcrossWindowShift,
   recordHistoryMeasuredHeight,
   resolveHistoryViewportEntryHeight,
 } from './historyMeasurements';
@@ -25,6 +25,7 @@ import type {
 import {
   captureViewportAnchor,
   resolveKernelWindowRequest,
+  resolveResizeObserverBorderBoxSize,
   resolveScrollCompensationDelta,
   restoreViewportAnchor,
   syncViewportScrollPosition,
@@ -217,12 +218,10 @@ function resolveMeasurementBrowseAnchor(
   state: SessionAppServerControlViewState,
   viewport: HTMLDivElement,
 ): VirtualizerAnchor | null {
-  const userScrollInProgress =
-    Date.now() - state.historyLastUserScrollIntentAt <= USER_HISTORY_GAP_RECOVERY_GRACE_MS;
   if (
     state.historyAutoScrollPinned ||
     state.pendingHistoryPrependAnchor !== null ||
-    userScrollInProgress
+    state.pendingHistoryLayoutAnchor !== null
   ) {
     return null;
   }
@@ -259,7 +258,7 @@ function collectHistoryMeasurementChanges(args: {
     const sizeChanged = recordHistoryMeasuredHeight(
       state,
       entryId,
-      record.contentRect.height,
+      resolveResizeObserverBorderBoxSize(record),
       viewport.clientWidth,
     );
     if (!sizeChanged || entry === null || previousSize === null) {
@@ -313,13 +312,12 @@ function syncHistoryMeasurementObserver(args: {
       changes: measurementChanges,
       anchorAbsoluteIndex: browseAnchor?.absoluteIndex,
     });
-    if (!current.historyAutoScrollPinned && compensationDelta !== 0) {
+    const activelyScrollingEarlier =
+      Date.now() - current.historyLastUserScrollIntentAt <= USER_HISTORY_GAP_RECOVERY_GRACE_MS &&
+      current.historyLastUserScrollDirection < 0;
+    if (!current.historyAutoScrollPinned && !activelyScrollingEarlier && compensationDelta !== 0) {
       syncViewportScrollPosition(viewport, viewport.scrollTop + compensationDelta);
       current.historyLastScrollMetrics = readHistoryScrollMetrics(viewport, current);
-    }
-
-    if (!current.historyAutoScrollPinned && current.pendingHistoryPrependAnchor === null) {
-      current.pendingHistoryLayoutAnchor = toHistoryViewportAnchor(browseAnchor);
     }
 
     args.scheduleHistoryRender(args.sessionId);
@@ -329,7 +327,7 @@ function syncHistoryMeasurementObserver(args: {
   for (const visibleEntry of args.visibleEntries) {
     const node = args.state.historyRenderedNodes.get(visibleEntry.key)?.node;
     if (node) {
-      args.state.historyMeasurementObserver.observe(node);
+      args.state.historyMeasurementObserver.observe(node, { box: 'border-box' });
     }
   }
 }
@@ -1079,31 +1077,40 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     const state = deps.getState(sessionId);
+    const viewport = container as HTMLDivElement;
+    const renderAnchor =
+      state &&
+      !state.historyAutoScrollPinned &&
+      state.historyRenderedNodes.size > 0 &&
+      typeof viewport.getBoundingClientRect === 'function' &&
+      state.pendingHistoryPrependAnchor === null &&
+      state.pendingHistoryLayoutAnchor === null
+        ? toHistoryViewportAnchor(
+            captureViewportAnchor({
+              viewport,
+              renderedNodes: Array.from(state.historyRenderedNodes, ([entryId, rendered]) => ({
+                key: entryId,
+                node: rendered.node,
+                absoluteIndex: resolveAnchorAbsoluteIndex(state, entryId),
+              })),
+            }),
+          )
+        : null;
     if (state) {
-      state.historyViewport = container as HTMLDivElement;
+      state.historyViewport = viewport;
       state.historyEntries = entries;
-      state.historyLastScrollMetrics ??= readHistoryScrollMetrics(
-        container as HTMLDivElement,
-        state,
-      );
-      pruneHistoryMeasurementCache(state, entries);
+      state.historyLastScrollMetrics ??= readHistoryScrollMetrics(viewport, state);
+      retainHistoryMeasurementsAcrossWindowShift(state);
       deps.pruneAssistantMarkdownCache(state, entries);
       renderScrollToBottomControl(panel, state);
+      if (renderAnchor) {
+        state.pendingHistoryLayoutAnchor = renderAnchor;
+      }
     }
 
-    const viewport = container as HTMLDivElement;
-    const metrics = readHistoryViewportMetrics(viewport, state);
-    const preserveActiveWheelScrollTop =
-      state !== undefined &&
-      !state.historyAutoScrollPinned &&
-      state.pendingHistoryPrependAnchor === null &&
-      state.pendingHistoryLayoutAnchor === null &&
-      Date.now() - state.historyLastUserScrollIntentAt <= USER_HISTORY_GAP_RECOVERY_GRACE_MS;
-    const renderPlan = buildHistoryRenderPlan(entries, metrics, state);
+    let metrics = readHistoryViewportMetrics(viewport, state);
+    let renderPlan = buildHistoryRenderPlan(entries, metrics, state);
     reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
-    if (preserveActiveWheelScrollTop) {
-      syncViewportScrollPosition(viewport, metrics.scrollTop);
-    }
     const measurementChanged = state
       ? measureRenderedHistoryHeights(
           sessionId,
@@ -1112,6 +1119,11 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
           metrics.clientWidth,
         )
       : false;
+    if (measurementChanged && isVirtualizedHistoryContext(state, entries.length)) {
+      metrics = readHistoryViewportMetrics(viewport, state);
+      renderPlan = buildHistoryRenderPlan(entries, metrics, state);
+      reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
+    }
     if (state?.snapshot) {
       traceRenderedAppServerControlHistoryWindow({
         sessionId,
@@ -1121,7 +1133,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         resolveEntryHeight: (entry) => resolveHistoryEntryHeight(entry, state, metrics.clientWidth),
       });
     }
-    finalizeRenderedHistoryState(sessionId, panel, viewport, entries, state, measurementChanged);
+    finalizeRenderedHistoryState(sessionId, panel, viewport, entries, state);
     const snapshot = state?.snapshot;
     const distanceFromBottom = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
     const reachedCanonicalEdge =
@@ -1311,7 +1323,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     viewport: HTMLDivElement,
     entries: readonly AppServerControlHistoryEntry[],
     state: SessionAppServerControlViewState | undefined,
-    measurementChanged: boolean,
   ): void {
     const jumpViewportAdjusted = state ? restorePendingHistoryJumpTarget(viewport, state) : false;
     const browseViewportAdjusted = jumpViewportAdjusted
@@ -1354,10 +1365,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         state.historyLastVoidSyncScrollTop = roundedScrollTop;
         deps.syncViewportHistoryWindow?.(sessionId);
       }
-    }
-
-    if (measurementChanged && isVirtualizedHistoryContext(state, entries.length)) {
-      deps.scheduleHistoryRender(sessionId);
     }
   }
 

@@ -1,6 +1,8 @@
 const VIRTUALIZER_MEASUREMENT_WIDTH_BUCKET_SIZE_PX = 40;
 const VIRTUALIZER_MEASUREMENT_MIN_WIDTH_PX = 240;
 const VIRTUALIZER_HEIGHT_SAMPLE_LIMIT = 6;
+const VIRTUALIZER_MEASUREMENT_BUCKET_LIMIT = 3;
+const VIRTUALIZER_MEASUREMENT_ENTRY_LIMIT = 12000;
 const DEFAULT_REPRESENTATIVE_ITEM_SIZE_PX = 72;
 
 export interface VirtualizerIndexRange {
@@ -73,6 +75,26 @@ function ensureBucket<T>(
   }
 
   return bucket;
+}
+
+function touchBucket<T>(buckets: Map<number, Map<string, T>>, widthBucket: number): Map<string, T> {
+  const bucket = ensureBucket(buckets, widthBucket);
+  buckets.delete(widthBucket);
+  buckets.set(widthBucket, bucket);
+  while (buckets.size > VIRTUALIZER_MEASUREMENT_BUCKET_LIMIT) {
+    const oldestBucket = buckets.keys().next().value;
+    if (oldestBucket === undefined) break;
+    buckets.delete(oldestBucket);
+  }
+  return bucket;
+}
+
+function trimMeasurementEntries<T>(bucket: Map<string, T>): void {
+  while (bucket.size > VIRTUALIZER_MEASUREMENT_ENTRY_LIMIT) {
+    const oldestKey = bucket.keys().next().value;
+    if (oldestKey === undefined) break;
+    bucket.delete(oldestKey);
+  }
 }
 
 function resolveMedian(sample: readonly number[], fallback: number): number {
@@ -149,14 +171,32 @@ export function resolveVirtualizerViewportWidth(
   return clientWidth > 0 ? resolveVirtualizerMeasurementWidthBucket(clientWidth) : undefined;
 }
 
+export function resolveResizeObserverBorderBoxSize(record: ResizeObserverEntry): number {
+  const borderBoxBlockSize = record.borderBoxSize[0]?.blockSize;
+  if (
+    borderBoxBlockSize !== undefined &&
+    Number.isFinite(borderBoxBlockSize) &&
+    borderBoxBlockSize > 0
+  ) {
+    return borderBoxBlockSize;
+  }
+
+  const measuredHeight = (record.target as HTMLElement).getBoundingClientRect().height;
+  if (Number.isFinite(measuredHeight) && measuredHeight > 0) {
+    return measuredHeight;
+  }
+
+  return record.contentRect.height;
+}
+
 export function activateVirtualizerMeasurementBucket(
   state: VirtualizerMeasurementState,
   clientWidth: number,
 ): number {
   const widthBucket = resolveVirtualizerMeasurementWidthBucket(clientWidth);
-  const measuredSizes = ensureBucket(state.measuredSizesByBucket, widthBucket);
-  const observedSizes = ensureBucket(state.observedSizesByBucket, widthBucket);
-  ensureBucket(state.observedSizeSamplesByBucket, widthBucket);
+  const measuredSizes = touchBucket(state.measuredSizesByBucket, widthBucket);
+  const observedSizes = touchBucket(state.observedSizesByBucket, widthBucket);
+  touchBucket(state.observedSizeSamplesByBucket, widthBucket);
   const changed =
     state.measuredWidthBucket !== widthBucket ||
     state.measuredSizes !== measuredSizes ||
@@ -198,6 +238,9 @@ export function recordMeasuredItemSize(
 
   state.measuredSizes.set(key, normalizedSize);
   state.observedSizes.set(key, nextObservedSize);
+  trimMeasurementEntries(state.measuredSizes);
+  trimMeasurementEntries(state.observedSizes);
+  trimMeasurementEntries(sampleBuckets);
   state.lastWindowKey = null;
   return true;
 }

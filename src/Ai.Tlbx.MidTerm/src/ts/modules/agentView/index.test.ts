@@ -6740,7 +6740,8 @@ describe('agentView dev errors', () => {
     expect(historyViewport.childNodes.length).toBeLessThan(entries.length + 2);
     expect(state.historyRenderedNodes.size).toBeLessThan(entries.length);
     expect(state.historyRenderedNodes.has('row-360')).toBe(true);
-    expect(scheduleHistoryRender).toHaveBeenCalled();
+    expect(state.pendingHistoryPrependAnchor).toBeNull();
+    expect(scheduleHistoryRender).not.toHaveBeenCalled();
   });
 
   it('keeps the progress navigator active for short histories with tall rendered rows', async () => {
@@ -7555,7 +7556,8 @@ describe('agentView dev errors', () => {
     render.renderActivationView('s1', panel, state, entries);
     render.renderActivationView('s1', panel, state, entries);
 
-    expect(measuredNode.getBoundingClientRect).toHaveBeenCalledTimes(1);
+    // One border-box measurement plus capture/restore reads for the stable browse anchor.
+    expect(measuredNode.getBoundingClientRect).toHaveBeenCalledTimes(3);
   });
 
   it('keeps the captured anchor absolute index inside a viewport-centered history fetch', async () => {

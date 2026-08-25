@@ -3119,7 +3119,11 @@
           "atBottom",
           "progress",
           "navigatorValue",
-          "navigatorMaximum"
+          "navigatorMaximum",
+          "anchorKey",
+          "anchorAbsoluteIndex",
+          "anchorTopOffsetPx",
+          "anchorResidualPx"
         ],
         "type": "object",
         "properties": {
@@ -3152,6 +3156,33 @@
           "navigatorMaximum": {
             "type": "integer",
             "format": "int32"
+          },
+          "anchorKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "anchorAbsoluteIndex": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "anchorTopOffsetPx": {
+            "type": [
+              "null",
+              "number"
+            ],
+            "format": "double"
+          },
+          "anchorResidualPx": {
+            "type": [
+              "null",
+              "number"
+            ],
+            "format": "double"
           }
         }
       },

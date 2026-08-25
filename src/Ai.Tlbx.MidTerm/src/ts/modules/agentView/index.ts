@@ -100,6 +100,7 @@ import {
   syncAppServerControlQuickSettingsFromSnapshot,
 } from '../appServerControl/quickSettings';
 import { showDevErrorDialog } from '../../utils/devErrorDialog';
+import { captureViewportAnchor } from '../../utils/virtualizer';
 import {
   attachSessionAppServerControl,
   detachSessionAppServerControl,
@@ -124,6 +125,10 @@ interface AgentHistoryWheelMetrics {
   progress: number;
   navigatorValue: number;
   navigatorMaximum: number;
+  anchorKey: string | null;
+  anchorAbsoluteIndex: number | null;
+  anchorTopOffsetPx: number | null;
+  anchorResidualPx: number | null;
 }
 
 export interface AgentHistoryWheelResult {
@@ -140,8 +145,17 @@ export interface AgentHistoryWheelResult {
 function readAgentHistoryWheelMetrics(
   viewport: HTMLDivElement,
   navigator: HTMLDivElement | null,
+  state: SessionAppServerControlViewState,
 ): AgentHistoryWheelMetrics {
   const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+  const anchor = captureViewportAnchor({
+    viewport,
+    renderedNodes: Array.from(state.historyRenderedNodes, ([entryId, rendered]) => ({
+      key: entryId,
+      node: rendered.node,
+      absoluteIndex: Math.max(0, Math.round(rendered.entry.order) - 1),
+    })),
+  });
   return {
     scrollTop: viewport.scrollTop,
     scrollHeight: viewport.scrollHeight,
@@ -151,7 +165,27 @@ function readAgentHistoryWheelMetrics(
     progress: maxScrollTop > 0 ? viewport.scrollTop / maxScrollTop : 1,
     navigatorValue: Number(navigator?.getAttribute('aria-valuenow') ?? 1),
     navigatorMaximum: Number(navigator?.getAttribute('aria-valuemax') ?? 1),
+    anchorKey: anchor?.key ?? null,
+    anchorAbsoluteIndex: anchor?.absoluteIndex ?? null,
+    anchorTopOffsetPx: anchor?.topOffsetPx ?? null,
+    anchorResidualPx: null,
   };
+}
+
+function resolveAgentHistoryAnchorResidual(
+  before: AgentHistoryWheelMetrics,
+  after: AgentHistoryWheelMetrics,
+): number | null {
+  if (
+    before.anchorKey === null ||
+    before.anchorKey !== after.anchorKey ||
+    before.anchorTopOffsetPx === null ||
+    after.anchorTopOffsetPx === null
+  ) {
+    return null;
+  }
+
+  return after.anchorTopOffsetPx - before.anchorTopOffsetPx + (after.scrollTop - before.scrollTop);
 }
 
 function waitForAgentHistoryWheelFrame(): Promise<void> {
@@ -184,11 +218,12 @@ export async function wheelAgentHistory(args: {
   }
 
   const navigator = state.historyProgressNav;
-  const before = readAgentHistoryWheelMetrics(viewport, navigator);
+  const before = readAgentHistoryWheelMetrics(viewport, navigator, state);
   const samples: AgentHistoryWheelMetrics[] = [];
   let cancelledSteps = 0;
   const steps = Math.max(1, Math.min(100, Math.trunc(args.steps)));
   for (let step = 0; step < steps; step += 1) {
+    const stepBefore = readAgentHistoryWheelMetrics(viewport, navigator, state);
     const accepted = viewport.dispatchEvent(
       new WheelEvent('wheel', {
         bubbles: true,
@@ -204,7 +239,9 @@ export async function wheelAgentHistory(args: {
       cancelledSteps += 1;
     }
     await waitForAgentHistoryWheelFrame();
-    samples.push(readAgentHistoryWheelMetrics(viewport, navigator));
+    const sample = readAgentHistoryWheelMetrics(viewport, navigator, state);
+    sample.anchorResidualPx = resolveAgentHistoryAnchorResidual(stepBefore, sample);
+    samples.push(sample);
   }
 
   return {
@@ -213,7 +250,7 @@ export async function wheelAgentHistory(args: {
     sessionId: args.sessionId,
     cancelledSteps,
     before,
-    after: readAgentHistoryWheelMetrics(viewport, navigator),
+    after: readAgentHistoryWheelMetrics(viewport, navigator, state),
     samples,
   };
 }

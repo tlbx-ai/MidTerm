@@ -99,37 +99,14 @@ export function recordHistoryMeasuredHeight(
   return changed;
 }
 
-export function pruneHistoryMeasurementCache(
+export function retainHistoryMeasurementsAcrossWindowShift(
   state: SessionAppServerControlViewState,
-  entries: readonly AppServerControlHistoryEntry[],
 ): void {
   ensureMeasurementBucketState(state);
-  const retainedIds = new Set(entries.map((entry) => entry.id));
-  pruneMeasurementMap(state.historyMeasuredHeights, retainedIds);
-  pruneMeasurementMap(state.historyObservedHeights, retainedIds);
-  pruneBucketMap(state.historyMeasuredHeightsByBucket, retainedIds);
-  pruneBucketMap(state.historyObservedHeightsByBucket, retainedIds);
-  pruneBucketMap(state.historyObservedHeightSamplesByBucket, retainedIds);
-}
-
-function pruneMeasurementMap<T>(map: Map<string, T>, retainedIds: ReadonlySet<string>): void {
-  for (const key of map.keys()) {
-    if (!retainedIds.has(key)) {
-      map.delete(key);
-    }
-  }
-}
-
-function pruneBucketMap<T>(
-  buckets: Map<number, Map<string, T>>,
-  retainedIds: ReadonlySet<string>,
-): void {
-  for (const [bucketKey, bucket] of buckets) {
-    pruneMeasurementMap(bucket, retainedIds);
-    if (bucket.size === 0) {
-      buckets.delete(bucketKey);
-    }
-  }
+  // A server history window is only the current materialized kernel, not the lifetime of a
+  // canonical row. Keep exact measurements across overlapping window shifts so revisiting a
+  // variable-height row does not fall back to its estimate and move the reader again. The whole
+  // measurement state is released when the Agent surface becomes inactive.
 }
 
 export function resolveRepresentativeHistoryEntryHeight(

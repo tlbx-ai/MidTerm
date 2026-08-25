@@ -6,6 +6,17 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public class StaticAssetCacheHeadersTests
 {
+    [Theory]
+    [InlineData("", "/index.html")]
+    [InlineData("/", "/index.html")]
+    [InlineData("/login.html", "/login.html")]
+    public void ResolveHtmlEntryPointPath_MapsTheDefaultDocumentBeforeCustomHtmlMiddleware(
+        string requestPath,
+        string expected)
+    {
+        Assert.Equal(expected, StaticAssetCacheHeaders.ResolveHtmlEntryPointPath(requestPath));
+    }
+
     [Fact]
     public void CreateETag_SamePathAndMetadata_ReturnsStableValue()
     {

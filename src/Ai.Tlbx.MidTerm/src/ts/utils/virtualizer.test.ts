@@ -1,13 +1,71 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  activateVirtualizerMeasurementBucket,
+  captureViewportAnchor,
   computeVirtualWindow,
   resolveKernelWindowRequest,
+  resolveResizeObserverBorderBoxSize,
   resolveScrollCompensationDelta,
+  restoreViewportAnchor,
   resolveViewportDrivenWindowCount,
 } from './virtualizer';
 
 describe('virtualizer', () => {
+  it('bounds retained measurement history to the three most recent width buckets', () => {
+    const state = {
+      measuredSizes: new Map(),
+      observedSizes: new Map(),
+      measuredSizesByBucket: new Map(),
+      observedSizesByBucket: new Map(),
+      observedSizeSamplesByBucket: new Map(),
+      measuredWidthBucket: 0,
+      lastWindowKey: null,
+    };
+
+    for (const width of [400, 800, 1200, 1600]) {
+      activateVirtualizerMeasurementBucket(state, width);
+    }
+
+    expect([...state.measuredSizesByBucket.keys()]).toEqual([800, 1200, 1600]);
+    expect([...state.observedSizesByBucket.keys()]).toEqual([800, 1200, 1600]);
+    expect([...state.observedSizeSamplesByBucket.keys()]).toEqual([800, 1200, 1600]);
+  });
+
+  it('uses the ResizeObserver border box instead of the smaller content box', () => {
+    const record = {
+      borderBoxSize: [{ blockSize: 132, inlineSize: 800 }],
+      contentRect: { height: 116 },
+      target: {
+        getBoundingClientRect: () => ({ height: 132 }),
+      },
+    } as unknown as ResizeObserverEntry;
+
+    expect(resolveResizeObserverBorderBoxSize(record)).toBe(132);
+  });
+
+  it('restores a concrete visible row after spacer geometry changes', () => {
+    const viewport = {
+      scrollTop: 1000,
+      scrollHeight: 5000,
+      clientHeight: 600,
+      getBoundingClientRect: () => ({ top: 100, bottom: 700 }),
+    } as HTMLDivElement;
+    let rowTop = 124;
+    const row = {
+      getBoundingClientRect: () => ({ top: rowTop, bottom: rowTop + 200 }),
+    } as HTMLElement;
+    const anchor = captureViewportAnchor({
+      viewport,
+      renderedNodes: [{ key: 'row-42', node: row, absoluteIndex: 42 }],
+    });
+
+    rowTop = 284;
+    expect(anchor).not.toBeNull();
+    expect(restoreViewportAnchor({ viewport, anchor: anchor!, resolveNode: () => row })).toBe(true);
+    expect(viewport.scrollTop).toBe(1160);
+  });
+
   it('computes a bounded overscanned render window', () => {
     const items = Array.from({ length: 100 }, (_, index) => index);
 

@@ -3901,6 +3901,13 @@ export interface components {
       navigatorValue: number;
       /** Format: int32 */
       navigatorMaximum: number;
+      anchorKey: null | string;
+      /** Format: int32 */
+      anchorAbsoluteIndex: null | number;
+      /** Format: double */
+      anchorTopOffsetPx: null | number;
+      /** Format: double */
+      anchorResidualPx: null | number;
     };
     AgentHistoryWheelRequest: {
       sessionId: string;
