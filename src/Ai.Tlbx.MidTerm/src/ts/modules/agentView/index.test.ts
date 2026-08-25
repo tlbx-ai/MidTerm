@@ -28,6 +28,56 @@ const windowEventListeners = new Map<string, Array<() => void>>();
 let resetAgentViewRuntimeForTests: typeof import('./index').resetAgentViewRuntimeForTests;
 const agentViewModulePromise = import('./index');
 
+describe('variable-height history wheel prefetch', () => {
+  it('requests the next retained window before an upward wheel reaches the pixel edge', async () => {
+    const { shouldPrefetchHistoryWindowForWheel } = await agentViewModulePromise;
+    expect(
+      shouldPrefetchHistoryWindowForWheel({
+        deltaYPx: -220,
+        scrollTop: 900,
+        scrollHeight: 8000,
+        clientHeight: 800,
+        hasOlderHistory: true,
+        hasNewerHistory: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPrefetchHistoryWindowForWheel({
+        deltaYPx: -220,
+        scrollTop: 2000,
+        scrollHeight: 8000,
+        clientHeight: 800,
+        hasOlderHistory: true,
+        hasNewerHistory: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('prefetches symmetrically near the lower edge and respects global endpoints', async () => {
+    const { shouldPrefetchHistoryWindowForWheel } = await agentViewModulePromise;
+    expect(
+      shouldPrefetchHistoryWindowForWheel({
+        deltaYPx: 220,
+        scrollTop: 6300,
+        scrollHeight: 8000,
+        clientHeight: 800,
+        hasOlderHistory: true,
+        hasNewerHistory: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPrefetchHistoryWindowForWheel({
+        deltaYPx: 220,
+        scrollTop: 6300,
+        scrollHeight: 8000,
+        clientHeight: 800,
+        hasOlderHistory: true,
+        hasNewerHistory: false,
+      }),
+    ).toBe(false);
+  });
+});
+
 function createMockDomNode(overrides: Record<string, unknown> = {}): any {
   const node: any = {
     dataset: {} as DOMStringMap,

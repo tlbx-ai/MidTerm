@@ -175,6 +175,7 @@ function readAgentHistoryWheelMetrics(
 function resolveAgentHistoryAnchorResidual(
   before: AgentHistoryWheelMetrics,
   after: AgentHistoryWheelMetrics,
+  requestedDeltaY: number,
 ): number | null {
   if (
     before.anchorKey === null ||
@@ -185,7 +186,11 @@ function resolveAgentHistoryAnchorResidual(
     return null;
   }
 
-  return after.anchorTopOffsetPx - before.anchorTopOffsetPx + (after.scrollTop - before.scrollTop);
+  // The retained pixel corridor is deliberately rebased as the global history
+  // window moves. Compare the concrete row's visual motion with the requested
+  // wheel motion; local scrollTop deltas are an implementation detail and may
+  // legitimately jump by thousands of pixels during that rebase.
+  return after.anchorTopOffsetPx - before.anchorTopOffsetPx + requestedDeltaY;
 }
 
 function waitForAgentHistoryWheelFrame(): Promise<void> {
@@ -240,7 +245,7 @@ export async function wheelAgentHistory(args: {
     }
     await waitForAgentHistoryWheelFrame();
     const sample = readAgentHistoryWheelMetrics(viewport, navigator, state);
-    sample.anchorResidualPx = resolveAgentHistoryAnchorResidual(stepBefore, sample);
+    sample.anchorResidualPx = resolveAgentHistoryAnchorResidual(stepBefore, sample, args.deltaY);
     samples.push(sample);
   }
 
@@ -1023,6 +1028,25 @@ function resolveHistoryWheelDeltaYPx(event: WheelEvent, viewport: HTMLDivElement
   return event.deltaY;
 }
 
+export function shouldPrefetchHistoryWindowForWheel(args: {
+  deltaYPx: number;
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  hasOlderHistory: boolean;
+  hasNewerHistory: boolean;
+}): boolean {
+  const thresholdPx = Math.max(Math.max(1, args.clientHeight) * 1.5, Math.abs(args.deltaYPx) * 4);
+  if (args.deltaYPx < 0 && args.hasOlderHistory) {
+    return args.scrollTop <= thresholdPx;
+  }
+  if (args.deltaYPx > 0 && args.hasNewerHistory) {
+    const distanceFromBottom = Math.max(0, args.scrollHeight - args.clientHeight - args.scrollTop);
+    return distanceFromBottom <= thresholdPx;
+  }
+  return false;
+}
+
 function clearHistoryNavigatorPreviewTimer(state: SessionAppServerControlViewState): void {
   if (state.historyNavigatorPreviewHandle === null) {
     return;
@@ -1376,6 +1400,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
 
   viewport.dataset.appServerControlScrollBound = 'true';
   let lastTouchClientY: number | null = null;
+  let wheelPrefetchFrameQueued = false;
   const markUserScrollIntent = (direction: -1 | 0 | 1 = 0) => {
     const current = viewStates.get(sessionId);
     if (!current) {
@@ -1420,25 +1445,35 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
     );
   };
   const queueKernelEdgeWindowSync = (deltaYPx: number) => {
-    const current = viewStates.get(sessionId);
-    const currentViewport = current?.historyViewport;
-    if (
-      !current ||
-      !currentViewport ||
-      current.historyAutoScrollPinned ||
-      typeof currentViewport.getBoundingClientRect !== 'function'
-    ) {
+    if (wheelPrefetchFrameQueued) {
       return;
     }
-
-    const distanceFromBottom =
-      currentViewport.scrollHeight - currentViewport.clientHeight - currentViewport.scrollTop;
-    const crossedKernelEdge =
-      (deltaYPx < 0 && currentViewport.scrollTop <= 1 && current.snapshot?.hasOlderHistory) ||
-      (deltaYPx > 0 && distanceFromBottom <= 1 && current.snapshot?.hasNewerHistory);
-    if (crossedKernelEdge) {
-      queueUrgentHistoryWindowViewportSync(sessionId, current);
-    }
+    wheelPrefetchFrameQueued = true;
+    window.requestAnimationFrame(() => {
+      wheelPrefetchFrameQueued = false;
+      const current = viewStates.get(sessionId);
+      const currentViewport = current?.historyViewport;
+      if (
+        !current ||
+        !currentViewport ||
+        current.historyAutoScrollPinned ||
+        typeof currentViewport.getBoundingClientRect !== 'function'
+      ) {
+        return;
+      }
+      if (
+        shouldPrefetchHistoryWindowForWheel({
+          deltaYPx,
+          scrollTop: currentViewport.scrollTop,
+          scrollHeight: currentViewport.scrollHeight,
+          clientHeight: currentViewport.clientHeight,
+          hasOlderHistory: current.snapshot?.hasOlderHistory ?? false,
+          hasNewerHistory: current.snapshot?.hasNewerHistory ?? false,
+        })
+      ) {
+        queueUrgentHistoryWindowViewportSync(sessionId, current);
+      }
+    });
   };
   viewport.addEventListener(
     'wheel',

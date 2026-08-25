@@ -68,6 +68,7 @@ const findStableAnchor = () => {
     })[0];
 };
 const sampleStep = async (deltaY) => {
+  const beforeNavigator = readNavigator();
   const anchor = findStableAnchor();
   const anchorId = anchor?.dataset.appServerControlEntryId ?? null;
   const beforeTop = anchor?.getBoundingClientRect().top ?? null;
@@ -94,11 +95,18 @@ const sampleStep = async (deltaY) => {
     residuals.push(
       current.getBoundingClientRect().top -
         beforeTop +
-        (viewport.scrollTop - beforeScrollTop),
+        deltaY,
     );
   }
   await wait(8);
-  return { ...readNavigator(), residuals };
+  return {
+    ...readNavigator(),
+    beforeValue: beforeNavigator.value,
+    anchorId,
+    beforeScrollTop,
+    afterScrollTop: viewport.scrollTop,
+    residuals,
+  };
 };
 
 const initial = readNavigator();
@@ -123,6 +131,33 @@ const residuals = [...upSamples, ...downSamples].flatMap(
 const absoluteResiduals = residuals
   .map(Math.abs)
   .sort((left, right) => left - right);
+const finalAbsoluteResiduals = [...upSamples, ...downSamples]
+  .map((sample) => Math.abs(sample.residuals.at(-1) ?? 0))
+  .sort((left, right) => left - right);
+const settlingReversals = [...upSamples, ...downSamples].reduce(
+  (total, sample) =>
+    total +
+    sample.residuals.reduce((reversals, residual, index, values) => {
+      if (index === 0) return reversals;
+      return reversals +
+        (Math.abs(residual) > Math.abs(values[index - 1]) + 1 ? 1 : 0);
+    }, 0),
+  0,
+);
+const outliers = [...upSamples.map((sample) => ({ direction: 'up', ...sample })),
+  ...downSamples.map((sample) => ({ direction: 'down', ...sample }))]
+  .map((sample) => ({
+    direction: sample.direction,
+    beforeValue: sample.beforeValue,
+    value: sample.value,
+    anchorId: sample.anchorId,
+    beforeScrollTop: sample.beforeScrollTop,
+    afterScrollTop: sample.afterScrollTop,
+    maximumResidualPx: Math.max(0, ...sample.residuals.map(Math.abs)),
+  }))
+  .filter((sample) => sample.maximumResidualPx > 8)
+  .sort((left, right) => right.maximumResidualPx - left.maximumResidualPx)
+  .slice(0, 20);
 const upReversals = upSamples.filter(
   (sample, index) =>
     index > 0 && sample.value > (upSamples[index - 1]?.value ?? sample.value),
@@ -146,6 +181,13 @@ return {
   maximumAnchorResidualPx: absoluteResiduals.at(-1) ?? null,
   p95AnchorResidualPx:
     absoluteResiduals[Math.floor(absoluteResiduals.length * 0.95)] ?? null,
+  maximumSettledAnchorResidualPx: finalAbsoluteResiduals.at(-1) ?? null,
+  p95SettledAnchorResidualPx:
+    finalAbsoluteResiduals[Math.floor(finalAbsoluteResiduals.length * 0.95)] ?? null,
+  settlingReversals,
+  residualsOver8Px: absoluteResiduals.filter((value) => value > 8).length,
+  residualsOver100Px: absoluteResiduals.filter((value) => value > 100).length,
+  outliers,
   renderedRows: viewport.querySelectorAll("[data-app-server-control-entry-id]")
     .length,
 };
