@@ -81,6 +81,15 @@ type HistoryRenderDeps = {
       showAssistantBadge?: boolean;
     },
   ) => HTMLElement;
+  syncHistoryEntry?: (
+    node: HTMLElement,
+    entry: AppServerControlHistoryEntry,
+    sessionId: string,
+    options?: {
+      artifactCluster?: ArtifactClusterInfo | null;
+      showAssistantBadge?: boolean;
+    },
+  ) => void;
   syncBusyIndicatorEntry?: (node: HTMLElement, entry: AppServerControlHistoryEntry) => void;
   createHistoryPlaceholderBlock?: (args: {
     heightPx: number;
@@ -1602,6 +1611,19 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     if (existing && existing.signature === visibleEntry.signature) {
       existing.node.dataset.appServerControlEntryId = visibleEntry.key;
+      return existing.node;
+    }
+
+    if (existing && deps.syncHistoryEntry) {
+      deps.syncHistoryEntry(existing.node, visibleEntry.entry, sessionId, {
+        artifactCluster: visibleEntry.cluster,
+        showAssistantBadge: visibleEntry.showAssistantBadge,
+      });
+      existing.node.dataset.appServerControlEntryId = visibleEntry.key;
+      existing.signature = visibleEntry.signature;
+      existing.entry = visibleEntry.entry;
+      existing.cluster = visibleEntry.cluster;
+      existing.lastMeasuredWidthBucket = null;
       return existing.node;
     }
 

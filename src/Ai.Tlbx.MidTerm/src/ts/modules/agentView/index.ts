@@ -386,6 +386,7 @@ const historyRender = createAgentHistoryRender({
   scheduleHistoryRender,
   syncAgentViewPresentation,
   createHistoryEntry: historyDom.createHistoryEntry,
+  syncHistoryEntry: historyDom.syncHistoryEntry,
   createHistoryPlaceholderBlock: historyDom.createHistoryPlaceholderBlock,
   syncBusyIndicatorEntry: historyDom.syncBusyIndicatorEntry,
   createRequestActionBlock: historyDom.createRequestActionBlock,

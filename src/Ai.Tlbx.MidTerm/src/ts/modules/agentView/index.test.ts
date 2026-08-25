@@ -661,78 +661,90 @@ describe('agentView dev errors', () => {
     });
 
     const visibleBadges: boolean[] = [];
+    const createHistoryEntry = vi.fn((entry: any, _sessionId: string, options?: any) => {
+      const node = createMockDomNode({
+        getBoundingClientRect: vi.fn(() => ({ height: 40, top: 0, bottom: 40 })),
+      });
+      node.dataset = {};
+      if (entry.kind === 'assistant') {
+        visibleBadges.push(options?.showAssistantBadge === true);
+      }
+      return node;
+    });
+    const syncHistoryEntry = vi.fn();
     const render = createAgentHistoryRender({
       getState: () => state,
       scheduleHistoryRender: vi.fn(),
       syncAgentViewPresentation: vi.fn(),
-      createHistoryEntry: (entry, _sessionId, options) => {
-        const node = createMockDomNode({
-          getBoundingClientRect: vi.fn(() => ({ height: 40, top: 0, bottom: 40 })),
-        });
-        node.dataset = {};
-        if (entry.kind === 'assistant') {
-          visibleBadges.push(options?.showAssistantBadge === true);
-        }
-        return node;
-      },
+      createHistoryEntry,
+      syncHistoryEntry,
       createHistorySpacer: () => createMockDomNode(),
       createRequestActionBlock: () => createMockDomNode(),
       pruneAssistantMarkdownCache: vi.fn(),
       renderRuntimeStats: vi.fn(),
     });
 
-    render.renderHistory(
-      state.panel,
-      [
-        {
-          id: 'user:turn-1',
-          order: 1,
-          kind: 'user',
-          tone: 'info',
-          label: 'User',
-          title: '',
-          body: 'Question',
-          meta: '12:00:00',
-          sourceTurnId: 'turn-1',
-        },
-        {
-          id: 'assistant:turn-1:1',
-          order: 2,
-          kind: 'assistant',
-          tone: 'info',
-          label: 'Agent',
-          title: '',
-          body: 'First part',
-          meta: '12:00:01',
-          sourceTurnId: 'turn-1',
-        },
-        {
-          id: 'assistant:turn-1:2',
-          order: 3,
-          kind: 'assistant',
-          tone: 'info',
-          label: 'Agent',
-          title: '',
-          body: 'Second part',
-          meta: '12:00:02',
-          sourceTurnId: 'turn-1',
-        },
-        {
-          id: 'assistant:turn-2:1',
-          order: 4,
-          kind: 'assistant',
-          tone: 'info',
-          label: 'Agent',
-          title: '',
-          body: 'New turn answer',
-          meta: '12:00:03',
-          sourceTurnId: 'turn-2',
-        },
-      ] as any,
-      's1',
-    );
+    const entries = [
+      {
+        id: 'user:turn-1',
+        order: 1,
+        kind: 'user',
+        tone: 'info',
+        label: 'User',
+        title: '',
+        body: 'Question',
+        meta: '12:00:00',
+        sourceTurnId: 'turn-1',
+      },
+      {
+        id: 'assistant:turn-1:1',
+        order: 2,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Agent',
+        title: '',
+        body: 'First part',
+        meta: '12:00:01',
+        sourceTurnId: 'turn-1',
+      },
+      {
+        id: 'assistant:turn-1:2',
+        order: 3,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Agent',
+        title: '',
+        body: 'Second part',
+        meta: '12:00:02',
+        sourceTurnId: 'turn-1',
+      },
+      {
+        id: 'assistant:turn-2:1',
+        order: 4,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Agent',
+        title: '',
+        body: 'New turn answer',
+        meta: '12:00:03',
+        sourceTurnId: 'turn-2',
+      },
+    ] as any;
+    render.renderHistory(state.panel, entries, 's1');
 
     expect(visibleBadges).toEqual([true, false, true]);
+
+    const liveNode = state.historyRenderedNodes.get('assistant:turn-2:1')?.node;
+    const updatedEntry = { ...entries[3], body: 'New turn answer, still streaming' };
+    render.renderHistory(state.panel, [...entries.slice(0, 3), updatedEntry], 's1');
+
+    expect(createHistoryEntry).toHaveBeenCalledTimes(4);
+    expect(syncHistoryEntry).toHaveBeenCalledTimes(1);
+    expect(syncHistoryEntry).toHaveBeenCalledWith(liveNode, updatedEntry, 's1', {
+      artifactCluster: null,
+      showAssistantBadge: true,
+    });
+    expect(state.historyRenderedNodes.get('assistant:turn-2:1')?.node).toBe(liveNode);
   });
 
   it('keeps the busy indicator DOM node and syncs it in place across live updates', async () => {
