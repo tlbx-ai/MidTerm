@@ -4,7 +4,9 @@ using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
-public sealed class AgentControllerInstallationService(SettingsService settingsService)
+public sealed class AgentControllerInstallationService(
+    SettingsService settingsService,
+    AcpAgentCatalogService acpAgentCatalog)
 {
     public IReadOnlyList<AgentControllerInstallationDto> GetInstalled()
     {
@@ -23,7 +25,7 @@ public sealed class AgentControllerInstallationService(SettingsService settingsS
             supportsResume: true,
             userProfileDirectory);
 
-        foreach (var definition in AcpAgentDefinitions.All)
+        foreach (var definition in acpAgentCatalog.GetDefinitions())
         {
             AddIfInstalled(
                 installed,

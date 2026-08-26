@@ -498,6 +498,7 @@ public sealed class AppServerControlAttachRuntimeRequest
 {
     public string SessionId { get; set; } = string.Empty;
     public string Provider { get; set; } = string.Empty;
+    public string? RuntimeKind { get; set; }
     public string WorkingDirectory { get; set; } = string.Empty;
     public string? InstanceId { get; set; }
     public string? OwnerToken { get; set; }
@@ -621,7 +622,6 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 public partial class AppServerControlHostJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

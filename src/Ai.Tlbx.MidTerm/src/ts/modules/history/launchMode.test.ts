@@ -44,6 +44,12 @@ describe('history launch mode helpers', () => {
     expect(getHistoryModeBadgeText({ launchMode: 'appServerControl', profile: 'opencode' })).toBe(
       'OPC',
     );
+    expect(getHistoryModeDisplayText({ launchMode: 'appServerControl', profile: 'gemini' })).toBe(
+      'Agent · Gemini CLI',
+    );
+    expect(getHistoryModeBadgeText({ launchMode: 'appServerControl', profile: 'copilot' })).toBe(
+      'COP',
+    );
     expect(
       isAppServerControlHistoryEntry({ launchMode: 'appServerControl', profile: 'claude' }),
     ).toBe(false);

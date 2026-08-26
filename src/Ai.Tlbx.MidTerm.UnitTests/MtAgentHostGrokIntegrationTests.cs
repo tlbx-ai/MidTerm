@@ -11,6 +11,7 @@ public sealed class MtAgentHostGrokIntegrationTests
     [Theory]
     [InlineData("grok", "agent", "stdio")]
     [InlineData("opencode", "acp")]
+    [InlineData("custom-acp", "--stdio-acp")]
     public async Task MtAgentHost_CanDriveStandardAcpAgent(string provider, params string[] expectedArguments)
     {
         using var fakeGrok = FakeGrokPathScope.Create();
@@ -22,7 +23,7 @@ public sealed class MtAgentHostGrokIntegrationTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains(provider, hello.Providers);
+            Assert.Contains("acp-v1", hello.Providers);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -33,7 +34,10 @@ public sealed class MtAgentHostGrokIntegrationTests
                 {
                     SessionId = sessionId,
                     Provider = provider,
+                    RuntimeKind = "acp-v1",
                     ExecutablePath = fakeGrok.ExecutablePath,
+                    AgentName = "Fake ACP agent",
+                    ExecutableArguments = expectedArguments.ToList(),
                     WorkingDirectory = fakeGrok.Root
                 }
             });
@@ -103,12 +107,64 @@ public sealed class MtAgentHostGrokIntegrationTests
                 turnWindow.Notices,
                 notice => notice.Type == "agent.state" &&
                           notice.Message.Contains("Fake Grok notification: Session notification handled.", StringComparison.Ordinal));
+            Assert.Contains(
+                turnWindow.Notices,
+                notice => notice.Type == "thread.token-usage.updated" &&
+                          notice.Detail?.Contains("1,234 / 128,000 context tokens, 0.0123 USD cumulative", StringComparison.Ordinal) == true);
             Assert.DoesNotContain(
                 turnWindow.Notices,
                 notice => notice.Message.Contains("ignored", StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_RejectsUnsupportedAcpProtocolVersion()
+    {
+        var previousVersion = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_PROTOCOL_VERSION");
+        Environment.SetEnvironmentVariable("MIDTERM_FAKE_GROK_PROTOCOL_VERSION", "2");
+        using var fakeGrok = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll());
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-invalid-protocol",
+                SessionId = "session-invalid-acp-protocol",
+                Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = "session-invalid-acp-protocol",
+                    Provider = "custom-acp",
+                    RuntimeKind = "acp-v1",
+                    ExecutablePath = fakeGrok.ExecutablePath,
+                    AgentName = "Fake ACP agent",
+                    WorkingDirectory = fakeGrok.Root
+                }
+            });
+
+            var result = await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput,
+                pendingPatches,
+                "cmd-attach-invalid-protocol");
+
+            Assert.Equal("rejected", result.Status);
+            Assert.Contains("requires ACP v1", result.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MIDTERM_FAKE_GROK_PROTOCOL_VERSION", previousVersion);
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);

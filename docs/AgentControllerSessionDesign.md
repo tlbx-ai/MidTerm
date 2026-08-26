@@ -4,7 +4,7 @@
 
 This document is the source of truth for the visual and interaction design of tlbx Agent Controller Session. It exists to prevent Agent Controller Session UI behavior from drifting across ad hoc iterations.
 
-Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The new-session launcher discovers locally installed supported runtimes and currently recognizes Codex app-server plus standard ACP agents such as Grok Build and OpenCode. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
+Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The new-session launcher discovers locally installed supported runtimes and recognizes Codex app-server plus standard ACP-v1 agents. The built-in ACP catalog covers Grok Build, OpenCode, Gemini CLI, and GitHub Copilot CLI; installations can add or override definitions through the server-owned `acp-agents.json` manifest without adding provider branches to `mtagenthost` or the frontend. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
 
 Any future Agent Controller Session UI change that affects layout, hierarchy, history ordering, timeline rendering, typography, spacing, scrolling, item rendering, or interaction states must update this document with the new fundamental rule or revised rationale.
 
@@ -29,6 +29,8 @@ This document governs:
 - DOM/performance constraints for long-running sessions
 
 Provider-specific transport details belong in the C# runtime layer, not here. This document describes the Agent Controller Session UX contract after provider events have been normalized into tlbx-owned concepts.
+
+ACP discovery is intentionally local and non-executing: tlbx only presents catalog entries whose command already resolves on the configured user's machine. The optional `acp-agents.json` file lives beside `settings.json` and has the shape `{ "agents": [{ "profile": "my-agent", "name": "My Agent", "command": "my-agent", "arguments": ["--acp"] }] }`. The server validates these definitions and resolves the executable before sending an owner-authenticated attach request to `mtagenthost`; browser input never supplies an arbitrary executable or argument vector.
 
 ## Non-Regression Floor
 
@@ -529,7 +531,8 @@ The canonical history contract must satisfy the following:
 
 - not yet implemented: older transport-era naming and `transcript` naming still leak through non-browser services, reducer internals, host-owned canonical state types, and some debug/test surfaces even though the active browser/websocket path is now history-first
 - not yet implemented: interview interactions now render inline in the timeline with a dedicated request widget, but they are still modeled as request summaries plus request history rows rather than a fully separate canonical `interview` item type end to end
-- not yet implemented: ACP session capability differences still need broader conformance coverage across additional registry agents beyond Grok Build and OpenCode
+- not yet implemented: ACP authentication and client-side filesystem/terminal capabilities are not advertised; agents must already be authenticated and must honor the currently advertised client capabilities
+- not yet implemented: live model-turn conformance still needs broader coverage across Gemini CLI and GitHub Copilot CLI even though their standard ACP launch contracts are now discoverable
 
 ## Dev Diagnostics
 

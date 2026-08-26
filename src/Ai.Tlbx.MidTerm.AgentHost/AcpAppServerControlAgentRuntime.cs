@@ -165,6 +165,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 AttachRequestTimeout,
                 ct)
             .ConfigureAwait(false);
+        ValidateProtocolVersion(initializeResult);
 
         var newSessionResult = await SendRequestAsync(
                 "session/new",
@@ -638,6 +639,9 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             case "current_mode_update":
                 _currentModeId = GetString(updateElement, "currentModeId");
                 return;
+            case "usage_update":
+                HandleUsageUpdate(updateElement, root, rawLine);
+                return;
         }
 
         var turnId = _activeTurnId;
@@ -847,6 +851,34 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         _quickSettings = updated;
         CaptureConfigOptions(Traverse(update, "configOptions"));
         _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", "config_option_update", root, rawLine));
+    }
+
+    private void HandleUsageUpdate(JsonElement update, JsonElement root, string rawLine)
+    {
+        var used = update.TryGetProperty("used", out var usedElement) && usedElement.TryGetUInt64(out var usedValue)
+            ? usedValue
+            : 0;
+        var size = update.TryGetProperty("size", out var sizeElement) && sizeElement.TryGetUInt64(out var sizeValue)
+            ? sizeValue
+            : 0;
+        var detail = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{used:N0} / {size:N0} context tokens");
+        if (update.TryGetProperty("cost", out var cost) && cost.ValueKind == JsonValueKind.Object &&
+            cost.TryGetProperty("amount", out var amount) && amount.TryGetDouble(out var amountValue) &&
+            GetString(cost, "currency") is { } currency)
+        {
+            detail += string.Create(CultureInfo.InvariantCulture, $", {amountValue:0.####} {currency} cumulative");
+        }
+
+        _emit(CreateEvent("thread.token-usage.updated", _activeTurnId, null, null, "acp", "usage_update", root, appServerControlEvent =>
+        {
+            appServerControlEvent.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
+            {
+                Message = $"{_agentName} context window updated.",
+                Detail = detail
+            };
+        }, rawLine));
     }
 
     private void EmitContentDelta(
@@ -1451,6 +1483,17 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         }
 
         return result;
+    }
+
+    private static void ValidateProtocolVersion(JsonElement initializeResult)
+    {
+        if (!initializeResult.TryGetProperty("protocolVersion", out var protocolVersion) ||
+            protocolVersion.ValueKind != JsonValueKind.Number ||
+            !protocolVersion.TryGetInt32(out var value) ||
+            value != 1)
+        {
+            throw new InvalidOperationException("ACP agent returned an unsupported protocol version; tlbx requires ACP v1.");
+        }
     }
 
     private static List<AcpPromptBlock> BuildPromptBlocks(AppServerControlTurnRequest request, string? planMode)

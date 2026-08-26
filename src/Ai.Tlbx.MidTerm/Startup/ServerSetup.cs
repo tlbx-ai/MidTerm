@@ -158,6 +158,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<ManagerBarQueueService>();
         builder.Services.AddSingleton<AiCliProfileService>();
         builder.Services.AddSingleton<AiCliCapabilityService>();
+        builder.Services.AddSingleton<AcpAgentCatalogService>();
         builder.Services.AddSingleton<AgentControllerInstallationService>();
         builder.Services.AddSingleton<SessionForegroundProcessService>();
         builder.Services.AddSingleton<SessionAgentFeedService>();

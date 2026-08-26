@@ -116,6 +116,8 @@ function getAgentDisplayName(profile: HistoryAppServerControlProfile | null): st
   if (profile === 'codex') return t('sessionLauncher.codexTitle');
   if (profile === 'grok') return 'Grok Build';
   if (profile === 'opencode') return 'OpenCode';
+  if (profile === 'gemini') return 'Gemini CLI';
+  if (profile === 'copilot') return 'GitHub Copilot CLI';
   return profile || t('sessionTabs.agent');
 }
 
@@ -123,5 +125,7 @@ function getAgentBadge(profile: HistoryAppServerControlProfile | null): string {
   if (profile === 'codex') return 'CDX';
   if (profile === 'grok') return 'GRK';
   if (profile === 'opencode') return 'OPC';
+  if (profile === 'gemini') return 'GEM';
+  if (profile === 'copilot') return 'COP';
   return (profile || 'ACP').slice(0, 3).toUpperCase();
 }

@@ -367,7 +367,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 HostKind = "mtagenthost",
                 HostVersion = "dev",
                 Providers = _syntheticProvider is null
-                    ? ["codex", .. AcpAgentDefinitions.All.Select(static agent => agent.Profile)]
+                    ? ["codex", "acp-v1"]
                     : [_syntheticProvider],
                 Capabilities =
                 [
@@ -425,14 +425,14 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             return _runtime;
         }
 
-        if (AcpAgentDefinitions.TryGet(provider, out var acpAgent))
+        var attach = command.AttachRuntime
+                     ?? throw new InvalidOperationException("runtime.attach payload is required.");
+        if (string.Equals(attach.RuntimeKind, "acp-v1", StringComparison.Ordinal))
         {
-            var attach = command.AttachRuntime
-                         ?? throw new InvalidOperationException("runtime.attach payload is required.");
             _runtime = new AcpAppServerControlAgentRuntime(
-                acpAgent.Profile,
-                attach.AgentName ?? acpAgent.Name,
-                attach.ExecutableArguments.Count > 0 ? attach.ExecutableArguments : acpAgent.Arguments,
+                provider ?? throw new InvalidOperationException("ACP provider is required."),
+                attach.AgentName,
+                attach.ExecutableArguments,
                 EmitRuntimeEvent);
             return _runtime;
         }
@@ -753,7 +753,6 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
     }
 }
-
 
 
 

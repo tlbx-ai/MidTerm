@@ -39,6 +39,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private readonly ConcurrentDictionary<string, HostRuntimeState> _states = new(StringComparer.Ordinal);
     private readonly SettingsService _settingsService;
+    private readonly AcpAgentCatalogService _acpAgentCatalog;
     private readonly MidTermInstanceIdentity _instanceIdentity;
     private readonly AppServerControlHostOwnershipRegistry _ownershipRegistry;
     private readonly bool _preserveHostsOnDispose;
@@ -48,8 +49,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     public SessionAppServerControlHostRuntimeService(
         SettingsService settingsService,
         MidTermInstanceIdentity? instanceIdentity = null,
-        string? mode = null)
-        : this(settingsService, instanceIdentity, mode, null)
+        string? mode = null,
+        AcpAgentCatalogService? acpAgentCatalog = null)
+        : this(settingsService, instanceIdentity, mode, null, acpAgentCatalog)
     {
     }
 
@@ -57,9 +59,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         SettingsService settingsService,
         MidTermInstanceIdentity? instanceIdentity,
         string? mode,
-        RedirectedProcessLauncher? launcher)
+        RedirectedProcessLauncher? launcher,
+        AcpAgentCatalogService? acpAgentCatalog = null)
     {
         _settingsService = settingsService;
+        _acpAgentCatalog = acpAgentCatalog ?? new AcpAgentCatalogService(settingsService);
         _instanceIdentity = instanceIdentity ?? MidTermInstanceIdentity.Load(
             Path.Combine(Path.GetTempPath(), "midterm-test-agenthost", Guid.NewGuid().ToString("N")),
             0);
@@ -76,7 +80,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     {
         return _mode is SyntheticMode or CodexMode &&
                (string.Equals(profile, AiCliProfileService.CodexProfile, StringComparison.Ordinal) ||
-                AcpAgentDefinitions.TryGet(profile, out _));
+                _acpAgentCatalog.ContainsProfile(profile));
     }
 
     internal bool TryResolveRecoverableProfile(string sessionId, [NotNullWhen(true)] out string? profile)
@@ -205,10 +209,19 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             await DisposeStateAsync(state, terminateHost: false).ConfigureAwait(false);
             var settings = _settingsService.Load();
             var userProfileDirectory = ResolveConfiguredUserProfileDirectory(settings);
-            AcpAgentDefinitions.TryGet(profile, out var acpAgent);
-            var executablePath = attachPoint is null
+            var isCodex = string.Equals(profile, AiCliProfileService.CodexProfile, StringComparison.Ordinal);
+            ResolvedAcpAgentDefinition? acpAgent = null;
+            var executablePath = attachPoint is null && isCodex
                 ? AiCliCommandLocator.ResolveExecutablePath(profile, session, userProfileDirectory)
                 : null;
+            if (!isCodex && !_acpAgentCatalog.TryResolve(profile, userProfileDirectory, out acpAgent))
+            {
+                state.Status = HostRuntimeStatus.Error;
+                state.LastError = $"ACP executable for profile '{profile}' could not be resolved from the trusted catalog.";
+                return false;
+            }
+
+            executablePath ??= acpAgent?.ExecutablePath;
             var preferredProfileDirectory = ResolvePreferredProfileDirectory(settings, executablePath);
             BuildLaunchEnvironment(
                 settings,
@@ -292,6 +305,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     {
                         SessionId = sessionId,
                         Provider = profile,
+                        RuntimeKind = acpAgent is null ? CodexMode : "acp-v1",
                         WorkingDirectory = workingDirectory,
                         InstanceId = _instanceIdentity.InstanceId,
                         OwnerToken = _instanceIdentity.OwnerToken,
