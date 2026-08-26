@@ -65,6 +65,10 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                     continue;
                 case "model/list":
                     RecordMethod(launchCapture, method);
+                    var modelCursor = root.TryGetProperty("params", out var modelListParams) &&
+                                      modelListParams.ValueKind == JsonValueKind.Object
+                        ? GetString(modelListParams, "cursor")
+                        : null;
                     PersistLaunchCapture(capturePath, launchCapture);
                     await WriteJsonAsync(new
                     {
@@ -72,21 +76,37 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         id = root.GetProperty("id").ToString(),
                         result = new
                         {
-                            data = new[]
-                            {
-                                new
+                            data = modelCursor is null
+                                ? new[]
                                 {
-                                    id = "gpt-5.3-codex",
-                                    displayName = "GPT-5.3 Codex",
-                                    isDefault = true,
-                                    supportedReasoningEfforts = new[]
+                                    new
                                     {
-                                        new { reasoningEffort = "low" },
-                                        new { reasoningEffort = "medium" },
-                                        new { reasoningEffort = "high" }
+                                        id = "gpt-5.3-codex",
+                                        displayName = "GPT-5.3 Codex",
+                                        isDefault = false,
+                                        supportedReasoningEfforts = new[]
+                                        {
+                                            new { reasoningEffort = "low" },
+                                            new { reasoningEffort = "medium" },
+                                            new { reasoningEffort = "high" }
+                                        }
                                     }
                                 }
-                            }
+                                : new[]
+                                {
+                                    new
+                                    {
+                                        id = "gpt-5.6-sol",
+                                        displayName = "GPT-5.6 Sol",
+                                        isDefault = true,
+                                        supportedReasoningEfforts = new[]
+                                        {
+                                            new { reasoningEffort = "medium" },
+                                            new { reasoningEffort = "high" }
+                                        }
+                                    }
+                                },
+                            nextCursor = modelCursor is null ? "models-page-2" : null
                         }
                     }).ConfigureAwait(false);
                     continue;
@@ -130,6 +150,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         launchCapture.ThreadResumeApprovalPolicy = GetString(threadResumeParams, "approvalPolicy");
                         launchCapture.ThreadResumeSandbox = GetString(threadResumeParams, "sandbox");
                         launchCapture.ThreadResumePersistExtendedHistory = GetBoolean(threadResumeParams, "persistExtendedHistory");
+                        launchCapture.ThreadResumeExcludeTurns = GetBoolean(threadResumeParams, "excludeTurns");
                     }
 
                     PersistLaunchCapture(capturePath, launchCapture);
@@ -155,6 +176,21 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 case "turn/start":
                 {
                     RecordMethod(launchCapture, method);
+                    if (root.TryGetProperty("params", out var turnStartParams))
+                    {
+                        launchCapture.TurnStartModel = GetString(turnStartParams, "model");
+                        launchCapture.TurnStartEffort = GetString(turnStartParams, "effort");
+                        launchCapture.TurnStartRuntimeContextKind = GetString(
+                            turnStartParams,
+                            "additionalContext",
+                            "tlbx.agent-controller.runtime",
+                            "kind");
+                        launchCapture.TurnStartRuntimeContextValue = GetString(
+                            turnStartParams,
+                            "additionalContext",
+                            "tlbx.agent-controller.runtime",
+                            "value");
+                    }
                     PersistLaunchCapture(capturePath, launchCapture);
                     var (imageCount, hasFileRef, textValue) = GetInputStats(root);
                     lastAssistant = $"Fake Codex reply. images={imageCount.ToString(CultureInfo.InvariantCulture)} fileRefs={hasFileRef.ToString().ToLowerInvariant()} text={textValue}";
@@ -628,6 +664,14 @@ internal sealed class FakeCodexLaunchCapture
 
     public bool? ThreadStartPersistExtendedHistory { get; set; }
 
+    public string? TurnStartModel { get; set; }
+
+    public string? TurnStartEffort { get; set; }
+
+    public string? TurnStartRuntimeContextKind { get; set; }
+
+    public string? TurnStartRuntimeContextValue { get; set; }
+
     public string? ThreadResumeCwd { get; set; }
 
     public string? ThreadResumeThreadId { get; set; }
@@ -637,4 +681,6 @@ internal sealed class FakeCodexLaunchCapture
     public string? ThreadResumeSandbox { get; set; }
 
     public bool? ThreadResumePersistExtendedHistory { get; set; }
+
+    public bool? ThreadResumeExcludeTurns { get; set; }
 }

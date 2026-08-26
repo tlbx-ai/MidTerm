@@ -53,6 +53,7 @@ import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { isSharedSessionRoute } from '../share';
 import { checkVersionAndReload } from '../../utils/versionCheck';
 import type { MobileDeviceAction } from '../web/mobileDeviceBridge';
+import type { TerminalNotificationSignal } from '../terminal/terminalNotifications';
 
 interface TmuxDockMessage {
   type: 'tmux-dock';
@@ -90,6 +91,9 @@ interface BrowserUiMessage {
   activateSession?: boolean;
   deviceAction?: string;
   deviceProfile?: string;
+  requestId?: string;
+  deltaY?: number;
+  steps?: number;
 }
 
 interface LayoutStateMessage {
@@ -115,12 +119,20 @@ interface CommandResponseMessage {
   error?: string;
 }
 
+interface TerminalNotificationMessage extends TerminalNotificationSignal {
+  type: 'terminal-notification';
+  sessionId: string;
+}
+
+type DirectStateMessage = BrowserUiMessage | TerminalNotificationMessage;
+
 type StateWsMessage =
   | TmuxDockMessage
   | TmuxFocusMessage
   | TmuxSwapMessage
   | MainBrowserStatusMessage
   | BrowserUiMessage
+  | TerminalNotificationMessage
   | StateUpdateMessage
   | CommandResponseMessage;
 
@@ -187,6 +199,8 @@ import {
 let layoutHydrated = false;
 let stateWsHasConnected = false;
 let lastUpdateInfoSignature = '';
+let initialStateHydrated = false;
+let handleInitialStateHydrated: (() => void) | null = null;
 
 // Pending dock instructions for sessions that haven't appeared in state yet
 interface PendingDock {
@@ -199,6 +213,11 @@ const pendingDocks: PendingDock[] = [];
 let selectSession: (
   sessionId: string,
   options?: { closeSettingsPanel?: boolean; focusTerminal?: boolean },
+) => void = () => {};
+
+let handleTerminalNotification: (
+  sessionId: string,
+  signal: TerminalNotificationSignal,
 ) => void = () => {};
 
 export function setSelectSessionCallback(
@@ -215,6 +234,19 @@ export function requestSelectSession(
   options?: { closeSettingsPanel?: boolean; focusTerminal?: boolean },
 ): void {
   selectSession(sessionId, options);
+}
+
+export function setTerminalNotificationCallback(
+  callback: (sessionId: string, signal: TerminalNotificationSignal) => void,
+): void {
+  handleTerminalNotification = callback;
+}
+
+export function setInitialStateHydratedCallback(callback: (() => void) | null): void {
+  handleInitialStateHydrated = callback;
+  if (callback && initialStateHydrated) {
+    callback();
+  }
 }
 
 function handleTmuxDockMessage(data: TmuxDockMessage): void {
@@ -259,6 +291,27 @@ function handleTmuxFocusMessage(data: TmuxFocusMessage): void {
   }
 }
 
+function handleDirectStateMessage(data: StateWsMessage): data is DirectStateMessage {
+  if (data.type === 'browser-ui') {
+    void handleBrowserUiCommand(data);
+    return true;
+  }
+
+  if (data.type === 'terminal-notification') {
+    handleTerminalNotification(data.sessionId, {
+      protocol: data.protocol,
+      ...(data.title ? { title: data.title } : {}),
+      ...(data.body ? { body: data.body } : {}),
+      ...(data.force ? { force: true } : {}),
+      ...(data.priority ? { priority: data.priority } : {}),
+      ...(data.nativeHandled ? { nativeHandled: true } : {}),
+    });
+    return true;
+  }
+
+  return false;
+}
+
 function handleStateSocketMessage(data: StateWsMessage): void {
   if (data.type === 'response') {
     handleCommandResponse(data);
@@ -288,8 +341,7 @@ function handleStateSocketMessage(data: StateWsMessage): void {
     return;
   }
 
-  if (data.type === 'browser-ui') {
-    void handleBrowserUiCommand(data);
+  if (handleDirectStateMessage(data)) {
     return;
   }
 
@@ -458,7 +510,11 @@ function syncActiveSessionSelection(): void {
       rememberedActiveId !== null
         ? sessionList.find((session) => session.id === rememberedActiveId)
         : undefined;
-    selectSession((rememberedSession ?? firstSession).id, { closeSettingsPanel: false });
+    const bookmarkedSession = sessionList.find((session) => !!session.bookmarkId?.trim());
+    const terminalSession = sessionList.find((session) => !session.appServerControlOnly);
+    selectSession((rememberedSession ?? bookmarkedSession ?? terminalSession ?? firstSession).id, {
+      closeSettingsPanel: false,
+    });
   }
 
   if (activeId && !sessionList.find((s) => s.id === activeId)) {
@@ -491,6 +547,10 @@ export function handleStateUpdate(
   if (sessionsChanged) {
     syncActiveSessionSelection();
     updateMobileTitle();
+  }
+  if (!initialStateHydrated) {
+    initialStateHydrated = true;
+    handleInitialStateHydrated?.();
   }
 }
 
@@ -700,8 +760,46 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
           });
       }
       break;
+    case 'agent-wheel':
+      await handleAgentWheelBrowserUiCommand(msg);
+      break;
     default:
       log.warn(() => `Unknown browser-ui command: ${msg.command}`);
+  }
+}
+
+async function handleAgentWheelBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
+  if (!msg.requestId || !msg.sessionId) {
+    return;
+  }
+
+  let result: unknown;
+  try {
+    const { wheelAgentHistory } = await import('../agentView');
+    result = await wheelAgentHistory({
+      requestId: msg.requestId,
+      sessionId: msg.sessionId,
+      deltaY: msg.deltaY ?? 120,
+      steps: msg.steps ?? 1,
+    });
+  } catch (error) {
+    result = {
+      requestId: msg.requestId,
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      sessionId: msg.sessionId,
+      cancelledSteps: 0,
+      samples: [],
+    };
+  }
+
+  const response = await fetch('/api/browser/agent-wheel/result', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(result),
+  });
+  if (!response.ok) {
+    log.warn(() => `ACP wheel result delivery failed: HTTP ${response.status}`);
   }
 }
 
@@ -1012,7 +1110,10 @@ export function resetStateChannelRuntimeForTests(): void {
   layoutHydrated = false;
   stateWsHasConnected = false;
   lastUpdateInfoSignature = '';
+  initialStateHydrated = false;
+  handleInitialStateHydrated = null;
   selectSession = () => {};
+  handleTerminalNotification = () => {};
   lastReportedBrowserActivity = undefined;
   terminalInteractionReportAt.clear();
   closeWebSocket(stateWs, setStateWs);

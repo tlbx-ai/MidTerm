@@ -4,7 +4,7 @@
 
 This document is the source of truth for the visual and interaction design of tlbx Agent Controller Session. It exists to prevent Agent Controller Session UI behavior from drifting across ad hoc iterations.
 
-Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The current new-session launcher exposes Codex and Grok Build. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
+Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The new-session launcher discovers locally installed supported runtimes and recognizes Codex app-server plus standard ACP-v1 agents. The built-in ACP catalog covers Grok Build, OpenCode, Gemini CLI, and GitHub Copilot CLI; installations can add or override definitions through the server-owned `acp-agents.json` manifest without adding provider branches to `mtagenthost` or the frontend. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
 
 Any future Agent Controller Session UI change that affects layout, hierarchy, history ordering, timeline rendering, typography, spacing, scrolling, item rendering, or interaction states must update this document with the new fundamental rule or revised rationale.
 
@@ -29,6 +29,8 @@ This document governs:
 - DOM/performance constraints for long-running sessions
 
 Provider-specific transport details belong in the C# runtime layer, not here. This document describes the Agent Controller Session UX contract after provider events have been normalized into tlbx-owned concepts.
+
+ACP discovery is intentionally local and non-executing: tlbx only presents catalog entries whose command already resolves on the configured user's machine. The optional `acp-agents.json` file lives beside `settings.json` and has the shape `{ "agents": [{ "profile": "my-agent", "name": "My Agent", "command": "my-agent", "arguments": ["--acp"] }] }`. The server validates these definitions and resolves the executable before sending an owner-authenticated attach request to `mtagenthost`; browser input never supplies an arbitrary executable or argument vector.
 
 ## Non-Regression Floor
 
@@ -59,9 +61,10 @@ Future refactors may improve or replace the implementation of any of the above, 
 
 New Agent Controller Session work must use the following concept names consistently:
 
-- use `Agent Controller` for software that speaks the App Server Protocol and provides an agent-control UI
+- use `Agent Controller` for software that speaks a supported structured agent protocol and provides an agent-control UI
 - use `Agent Controller Session` for one live controlled provider conversation
-- use `App Server Protocol` for the protocol boundary spoken between an Agent Controller and tlbx's provider runtime
+- use `provider protocol` for the runtime boundary; currently Codex app-server or Agent Client Protocol (ACP) v1 over stdio
+- use `ACP client runtime` for tlbx's standards-based client implementation that drives registered ACP agents without provider-specific stream parsing
 - use `Agent Controller Runtime` for the backend-owned provider runtime that drives an Agent Controller Session
 - use `history` for the canonical ordered Agent Controller Session item sequence
 - use `history item` for one canonical renderable entry
@@ -104,6 +107,7 @@ Naming rule:
 - `mtagenthost` must own the canonical in-memory Agent Controller Session history for a session. `mt` should broker access to that history, not build and own a second competing canonical reducer.
 - Agent Controller Sessions must be immune to `mt` restarts. Restarting or replacing `mt` must not destroy, reset, or orphan canonical state for an attached supported provider runtime.
 - All canonical Agent Controller Session state needed for recovery after an `mt` restart must live in the owning `mtagenthost` instance for that Agent Controller Session.
+- The source development loop must exercise that restart boundary instead of hiding it: C# rebuilds replace only the source `mt` process, preserve its existing `mthost` and `mtagenthost` children, and launch newly created Agent Controller Sessions from a fresh shadow-built `mtagenthost` generation so Windows file locks cannot block the next build.
 - The intended runtime cardinality is one dedicated `mtagenthost` process per explicit Agent Controller Session.
 - Canonical Agent Controller Session history must be optimized for human consumption. Transport noise, fluff, superseded chatter, and non-view-affecting provider detail should be discarded as early as possible to save memory.
 - If `mtagenthost` attach fails, Agent Controller Session should surface that failure and remain unattached rather than switching to a second provider ingestion path with different behavior.
@@ -132,6 +136,7 @@ The canonical history contract must satisfy the following:
 - canonical history should include special interactive item types when the agent expects dedicated UI treatment rather than plain text rendering
 - one required draft interactive type is an `interview` item where the agent emits a list of questions and the frontend renders a dedicated response widget
 - canonical recovery after an `mt` restart must come from `mtagenthost` state, not from rebuilding browser-visible history inside a fresh `mt` process from partial browser caches
+- a submitted user item may be synthesized locally for immediate feedback, but its stable identity must use the `local-user:<turn-id>` namespace so the provider-backed completion can reconcile that same item instead of appending a duplicate or leaving it in progress
 
 ## Core Principles
 
@@ -192,7 +197,12 @@ The canonical history contract must satisfy the following:
 - The progress navigator should remain a persistent Agent Controller Session-owned rail in layout. Its ready/not-ready state should come from explicit navigator state, not from toggling the element out of layout with stale `hidden` attributes on reused panel DOM.
 - Direct progress-nav drags should map to canonical history progress, land on a tiny centered preview window around the latest target, and only then hydrate into a normal browse window after drag idle. Agent Controller Session must not try to materialize the entire traversed span during a large scrub.
 - The materialized browse kernel should remain contiguous around the visible region and should grow outward as the user locally scrolls. Trimming older/newer materialized rows must preserve the visible reader anchor by stable item identity and pixel offset.
-- Placeholder blocks may represent buffered or far-off ranges, but the viewport must not settle into placeholder-only or empty estimated space. If no concrete row intersects the viewport, Agent Controller Session should urgently materialize the nearest canonical rows.
+- Reader anchors must retain the canonical history index carried by each rendered item. Visual timeline arrays may omit or synthesize rows, so array position inside a retained window is never a valid substitute for canonical order when choosing the next history window.
+- Local kernel-edge demand must likewise derive its visible canonical range from item order, not from visual-array offsets. This is what lets wheel navigation move both backward and forward across windows when canonical items have been filtered or summarized out of the timeline.
+- Reaching a physical top or bottom edge is explicit directional demand. If the canonical snapshot reports more history in that direction, the next retained window must move with overlap even when filtered canonical items make the last rendered visual row appear far from the retained window's canonical edge.
+- After the browser issues a history-window revision, streamed window snapshots must carry that exact revision. Unversioned or stale stream windows must never overwrite a newer REST-selected browse window; live patches remain independently consumable.
+- The native history pane must contain only the currently retained kernel and any exact in-kernel virtualization spacers. It must never inflate its scroll height with estimated pixel spacers for canonical rows that are not retained in the browser.
+- Reaching either local kernel edge should request an overlapping earlier or later canonical index window. The shift must preserve a stable visible row identity and its pixel offset in both directions.
 - Any browser-side visible-range math that feeds navigator position, fetch policy, or tracing must resolve the actual on-screen slice even when the retained window is small enough to stay fully materialized in the DOM. A short retained window is not the same thing as “every retained item is currently visible.”
 - That browser-side virtualization should live behind a reusable frontend virtualizer core with item-based knobs such as `overscanItems`, preview-window sizing, and `fetchAheadItems`; Agent Controller Session-specific history-window fetch policy should stay in a thin Agent Controller Session adapter instead of being scattered through unrelated UI code.
 - Browser-resident Agent Controller Session history should stay bounded to the visible working set plus a modest nearby margin instead of accumulating the full session scrollback in memory.
@@ -205,7 +215,7 @@ The canonical history contract must satisfy the following:
 
 - Agent Controller Session must remain fully usable on mobile-sized viewports.
 - Mobile Agent Controller Session should preserve history hierarchy, composer usability, and request/approval handling without forcing pinch-zoom or horizontal history reading.
-- On touch-sized viewports, the progress navigator should expose at least a 44px touch target while keeping the visible track/thumb visually quiet; the hit target should not read as a separate glowing sidebar.
+- On touch-sized viewports, the progress navigator should expose at least a 44px touch target while keeping the visible track/thumb visually quiet; that hit target should overlay reserved right-side history padding instead of consuming a separate layout column, and it should not read as a glowing sidebar.
 - Responsive behavior must be designed, not treated as desktop shrinkage.
 
 ### 8. Internationalized tlbx UI copy
@@ -219,6 +229,9 @@ The canonical history contract must satisfy the following:
 - The UI must not depend on a final assistant message before showing useful user feedback.
 - Streaming state should feel low-latency and in-place instead of replacing one row with a later unrelated row.
 - Agent Controller Session should keep canonical live state current on every patch, but the expensive browser-side timeline paint path should explicitly coalesce fast live patch bursts to a bounded cadence of roughly 4 fps so long assistant output does not trigger a full markdown rerender on every incoming delta.
+- Starting a new turn while the provider already has an active turn must be rejected explicitly. Appending instructions to the active turn is a distinct `turn.steer` operation; callers must not depend on provider-specific implicit steering behavior.
+- Expected Agent Controller command-state conflicts must cross the REST boundary as `409 Conflict` with the actionable runtime message. Generated PowerShell helpers must turn non-zero HTTP client exits into terminating errors that retain that response body so scripts cannot mistake a rejected command for success.
+- Provider `turn.started` notifications may omit model or effort. Missing values must preserve the established quick settings and seed the current-turn display from those settings rather than clearing operator-visible state.
 
 ### 10. Scroll-follow discipline
 
@@ -233,12 +246,12 @@ The canonical history contract must satisfy the following:
 - When measured row heights change above the reader while browsing older history, the virtualizer should compensate the viewport scroll offset from those concrete size deltas instead of relying only on a later rerender to keep the visible content stable.
 - Agent Controller Session retained-history fetch policy should keep at least 20 canonical items of margin on both sides of the current visible range whenever history bounds allow it.
 - If scrolling continues while a retained-history window fetch is already in flight, Agent Controller Session should queue a follow-up viewport-centered fetch pass so the retained window catches up immediately after the in-flight response resolves.
-- Placeholder sizing may use stable width-bucket observations and measured local row history, but navigator position must remain canonical/index-based and must not whip around when a newly fetched slice has a very different row mix.
+- Local in-kernel spacer sizing may use measured row heights, but navigator position must remain canonical/index-based and must not move when a newly fetched slice has a different row mix.
 - When Agent Controller Session uses a dedicated history scrollbar, that scrollbar should operate in canonical index space and must not treat rendered DOM height as the source of truth for navigation position.
 - Passive row-height measurement, image/content reflow, window hydration, and virtualization rerenders must not recompute the dedicated history scrollbar thumb from rendered pixel geometry. Only explicit user scroll/drag/follow actions may update the scrollbar's canonical integer anchor; passive layout work may only redraw that stored anchor.
 - Dragging the dedicated history scrollbar should scrub directly in canonical progress space and should coalesce toward the latest target. Stale preview or hydrate fetches must not overwrite a newer navigator target.
 - Wheel, trackpad, keyboard, and touch scrolling on the history pane itself should stay native and pixel-based inside the currently materialized kernel; fetch/grow/prune work must preserve the visible anchor so that local reading motion does not shake when the retained window expands or trims.
-- Fast wheel bursts may temporarily land inside placeholder-only retained-history gaps; Agent Controller Session should log that transition, urgently fetch the viewport-centered canonical window, and must not snap the user back to the nearest previously rendered row while the user scroll is still in progress.
+- Fast wheel bursts must remain inside the concrete local kernel. At its edge they should coalesce an overlapping canonical window fetch instead of entering estimated off-window pixel space or snapping to a guessed position.
 - Passive rerenders must not clear an active text selection inside Agent Controller Session. If the user is selecting or holding a non-collapsed selection in the history pane, Agent Controller Session should defer non-forced DOM replacement until that selection is cleared.
 
 ### 11. Terminal-font monospace usage
@@ -254,6 +267,7 @@ The canonical history contract must satisfy the following:
 - Reserve stronger styles for true hierarchy boundaries only.
 - Favor readable body text and restrained metadata styling.
 - In Codex Agent Controller Session, user and assistant prompt bodies should follow the configured terminal monospace stack and terminal font size so prompt and response text align with command-oriented work.
+- Assistant prose uses pure white for maximum legibility. Its body and markdown-content layers must allow glyph ink to overflow vertically so descenders and other font overhangs are never clipped; wide tables and code blocks keep overflow handling on their own dedicated wrappers.
 
 ### Containers
 
@@ -437,6 +451,7 @@ The canonical history contract must satisfy the following:
 - The composer is the primary action control for Agent Controller Sessions.
 - The composer textbox should remain visibly larger than surrounding automation chips, status pills, and quick-setting controls; the dock must read as one system, but the prompt should still dominate.
 - The single-line composer row should align on a shared visual centerline with its adjacent send and utility buttons, and the dock should use equal vertical spacing between the pane edge and each visible dock row.
+- The Agent Controller Session quick-settings rail must use that same dock-row spacing above it as the composer uses above the automation shortcuts; the settings surface must not add a second top margin of its own.
 - Agent Controller Session and Terminal should now share one adaptive footer dock language instead of stacking unrelated bars beneath the active pane.
 - When input is visible, the primary smart input row must always be the first row directly beneath the active pane.
 - Agent Controller Session quick settings should live in the dock status rail rather than as a separate detached manager strip.
@@ -450,7 +465,8 @@ The canonical history contract must satisfy the following:
 - Command Bay controls should use one shared visual language for typography, spacing, radius, border treatment, and hover states; avoid mixing glowy icon buttons, flat chips, and separate pill styles in the same dock.
 - tlbx's dock chrome should stay relatively boxy: tighter corner radii, compact control heights, and restrained padding rather than oversized capsule pills.
 - Prompt-side utility buttons, automation chips, quick-setting pills, and status controls should all use restrained tonal surfaces instead of individual glow or shadow gimmicks.
-- On mobile, Agent Controller Session should keep model/effort/plan awareness always visible in the dock status rail and may reveal only those three editable controls from that status row. The expanded mobile sheet must stay keyboard-safe: one compact row of three buttons, not a multi-row settings form.
+- On mobile, Agent Controller Session should keep model/effort/plan awareness always visible in the dock status rail and may reveal those three editable controls plus provider-supported compact toggles such as Codex Fast Mode. The expanded mobile sheet must stay keyboard-safe and remain a single compact row, not a multi-row settings form.
+- Mobile Agent Controller Session actions, composer controls, quick-setting controls, table sort/filter controls, and live-edge recovery must expose 44px-class touch targets without forcing horizontal page overflow.
 - When the mobile soft keyboard is open, Agent Controller Session should keep that compact status rail ahead of the composer so model/effort/plan awareness stays reachable without hiding the prompt.
 - When desktop width becomes constrained enough that the inline quick-settings rail would overflow, Agent Controller Session should fall back to that same summary-plus-sheet pattern instead of letting controls spill off screen.
 - Manager automation should occupy at most one dock row and one visual line, with overflow or truncation behavior instead of wrapping into a second toolbar band.
@@ -465,6 +481,7 @@ The canonical history contract must satisfy the following:
   - permission or approval mode
 - Codex Agent Controller Session should expose low-chrome slash-equivalent action buttons for `/model`, `/plan`, and `/goal` directly in the quick-settings rail. `/model` opens the model picker, `/plan` toggles the next-turn plan-mode setting, and `/goal` prepares the provider goal command in the composer so the operator can set the objective without remembering command syntax. The `/plan` affordance should read as a quiet mode toggle, not a primary command button.
 - These quick controls should be tlbx-owned canonical settings, not scraped provider-native menus.
+- Codex model choices must come from the runtime's paginated `model/list` catalog in provider order. With no explicit user selection, tlbx must use the model marked as the provider default and medium reasoning. tlbx must preserve an explicitly selected custom model, follow every `nextCursor`, and must not present a hardcoded Codex model catalog when discovery is unavailable.
 - Provider-specific meaning and transport mapping for those controls must stay in the C# Agent Controller Runtime layer.
 - The TypeScript Agent Controller Session UI should render the common quick-settings surface from the canonical model without branching deeply on provider quirks.
 - Quick-settings changes should be sticky for the active Agent Controller Session and may also reuse provider-level draft defaults where that improves flow.
@@ -486,6 +503,16 @@ The canonical history contract must satisfy the following:
 - The busy-indicator hint `(Press Esc to cancel)` implies a surface-wide shortcut, not a composer-only shortcut.
 - If the user queued follow-up Agent Controller Session turns while a turn was still running, the first `Esc` should let that queued work drain next, and a second `Esc` should cancel the remaining queued drain.
 
+## Operator API And CLI
+
+- Agent Controller Session automation must use first-class session APIs rather than browser DOM scripting or terminal keystroke injection when the requested operation is available through the App Server Protocol.
+- The REST control surface is session-scoped: `GET /api/sessions/{id}/agent-control/history` and `POST` operations for `turn`, `interrupt`, `steer`, and `compact`.
+- History reads accept canonical `startIndex` and `count` windows and return the same bounded canonical history contract used by the browser.
+- Starting a turn may attach the runtime on demand. Steering requires the expected active turn identity and appends input to that turn through the provider's native `turn/steer` operation; it must not masquerade as a new turn.
+- Compaction must use the provider's native thread-compaction operation and remain observable as canonical history/state instead of rewriting browser-local history.
+- The generated shell and PowerShell helpers expose the same operations as `mt_acp_new`, `mt_acp_history`, `mt_acp_turn`, `mt_acp_interrupt`, `mt_acp_steer`, and `mt_acp_compact` (with corresponding `Mt-Acp*` commands). These helpers are the preferred repeatable dev-loop surface for real Agent Controller Session test runs.
+- Provider telemetry such as token usage, rate limits, account state, settings updates, and healthy startup bookkeeping belongs in bounded runtime notices/stats, not the human conversation timeline. Provider errors remain visible history items.
+
 ## Performance Rules
 
 - Streaming must not cause full history/timeline rerenders.
@@ -502,10 +529,10 @@ The canonical history contract must satisfy the following:
 
 ## Current Gaps
 
-- not yet implemented: browser virtualization now carries forward observed row-height samples across previously seen windows at the current width bucket, but it still does not keep a richer canonical or long-run distribution model for highly heterogeneous off-window scrollbar accuracy
 - not yet implemented: older transport-era naming and `transcript` naming still leak through non-browser services, reducer internals, host-owned canonical state types, and some debug/test surfaces even though the active browser/websocket path is now history-first
 - not yet implemented: interview interactions now render inline in the timeline with a dedicated request widget, but they are still modeled as request summaries plus request history rows rather than a fully separate canonical `interview` item type end to end
-- not yet implemented: Codex interview/user-input is supported through a verified structured runtime contract, but Claude interview/user-input remains explicitly unsupported until tlbx integrates a verified structured Claude contract instead of a guessed bridge
+- not yet implemented: ACP authentication and client-side filesystem/terminal capabilities are not advertised; agents must already be authenticated and must honor the currently advertised client capabilities
+- not yet implemented: live model-turn conformance still needs broader coverage across Gemini CLI and GitHub Copilot CLI even though their standard ACP launch contracts are now discoverable
 
 ## Dev Diagnostics
 
@@ -551,8 +578,10 @@ Status in this branch/work item:
 - implemented: hidden/background Agent Controller Sessions may continue ingesting runtime state, but history DOM work is deferred until that Agent Controller Session surface is visible again
 - implemented: hidden/background Agent Controller Sessions clear rendered history DOM and compact retained browser-side history back to a bounded latest window without interrupting the live runtime
 - implemented: Agent Controller Session history is treated as a bounded browser-side view window over tlbx-owned canonical history rather than as an unbounded full-history browser cache
-- implemented: Codex, Claude, and Grok Agent Controller runtimes route through `mtagenthost` as the single structured runtime boundary; `SessionAppServerControlRuntimeService` no longer falls back to a second in-process Codex runtime when host attach fails
-- implemented: Claude Agent Controller Session no longer injects or parses a tlbx-invented XML user-input bridge in the active runtime path; unsupported Claude interview/user-input now remains unsupported instead of relying on guessed protocol behavior
+- implemented: Codex app-server and the generic ACP client runtime route through `mtagenthost` as the single structured runtime boundary; `SessionAppServerControlRuntimeService` no longer falls back to a second in-process Codex runtime when host attach fails
+- implemented: the unsupported, unmaintained Claude stream-json adapter and its invented XML user-input bridge have been removed; Claude Code remains a normal terminal-native CLI instead of being advertised as an Agent Controller runtime
+- implemented: the ACP client performs the standard `initialize` and `session/new` flow, consumes canonical `session/update` notifications, handles permission requests and cancellation, and prefers `session/set_config_option` while retaining protocol-level legacy mode/model fallbacks
+- implemented: the new-session launcher queries locally installed Agent Controller runtimes and offers only detected Codex app-server and registered ACP agents; the selected ACP profile is preserved by bookmarks and relaunch
 - implemented: Agent Controller Session retains canonical user-facing history rather than a hidden durable raw-event archive
 - implemented: tlbx-side Agent Controller Session persistence now writes canonical reduced session state instead of appending provider-shaped event logs, while transient live event backlog stays bounded in memory only
 - implemented: mouseup inside the Agent Controller Session surface no longer routes through terminal focus reclaim, so drag text selection in Agent Controller Session remains intact after the mouse button is released
@@ -574,17 +603,16 @@ Status in this branch/work item:
 - implemented: explicit Agent Controller Sessions now survive `mt` restart by reconnecting to the owning `mtagenthost` and reusing that host-owned canonical history
 - implemented: Agent Controller Session history transport between browser and backend now uses count/index history windows and canonical history patches rather than backend-owned unseen-history pixel spacer estimates
 - implemented: `/ws/app-server-control` no longer needs or serves the old browser-facing `snapshot.get` / `events.get` compatibility path; the active Agent Controller Session browser transport is `history.window.get` plus live `history.patch`
-- implemented: unseen-history spacer geometry is now estimated locally in the browser from total history count plus loaded-row estimates and measured row heights
+- implemented: the native history pane no longer represents unseen canonical history as estimated pixel space; it scrolls only the retained local kernel and uses the separate canonical progress navigator for global position
 - implemented: visible-row virtualization now prefers browser-measured row heights over static heuristics and keeps those measurements as the render window shifts
 - implemented: browser-side virtual-range math now uses cumulative prefix-height layout math with binary-search index lookup instead of repeated linear spacer scans through the full retained window
 - implemented: the browser now retains one bounded moving history window and shifts it by overlapping absolute index fetches instead of monotonically expanding the cached history while the user pages around
-- implemented: shared browser-side virtualization now lives behind a reusable virtualizer core that owns width-bucketed measurement reuse, visible-range math, spacer geometry, anchor capture/restore, and viewport-centered retained-window demand
-- implemented: unseen-history spacer estimation now prefers stable width-bucket observations plus estimated row heights, clamping local slice bias so random older-history fetches do not yank the scrollbar as aggressively when a fetched slice has an unusual row mix
+- implemented: shared browser-side virtualization now lives behind a reusable virtualizer core that owns width-bucketed measurement reuse, local visible-range math, in-kernel spacer geometry, anchor capture/restore, and overlapping kernel-window demand
 - implemented: retained browser history now recenters around the actual visible history range plus a bounded nearby margin rather than only paging by fixed top/bottom thresholds
 - implemented: viewport-driven history refetch now trims retained browser history down to the visible range plus a bounded nearby margin instead of enforcing an extra fixed retained-window floor
 - implemented: retained-window fetch policy now enforces a minimum 20-item fetch-ahead margin on each side of the visible range (when canonical bounds allow) so browse paging cannot collapse to razor-thin retained slices
 - implemented: while browsing, additional scroll movement during an in-flight window sync now queues an immediate follow-up viewport sync so retained history catches up as soon as the active fetch resolves
-- implemented: unseen-history spacer estimation now retains observed row-height samples across previously visited windows at the current width bucket instead of relying only on the currently loaded slice
+- implemented: observed row-height samples remain reusable across previously visited windows at the current width bucket for exact local layout and anchor restoration
 - implemented: browser-requested history windows now include the current viewport width bucket so `mtagenthost` can return width-aware per-row height estimates instead of assuming one fixed desktop width
 - implemented: older-history and newer-history window shifts restore scroll position from a stable visible anchor row and actual DOM offsets instead of summing estimated prepended row heights
 - implemented: while Agent Controller Session is restoring a backward-history anchor after a window shift or layout reflow, it expands only to a bounded anchor corridor around that row instead of materializing the full retained window
@@ -601,12 +629,16 @@ Status in this branch/work item:
 - implemented: retained-window sizing now prefers the browser's observed median row height when available, reducing unnecessary DOM retention for tall windows while still falling back to the conservative default estimate before measurements exist
 - implemented: row-height measurements are now retained per viewport-width bucket and reused when the Agent Controller Session pane returns to a previous width class instead of clearing all known measurements on resize
 - implemented: visible Agent Controller Session rows now stay under `ResizeObserver` measurement, and non-follow browsing captures/restores a layout anchor so late content reflow and viewport resize do not destabilize the reader position or virtual window selection
+- implemented: dynamic history measurement uses one border-box coordinate system for both synchronous mount reads and `ResizeObserver` updates; the native pane opts out of browser scroll anchoring so only the tlbx-owned anchor transaction may correct scroll position
+- implemented: every browse-mode DOM/virtual-window reconciliation captures a concrete visible row before changing spacers or measured layout, incorporates new row measurements in the same render transaction, and restores that row once instead of preserving a naked `scrollTop`
+- implemented: exact width-bucketed row measurements survive overlapping server-window shifts for the lifetime of the visible Agent surface, so revisiting variable-height history does not regress to estimates; deactivation still releases the complete measurement state
 - implemented: when off-window canonical history changes arrive while the user is browsing older history, Agent Controller Session now refreshes that window instead of silently leaving remote spacer geometry stale
 - implemented: when a hidden Agent Controller Session returns to view while its cached browser window is still off the live edge, Agent Controller Session now refreshes the latest window and rerenders immediately when hidden-history compaction finishes so the viewport does not strand the user inside spacer-only voids
 - implemented: the active TypeScript Agent Controller Session client and browser state now consume history-first window/patch types directly instead of normalizing live browser traffic back into the older snapshot/delta DTO shape
 - implemented: assistant markdown now keeps single line breaks inside the same dense paragraph with simple line breaks, while blank lines still form real paragraph boundaries
 - implemented: assistant rows now stay markdown-rendered while streaming and remain markdown-rendered after later turns begin, so settled replies do not visually fall back to plain text
 - implemented: live Agent Controller Session history patches now update canonical state immediately but batch browser-side timeline paints to a 250 ms cadence while a turn is actively streaming, so long assistant text no longer forces a markdown rerender on every incoming delta
+- implemented: content-only Agent Controller Session history updates preserve the existing keyed row and message-body DOM elements while refreshing their rendered children, so streaming assistant text does not repeatedly destroy and recreate the mobile browser's text/compositor layer
 - implemented: finalized Agent Controller Session history rows now receive canonical C# file-mention enrichment before they reach the browser, so settled title/body/command text can render clickable file and folder references plus server-confirmed image thumbnails without a second browser-only resolution pass
 - implemented: clickable Agent Controller Session file and folder mentions now render as blue dotted-underlined links so file-oriented references stand out from surrounding prose and machine output
 - implemented: assistant markdown blank-line gap markers now use a tighter quarter-em pause per blank line instead of the older taller half-em spacing
@@ -631,7 +663,9 @@ Status in this branch/work item:
 - implemented: Agent Controller Session diff code lines now use one consistent old/new gutter shape across context, delete, and add rows instead of changing numbering layout per row type
 - implemented: Agent Controller Session and Terminal now share one adaptive footer dock shell with ordered primary/context/automation/status rails instead of separate smart-input and manager bars
 - implemented: the dock reserves only its collapsed footer height; multiline input growth expands upward as overlay chrome instead of shrinking the active pane
-- implemented: desktop Agent Controller Session quick settings now live in the dock status rail as a compact translucent control line, while mobile keeps a persistent summary row and reveals only three keyboard-safe controls for model, effort, and plan
+- implemented: desktop Agent Controller Session quick settings now live in the dock status rail as a compact translucent control line, while mobile keeps a persistent summary row and reveals keyboard-safe controls for model, effort, plan, and Codex Fast Mode
+- implemented: Agent Controller Session quick settings now use the shared dock row gap above the rail without an additive panel margin, matching the composer-to-automation spacing
+- implemented: Codex Agent Controller Session Fast Mode is a real quick-setting toggle and maps to App Server `turn/start.serviceTier` (`fast` when enabled, provider default when disabled)
 - implemented: mobile Agent Controller Session now orders the compact status rail ahead of the composer lane, and keyboard-visible Agent Controller Session keeps that summary rail reachable without dropping it below the prompt
 - implemented: Agent Controller Session model quick settings now use provider-scoped populated lists instead of a freeform textbox, while preserving current non-preset models already present in session state
 - implemented: Agent Controller Session quick-settings dropdowns no longer rebuild and resync on every no-op footer refresh; unchanged option lists and unchanged selected values now stay quiet so idle Agent Controller Sessions avoid repeated `midterm:options` and `midterm:sync` event churn
@@ -644,7 +678,7 @@ Status in this branch/work item:
 - implemented: inline Agent Controller Session composer references are UI-facing placeholders only; on send, Agent Controller Session keeps semantic markers such as `[Image 1]` in the prompt, expands staged text references into appended full-text blocks, and preserves real non-text attachments separately so the runtime receives the actual content rather than only placeholder token text
 - implemented: quick-settings state is tlbx-owned and canonical, while provider permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Agent Controller Session quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
-- implemented: provider-scoped remembered default Agent Controller Session models are now persisted in tlbx-owned settings and seed new Agent Controller Sessions, with Codex defaulting to `gpt-5.4` when no explicit stored model exists
+- implemented: provider-scoped explicit Agent Controller Session model selections are persisted in tlbx-owned settings and seed new sessions; without one, Codex follows the live `model/list` default and uses medium reasoning
 - implemented: Codex Agent Controller Session exposes `/model`, `/plan`, and `/goal` action buttons inside the quick-settings rail; `/model` opens the Agent Controller Session model picker, `/plan` toggles plan mode, and `/goal` prepares a goal command in the composer while Codex goal update/clear notifications are canonized as runtime messages instead of unknown fallback rows
 - implemented: desktop Agent Controller Session quick-settings menus are allowed to escape the compact rail without being clipped by the rail container
 - implemented: Agent Controller Session quick settings remain hidden unless the active session is an explicit Agent Controller Session surface; ordinary terminal sessions and no-session empty states never show Agent Controller Session-only quick controls
@@ -653,7 +687,7 @@ Status in this branch/work item:
 - implemented: when terminal transparency is fully opaque, active Agent Controller Sessions render over an opaque terminal-toned underlay so wallpaper and hidden sibling panels do not glow through the Agent Controller Session surface
 - implemented: workspace parent shells stay transparent so active Terminal and Agent Controller Session panes sit directly over the app wallpaper without extra translucent backdrop layers
 - implemented: Agent Controller Session terminal-transparency ownership is limited to the outer Agent Controller Session pane backdrop; inner chat/composer wrappers stay transparent so UI transparency and stacked underlays do not alter the effective Agent Controller Session pane opacity
-- implemented: Codex/Claude history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened
+- implemented: Agent Controller history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened
 - implemented: the trailing busy bubble now ignores in-progress user-prompt items for its label, phase-locks both its sweep and spinner animations to a shared wallclock-derived phase, and keeps the existing busy DOM node alive across live label/elapsed updates so redraws do not visibly restart the motion
 - implemented: the trailing busy-label text highlight now mirrors at the right edge and travels back left through the word instead of snapping from the end back to the first letter
 - implemented: the shared Command Bay queue now renders as a vertical stack above the composer and is backed by tlbx-owned persistent queue state rather than browser-local Agent Controller Session-only submission state
@@ -666,12 +700,12 @@ Status in this branch/work item:
 - implemented: Codex `codex/event/task_started`, `codex/event/agent_reasoning`, `codex/event/task_complete`, and `codex/event/background_terminal_wait` now canonize into explicit `task.*` events, and background-terminal wait no longer falls through to unknown-agent fallback rows
 - implemented: runtime stats now suppress bogus context percentages when Codex reports cumulative token totals, falling back to the window limit plus session in/out totals instead of displaying impossible values
 - implemented: request-backed interview interactions now render inline in the history timeline with a dedicated question-and-answer widget instead of being flattened into plain body text or composer-only interruption chrome
-- implemented: long Agent Controller Session histories no longer collapse everything outside the active corridor into two blind spacers; the timeline now keeps segmented placeholder blocks in the DOM for buffered/off-window ranges and triggers an urgent viewport-centered history-window sync whenever the viewport has no intersecting concrete rows, so mobile and browse-mode recovery do not settle into black voids
+- implemented: long Agent Controller Session histories keep all off-window canonical ranges entirely outside the native scroll DOM; only concrete retained rows and bounded in-kernel spacers are materialized, eliminating placeholder-only global scroll voids
 - implemented: Agent Controller Session no longer renders a browser-visible virtualizer debug overlay; virtualization diagnostics stay in traces/tests so the session surface remains focused on history, navigation, and operator controls
 - implemented: Agent Controller Session history navigation now uses a dedicated progress navigator keyed directly to canonical item indexes instead of DOM height or a synthetic total-height scroll host
 - implemented: the separate progress navigator now keeps a visible thumb/track treatment even when accent variables or advanced color functions are unavailable, so the Agent Controller Session-owned scrollbar does not disappear into a transparent rail
 - implemented: the progress navigator now stays in layout as a stateful Agent Controller Session rail instead of relying on `hidden` attribute toggles for visibility, which prevents reused session shells from collapsing the navigator out of existence
-- implemented: touch-sized Agent Controller Session layouts now widen the progress navigator to a 44px-class hit target without adding a visible side slab, so direct scrubbing does not require precision taps
+- implemented: touch-sized Agent Controller Session layouts now overlay the 44px-class progress-navigator hit target on reserved right-side history padding instead of spending a separate content-width column, so direct scrubbing stays easy without narrowing the reading lane
 - implemented: the Agent Controller Session "Back to bottom" control now clears the reserved Command Bay footprint so mobile prompt chrome does not overlap that live-edge action
 - implemented: desktop and touch-sized Agent Controller Session progress navigation now use a thinner low-chrome rail with a darker thumb, preserving the 44px-class interaction target on touch-sized layouts without making the navigator visually dominant
 - implemented: the progress navigator thumb now top-clamps when the first canonical history item is top-aligned in the pane and bottom-clamps when the latest item is bottom-aligned, instead of always presenting the visible-range midpoint
@@ -679,9 +713,21 @@ Status in this branch/work item:
 - implemented: passive Agent Controller Session row-height remeasurement no longer backpressures the dedicated progress navigator; the thumb renders the last canonical integer anchor until an explicit viewport scroll, drag, or live-follow transition updates that anchor
 - implemented: Agent Controller Session no longer carries the old browser-side `history-index-scroll` repair shim during activation; releases now assume the current end-to-end Agent Controller Session shell contract instead of patching older in-memory session DOM forward
 - implemented: the history pane itself is again the native local pixel scroller for the currently materialized kernel, while browse-mode retained-window growth and trims preserve the reader anchor
+- implemented: wheel/trackpad movement at either retained-kernel edge requests an overlapping canonical window and restores the same concrete anchor row, so ordinary downward scrolling can return to the live edge without requiring the Back to bottom button
+- implemented: viewport anchors derive their absolute index from each rendered item's canonical order, so filtered or synthesized timeline rows cannot shift a fetch window away from the visible reader anchor
+- implemented: overlapping kernel-window demand resolves sparse visual items back to their canonical indexes, allowing ordinary downward wheel input at a local edge to request the actual newer history range
+- implemented: physical kernel-edge wheel intent forces an overlapping directional window shift when older or newer canonical history exists, so a filtered visual tail cannot trap the native scroller
+- implemented: revisioned browse windows reject stale and unversioned streamed window snapshots, preventing an older stream subscription from repeatedly snapping the visible kernel back during wheel navigation
+- implemented: `POST /api/browser/agent-wheel` and `mt_agent_wheel` route mouse-wheel-equivalent input through the owning tlbx browser UI and return before/after/sample metrics for the visible ACP history, including canonical navigator position and exact top/bottom state
 - implemented: ordinary local pane scrolling no longer force-refreshes the already loaded history window when no window shift is needed; forced same-window refetch is reserved for urgent void-recovery cases where the viewport has lost all intersecting concrete rows
 - implemented: direct progress-nav scrubs now jump to a tiny centered preview window first and then hydrate into a normal browse window after drag idle, so large jumps do not try to materialize the traversed span
 - implemented: canonical interactive request/question flows are first-class `interview` history items with embedded questions and answers; the frontend prefers that self-renderable payload and retains request-summary lookup only as a compatibility fallback
+- implemented: session-scoped REST and generated CLI control surfaces now support bounded canonical history reads, turn submission, interruption, active-turn steering, and provider-native thread compaction without browser automation
+- implemented: Codex `thread/settings/updated`, token-usage, account, rate-limit, and healthy MCP startup bookkeeping now update bounded runtime notices/quick settings without producing timeline noise; MCP/provider failures remain visible
+- implemented: Codex model discovery follows all paginated `model/list` cursors and exposes the provider-ordered live catalog, including newly available models, without a stale frontend fallback list
+- implemented: Codex `thread/resume` requests use `excludeTurns` so resuming a large provider thread does not hydrate its complete stored turn payload into the runtime handshake; tlbx canonical history remains the bounded browser history source
+- implemented: the massive-history debug scenario now models a 10,000-item canonical history through a bounded 160-item browser window instead of allocating all 10,000 history objects in the page
+- implemented: Agent Controller Session time rendering reuses one locale formatter, avoiding formatter construction for every row during virtualization; the repeatable 10,000-item scroll profile retained at most 35 concrete rows with no blank samples and reduced long tasks from 24 to 2 in the measured comparison
 
 Still mandatory after this work whenever Agent Controller Session evolves:
 

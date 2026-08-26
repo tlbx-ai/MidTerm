@@ -39,10 +39,35 @@ public static class BrowserEndpointDefinitions
             await handler.ExecuteCommandAsync(request, ctx))
             .Produces<BrowserCommandResponse>(StatusCodes.Status200OK, "application/json");
 
+        app.MapPost("/api/browser/wheel", async (BrowserCommandRequest request, HttpContext ctx, IBrowserHandler handler) =>
+            await handler.ExecuteCommandAsync(WithCommand(request, "wheel"), ctx))
+            .Produces<BrowserCommandResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapPost("/api/browser/agent-wheel", (AgentHistoryWheelRequest request) => Results.Ok(request))
+            .Produces<AgentHistoryWheelResult>(StatusCodes.Status200OK, "application/json")
+            .Produces<AgentHistoryWheelResult>(StatusCodes.Status409Conflict, "application/json");
+
         app.MapPost("/api/browser/main", (BrowserCommandRequest request, IBrowserHandler handler) =>
             handler.ClaimMain(request))
             .Produces<BrowserCommandResponse>(StatusCodes.Status200OK, "application/json");
 
         return app;
     }
+
+    private static BrowserCommandRequest WithCommand(BrowserCommandRequest request, string command) =>
+        new()
+        {
+            Command = command,
+            Selector = request.Selector,
+            Value = request.Value,
+            MaxDepth = request.MaxDepth,
+            TextOnly = request.TextOnly,
+            Timeout = request.Timeout,
+            SessionId = request.SessionId,
+            PreviewName = request.PreviewName,
+            PreviewId = request.PreviewId,
+            DeltaX = request.DeltaX,
+            DeltaY = request.DeltaY,
+            Steps = request.Steps
+        };
 }

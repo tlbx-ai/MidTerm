@@ -17,6 +17,35 @@ public sealed class SessionUpdateStateServiceTests
     };
 
     [Fact]
+    public void TryExtractCodexExitResumeId_AcceptsOnlyAuthoritativeExitLine()
+    {
+        const string output = "\u001b[0mToken usage: total=13,945\r\nTo continue this session, run codex resume 019ff5ac-a7ab-7c23-8341-e3cc38782efa\r\nPS Q:\\repos\\Jpa> ";
+
+        Assert.Equal(
+            "019ff5ac-a7ab-7c23-8341-e3cc38782efa",
+            SessionUpdateStateService.TryExtractCodexExitResumeId(output));
+    }
+
+    [Theory]
+    [InlineData("codex --yolo resume capture")]
+    [InlineData("Release title: Codex resume capture")]
+    [InlineData("To continue this session, run codex resume capture")]
+    [InlineData("To continue this session, run codex resume 019ff5ac-a7ab-7c23-8341-e3cc38782efa trailing")]
+    public void TryExtractCodexExitResumeId_RejectsRenderedTextAndInvalidIds(string output)
+    {
+        Assert.Null(SessionUpdateStateService.TryExtractCodexExitResumeId(output));
+    }
+
+    [Theory]
+    [InlineData("codex --yolo resume thread-123", "codex")]
+    [InlineData("C:\\tools\\claude.exe --resume thread-123", "claude")]
+    [InlineData("pwsh -NoLogo", null)]
+    public void TryGetResumeProvider_DetectsSupportedAgentCommand(string command, string? expected)
+    {
+        Assert.Equal(expected, SessionUpdateStateService.TryGetResumeProvider(command));
+    }
+
+    [Fact]
     public void SessionRegistry_GetSessionList_CanIncludeHiddenSessionsForUpdateStateCapture()
     {
         var registry = new SessionRegistry(isServiceMode: false);

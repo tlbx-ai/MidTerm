@@ -483,6 +483,7 @@ public sealed class InputHistoryService : IDisposable
             Effort = NormalizeOptional(turn.Effort, 64),
             PlanMode = NormalizeOptional(turn.PlanMode, 64),
             PermissionMode = NormalizeOptional(turn.PermissionMode, 64),
+            FastMode = NormalizeOptional(turn.FastMode, 64),
             Attachments = attachments,
             TerminalReplay = terminalReplay
         };

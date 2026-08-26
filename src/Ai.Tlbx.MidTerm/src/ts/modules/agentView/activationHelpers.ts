@@ -12,6 +12,12 @@ import { t } from '../i18n';
 
 export const STALE_APP_SERVER_CONTROL_ACTIVATION = '__midterm_stale_appServerControl_activation__';
 
+const absoluteTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
 function appServerControlText(key: string, fallback: string): string {
   const translated = t(key);
   if (!translated || translated === key) {
@@ -45,19 +51,11 @@ export function formatAbsoluteTime(value: string): string {
     return value;
   }
 
-  return new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(date);
+  return absoluteTimeFormatter.format(date);
 }
 
 export function formatClockTime(value: Date): string {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(value);
+  return absoluteTimeFormatter.format(value);
 }
 
 export function appendActivationTrace(

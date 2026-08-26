@@ -62,6 +62,7 @@ $npmWorkspaces = @(
     (Join-Path $repoRoot "docs/marketing/ScreenshotAutomation")
 )
 foreach ($workspace in $npmWorkspaces) {
+    Invoke-Checked -FilePath "npm" -ArgumentList @("ci") -WorkingDirectory $workspace
     Invoke-Checked -FilePath "npm" -ArgumentList @("audit", "--audit-level=low") -WorkingDirectory $workspace
     Invoke-Checked -FilePath "npm" -ArgumentList @("audit", "signatures") -WorkingDirectory $workspace
 }

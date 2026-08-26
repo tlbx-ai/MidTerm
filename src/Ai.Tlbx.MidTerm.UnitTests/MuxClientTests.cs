@@ -10,7 +10,7 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MuxClientTests
 {
     [Fact]
-    public async Task FullReplayClient_DeliversAllAccessibleSessions()
+    public async Task HintedClient_DeliversActiveVisibleAndSubscribedBackgroundSessions()
     {
         using var socket = new FakeWebSocket();
         await using var client = new MuxClient(
@@ -20,10 +20,12 @@ public sealed class MuxClientTests
 
         client.SetActiveSession("active");
         client.SetVisibleSessions(new HashSet<string>(StringComparer.Ordinal) { "visible" });
+        client.SetBackgroundSessions(new HashSet<string>(StringComparer.Ordinal) { "background" });
 
         Assert.True(client.ShouldDeliverSession("active"));
         Assert.True(client.ShouldDeliverSession("visible"));
-        Assert.True(client.ShouldDeliverSession("hidden"));
+        Assert.True(client.ShouldDeliverSession("background"));
+        Assert.False(client.ShouldDeliverSession("hidden"));
     }
 
     [Fact]
@@ -37,11 +39,13 @@ public sealed class MuxClientTests
 
         client.SetActiveSession("active");
         client.SetVisibleSessions(new HashSet<string>(StringComparer.Ordinal) { "visible" });
+        client.SetBackgroundSessions(new HashSet<string>(StringComparer.Ordinal) { "background" });
         client.MarkTransportDegradedForTests();
 
         Assert.True(client.IsTransportDegraded);
         Assert.True(client.ShouldDeliverSession("active"));
         Assert.True(client.ShouldDeliverSession("visible"));
+        Assert.False(client.ShouldDeliverSession("background"));
         Assert.False(client.ShouldDeliverSession("hidden"));
     }
 
@@ -60,7 +64,7 @@ public sealed class MuxClientTests
     }
 
     [Fact]
-    public async Task DegradedHiddenSession_PausesAtDeliveredCursorUntilRecoveryCompletes()
+    public async Task HiddenSession_PausesAtDeliveredCursorUntilRecoveryCompletes()
     {
         using var socket = new RecordingWebSocket();
         await using var client = new MuxClient(
@@ -70,14 +74,12 @@ public sealed class MuxClientTests
 
         client.SetActiveSession("active01");
         client.SetVisibleSessions(new HashSet<string>(StringComparer.Ordinal) { "visible1" });
-        client.MarkTransportDegradedForTests();
-
         Assert.False(client.QueueOutput("hidden01", 4, 120, 30, RentOutput("lost")));
         Assert.True(client.TryGetPausedSession("hidden01", out var paused));
         Assert.Equal(0UL, paused.ResumeSequence);
         Assert.Equal(4UL, paused.SourceSequenceEndExclusive);
 
-        client.SetVisibleSessions(new HashSet<string>(StringComparer.Ordinal) { "visible1", "hidden01" });
+        client.SetBackgroundSessions(new HashSet<string>(StringComparer.Ordinal) { "hidden01" });
         Assert.False(client.QueueOutput("hidden01", 9, 120, 30, RentOutput("after")));
 
         Assert.True(await client.ExecuteRecoveryAsync(
@@ -245,6 +247,64 @@ public sealed class MuxClientTests
     }
 
     [Fact]
+    public async Task ContinuousBackgroundBacklog_CannotStarveActiveFlush()
+    {
+        const string activeSessionId = "active01";
+        const string backgroundSessionId = "backgr01";
+        using var socket = new ActiveFrameGateWebSocket(activeSessionId);
+        var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.FullReplay);
+        SharedOutputBuffer? lateBackgroundBuffer = null;
+
+        try
+        {
+            client.SetActiveSession(activeSessionId);
+            client.SetBackgroundSessions(new HashSet<string>(StringComparer.Ordinal) { backgroundSessionId });
+
+            Assert.True(client.QueueOutput(activeSessionId, 1, 120, 30, RentOutput("1")));
+            await socket.FirstActiveFrameStarted.WaitAsync(TimeSpan.FromSeconds(2));
+
+            for (var sequence = 1; sequence <= 63; sequence++)
+            {
+                Assert.True(client.QueueOutput(backgroundSessionId, (ulong)sequence, 120, 30, RentOutput("b")));
+            }
+
+            var activePayload = new string('2', MuxProtocol.CompressionThreshold);
+            Assert.True(client.QueueOutput(
+                activeSessionId,
+                1 + MuxProtocol.CompressionThreshold,
+                120,
+                30,
+                RentOutput(activePayload)));
+            for (var sequence = 64; sequence <= 500; sequence++)
+            {
+                var buffer = RentOutput("b");
+                Assert.True(client.QueueOutput(backgroundSessionId, (ulong)sequence, 120, 30, buffer));
+                lateBackgroundBuffer = buffer;
+            }
+
+            Assert.NotNull(lateBackgroundBuffer);
+            socket.ReleaseFirstActiveFrame();
+            await socket.SecondActiveFrameStarted.WaitAsync(TimeSpan.FromSeconds(2));
+
+            // The second active frame was reached after one 64-item drain pass;
+            // later background buffers must still be waiting in the bounded input queue.
+            Assert.False(lateBackgroundBuffer.IsReleased);
+            socket.ReleaseSecondActiveFrame();
+        }
+        finally
+        {
+            socket.ReleaseAll();
+            await client.DisposeAsync();
+        }
+
+        Assert.NotNull(lateBackgroundBuffer);
+        Assert.True(lateBackgroundBuffer.IsReleased);
+    }
+
+    [Fact]
     public void ResolveViewportReplayBytes_ScalesWithRowsAndClamps()
     {
         var session = new SessionInfo
@@ -326,6 +386,27 @@ public sealed class MuxClientTests
         Assert.Equal(sessionId, parsedSessionId);
         Assert.Equal((ulong)2, MuxProtocol.ParseOutputSequenceEnd(payload));
         Assert.Equal("ab", Encoding.UTF8.GetString(MuxProtocol.GetOutputData(payload)));
+    }
+
+    [Fact]
+    public async Task BackgroundSessionOutput_IsBatchedAtLowFrequency()
+    {
+        using var socket = new RecordingWebSocket();
+        await using var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.FullReplay);
+
+        const string sessionId = "session1";
+        client.SetActiveSession("active01");
+        client.SetBackgroundSessions(new HashSet<string>(StringComparer.Ordinal) { sessionId });
+
+        Assert.True(client.QueueOutput(sessionId, 1, 120, 30, RentOutput("a")));
+        await Task.Delay(80);
+        Assert.Empty(socket.SentFrames);
+
+        await WaitForAsync(() => socket.SentFrames.Count == 1);
+        Assert.InRange(client.GetFlushDelay(sessionId), 150, 1_000);
     }
 
     private static SharedOutputBuffer RentOutput(string text)
@@ -410,6 +491,60 @@ public sealed class MuxClientTests
         {
             _sendStarted.TrySetResult();
             return _releaseSends.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    private sealed class ActiveFrameGateWebSocket : FakeWebSocket
+    {
+        private readonly string _activeSessionId;
+        private readonly TaskCompletionSource _firstActiveFrameStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _secondActiveFrameStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseFirstActiveFrame = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseSecondActiveFrame = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _activeFrameCount;
+
+        public ActiveFrameGateWebSocket(string activeSessionId)
+        {
+            _activeSessionId = activeSessionId;
+        }
+
+        public Task FirstActiveFrameStarted => _firstActiveFrameStarted.Task;
+        public Task SecondActiveFrameStarted => _secondActiveFrameStarted.Task;
+
+        public void ReleaseFirstActiveFrame() => _releaseFirstActiveFrame.TrySetResult();
+        public void ReleaseSecondActiveFrame() => _releaseSecondActiveFrame.TrySetResult();
+
+        public void ReleaseAll()
+        {
+            ReleaseFirstActiveFrame();
+            ReleaseSecondActiveFrame();
+        }
+
+        public override async Task SendAsync(
+            ArraySegment<byte> buffer,
+            WebSocketMessageType messageType,
+            bool endOfMessage,
+            CancellationToken cancellationToken)
+        {
+            var frame = buffer.AsSpan();
+            if (!MuxProtocol.TryParseFrame(frame, out var type, out var sessionId, out _)
+                || type != MuxProtocol.TypeTerminalOutput
+                || !string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var activeFrameNumber = Interlocked.Increment(ref _activeFrameCount);
+            if (activeFrameNumber == 1)
+            {
+                _firstActiveFrameStarted.TrySetResult();
+                await _releaseFirstActiveFrame.Task.WaitAsync(cancellationToken);
+            }
+            else if (activeFrameNumber == 2)
+            {
+                _secondActiveFrameStarted.TrySetResult();
+                await _releaseSecondActiveFrame.Task.WaitAsync(cancellationToken);
+            }
         }
     }
 

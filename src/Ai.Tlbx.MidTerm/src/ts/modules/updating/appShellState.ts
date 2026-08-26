@@ -22,8 +22,12 @@ export function initAppShellStatePersistence(): void {
   }
 
   activeSessionPersistenceInitialized = true;
-  persistActiveSessionId($activeSessionId.get());
+  let initialNotification = true;
   $activeSessionId.subscribe((sessionId) => {
+    if (initialNotification) {
+      initialNotification = false;
+      return;
+    }
     persistActiveSessionId(sessionId);
   });
 }

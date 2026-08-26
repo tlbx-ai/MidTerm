@@ -23,6 +23,7 @@ interface PersistedPromptHistoryQuickSettings {
   model: string | null;
   permissionMode: string;
   planMode: string;
+  fastMode: string;
 }
 
 interface PersistedSmartInputPromptHistoryEntry {
@@ -58,6 +59,7 @@ function clonePromptHistoryQuickSettings(
     planMode: typeof quickSettings.planMode === 'string' ? quickSettings.planMode : 'off',
     permissionMode:
       typeof quickSettings.permissionMode === 'string' ? quickSettings.permissionMode : 'manual',
+    fastMode: typeof quickSettings.fastMode === 'string' ? quickSettings.fastMode : 'off',
   };
 }
 
@@ -90,6 +92,7 @@ function toPersistedPromptHistoryQuickSettings(
     planMode: typeof quickSettings.planMode === 'string' ? quickSettings.planMode : 'off',
     permissionMode:
       typeof quickSettings.permissionMode === 'string' ? quickSettings.permissionMode : 'manual',
+    fastMode: typeof quickSettings.fastMode === 'string' ? quickSettings.fastMode : 'off',
   };
 }
 
@@ -296,6 +299,7 @@ function tryParsePromptHistoryQuickSettings(
     planMode: typeof quickSettings.planMode === 'string' ? quickSettings.planMode : 'off',
     permissionMode:
       typeof quickSettings.permissionMode === 'string' ? quickSettings.permissionMode : 'manual',
+    fastMode: typeof quickSettings.fastMode === 'string' ? quickSettings.fastMode : 'off',
   };
 }
 

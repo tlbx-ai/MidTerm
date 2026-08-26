@@ -30,6 +30,7 @@ public sealed class AppServerControlHostProtocolTests
                 Effort = "medium",
                 PlanMode = AppServerControlQuickSettings.PlanModeOn,
                 PermissionMode = AppServerControlQuickSettings.PermissionModeAuto,
+                FastMode = AppServerControlQuickSettings.FastModeOn,
                 Attachments =
                 [
                     new AppServerControlAttachmentReference
@@ -54,6 +55,7 @@ public sealed class AppServerControlHostProtocolTests
         Assert.Equal("gpt-5.3-codex", roundTrip.StartTurn.Model);
         Assert.Equal(AppServerControlQuickSettings.PlanModeOn, roundTrip.StartTurn.PlanMode);
         Assert.Equal(AppServerControlQuickSettings.PermissionModeAuto, roundTrip.StartTurn.PermissionMode);
+        Assert.Equal(AppServerControlQuickSettings.FastModeOn, roundTrip.StartTurn.FastMode);
         Assert.Single(roundTrip.StartTurn.Attachments);
         Assert.Equal("image", roundTrip.StartTurn.Attachments[0].Kind);
         Assert.Equal("Q:/repo/.midterm/uploads/screen.png", roundTrip.StartTurn.Attachments[0].Path);
@@ -489,7 +491,6 @@ public sealed class AppServerControlHostProtocolTests
         AppServerControlHostCommandResultEnvelope Result,
         IReadOnlyList<AppServerControlProviderEvent> Events);
 }
-
 
 
 

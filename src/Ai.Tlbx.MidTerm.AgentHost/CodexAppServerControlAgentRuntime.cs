@@ -14,6 +14,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
     private const int MaxInlineImageBytes = 10 * 1024 * 1024;
     private const int CodexStderrBlockFlushDelayMs = 175;
     private const string CodexRemoteCompactionDisabledEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED";
+    private const string TlbxRuntimeContextKey = "tlbx.agent-controller.runtime";
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly HashSet<string> SupportedApprovalDecisions = new(StringComparer.Ordinal)
     {
@@ -117,7 +118,9 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             {
                 "runtime.attach" => await AttachAsync(command, ct).ConfigureAwait(false),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
+                "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
+                "thread.compact" => await CompactThreadAsync(command, ct).ConfigureAwait(false),
                 "thread.goal.set" => await SetGoalAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolveRequestAsync(command, ct).ConfigureAwait(false),
                 "user-input.resolve" => await ResolveUserInputAsync(command, ct).ConfigureAwait(false),
@@ -237,6 +240,12 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
     private async Task<HostCommandOutcome> StartTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
         EnsureAttached();
+        if (!string.IsNullOrWhiteSpace(_activeTurnId))
+        {
+            throw new InvalidOperationException(
+                "Codex already has an active turn. Use turn.steer to append input or interrupt the active turn first.");
+        }
+
         if (_pendingUserInputs.Count > 0)
         {
             throw new InvalidOperationException("Codex is waiting for structured user input. Resolve that request before starting another turn.");
@@ -265,7 +274,13 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
 
         var turnResult = await SendCodexRequestAsync(
             "turn/start",
-            id => BuildCodexTurnStartRequest(id, _providerThreadId!, input, quickSettings.Model, quickSettings.Effort),
+            id => BuildCodexTurnStartRequest(
+                id,
+                _providerThreadId!,
+                input,
+                quickSettings.Model,
+                quickSettings.Effort,
+                quickSettings.FastMode),
             ct).ConfigureAwait(false);
 
         _quickSettings = quickSettings;
@@ -296,6 +311,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                         Effort = _quickSettings.Effort,
                         PlanMode = _quickSettings.PlanMode,
                         PermissionMode = _quickSettings.PermissionMode,
+                        FastMode = _quickSettings.FastMode,
                         ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions),
                         EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions)
                     }
@@ -333,6 +349,55 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                 Status = "accepted",
                 TurnId = turnId
             });
+    }
+
+    private async Task<HostCommandOutcome> SteerTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    {
+        EnsureAttached();
+        var request = command.SteerTurn ?? throw new InvalidOperationException("turn.steer payload is required.");
+        var turnId = string.IsNullOrWhiteSpace(request.ExpectedTurnId) ? _activeTurnId : request.ExpectedTurnId;
+        if (string.IsNullOrWhiteSpace(turnId))
+        {
+            throw new InvalidOperationException("Codex does not have an active turn to steer.");
+        }
+
+        var input = await CreateCodexTurnInputAsync(
+            new AppServerControlTurnRequest
+            {
+                Text = request.Text,
+                Attachments = request.Attachments
+            },
+            AppServerControlQuickSettings.PlanModeOff,
+            ct).ConfigureAwait(false);
+        if (input.Count == 0)
+        {
+            throw new InvalidOperationException("Agent Controller steer input must include text or attachments.");
+        }
+
+        var result = await SendCodexRequestAsync(
+            "turn/steer",
+            id => BuildCodexTurnSteerRequest(id, _providerThreadId!, turnId, input),
+            ct).ConfigureAwait(false);
+        var acceptedTurnId = GetString(result, "turnId") ?? turnId;
+        return Accepted(
+            command.CommandId,
+            command.SessionId,
+            accepted: new AppServerControlCommandAcceptedResponse
+            {
+                SessionId = command.SessionId,
+                Status = "accepted",
+                TurnId = acceptedTurnId
+            });
+    }
+
+    private async Task<HostCommandOutcome> CompactThreadAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    {
+        EnsureAttached();
+        await SendCodexRequestAsync(
+            "thread/compact/start",
+            id => BuildCodexThreadCompactRequest(id, _providerThreadId!),
+            ct).ConfigureAwait(false);
+        return Accepted(command.CommandId, command.SessionId);
     }
 
     private async Task<HostCommandOutcome> SetGoalAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -741,12 +806,35 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                 break;
             }
 
+            case "thread/settings/updated":
+            {
+                var model = AppServerControlQuickSettings.NormalizeOptionalValue(
+                    GetString(payload, "threadSettings", "model"));
+                var effort = AppServerControlQuickSettings.NormalizeOptionalValue(
+                    GetString(payload, "threadSettings", "effort"));
+                if (model is not null)
+                {
+                    _quickSettings.Model = model;
+                }
+
+                if (effort is not null)
+                {
+                    _quickSettings.Effort = effort;
+                }
+                _emit(CreateQuickSettingsUpdatedEvent(
+                    _quickSettings,
+                    "codex.app-server.notification",
+                    method,
+                    payload));
+                break;
+            }
+
             case "thread/tokenUsage/updated":
             {
                 var detail = BuildCodexTokenUsageDetail(payload);
                 _emit(CreateEvent("thread.token-usage.updated", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
-                    appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
+                    appServerControlEvent.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
                     {
                         Message = "Codex context window updated.",
                         Detail = detail
@@ -1353,7 +1441,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             {
                 _emit(CreateEvent("account.updated", null, null, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
-                    appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
+                    appServerControlEvent.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
                     {
                         Message = "Codex account details updated.",
                         Detail = BuildCompactJsonDetail(payload)
@@ -1366,7 +1454,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             {
                 _emit(CreateEvent("account.rate-limits.updated", null, null, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
-                    appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
+                    appServerControlEvent.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
                     {
                         Message = "Codex rate limits updated.",
                         Detail = BuildCompactJsonDetail(payload)
@@ -1408,11 +1496,19 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                     payload,
                     appServerControlEvent =>
                     {
-                        appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
+                        var startupMessage = new AppServerControlProviderRuntimeMessagePayload
                         {
                             Message = BuildCodexMcpStartupStatusMessage(serverName, status, error),
                             Detail = hasError ? error : null
                         };
+                        if (hasError)
+                        {
+                            appServerControlEvent.RuntimeMessage = startupMessage;
+                        }
+                        else
+                        {
+                            appServerControlEvent.RuntimeNoticeOnly = startupMessage;
+                        }
                     }));
                 break;
             }
@@ -1978,27 +2074,79 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
     {
         try
         {
-            var result = await SendCodexRequestAsync(
-                "model/list",
-                BuildCodexModelListRequest,
-                ct,
-                TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-            var modelOptions = ReadCodexModelOptions(result);
+            var pages = new List<JsonElement>();
+            var modelOptions = new List<AppServerControlQuickSettingsOption>();
+            var seenModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seenCursors = new HashSet<string>(StringComparer.Ordinal);
+            string? cursor = null;
+            do
+            {
+                var result = await SendCodexRequestAsync(
+                    "model/list",
+                    id => BuildCodexModelListRequest(id, cursor),
+                    ct,
+                    TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+                pages.Add(result.Clone());
+                foreach (var option in ReadCodexModelOptions(result))
+                {
+                    if (seenModels.Add(option.Value))
+                    {
+                        modelOptions.Add(option);
+                    }
+                }
+
+                cursor = AppServerControlQuickSettings.NormalizeOptionalValue(GetString(result, "nextCursor"));
+            }
+            while (cursor is not null && seenCursors.Add(cursor) && pages.Count < 100);
+
             if (modelOptions.Count == 0)
             {
                 return;
             }
 
             _quickSettings.ModelOptions = modelOptions;
-            _quickSettings.EffortOptions = ReadCodexEffortOptions(
-                result,
-                _quickSettings.Model,
-                modelOptions.FirstOrDefault(static option => option.IsDefault)?.Value);
+            var defaultModel = modelOptions.FirstOrDefault(static option => option.IsDefault)?.Value;
+            _quickSettings.Model ??= defaultModel;
+            var effortCatalogPage = pages.FirstOrDefault(page =>
+                ContainsCodexModel(page, _quickSettings.Model ?? defaultModel));
+            if (effortCatalogPage.ValueKind != JsonValueKind.Undefined)
+            {
+                _quickSettings.EffortOptions = ReadCodexEffortOptions(
+                    effortCatalogPage,
+                    _quickSettings.Model,
+                    defaultModel);
+            }
         }
         catch
         {
-            // Codex may run older app-server builds. Keep the static frontend fallback quiet.
+            // Codex may run older app-server builds. Keep the current model usable without
+            // presenting a stale hard-coded catalog as provider truth.
         }
+    }
+
+    private static bool ContainsCodexModel(JsonElement result, string? selectedModel)
+    {
+        if (string.IsNullOrWhiteSpace(selectedModel) ||
+            !result.TryGetProperty("data", out var data) ||
+            data.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        using var models = data.EnumerateArray();
+        while (models.MoveNext())
+        {
+            var model = models.Current;
+            if (string.Equals(
+                    GetString(model, "id") ?? GetString(model, "model"),
+                    selectedModel,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static List<AppServerControlQuickSettingsOption> ReadCodexModelOptions(JsonElement result)
@@ -2044,10 +2192,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             }
         }
 
-        return options
-            .OrderBy(static option => GetCodexModelSortKey(option.Value), StringComparer.Ordinal)
-            .ThenBy(static option => option.Value, StringComparer.Ordinal)
-            .ToList();
+        return options;
     }
 
     private static List<AppServerControlQuickSettingsOption> ReadCodexEffortOptions(
@@ -2254,7 +2399,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
         });
     }
 
-    private static string BuildCodexModelListRequest(string id)
+    private static string BuildCodexModelListRequest(string id, string? cursor = null)
     {
         return BuildJsonString(writer =>
         {
@@ -2265,6 +2410,10 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             writer.WritePropertyName("params");
             writer.WriteStartObject();
             writer.WriteBoolean("includeHidden", false);
+            if (!string.IsNullOrWhiteSpace(cursor))
+            {
+                writer.WriteString("cursor", cursor);
+            }
             writer.WriteEndObject();
             writer.WriteEndObject();
         });
@@ -2326,6 +2475,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             writer.WriteString("approvalPolicy", ResolveCodexApprovalPolicy(permissionMode));
             writer.WriteString("sandbox", ResolveCodexSandbox(permissionMode));
             writer.WriteBoolean("persistExtendedHistory", false);
+            writer.WriteBoolean("excludeTurns", true);
             writer.WriteEndObject();
             writer.WriteEndObject();
         });
@@ -2352,7 +2502,8 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
         string threadId,
         IReadOnlyList<CodexTurnInputEntry> input,
         string? model = null,
-        string? effort = null)
+        string? effort = null,
+        string? fastMode = null)
     {
         return BuildJsonString(writer =>
         {
@@ -2395,7 +2546,66 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                 writer.WriteString("effort", effort);
             }
 
+            if (string.Equals(
+                    AppServerControlQuickSettings.NormalizeFastMode(fastMode),
+                    AppServerControlQuickSettings.FastModeOn,
+                    StringComparison.Ordinal))
+            {
+                writer.WriteString("serviceTier", "fast");
+            }
+            else
+            {
+                writer.WriteNull("serviceTier");
+            }
+
+            WriteCodexRuntimeContext(writer, model, effort);
+
             writer.WriteEndObject();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static void WriteCodexRuntimeContext(Utf8JsonWriter writer, string? model, string? effort)
+    {
+        var selectedModel = AppServerControlQuickSettings.NormalizeOptionalValue(model);
+        var selectedEffort = AppServerControlQuickSettings.NormalizeOptionalValue(effort);
+        if (selectedModel is null && selectedEffort is null)
+        {
+            return;
+        }
+
+        writer.WritePropertyName("additionalContext");
+        writer.WriteStartObject();
+        writer.WritePropertyName(TlbxRuntimeContextKey);
+        writer.WriteStartObject();
+        writer.WriteString("kind", "application");
+        writer.WriteString(
+            "value",
+            BuildCodexRuntimeContextValue(selectedModel, selectedEffort));
+        writer.WriteEndObject();
+        writer.WriteEndObject();
+    }
+
+    private static string BuildCodexRuntimeContextValue(string? model, string? effort)
+    {
+        return BuildJsonString(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("source", "tlbx-agent-controller");
+            writer.WriteString("authority", "current-turn-selection");
+            if (model is not null)
+            {
+                writer.WriteString("selectedModel", model);
+            }
+
+            if (effort is not null)
+            {
+                writer.WriteString("selectedReasoningEffort", effort);
+            }
+
+            writer.WriteString(
+                "guidance",
+                "When asked about the active model or effort, use this turn selection instead of process arguments, environment defaults, or global tlbx settings.");
             writer.WriteEndObject();
         });
     }
@@ -2412,6 +2622,65 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             writer.WriteStartObject();
             writer.WriteString("threadId", threadId);
             writer.WriteString("turnId", turnId);
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static string BuildCodexTurnSteerRequest(
+        string id,
+        string threadId,
+        string expectedTurnId,
+        IReadOnlyList<CodexTurnInputEntry> input)
+    {
+        return BuildJsonString(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("jsonrpc", "2.0");
+            writer.WriteString("id", id);
+            writer.WriteString("method", "turn/steer");
+            writer.WritePropertyName("params");
+            writer.WriteStartObject();
+            writer.WriteString("threadId", threadId);
+            writer.WriteString("expectedTurnId", expectedTurnId);
+            writer.WritePropertyName("input");
+            writer.WriteStartArray();
+            foreach (var entry in input)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("type", entry.Type);
+                if (string.Equals(entry.Type, "image", StringComparison.Ordinal))
+                {
+                    writer.WriteString("url", entry.Url);
+                }
+                else
+                {
+                    writer.WriteString("text", entry.Text);
+                    writer.WritePropertyName("text_elements");
+                    writer.WriteStartArray();
+                    writer.WriteEndArray();
+                }
+
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static string BuildCodexThreadCompactRequest(string id, string threadId)
+    {
+        return BuildJsonString(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("jsonrpc", "2.0");
+            writer.WriteString("id", id);
+            writer.WriteString("method", "thread/compact/start");
+            writer.WritePropertyName("params");
+            writer.WriteStartObject();
+            writer.WriteString("threadId", threadId);
             writer.WriteEndObject();
             writer.WriteEndObject();
         });
@@ -2605,10 +2874,11 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             : AppServerControlQuickSettings.PermissionModeManual;
         return AppServerControlQuickSettings.CreateSummary(
             AppServerControlProviderRuntimeConfiguration.GetCodexDefaultModel(),
-            null,
+            "medium",
             AppServerControlQuickSettings.PlanModeOff,
             defaultPermissionMode,
-            defaultPermissionMode);
+            defaultPermissionMode,
+            AppServerControlQuickSettings.FastModeOff);
     }
 
     private AppServerControlQuickSettingsSummary ResolveRequestedQuickSettings(AppServerControlTurnRequest request)
@@ -2617,11 +2887,16 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             ? AppServerControlQuickSettings.PermissionModeAuto
             : AppServerControlQuickSettings.PermissionModeManual;
         var quickSettings = AppServerControlQuickSettings.CreateSummary(
-            request.Model ?? AppServerControlProviderRuntimeConfiguration.GetCodexDefaultModel(),
-            request.Effort,
+            AppServerControlQuickSettings.NormalizeOptionalValue(request.Model) ??
+            _quickSettings.Model ??
+            AppServerControlProviderRuntimeConfiguration.GetCodexDefaultModel(),
+            AppServerControlQuickSettings.NormalizeOptionalValue(request.Effort) ??
+            _quickSettings.Effort ??
+            "medium",
             request.PlanMode,
             request.PermissionMode,
-            defaultPermissionMode);
+            defaultPermissionMode,
+            request.FastMode);
         quickSettings.ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions);
         quickSettings.EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions);
         return quickSettings;
@@ -3691,22 +3966,6 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             "high" => "High",
             "xhigh" => "Extra high",
             _ => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(effort.Replace('_', ' ').Trim())
-        };
-    }
-
-    private static string GetCodexModelSortKey(string value)
-    {
-        return value.Trim().ToLowerInvariant() switch
-        {
-            "gpt-5.5" => "000",
-            "gpt-5.4" => "010",
-            "gpt-5.4-mini" => "020",
-            "gpt-5.3-codex" => "030",
-            "gpt-5.3-codex-spark" => "040",
-            "gpt-5.2" => "050",
-            "gpt-5" => "060",
-            "gpt-5.4-codex" => "070",
-            _ => "900:" + value.Trim().ToLowerInvariant()
         };
     }
 

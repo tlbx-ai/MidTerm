@@ -9973,7 +9973,7 @@ body.shared-session-mode .session-tab-bar {
   align-items: stretch;
   box-sizing: border-box;
   width: calc(100% - 2px);
-  margin-top: 8px;
+  margin: 0 auto;
   min-height: var(--command-bay-automation-chip-height);
   padding: 0 3px;
   border-radius: var(--command-bay-pill-radius);
@@ -13178,6 +13178,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --agent-appServerControl-machine-surface: transparent;
   --agent-appServerControl-machine-surface-strong: transparent;
   --agent-appServerControl-machine-border: color-mix(in srgb, var(--border-color) 72%, transparent);
+  --agent-appServerControl-assistant-text: var(--text-on-accent);
   --agent-appServerControl-user-text: color-mix(
     in srgb,
     var(--accent-blue) 20%,
@@ -13292,6 +13293,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   min-height: 0;
   position: relative;
   overflow: hidden auto;
+  overflow-anchor: none;
   padding: 18px 18px 64px;
   scroll-padding-bottom: 60px;
   scrollbar-width: none;
@@ -13406,11 +13408,17 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 @media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .agent-history-shell {
-    gap: 12px;
+    gap: 0;
   }
 
   .agent-history-progress-nav {
-    flex: 0 0 44px;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
+    width: 44px;
+    flex: none;
     min-width: 44px;
     border-radius: 22px;
     background: transparent;
@@ -13619,7 +13627,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-assistant.agent-history-pending .agent-history-body {
-  color: color-mix(in srgb, var(--text-primary) 96%, white 4%);
+  color: var(--agent-appServerControl-assistant-text);
 }
 
 .agent-history-assistant.agent-history-live:not(.agent-history-pending) {
@@ -13627,7 +13635,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-assistant.agent-history-live:not(.agent-history-pending) .agent-history-body {
-  color: var(--text-primary);
+  color: var(--agent-appServerControl-assistant-text);
 }
 
 .agent-history-assistant.agent-history-live:not(.agent-history-pending) .agent-history-meta {
@@ -13913,7 +13921,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-assistant .agent-history-body {
-  color: var(--text-primary);
+  color: var(--agent-appServerControl-assistant-text);
   font-family: var(--agent-history-assistant-font-family);
   font-size: var(--terminal-font-size, 16px);
   font-weight: var(--terminal-font-weight, normal);
@@ -14018,7 +14026,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-markdown {
-  overflow: hidden;
+  overflow: visible;
   line-height: 1.38;
 }
 
@@ -14213,7 +14221,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-markdown-content {
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
+  overflow-wrap: anywhere;
 }
 
 .agent-history-markdown > :first-child {
@@ -14350,7 +14359,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-markdown strong {
-  color: var(--text-primary);
+  color: var(--agent-appServerControl-assistant-text);
   font-weight: 700;
 }
 
@@ -14774,7 +14783,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-markdown h2,
 .agent-history-markdown h3,
 .agent-history-markdown h4 {
-  color: var(--text-primary);
+  color: var(--agent-appServerControl-assistant-text);
   font-weight: 650;
   line-height: 1.25;
 }
@@ -15514,7 +15523,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 @media (max-width: 720px) {
   .agent-history {
-    padding: 10px 12px 20px;
+    padding: 10px 44px 20px 12px;
     scroll-padding-bottom: 20px;
   }
 
@@ -15581,8 +15590,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   }
 
   .agent-scroll-to-bottom {
-    right: 12px;
+    right: 56px;
     bottom: 10px;
+    min-height: 44px;
   }
 
   .agent-request-panel {
@@ -15621,6 +15631,18 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   .agent-request-button-row .agent-view-btn {
     width: 100%;
     flex-basis: 100%;
+    min-height: 44px;
+  }
+
+  .agent-history-markdown .agent-markdown-table-sort,
+  .agent-history-markdown .agent-markdown-table-filter {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+  .agent-history {
+    padding-right: 44px;
   }
 }
 
@@ -18310,6 +18332,26 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   font-weight: 600;
 }
 
+.smart-input-appServerControl-fast-toggle {
+  justify-content: center;
+  min-width: 56px;
+  padding-inline: 10px;
+  border: 1px solid color-mix(in srgb, var(--command-bay-border) 70%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.smart-input-appServerControl-fast-toggle[aria-pressed='true'] {
+  color: color-mix(in srgb, var(--command-bay-text) 86%, var(--accent-blue) 14%);
+  border-color: color-mix(in srgb, var(--accent-blue) 30%, var(--command-bay-border));
+  background: color-mix(in srgb, var(--accent-blue) 7%, var(--command-bay-surface-color));
+}
+
+.smart-input-appServerControl-fast-toggle:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .smart-input-appServerControl-dropdown-trigger {
   min-height: 24px;
 }
@@ -18327,7 +18369,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   flex-wrap: wrap;
   width: 100%;
-  margin-top: var(--command-bay-gap);
+  margin-top: 0;
   padding: 10px;
   overflow: visible;
   box-shadow: none;
@@ -18807,7 +18849,7 @@ body.keyboard-visible
   .adaptive-footer-status {
   top: 0;
   bottom: auto;
-  order: 4;
+  order: -1;
 }
 
 body.keyboard-visible
@@ -18862,7 +18904,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 
 @media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .adaptive-footer-dock {
-    --command-bay-control-height-mobile: 40px;
+    --command-bay-control-height-mobile: 44px;
     --command-bay-control-height: var(--command-bay-control-height-mobile);
     --command-bay-gap: 4px;
     padding: 2px;
@@ -18872,6 +18914,16 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     background: transparent;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+  }
+
+  .adaptive-footer-status[data-appServerControl-compact='true']
+    .smart-input-appServerControl-control,
+  .adaptive-footer-status[data-appServerControl-compact='true']
+    .smart-input-appServerControl-action,
+  .adaptive-footer-dock .smart-input-appServerControl-dropdown-trigger,
+  .adaptive-footer-dock .manager-bar-overflow.adaptive-footer-status-automation-proxy {
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .smart-input-row {
@@ -18942,8 +18994,8 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 
   .smart-input-mobile-touch-host .touch-controller.embedded .touch-key {
     width: auto;
-    min-width: 38px;
-    min-height: 38px;
+    min-width: 44px;
+    min-height: 44px;
     margin-left: 0;
     padding: 6px 8px;
     border-radius: 8px;
@@ -18977,7 +19029,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   }
 
   .smart-input-textarea-shell {
-    --smart-input-expand-hit-size: 36px;
+    --smart-input-expand-hit-size: 44px;
   }
 
   .adaptive-footer-dock[data-composer-expanded='true'] {

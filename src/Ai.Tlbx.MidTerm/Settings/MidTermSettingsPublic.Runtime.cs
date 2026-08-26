@@ -56,9 +56,6 @@ public sealed partial class MidTermSettingsPublic
             CodexYoloDefault = settings.CodexYoloDefault,
             CodexDefaultAppServerControlModel = settings.CodexDefaultAppServerControlModel,
             CodexEnvironmentVariables = settings.CodexEnvironmentVariables,
-            ClaudeDangerouslySkipPermissionsDefault = settings.ClaudeDangerouslySkipPermissionsDefault,
-            ClaudeDefaultAppServerControlModel = settings.ClaudeDefaultAppServerControlModel,
-            ClaudeEnvironmentVariables = settings.ClaudeEnvironmentVariables,
             AgentMessageFontFamily = NormalizeAgentMessageFontFamily(settings.AgentMessageFontFamily),
             ShowAgentMessageTimestamps = settings.ShowAgentMessageTimestamps,
             ShowUnknownAgentMessages = settings.ShowUnknownAgentMessages,
@@ -100,6 +97,7 @@ public sealed partial class MidTermSettingsPublic
             ScrollbackLines = settings.ScrollbackLines,
             ScrollbackBytes = settings.ScrollbackBytes,
             BellStyle = settings.BellStyle,
+            NotificationPriority = settings.NotificationPriority,
             CopyOnSelect = settings.CopyOnSelect,
             RightClickPaste = settings.RightClickPaste,
             ClipboardShortcuts = settings.ClipboardShortcuts,
@@ -160,9 +158,6 @@ public sealed partial class MidTermSettingsPublic
         settings.CodexYoloDefault = CodexYoloDefault;
         settings.CodexDefaultAppServerControlModel = CodexDefaultAppServerControlModel?.Trim() ?? string.Empty;
         settings.CodexEnvironmentVariables = CodexEnvironmentVariables ?? string.Empty;
-        settings.ClaudeDangerouslySkipPermissionsDefault = ClaudeDangerouslySkipPermissionsDefault;
-        settings.ClaudeDefaultAppServerControlModel = ClaudeDefaultAppServerControlModel?.Trim() ?? string.Empty;
-        settings.ClaudeEnvironmentVariables = ClaudeEnvironmentVariables ?? string.Empty;
         settings.AgentMessageFontFamily = NormalizeAgentMessageFontFamily(
             AgentMessageFontFamily,
             DefaultAgentMessageFontFamily);
@@ -224,6 +219,7 @@ public sealed partial class MidTermSettingsPublic
             MidTermSettings.MinScrollbackBytes,
             MidTermSettings.MaxScrollbackBytes);
         settings.BellStyle = BellStyle;
+        settings.NotificationPriority = NotificationPriority;
         settings.CopyOnSelect = CopyOnSelect;
         settings.RightClickPaste = RightClickPaste;
         settings.ClipboardShortcuts = ClipboardShortcuts;

@@ -307,7 +307,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             Provider = turnStarted.Provider,
             ThreadId = turnStarted.ThreadId,
             TurnId = turnStarted.TurnId,
-            ItemId = $"user:{turnStarted.TurnId ?? Guid.NewGuid().ToString("N")}",
+            ItemId = $"local-user:{turnStarted.TurnId ?? Guid.NewGuid().ToString("N")}",
             CreatedAt = DateTimeOffset.UtcNow,
             Type = "item.completed",
             Item = new AppServerControlProviderItemPayload
@@ -366,12 +366,16 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 HostKind = "mtagenthost",
                 HostVersion = "dev",
-                Providers = _syntheticProvider is null ? ["codex", "claude", "grok"] : [_syntheticProvider],
+                Providers = _syntheticProvider is null
+                    ? ["codex", "acp-v1"]
+                    : [_syntheticProvider],
                 Capabilities =
                 [
                     "attach",
                     "turn.start",
+                    "turn.steer",
                     "turn.interrupt",
+                    "thread.compact",
                     "thread.goal.set",
                     "request.resolve",
                     "user-input.resolve",
@@ -409,18 +413,31 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
 
         var provider = _syntheticProvider ?? command.AttachRuntime?.Provider?.Trim().ToLowerInvariant();
-        _runtime = provider switch
+        if (_syntheticProvider is not null)
         {
-            "codex" when _syntheticProvider is null => new CodexAppServerControlAgentRuntime(EmitRuntimeEvent),
-            "claude" when _syntheticProvider is null => new ClaudeAppServerControlAgentRuntime(EmitRuntimeEvent),
-            "grok" when _syntheticProvider is null => new GrokAcpAppServerControlAgentRuntime(EmitRuntimeEvent),
-            "codex" => new SyntheticAppServerControlAgentRuntime(provider, EmitRuntimeEvent),
-            "claude" when _syntheticProvider is not null => new SyntheticAppServerControlAgentRuntime(provider, EmitRuntimeEvent),
-            "grok" when _syntheticProvider is not null => new SyntheticAppServerControlAgentRuntime(provider, EmitRuntimeEvent),
-            _ => throw new InvalidOperationException($"mtagenthost does not support provider '{provider ?? "(null)"}'.")
-        };
+            _runtime = new SyntheticAppServerControlAgentRuntime(provider!, EmitRuntimeEvent);
+            return _runtime;
+        }
 
-        return _runtime;
+        if (string.Equals(provider, "codex", StringComparison.Ordinal))
+        {
+            _runtime = new CodexAppServerControlAgentRuntime(EmitRuntimeEvent);
+            return _runtime;
+        }
+
+        var attach = command.AttachRuntime
+                     ?? throw new InvalidOperationException("runtime.attach payload is required.");
+        if (string.Equals(attach.RuntimeKind, "acp-v1", StringComparison.Ordinal))
+        {
+            _runtime = new AcpAppServerControlAgentRuntime(
+                provider ?? throw new InvalidOperationException("ACP provider is required."),
+                attach.AgentName,
+                attach.ExecutableArguments,
+                EmitRuntimeEvent);
+            return _runtime;
+        }
+
+        throw new InvalidOperationException($"mtagenthost does not support provider '{provider ?? "(null)"}'.");
     }
 
     private static void ValidateCommand(AppServerControlHostCommandEnvelope command)
@@ -563,6 +580,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 Effort = appServerControlEvent.QuickSettingsUpdated.Effort,
                 PlanMode = AppServerControlQuickSettings.NormalizePlanMode(appServerControlEvent.QuickSettingsUpdated.PlanMode),
                 PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(appServerControlEvent.QuickSettingsUpdated.PermissionMode),
+                FastMode = AppServerControlQuickSettings.NormalizeFastMode(appServerControlEvent.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.ModelOptions),
                 EffortOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.EffortOptions)
             },
@@ -589,6 +607,11 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 Message = appServerControlEvent.RuntimeMessage.Message,
                 Detail = appServerControlEvent.RuntimeMessage.Detail
+            },
+            RuntimeNoticeOnly = appServerControlEvent.RuntimeNoticeOnly is null ? null : new AppServerControlProviderRuntimeMessagePayload
+            {
+                Message = appServerControlEvent.RuntimeNoticeOnly.Message,
+                Detail = appServerControlEvent.RuntimeNoticeOnly.Detail
             }
         };
     }
@@ -730,12 +753,6 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
     }
 }
-
-
-
-
-
-
 
 
 

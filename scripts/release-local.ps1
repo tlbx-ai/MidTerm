@@ -245,7 +245,7 @@ Remove-Job -Job $mtJob, $mthostJob, $mtagenthostJob, $mttmuxJob
 # Check if publish succeeded by verifying output file exists
 # (MSBuild uses _REINVOKE_SUCCESS_ error to stop outer build after nested build completes, so exit code is unreliable)
 $mtExe = "$repoRoot/src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$RID/publish/mt.exe"
-$mthostExe = "$repoRoot/src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/$RID/publish/mthost.exe"
+$mthostExe = "$repoRoot/src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0-windows10.0.19041.0/$RID/publish/mthost.exe"
 $mtagenthostExe = "$repoRoot/src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/$RID/publish/mtagenthost.exe"
 $mttmuxExe = "$repoRoot/src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/$RID/publish/mttmux.exe"
 if (-not (Test-Path $mtExe)) { throw "mt publish failed - output not found: $mtExe" }
@@ -259,7 +259,7 @@ if (-not (Test-Path $mttmuxExe)) { throw "mttmux publish failed - output not fou
 Write-Host "Copying to $OutputDir..." -ForegroundColor Gray
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$RID/publish/mt.exe" $OutputDir -Force
-$mthostPublishDir = "$repoRoot/src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/$RID/publish"
+$mthostPublishDir = "$repoRoot/src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0-windows10.0.19041.0/$RID/publish"
 Copy-Item "$mthostPublishDir/mthost.exe" $OutputDir -Force
 & "$PSScriptRoot/copy-windows-conpty-runtime.ps1" -SourceDir $mthostPublishDir -DestinationDir $OutputDir -Rid $RID
 Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/$RID/publish/mtagenthost.exe" $OutputDir -Force

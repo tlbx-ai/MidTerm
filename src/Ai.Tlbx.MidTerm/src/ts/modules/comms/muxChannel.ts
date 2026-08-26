@@ -23,6 +23,7 @@ import {
   MUX_TYPE_PONG,
   MUX_TYPE_SYNC_COMPLETE,
   MUX_TYPE_VISIBLE_SESSIONS_HINT,
+  MUX_TYPE_BACKGROUND_SESSIONS_HINT,
   MUX_TYPE_RECOVERY_BEGIN,
   MUX_TYPE_RECOVERY_END,
   WS_CLOSE_SERVER_SHUTDOWN,
@@ -180,6 +181,10 @@ interface ActiveSessionRecovery {
 }
 
 const replaySuppressedSessions = new Map<string, { quietUntilMs: number; hardUntilMs: number }>();
+const pendingBufferRefreshes = new Map<
+  string,
+  { mode: 'fullReplay' | 'quickResume'; recoveryCause: string }
+>();
 const browserTransportSnapshots = new Map<string, BrowserTransportSnapshot>();
 const activeSessionRecoveries = new Map<string, ActiveSessionRecovery>();
 const recoveryRequestsInFlight = new Set<string>();
@@ -427,6 +432,7 @@ function measureCompletedOutputRtt(sessionId: string): void {
 // Track last hinted session to avoid redundant hints
 let lastHintedSessionId: string | null = null;
 let currentVisibleSessionIds: string[] = [];
+let currentBackgroundSessionIds: string[] = [];
 let muxSuspendedForBrowserBackground = false;
 
 // =============================================================================
@@ -553,6 +559,7 @@ export function forgetMuxSession(sessionId: string): void {
   discardSessionRecovery(sessionId);
   recoveryRequestsInFlight.delete(sessionId);
   recoveryFollowupCauses.delete(sessionId);
+  pendingBufferRefreshes.delete(sessionId);
   bracketedPasteState.delete(sessionId);
   clearBracketedPasteScanState(sessionId);
   sessionOutputGenerations.delete(sessionId);
@@ -1438,6 +1445,9 @@ export function connectMuxWebSocket(): void {
   if (currentVisibleSessionIds.length > 0) {
     query.set('visibleSessionIds', currentVisibleSessionIds.join(','));
   }
+  if (currentBackgroundSessionIds.length > 0) {
+    query.set('backgroundSessionIds', currentBackgroundSessionIds.join(','));
+  }
   const resumeCursors = buildResumeCursorQueryValue(
     sessionTerminals,
     (sessionId) => browserTransportSnapshots.get(sessionId),
@@ -1512,6 +1522,13 @@ export function connectMuxWebSocket(): void {
       sendActiveSessionHint(activeSessionId);
     }
     sendVisibleSessionsHint(currentVisibleSessionIds);
+    sendBackgroundSessionsHint(currentBackgroundSessionIds);
+
+    const queuedRefreshes = [...pendingBufferRefreshes.entries()];
+    pendingBufferRefreshes.clear();
+    queuedRefreshes.forEach(([sessionId, request]) => {
+      requestBufferRefresh(sessionId, request.mode, request.recoveryCause);
+    });
 
     // Flush any input buffered during disconnection
     flushPendingInput();
@@ -1756,6 +1773,10 @@ export function requestBufferRefresh(
     return;
   }
 
+  if (queueBufferRefreshUntilMuxOpens(sessionId, mode, recoveryCause)) {
+    return;
+  }
+
   beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
   _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
   const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
@@ -1765,8 +1786,6 @@ export function requestBufferRefresh(
   }
   snapshot.lastReplayReason =
     mode === 'quickResume' ? 'quick_resume_tail_replay' : 'buffer_refresh_tail_replay';
-  if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
-
   recoveryRequestsInFlight.add(sessionId);
   snapshot.recoveryRequested += 1;
   snapshot.lastRecoveryCause = recoveryCause;
@@ -1784,6 +1803,23 @@ export function requestBufferRefresh(
     resumeSequence,
   );
   sendFrame(frame);
+}
+
+function queueBufferRefreshUntilMuxOpens(
+  sessionId: string,
+  mode: 'fullReplay' | 'quickResume',
+  recoveryCause: string,
+): boolean {
+  if (muxWs?.readyState === WebSocket.OPEN) {
+    return false;
+  }
+
+  const pending = pendingBufferRefreshes.get(sessionId);
+  pendingBufferRefreshes.set(sessionId, {
+    mode: pending?.mode === 'fullReplay' || mode === 'fullReplay' ? 'fullReplay' : 'quickResume',
+    recoveryCause: mode === 'fullReplay' || !pending ? recoveryCause : pending.recoveryCause,
+  });
+  return true;
 }
 
 function requestSessionRecovery(sessionId: string, cause: string): void {
@@ -1823,11 +1859,19 @@ export function sendActiveSessionHint(sessionId: string | null): void {
 }
 
 export function sendVisibleSessionsHint(sessionIds: readonly string[]): void {
+  sendSessionIdsHint(MUX_TYPE_VISIBLE_SESSIONS_HINT, sessionIds);
+}
+
+export function sendBackgroundSessionsHint(sessionIds: readonly string[]): void {
+  sendSessionIdsHint(MUX_TYPE_BACKGROUND_SESSIONS_HINT, sessionIds);
+}
+
+function sendSessionIdsHint(type: number, sessionIds: readonly string[]): void {
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
   const normalizedSessionIds = muxSessionRouting.normalizeSessionIds(sessionIds);
   const frame = new Uint8Array(MUX_HEADER_SIZE + normalizedSessionIds.length * 8);
-  frame[0] = MUX_TYPE_VISIBLE_SESSIONS_HINT;
+  frame[0] = type;
   let offset = MUX_HEADER_SIZE;
   normalizedSessionIds.forEach((sessionId) => {
     encodeSessionId(frame, offset, sessionId);
@@ -1839,14 +1883,30 @@ export function sendVisibleSessionsHint(sessionIds: readonly string[]): void {
 export function updateTerminalVisibility(
   _activeSessionId: string | null,
   visibleSessionIds: readonly string[],
+  backgroundSessionIds: readonly string[] = [],
 ): void {
   const normalizedVisibleSessionIds = muxSessionRouting.normalizeSessionIds(visibleSessionIds);
+  const normalizedBackgroundSessionIds =
+    muxSessionRouting.normalizeSessionIds(backgroundSessionIds);
+  const visibleChanged = !sameSessionIds(currentVisibleSessionIds, normalizedVisibleSessionIds);
+  const backgroundChanged = !sameSessionIds(
+    currentBackgroundSessionIds,
+    normalizedBackgroundSessionIds,
+  );
 
   currentVisibleSessionIds = normalizedVisibleSessionIds;
+  currentBackgroundSessionIds = normalizedBackgroundSessionIds;
 
   if (muxWs && muxWs.readyState === WebSocket.OPEN) {
-    sendVisibleSessionsHint(normalizedVisibleSessionIds);
+    if (visibleChanged) sendVisibleSessionsHint(normalizedVisibleSessionIds);
+    if (backgroundChanged) sendBackgroundSessionsHint(normalizedBackgroundSessionIds);
   }
+}
+
+function sameSessionIds(left: readonly string[], right: readonly string[]): boolean {
+  return (
+    left.length === right.length && left.every((sessionId, index) => sessionId === right[index])
+  );
 }
 
 /**
@@ -1889,6 +1949,7 @@ export function recoverVisibleTerminalsAfterBrowserResume(
   }
 
   sendVisibleSessionsHint(normalizedVisibleSessionIds);
+  sendBackgroundSessionsHint(currentBackgroundSessionIds);
   sendActiveSessionHint(activeSessionId);
 }
 
@@ -1957,6 +2018,7 @@ export function resetMuxChannelRuntimeForTests(): void {
   lastServerIoRttMs = null;
   lastHintedSessionId = null;
   currentVisibleSessionIds = [];
+  currentBackgroundSessionIds = [];
   muxSuspendedForBrowserBackground = false;
   replaySuppressedSessions.clear();
   browserTransportSnapshots.clear();
@@ -1978,6 +2040,7 @@ export function resetMuxChannelRuntimeForTests(): void {
   pendingOutputFrames.clear();
   pendingTerminalReplayModes.clear();
   sessionsNeedingResync.clear();
+  pendingBufferRefreshes.clear();
   closeWebSocket(muxWs, setMuxWs);
 }
 

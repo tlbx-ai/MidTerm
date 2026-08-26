@@ -143,6 +143,9 @@ public sealed class BrowserCommandService
             MaxDepth = request.MaxDepth,
             TextOnly = request.TextOnly,
             Timeout = request.Timeout,
+            DeltaX = request.DeltaX,
+            DeltaY = request.DeltaY,
+            Steps = request.Steps,
             SessionId = client.SessionId,
             PreviewName = client.PreviewName,
             PreviewId = client.PreviewId

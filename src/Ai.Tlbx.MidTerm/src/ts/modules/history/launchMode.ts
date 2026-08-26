@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 
 export type HistoryLaunchMode = 'terminal' | 'appServerControl';
-export type HistoryAppServerControlProfile = 'codex' | 'claude' | 'grok';
+export type HistoryAppServerControlProfile = string;
 
 export interface HistoryModeEntry {
   launchMode?: string | null;
@@ -24,7 +24,10 @@ export function normalizeHistoryLaunchMode(mode: string | null | undefined): His
 export function normalizeHistoryAppServerControlProfile(
   profile: string | null | undefined,
 ): HistoryAppServerControlProfile | null {
-  return profile === 'codex' || profile === 'claude' || profile === 'grok' ? profile : null;
+  const normalized = (profile ?? '').trim().toLowerCase();
+  return normalized && normalized !== 'claude' && /^[a-z0-9][a-z0-9._-]*$/.test(normalized)
+    ? normalized
+    : null;
 }
 
 export function isAppServerControlHistoryEntry(entry: HistoryModeEntry): boolean {
@@ -69,17 +72,17 @@ export function getHistoryModeDisplayText(entry: HistoryModeEntry): string {
     return `${t('sessionTabs.agent')} · Grok`;
   }
 
+  if ((entry.surfaceType ?? '').toLowerCase() === 'acp') {
+    const profile = normalizeHistoryAppServerControlProfile(entry.profile);
+    return `${t('sessionTabs.agent')} · ${getAgentDisplayName(profile)}`;
+  }
+
   if (!isAppServerControlHistoryEntry(entry)) {
     return t('session.terminal');
   }
 
   const profile = normalizeHistoryAppServerControlProfile(entry.profile);
-  const providerText =
-    profile === 'claude'
-      ? t('sessionLauncher.claudeTitle')
-      : profile === 'grok'
-        ? 'Grok'
-        : t('sessionLauncher.codexTitle');
+  const providerText = getAgentDisplayName(profile);
   return `${t('sessionTabs.agent')} · ${providerText}`;
 }
 
@@ -97,10 +100,32 @@ export function getHistoryModeBadgeText(entry: HistoryModeEntry): string {
     return 'GRK';
   }
 
+  if (normalizedSurfaceType === 'acp') {
+    return getAgentBadge(normalizeHistoryAppServerControlProfile(entry.profile));
+  }
+
   if (!isAppServerControlHistoryEntry(entry)) {
     return 'TRM';
   }
 
   const profile = normalizeHistoryAppServerControlProfile(entry.profile);
-  return profile === 'claude' ? 'CLD' : profile === 'grok' ? 'GRK' : 'CDX';
+  return getAgentBadge(profile);
+}
+
+function getAgentDisplayName(profile: HistoryAppServerControlProfile | null): string {
+  if (profile === 'codex') return t('sessionLauncher.codexTitle');
+  if (profile === 'grok') return 'Grok Build';
+  if (profile === 'opencode') return 'OpenCode';
+  if (profile === 'gemini') return 'Gemini CLI';
+  if (profile === 'copilot') return 'GitHub Copilot CLI';
+  return profile || t('sessionTabs.agent');
+}
+
+function getAgentBadge(profile: HistoryAppServerControlProfile | null): string {
+  if (profile === 'codex') return 'CDX';
+  if (profile === 'grok') return 'GRK';
+  if (profile === 'opencode') return 'OPC';
+  if (profile === 'gemini') return 'GEM';
+  if (profile === 'copilot') return 'COP';
+  return (profile || 'ACP').slice(0, 3).toUpperCase();
 }

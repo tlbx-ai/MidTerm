@@ -111,10 +111,13 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(SessionAttentionItem))]
 [JsonSerializable(typeof(List<SessionAttentionItem>))]
 [JsonSerializable(typeof(WorkerBootstrapRequest))]
+[JsonSerializable(typeof(AgentControllerInstallationDto))]
+[JsonSerializable(typeof(List<AgentControllerInstallationDto>))]
 [JsonSerializable(typeof(WorkerBootstrapResponse))]
 [JsonSerializable(typeof(ProviderResumeCatalogEntryDto))]
 [JsonSerializable(typeof(List<ProviderResumeCatalogEntryDto>))]
 [JsonSerializable(typeof(AppServerControlTurnRequest))]
+[JsonSerializable(typeof(AppServerControlSteerRequest))]
 [JsonSerializable(typeof(AppServerControlGoalSetRequest))]
 [JsonSerializable(typeof(AppServerControlAttachmentReference))]
 [JsonSerializable(typeof(List<AppServerControlAttachmentReference>))]
@@ -147,6 +150,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(List<SessionActivityHeatSample>))]
 [JsonSerializable(typeof(SessionBellEvent))]
 [JsonSerializable(typeof(List<SessionBellEvent>))]
+[JsonSerializable(typeof(TerminalNotificationMessage))]
+[JsonSerializable(typeof(TerminalNotificationRequest))]
 [JsonSerializable(typeof(AgentSessionVibeResponse))]
 [JsonSerializable(typeof(AgentSessionVibeHeader))]
 [JsonSerializable(typeof(AgentSessionVibeChip))]
@@ -277,6 +282,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(CursorStyleSetting))]
 [JsonSerializable(typeof(ThemeSetting))]
 [JsonSerializable(typeof(BellStyleSetting))]
+[JsonSerializable(typeof(NotificationPrioritySetting))]
 [JsonSerializable(typeof(ClipboardShortcutsSetting))]
 [JsonSerializable(typeof(ScrollbarStyleSetting))]
 [JsonSerializable(typeof(LanguageSetting))]
@@ -358,6 +364,9 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(BrowserWsMessage))]
 [JsonSerializable(typeof(BrowserWsResult))]
 [JsonSerializable(typeof(BrowserUiInstruction))]
+[JsonSerializable(typeof(AgentHistoryWheelRequest))]
+[JsonSerializable(typeof(AgentHistoryWheelResult))]
+[JsonSerializable(typeof(AgentHistoryScrollMetrics))]
 [JsonSerializable(typeof(MobileDeviceRequest))]
 [JsonSerializable(typeof(ViewportRequest))]
 
@@ -381,10 +390,4 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
-
-
-
-
-
 

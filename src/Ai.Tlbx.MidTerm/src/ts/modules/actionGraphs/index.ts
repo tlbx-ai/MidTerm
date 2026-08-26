@@ -11,6 +11,7 @@ import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { closeSettings } from '../settings';
 import { reconcileKeyedChildren } from '../../utils/domReconcile';
 import { isActionGraphsAvailable } from './availability';
+import { disambiguateGraphLabels } from './graphLabels';
 import {
   bindSession,
   createEdge,
@@ -432,10 +433,10 @@ function renderGraphSelect(graphs: Array<{ id: string; name: string }>): void {
   if (!graphSelect) return;
   const previous = graphSelect.value;
   graphSelect.replaceChildren();
-  for (const graph of graphs) {
+  for (const graph of disambiguateGraphLabels(graphs)) {
     const option = document.createElement('option');
     option.value = graph.id;
-    option.textContent = graph.name;
+    option.textContent = graph.label;
     graphSelect.appendChild(option);
   }
   if (graphs.some((graph) => graph.id === previous)) {

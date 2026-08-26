@@ -211,6 +211,7 @@ public class Program
         var agentFeed = app.Services.GetRequiredService<SessionAgentFeedService>();
         var sessionSupervisor = app.Services.GetRequiredService<SessionSupervisorService>();
         var aiCliProfileService = app.Services.GetRequiredService<AiCliProfileService>();
+        var agentControllerInstallations = app.Services.GetRequiredService<AgentControllerInstallationService>();
         var workerSessionRegistry = app.Services.GetRequiredService<WorkerSessionRegistryService>();
         var historyService = app.Services.GetRequiredService<HistoryService>();
         var inputHistoryService = app.Services.GetRequiredService<InputHistoryService>();
@@ -365,6 +366,7 @@ public class Program
         SecurityEndpoints.MapSecurityEndpoints(app, securityStatusService, apiKeyService);
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);
+        AgentControllerInstallationEndpoints.MapAgentControllerInstallationEndpoints(app, agentControllerInstallations);
         ShareEndpoints.MapShareEndpoints(app, shareGrantService, sessionManager, settingsService);
         var clipboardService = app.Services.GetRequiredService<ClipboardService>();
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();

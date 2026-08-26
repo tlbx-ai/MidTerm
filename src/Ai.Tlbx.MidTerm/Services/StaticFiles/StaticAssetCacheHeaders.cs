@@ -10,6 +10,10 @@ internal static class StaticAssetCacheHeaders
 {
     private static readonly Regex AssetVersionQueryRegex =
         new(@"\?v=[^""'\s>]+", RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+    private static readonly Regex DevScriptUrlRegex =
+        new(@"(?<prefix>\bsrc\s*=\s*[""'])/js/", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+    private static readonly Regex DevStyleUrlRegex =
+        new(@"(?<prefix>\bhref\s*=\s*[""'])/css/", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
     public static string CreateETag(string requestPath, IFileInfo fileInfo)
     {
@@ -43,6 +47,13 @@ internal static class StaticAssetCacheHeaders
         return requestPath.EndsWith(".html", StringComparison.OrdinalIgnoreCase);
     }
 
+    public static string ResolveHtmlEntryPointPath(string requestPath)
+    {
+        return string.IsNullOrEmpty(requestPath) || requestPath == "/"
+            ? "/index.html"
+            : requestPath;
+    }
+
     public static string StampHtmlAssetUrls(string html, string assetVersion)
     {
         if (string.IsNullOrWhiteSpace(html) || string.IsNullOrWhiteSpace(assetVersion))
@@ -51,6 +62,36 @@ internal static class StaticAssetCacheHeaders
         }
 
         return AssetVersionQueryRegex.Replace(html, $"?v={assetVersion}");
+    }
+
+    public static bool TryNormalizeLoopbackAssetOrigin(string? value, out string origin)
+    {
+        origin = string.Empty;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttps
+            || !uri.IsLoopback
+            || uri.Port < 1024
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || uri.AbsolutePath != "/"
+            || !string.IsNullOrEmpty(uri.Query)
+            || !string.IsNullOrEmpty(uri.Fragment))
+        {
+            return false;
+        }
+
+        origin = uri.GetLeftPart(UriPartial.Authority);
+        return true;
+    }
+
+    public static string RewriteDevAssetUrls(string html, string origin)
+    {
+        if (string.IsNullOrWhiteSpace(html) || string.IsNullOrWhiteSpace(origin))
+        {
+            return html;
+        }
+
+        var scriptsRewritten = DevScriptUrlRegex.Replace(html, $"${{prefix}}{origin}/js/");
+        return DevStyleUrlRegex.Replace(scriptsRewritten, $"${{prefix}}{origin}/css/");
     }
 
     private static bool IsEntryPointAsset(string requestPath)

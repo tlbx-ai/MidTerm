@@ -1,9 +1,12 @@
 namespace Ai.Tlbx.MidTerm.Services.Browser;
 
+using Ai.Tlbx.MidTerm.Models.Browser;
+
 public sealed class BrowserUiBridge
 {
     private readonly Lock _lock = new();
     private readonly Dictionary<string, ListenerRegistration> _listeners = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TaskCompletionSource<AgentHistoryWheelResult>> _pendingAgentWheels = new(StringComparer.Ordinal);
     private readonly MainBrowserService _mainBrowserService;
     private readonly BrowserPreviewOwnerService? _previewOwnerService;
 
@@ -33,7 +36,8 @@ public sealed class BrowserUiBridge
         Action<string?, string?> dock,
         Action<string?, string?, int, int> viewport,
         Action<string?, string?, string, bool> open,
-        Action<string?, string?, string, string?>? mobileDevice = null)
+        Action<string?, string?, string, string?>? mobileDevice = null,
+        Action<string, string, double, int>? agentWheel = null)
     {
         lock (_lock)
         {
@@ -46,9 +50,120 @@ public sealed class BrowserUiBridge
                 Viewport = viewport,
                 Open = open,
                 MobileDevice = mobileDevice,
+                AgentWheel = agentWheel,
                 ConnectedAtUtc = DateTimeOffset.UtcNow
             };
         }
+    }
+
+    public async Task<AgentHistoryWheelResult> RequestAgentWheelAsync(
+        string sessionId,
+        double deltaY,
+        int steps,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return new AgentHistoryWheelResult { Error = "sessionId required" };
+        }
+
+        ListenerRegistration[] targets;
+        lock (_lock)
+        {
+            targets = _listeners.Values
+                .Where(listener => listener.AgentWheel is not null)
+                .OrderByDescending(listener => listener.ConnectedAtUtc)
+                .ToArray();
+        }
+
+        if (targets.Length == 0)
+        {
+            return new AgentHistoryWheelResult
+            {
+                SessionId = sessionId,
+                Error = ConnectedBrowserCount == 0
+                    ? "No tlbx browser UI is connected. Open the tlbx browser tab containing the ACP session and retry."
+                    : "The connected tlbx browser UI does not support ACP wheel control. Reload it and retry."
+            };
+        }
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        AgentHistoryWheelResult? lastFailure = null;
+        foreach (var target in targets)
+        {
+            var requestId = Guid.NewGuid().ToString("N");
+            var completion = new TaskCompletionSource<AgentHistoryWheelResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (_lock)
+            {
+                _pendingAgentWheels[requestId] = completion;
+            }
+
+            try
+            {
+                target.AgentWheel!(requestId, sessionId, deltaY, Math.Clamp(steps, 1, 100));
+                using var attemptTimeout = CancellationTokenSource.CreateLinkedTokenSource(
+                    timeout.Token);
+                attemptTimeout.CancelAfter(ResolveAgentWheelAttemptTimeout(steps));
+                var result = await completion.Task.WaitAsync(attemptTimeout.Token).ConfigureAwait(false);
+                if (result.Success)
+                {
+                    return result;
+                }
+
+                lastFailure = result;
+            }
+            catch (OperationCanceledException) when (
+                !cancellationToken.IsCancellationRequested && !timeout.IsCancellationRequested)
+            {
+                lastFailure = new AgentHistoryWheelResult
+                {
+                    RequestId = requestId,
+                    SessionId = sessionId,
+                    Error = "The tlbx browser UI did not answer the ACP wheel command; trying another connected UI."
+                };
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return new AgentHistoryWheelResult
+                {
+                    RequestId = requestId,
+                    SessionId = sessionId,
+                    Error = "Timed out waiting for a tlbx browser UI to complete the ACP wheel command."
+                };
+            }
+            finally
+            {
+                lock (_lock)
+                {
+                    _pendingAgentWheels.Remove(requestId);
+                }
+            }
+        }
+
+        return lastFailure ?? new AgentHistoryWheelResult
+        {
+            SessionId = sessionId,
+            Error = "No connected tlbx browser UI could find the requested ACP history."
+        };
+    }
+
+    private static TimeSpan ResolveAgentWheelAttemptTimeout(int steps)
+    {
+        var boundedSteps = Math.Clamp(steps, 1, 100);
+        return TimeSpan.FromSeconds(Math.Min(10, 2 + boundedSteps * 0.06));
+    }
+
+    public bool CompleteAgentWheel(AgentHistoryWheelResult result)
+    {
+        TaskCompletionSource<AgentHistoryWheelResult>? completion;
+        lock (_lock)
+        {
+            _pendingAgentWheels.TryGetValue(result.RequestId, out completion);
+        }
+
+        return completion?.TrySetResult(result) == true;
     }
 
     public void UnregisterListener(string connectionId)
@@ -388,6 +503,7 @@ public sealed class BrowserUiBridge
         public required Action<string?, string?, int, int> Viewport { get; init; }
         public required Action<string?, string?, string, bool> Open { get; init; }
         public Action<string?, string?, string, string?>? MobileDevice { get; init; }
+        public Action<string, string, double, int>? AgentWheel { get; init; }
         public DateTimeOffset ConnectedAtUtc { get; init; }
     }
 }

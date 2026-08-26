@@ -526,8 +526,29 @@ Start-Service -Name $serviceName -ErrorAction Stop
             return Results.Json(update, AppJsonContext.Default.UpdateInfo);
         });
 
-        app.MapPost("/api/update/apply", async (string? source) =>
+        app.MapPost("/api/update/apply", async (string? source, bool detached = false) =>
         {
+            if (detached)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var (success, message) = await updateService.ApplyUpdateAsync(settingsService, source)
+                            .ConfigureAwait(false);
+                        if (!success)
+                        {
+                            Log.Warn(() => $"Detached update failed before restart: {message}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Exception(ex, "DetachedUpdate");
+                    }
+                }, CancellationToken.None);
+                return Results.Accepted(value: "Update scheduled");
+            }
+
             var (success, message) = await updateService.ApplyUpdateAsync(settingsService, source);
             if (!success)
             {
@@ -801,7 +822,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
         BrowserUiBridge? browserUiBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, appServerControlRuntime, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, terminalSizeControlService, sessionLayoutStateService, managerBarQueueService, tmuxLayoutBridge, browserUiBridge);
+        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, appServerControlRuntime, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, terminalSizeControlService, sessionLayoutStateService, managerBarQueueService, app.Services.GetRequiredService<TerminalNotificationDeliveryService>(), tmuxLayoutBridge, browserUiBridge);
         var appServerControlHandler = new AppServerControlWebSocketHandler(sessionManager, sessionSupervisor, app.Services.GetRequiredService<SessionAppServerControlRuntimeService>(), app.Services.GetRequiredService<SessionCodexHandoffService>(), app.Services.GetRequiredService<AiCliProfileService>(), authService, shutdownService);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);

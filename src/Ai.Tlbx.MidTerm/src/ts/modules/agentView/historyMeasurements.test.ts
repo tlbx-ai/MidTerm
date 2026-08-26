@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pruneHistoryMeasurementCache } from './historyMeasurements';
-import type { AppServerControlHistoryEntry, SessionAppServerControlViewState } from './types';
+import { retainHistoryMeasurementsAcrossWindowShift } from './historyMeasurements';
+import type { SessionAppServerControlViewState } from './types';
 
 function createState(): SessionAppServerControlViewState {
   return {
@@ -43,20 +43,26 @@ function createState(): SessionAppServerControlViewState {
   } as unknown as SessionAppServerControlViewState;
 }
 
-describe('pruneHistoryMeasurementCache', () => {
-  it('keeps measurement state only for the active history window entries', () => {
+describe('retainHistoryMeasurementsAcrossWindowShift', () => {
+  it('keeps exact measurements when the retained server window moves away and back', () => {
     const state = createState();
-    const entries = [{ id: 'keep-1' }, { id: 'keep-2' }] as AppServerControlHistoryEntry[];
 
-    pruneHistoryMeasurementCache(state, entries);
+    retainHistoryMeasurementsAcrossWindowShift(state);
 
-    expect([...state.historyMeasuredHeights.keys()]).toEqual(['keep-1']);
-    expect([...state.historyObservedHeights.keys()]).toEqual(['keep-2']);
-    expect([...state.historyMeasuredHeightsByBucket.keys()]).toEqual([800]);
-    expect([...(state.historyMeasuredHeightsByBucket.get(800)?.keys() ?? [])]).toEqual(['keep-1']);
-    expect([...(state.historyObservedHeightsByBucket.get(800)?.keys() ?? [])]).toEqual(['keep-2']);
+    expect([...state.historyMeasuredHeights.keys()]).toEqual(['keep-1', 'stale-1']);
+    expect([...state.historyObservedHeights.keys()]).toEqual(['keep-2', 'stale-2']);
+    expect([...state.historyMeasuredHeightsByBucket.keys()]).toEqual([800, 1200]);
+    expect([...(state.historyMeasuredHeightsByBucket.get(800)?.keys() ?? [])]).toEqual([
+      'keep-1',
+      'stale-1',
+    ]);
+    expect([...(state.historyObservedHeightsByBucket.get(800)?.keys() ?? [])]).toEqual([
+      'keep-2',
+      'stale-2',
+    ]);
     expect([...(state.historyObservedHeightSamplesByBucket.get(800)?.keys() ?? [])]).toEqual([
       'keep-1',
+      'stale-1',
     ]);
   });
 });

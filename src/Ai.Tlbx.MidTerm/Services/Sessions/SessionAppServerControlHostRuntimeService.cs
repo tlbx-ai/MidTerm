@@ -19,6 +19,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 {
+    internal const string AgentHostPathEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_AGENTHOST_PATH";
     internal delegate bool RedirectedProcessLauncher(
         string fileName,
         IReadOnlyList<string> args,
@@ -38,6 +39,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private readonly ConcurrentDictionary<string, HostRuntimeState> _states = new(StringComparer.Ordinal);
     private readonly SettingsService _settingsService;
+    private readonly AcpAgentCatalogService _acpAgentCatalog;
     private readonly MidTermInstanceIdentity _instanceIdentity;
     private readonly AppServerControlHostOwnershipRegistry _ownershipRegistry;
     private readonly bool _preserveHostsOnDispose;
@@ -47,8 +49,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     public SessionAppServerControlHostRuntimeService(
         SettingsService settingsService,
         MidTermInstanceIdentity? instanceIdentity = null,
-        string? mode = null)
-        : this(settingsService, instanceIdentity, mode, null)
+        string? mode = null,
+        AcpAgentCatalogService? acpAgentCatalog = null)
+        : this(settingsService, instanceIdentity, mode, null, acpAgentCatalog)
     {
     }
 
@@ -56,9 +59,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         SettingsService settingsService,
         MidTermInstanceIdentity? instanceIdentity,
         string? mode,
-        RedirectedProcessLauncher? launcher)
+        RedirectedProcessLauncher? launcher,
+        AcpAgentCatalogService? acpAgentCatalog = null)
     {
         _settingsService = settingsService;
+        _acpAgentCatalog = acpAgentCatalog ?? new AcpAgentCatalogService(settingsService);
         _instanceIdentity = instanceIdentity ?? MidTermInstanceIdentity.Load(
             Path.Combine(Path.GetTempPath(), "midterm-test-agenthost", Guid.NewGuid().ToString("N")),
             0);
@@ -73,12 +78,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
     public bool IsEnabledFor(string? profile)
     {
-        return (_mode, profile) switch
-        {
-            (SyntheticMode, AiCliProfileService.CodexProfile or AiCliProfileService.ClaudeProfile or AiCliProfileService.GrokProfile) => true,
-            (CodexMode, AiCliProfileService.CodexProfile or AiCliProfileService.ClaudeProfile or AiCliProfileService.GrokProfile) => true,
-            _ => false
-        };
+        return _mode is SyntheticMode or CodexMode &&
+               (string.Equals(profile, AiCliProfileService.CodexProfile, StringComparison.Ordinal) ||
+                _acpAgentCatalog.ContainsProfile(profile));
     }
 
     internal bool TryResolveRecoverableProfile(string sessionId, [NotNullWhen(true)] out string? profile)
@@ -207,9 +209,19 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             await DisposeStateAsync(state, terminateHost: false).ConfigureAwait(false);
             var settings = _settingsService.Load();
             var userProfileDirectory = ResolveConfiguredUserProfileDirectory(settings);
-            var executablePath = attachPoint is null
+            var isCodex = string.Equals(profile, AiCliProfileService.CodexProfile, StringComparison.Ordinal);
+            ResolvedAcpAgentDefinition? acpAgent = null;
+            var executablePath = attachPoint is null && isCodex
                 ? AiCliCommandLocator.ResolveExecutablePath(profile, session, userProfileDirectory)
                 : null;
+            if (!isCodex && !_acpAgentCatalog.TryResolve(profile, userProfileDirectory, out acpAgent))
+            {
+                state.Status = HostRuntimeStatus.Error;
+                state.LastError = $"ACP executable for profile '{profile}' could not be resolved from the trusted catalog.";
+                return false;
+            }
+
+            executablePath ??= acpAgent?.ExecutablePath;
             var preferredProfileDirectory = ResolvePreferredProfileDirectory(settings, executablePath);
             BuildLaunchEnvironment(
                 settings,
@@ -293,11 +305,14 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     {
                         SessionId = sessionId,
                         Provider = profile,
+                        RuntimeKind = acpAgent is null ? CodexMode : "acp-v1",
                         WorkingDirectory = workingDirectory,
                         InstanceId = _instanceIdentity.InstanceId,
                         OwnerToken = _instanceIdentity.OwnerToken,
                         AttachPoint = attachPoint,
                         ExecutablePath = executablePath,
+                        AgentName = acpAgent?.Name,
+                        ExecutableArguments = acpAgent?.Arguments.ToList() ?? [],
                         UserProfileDirectory = preferredProfileDirectory,
                         ResumeThreadId = resumeThreadIdOverride ?? attachPoint?.PreferredThreadId
                     }
@@ -436,6 +451,69 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 },
                 ct).ConfigureAwait(false);
 
+            return result.Accepted ?? new AppServerControlCommandAcceptedResponse
+            {
+                SessionId = sessionId,
+                Status = result.Status
+            };
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    public async Task<AppServerControlCommandAcceptedResponse> SteerTurnAsync(
+        string sessionId,
+        AppServerControlSteerRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var state = GetRequiredState(sessionId);
+
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(
+                state,
+                commandId => new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "turn.steer",
+                    SteerTurn = request
+                },
+                ct).ConfigureAwait(false);
+            return result.Accepted ?? new AppServerControlCommandAcceptedResponse
+            {
+                SessionId = sessionId,
+                Status = result.Status,
+                TurnId = request.ExpectedTurnId
+            };
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    public async Task<AppServerControlCommandAcceptedResponse> CompactThreadAsync(
+        string sessionId,
+        CancellationToken ct = default)
+    {
+        var state = GetRequiredState(sessionId);
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(
+                state,
+                commandId => new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "thread.compact"
+                },
+                ct).ConfigureAwait(false);
             return result.Accepted ?? new AppServerControlCommandAcceptedResponse
             {
                 SessionId = sessionId,
@@ -1393,6 +1471,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             Effort = source.Effort,
             PlanMode = source.PlanMode,
             PermissionMode = source.PermissionMode,
+            FastMode = source.FastMode,
             ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions),
             EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions)
         };
@@ -1669,13 +1748,6 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         environment["MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT"] = settings.CodexYoloDefault ? "true" : "false";
         environment["MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL"] = NormalizeOptionalValue(settings.CodexDefaultAppServerControlModel) ?? string.Empty;
         environment["MIDTERM_APP_SERVER_CONTROL_CODEX_ENVIRONMENT_VARIABLES"] = settings.CodexEnvironmentVariables ?? string.Empty;
-        environment["MIDTERM_APP_SERVER_CONTROL_CLAUDE_DEFAULT_MODEL"] = NormalizeOptionalValue(settings.ClaudeDefaultAppServerControlModel) ?? string.Empty;
-        environment["MIDTERM_APP_SERVER_CONTROL_CLAUDE_ENVIRONMENT_VARIABLES"] = settings.ClaudeEnvironmentVariables ?? string.Empty;
-        environment["MIDTERM_APP_SERVER_CONTROL_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS"] =
-            settings.ClaudeDangerouslySkipPermissionsDefault ? "true" : "false";
-        environment["MIDTERM_APP_SERVER_CONTROL_GROK_DEFAULT_MODEL"] = "grok-4.20-0309-non-reasoning";
-        environment["MIDTERM_APP_SERVER_CONTROL_GROK_ENVIRONMENT_VARIABLES"] = string.Empty;
-        environment["MIDTERM_APP_SERVER_CONTROL_GROK_ALWAYS_APPROVE_DEFAULT"] = "false";
     }
 
     private static string? NormalizeOptionalValue(string? value)
@@ -1704,6 +1776,34 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
     private static bool TryResolveLaunch(string profile, string mode, string settingsDirectory, out HostLaunch launch)
     {
+        var configuredHostPath = ResolveConfiguredHostPath();
+        if (!string.IsNullOrWhiteSpace(configuredHostPath))
+        {
+            if (string.Equals(Path.GetExtension(configuredHostPath), ".dll", StringComparison.OrdinalIgnoreCase))
+            {
+                var dotnetHost = ResolveDotNetHostPath();
+                if (string.IsNullOrWhiteSpace(dotnetHost))
+                {
+                    launch = default;
+                    return false;
+                }
+
+                launch = new HostLaunch(
+                    dotnetHost,
+                    string.Equals(mode, SyntheticMode, StringComparison.Ordinal)
+                        ? [configuredHostPath, "--stdio", "--synthetic", profile]
+                        : [configuredHostPath, "--stdio"]);
+                return true;
+            }
+
+            launch = new HostLaunch(
+                configuredHostPath,
+                string.Equals(mode, SyntheticMode, StringComparison.Ordinal)
+                    ? ["--stdio", "--synthetic", profile]
+                    : ["--stdio"]);
+            return true;
+        }
+
         var baseDir = AppContext.BaseDirectory;
         var installedExecutable = ResolveInstalledHostExecutablePath(settingsDirectory, baseDir);
         if (!string.IsNullOrWhiteSpace(installedExecutable))
@@ -1717,6 +1817,25 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
 
         return TryResolveDevLaunch(profile, mode, baseDir, out launch);
+    }
+
+    internal static string? ResolveConfiguredHostPath()
+    {
+        var configured = Environment.GetEnvironmentVariable(AgentHostPathEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return null;
+        }
+
+        var resolved = Path.GetFullPath(configured.Trim());
+        if (!File.Exists(resolved))
+        {
+            throw new FileNotFoundException(
+                $"Configured mtagenthost path does not exist: {resolved}",
+                resolved);
+        }
+
+        return resolved;
     }
 
     private static IEnumerable<string> EnumerateInstalledHostExecutableCandidates(string baseDir, string settingsDirectory, string executableName)
@@ -2167,4 +2286,3 @@ internal sealed class SubscriptionState
         }
     }
 }
-

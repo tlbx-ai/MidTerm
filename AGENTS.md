@@ -58,12 +58,12 @@ Rules:
 - The IDE bar rule is exclusive, not additive:
   - normal terminal session: `Terminal` + `Files`
   - explicit Codex Agent Controller Session: `Codex` + `Files`
-  - explicit Grok Agent Controller Session: `Grok` + `Files`
+  - explicit ACP Agent Controller Session: the discovered agent name + `Files`
 
 ## Agent Controller Runtime Principle
 
 - Implement provider-backed Agent Controller Sessions as dedicated runtimes, not as reinterpretations of terminal transcript output.
-- For each explicit Agent Controller Session, MidTerm should launch or attach a dedicated supported provider runtime and consume structured runtime events from it. The current new-session launcher exposes Codex and Grok Build; do not infer launcher support from dormant or legacy provider code.
+- For each explicit Agent Controller Session, MidTerm should launch or attach a dedicated supported provider runtime and consume structured runtime events from it. The new-session launcher discovers Codex app-server and locally installed ACP-v1 agents from the trusted server-side ACP catalog; do not infer launcher support from dormant terminal-provider code.
 - Agent Controller Session is not a terminal transcript view. It relies on explicit provider APIs and structured protocols for rich UI clients, with `mtagenthost` as the MidTerm host boundary.
 - Reserve `transcript` terminology for actual terminal/PTTY capture or legacy wire names only. In Agent Controller code and docs, prefer `history` for the canonical provider-backed item sequence and `timeline` for its rendered visual presentation.
 - An explicit Agent Controller Session's provider state and transport belong exclusively to `mtagenthost`, which launches the provider with the parameters and structured protocol needed for a rich web UI integration. Current session-creation plumbing may still provision an unused `mthost` backing session; never treat that PTY as the Agent Controller runtime or as a transcript fallback.

@@ -402,11 +402,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-30T08:00:01Z"),
             Type = "turn.started",
-            TurnStarted = new AppServerControlProviderTurnStartedPayload
-            {
-                Model = "gpt-5.4",
-                Effort = "high"
-            }
+            TurnStarted = new AppServerControlProviderTurnStartedPayload()
         });
 
         var snapshot = service.GetSnapshot("s-settings");
@@ -415,6 +411,8 @@ public sealed class SessionAppServerControlHistoryServiceTests
         Assert.NotNull(snapshot);
         Assert.Equal("gpt-5.4", snapshot!.QuickSettings.Model);
         Assert.Equal("high", snapshot.QuickSettings.Effort);
+        Assert.Equal("gpt-5.4", snapshot.CurrentTurn.Model);
+        Assert.Equal("high", snapshot.CurrentTurn.Effort);
         Assert.Equal("on", snapshot.QuickSettings.PlanMode);
         Assert.Equal("auto", snapshot.QuickSettings.PermissionMode);
         Assert.Contains(
@@ -1862,6 +1860,66 @@ public sealed class SessionAppServerControlHistoryServiceTests
     }
 
     [Fact]
+    public async Task GetSnapshot_KeepsTelemetryNoticesOutOfConversationHistory()
+    {
+        var service = new SessionAppServerControlHistoryService();
+        using var subscription = service.SubscribeHistoryPatches("s-runtime-telemetry");
+
+        service.Append(new AppServerControlProviderEvent
+        {
+            EventId = "event-telemetry",
+            SessionId = "s-runtime-telemetry",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            CreatedAt = ParseUtc("2026-04-04T10:00:00Z"),
+            Type = "thread.token-usage.updated",
+            RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
+            {
+                Message = "Codex context window updated.",
+                Detail = "Used 100 tokens, window 258400"
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s-runtime-telemetry");
+
+        Assert.NotNull(snapshot);
+        Assert.Single(snapshot!.Notices);
+        Assert.Empty(snapshot.History);
+
+        Assert.True(await subscription.Reader.WaitToReadAsync());
+        Assert.True(subscription.Reader.TryRead(out var patch));
+        Assert.Empty(patch!.HistoryUpserts);
+        Assert.Equal("Codex context window updated.", Assert.Single(patch.NoticeUpserts).Message);
+    }
+
+    [Fact]
+    public void ProviderEventJson_PreservesTimelineSuppressionAcrossProcessBoundary()
+    {
+        var source = new AppServerControlProviderEvent
+        {
+            EventId = "event-telemetry-json",
+            SessionId = "s-runtime-telemetry",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            CreatedAt = ParseUtc("2026-04-04T10:00:00Z"),
+            Type = "thread.token-usage.updated",
+            RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
+            {
+                Message = "Codex context window updated."
+            }
+        };
+
+        var json = JsonSerializer.Serialize(
+            source,
+            AppServerControlProviderEventJsonContext.Default.AppServerControlProviderEvent);
+        var roundTripped = JsonSerializer.Deserialize(
+            json,
+            AppServerControlProviderEventJsonContext.Default.AppServerControlProviderEvent);
+
+        Assert.Equal("Codex context window updated.", roundTripped?.RuntimeNoticeOnly?.Message);
+    }
+
+    [Fact]
     public void GetSnapshot_SanitizesAndDeduplicatesRuntimeNoticeHistoryBody()
     {
         var service = new SessionAppServerControlHistoryService();
@@ -2242,12 +2300,6 @@ public sealed class SessionAppServerControlHistoryServiceTests
 
     private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
 }
-
-
-
-
-
-
 
 
 

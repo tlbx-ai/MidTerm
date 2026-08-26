@@ -36,14 +36,23 @@ describe('history launch mode helpers', () => {
     } = await import('./launchMode');
 
     expect(
-      isAppServerControlHistoryEntry({ launchMode: 'appServerControl', profile: 'claude' }),
+      isAppServerControlHistoryEntry({ launchMode: 'appServerControl', profile: 'opencode' }),
     ).toBe(true);
-    expect(getHistoryModeDisplayText({ launchMode: 'appServerControl', profile: 'claude' })).toBe(
-      'Agent · Claude',
+    expect(getHistoryModeDisplayText({ launchMode: 'appServerControl', profile: 'opencode' })).toBe(
+      'Agent · OpenCode',
     );
-    expect(getHistoryModeBadgeText({ launchMode: 'appServerControl', profile: 'claude' })).toBe(
-      'CLD',
+    expect(getHistoryModeBadgeText({ launchMode: 'appServerControl', profile: 'opencode' })).toBe(
+      'OPC',
     );
+    expect(getHistoryModeDisplayText({ launchMode: 'appServerControl', profile: 'gemini' })).toBe(
+      'Agent · Gemini CLI',
+    );
+    expect(getHistoryModeBadgeText({ launchMode: 'appServerControl', profile: 'copilot' })).toBe(
+      'COP',
+    );
+    expect(
+      isAppServerControlHistoryEntry({ launchMode: 'appServerControl', profile: 'claude' }),
+    ).toBe(false);
     expect(getHistoryModeBadgeText({ launchMode: 'appServerControl', profile: 'codex' })).toBe(
       'CDX',
     );
@@ -64,7 +73,22 @@ describe('history launch mode helpers', () => {
     expect(getHistoryModeBadgeText({ surfaceType: 'trm' })).toBe('TRM');
     expect(getHistoryModeBadgeText({ surfaceType: 'cdx' })).toBe('CDX');
     expect(getHistoryModeBadgeText({ surfaceType: 'cld' })).toBe('CLD');
+    expect(getHistoryModeBadgeText({ surfaceType: 'acp', profile: 'opencode' })).toBe('OPC');
     expect(getHistoryModeDisplayText({ surfaceType: 'cdx' })).toBe('Agent · Codex');
     expect(getHistoryModeDisplayText({ surfaceType: 'cld' })).toBe('Agent · Claude');
+  });
+
+  it('keeps dynamically discovered ACP profiles bookmarkable', async () => {
+    const { getBookmarkSurfaceType } = await import('./bookmarkSession');
+    const { resolveSessionHistoryMode } = await import('./launchMode');
+    const session = {
+      id: 'session-opencode',
+      appServerControlOnly: true,
+      profileHint: 'opencode',
+    } as never;
+
+    const mode = resolveSessionHistoryMode(session);
+    expect(mode).toEqual({ launchMode: 'appServerControl', profile: 'opencode' });
+    expect(getBookmarkSurfaceType(session, mode.profile)).toBe('acp');
   });
 });

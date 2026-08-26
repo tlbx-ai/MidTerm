@@ -968,7 +968,9 @@ public sealed partial class UpdateService : IDisposable
         }
         else
         {
-            var update = LatestUpdate;
+            // Never apply a timer/UI snapshot here. A release can finish publishing
+            // after the last background check but before the user presses Update.
+            var update = await CheckForUpdateAsync().ConfigureAwait(false);
             if (update is null || !update.Available)
             {
                 return FailUpdate(artifacts, "No update available");
@@ -995,6 +997,13 @@ public sealed partial class UpdateService : IDisposable
             }
             catch (Exception ex)
             {
+                if (updateType == UpdateType.Full)
+                {
+                    return FailUpdate(
+                        artifacts,
+                        $"Full update canceled because active sessions could not be recovered safely: {ex.Message}");
+                }
+
                 AppendUpdateLog(artifacts.LogPath, $"Failed to capture session update state: {ex.Message}", "WARN");
             }
         }

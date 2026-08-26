@@ -1,4 +1,5 @@
 import { escapeHtml } from '../../utils/dom';
+import type { AgentControllerInstallation } from '../../api/types';
 import { showTextPrompt } from '../../utils/dialog';
 import { JS_BUILD_VERSION } from '../../constants';
 import { t } from '../i18n';
@@ -7,7 +8,7 @@ import { getLaunchableHubMachines, refreshHubState, subscribeHubState } from '..
 import type { HubMachineState } from '../hub/types';
 import { openProviderResumePicker, type ResumeProvider } from '../providerResume';
 
-export type LauncherProvider = 'terminal' | 'codex' | 'claude' | 'grok';
+export type LauncherProvider = string;
 export type LauncherLaunchMode = 'new' | 'resume';
 
 const LOCAL_TARGET_ID = 'local';
@@ -80,6 +81,7 @@ interface LauncherState {
   requestToken: number;
   targets: SessionLauncherTarget[];
   selectedTargetId: string;
+  agentControllerInstallations: AgentControllerInstallation[];
 }
 
 interface LauncherLocalActionContext {
@@ -118,6 +120,15 @@ export function isProviderSupportedOnTarget(
   target: SessionLauncherTarget,
 ): boolean {
   return target.kind === 'local' || provider === 'terminal';
+}
+
+async function fetchAgentControllerInstallations(): Promise<AgentControllerInstallation[]> {
+  const response = await fetch('/api/agent-controller/installations', { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`Agent Controller installation discovery failed (${response.status})`);
+  }
+
+  return (await response.json()) as AgentControllerInstallation[];
 }
 
 async function promptForLauncherFolderName(): Promise<string | null> {
@@ -557,6 +568,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       requestToken: 0,
       targets: buildSessionLauncherTargets(getLaunchableHubMachines()),
       selectedTargetId: LOCAL_TARGET_ID,
+      agentControllerInstallations: [],
     };
 
     const providersEl = overlay.querySelector<HTMLElement>('[data-role="providers"]');
@@ -664,7 +676,9 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
     function renderProviders(): void {
       const target = getSelectedTarget();
-      safeProvidersEl.innerHTML = getSessionLauncherProviderDefinitions()
+      safeProvidersEl.innerHTML = getSessionLauncherProviderDefinitions(
+        state.agentControllerInstallations,
+      )
         .map((definition) => {
           const supported = isProviderSupportedOnTarget(definition.provider, target);
           const badge = definition.beta
@@ -911,6 +925,15 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     });
     void loadSelectedTargetBrowser(getSelectedTarget());
     void refreshHubState().catch(() => {});
+    void fetchAgentControllerInstallations()
+      .then((installations) => {
+        state.agentControllerInstallations = installations;
+        renderProviders();
+      })
+      .catch(() => {
+        state.agentControllerInstallations = [];
+        renderProviders();
+      });
 
     function launch(
       provider: LauncherProvider,
@@ -1107,7 +1130,9 @@ async function fetchHomePath(target: SessionLauncherTarget): Promise<LauncherPat
   return (await response.json()) as LauncherPathResponse;
 }
 
-export function getSessionLauncherProviderDefinitions(): ReadonlyArray<{
+export function getSessionLauncherProviderDefinitions(
+  installations: ReadonlyArray<AgentControllerInstallation> = [],
+): ReadonlyArray<{
   provider: LauncherProvider;
   title: string;
   description: string;
@@ -1122,21 +1147,14 @@ export function getSessionLauncherProviderDefinitions(): ReadonlyArray<{
       description: t('sessionLauncher.terminalDescription'),
       launchLabel: t('sessionLauncher.startTerminal'),
     },
-    {
-      provider: 'codex',
-      title: t('sessionLauncher.codexTitle'),
-      description: t('sessionLauncher.codexDescription'),
-      launchLabel: t('sessionLauncher.startCodex'),
+    ...installations.map((installation) => ({
+      provider: installation.profile,
+      title: installation.name,
+      description: `${installation.protocol} · ${installation.command}`,
+      launchLabel: installation.name,
       beta: true,
-    },
-    {
-      provider: 'grok',
-      title: 'Grok Build',
-      description: 'Start an Agent Controller Session for Grok Build in a chosen folder.',
-      launchLabel: 'Start Grok Build',
-      beta: true,
-      supportsResume: false,
-    },
+      supportsResume: installation.supportsResume,
+    })),
   ];
 }
 

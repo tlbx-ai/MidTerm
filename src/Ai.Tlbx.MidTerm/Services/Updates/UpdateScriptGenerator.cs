@@ -251,6 +251,39 @@ function SafeCopy {{
     Log ""$Description copied successfully""
 }}
 
+function GetOwnedService {{
+    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if (-not $service) {{
+        return $null
+    }}
+
+    try {{
+        $escapedServiceName = $ServiceName.Replace(""'"", ""''"")
+        $serviceConfig = Get-CimInstance Win32_Service -Filter ""Name='$escapedServiceName'"" -ErrorAction Stop
+        $commandLine = [string]$serviceConfig.PathName
+        if ([string]::IsNullOrWhiteSpace($commandLine)) {{
+            Log ""Ignoring service '$ServiceName': executable path is unavailable."" 'WARN'
+            return $null
+        }}
+
+        $trimmedCommandLine = $commandLine.Trim()
+        $quotedBinary = '""' + $CurrentMt + '""'
+        $ownsBinary = $trimmedCommandLine.Equals($CurrentMt, [StringComparison]::OrdinalIgnoreCase) -or
+            $trimmedCommandLine.StartsWith($quotedBinary + ' ', [StringComparison]::OrdinalIgnoreCase) -or
+            $trimmedCommandLine.Equals($quotedBinary, [StringComparison]::OrdinalIgnoreCase) -or
+            $trimmedCommandLine.StartsWith($CurrentMt + ' ', [StringComparison]::OrdinalIgnoreCase)
+        if (-not $ownsBinary) {{
+            Log ""Ignoring unrelated service '$ServiceName' at '$commandLine'; this update owns '$CurrentMt'."" 'WARN'
+            return $null
+        }}
+
+        return $service
+    }} catch {{
+        Log ""Ignoring service '$ServiceName': could not verify executable ownership: $_"" 'WARN'
+        return $null
+    }}
+}}
+
 # === Main Script ===
 
 # Clear previous logs
@@ -285,7 +318,7 @@ try {{
     Log '=== PHASE 1: Stopping processes ==='
 
     # Stop Windows service if running
-    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    $service = GetOwnedService
     if ($service -and $service.Status -eq 'Running') {{
         Log ""Stopping tlbx service '$ServiceName'...""
         Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
@@ -554,7 +587,7 @@ try {{
     Log ''
     Log '=== PHASE 5: Starting new version ==='
 
-    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    $service = GetOwnedService
     if ($service) {{
         Log ""Starting tlbx service '$ServiceName'...""
         Start-Service -Name $ServiceName -ErrorAction Stop

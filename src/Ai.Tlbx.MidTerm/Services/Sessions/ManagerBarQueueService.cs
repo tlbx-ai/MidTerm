@@ -1168,6 +1168,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             Effort = string.IsNullOrWhiteSpace(turn.Effort) ? null : turn.Effort.Trim(),
             PlanMode = string.IsNullOrWhiteSpace(turn.PlanMode) ? null : turn.PlanMode.Trim(),
             PermissionMode = string.IsNullOrWhiteSpace(turn.PermissionMode) ? null : turn.PermissionMode.Trim(),
+            FastMode = string.IsNullOrWhiteSpace(turn.FastMode) ? null : turn.FastMode.Trim(),
             Attachments = turn.Attachments?
                 .Select(CloneAttachment)
                 .Where(static attachment => attachment is not null)

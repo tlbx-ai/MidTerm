@@ -1,16 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { MidTermSettingsPublic } from '../../api/types';
-import { shouldUseWebglRenderer } from './webglSupport';
+import { shouldOwnWebglContext, shouldUseWebglRenderer } from './webglSupport';
 
 function createSettings(
   partial: Partial<
     Pick<
       MidTermSettingsPublic,
-      | 'terminalTransparency'
-      | 'terminalCellBackgroundTransparency'
-      | 'uiTransparency'
-      | 'useWebGL'
+      'terminalTransparency' | 'terminalCellBackgroundTransparency' | 'uiTransparency' | 'useWebGL'
     >
   >,
 ): MidTermSettingsPublic {
@@ -74,5 +71,20 @@ describe('webglSupport', () => {
         }),
       ),
     ).toBe(true);
+  });
+});
+
+describe('WebGL context ownership', () => {
+  it('keeps unmanaged auxiliary terminals independent from session visibility', () => {
+    expect(shouldOwnWebglContext(false, true, false)).toBe(true);
+  });
+
+  it('allows session terminals before the first visibility synchronization', () => {
+    expect(shouldOwnWebglContext(true, false, false)).toBe(true);
+  });
+
+  it('keeps WebGL only for visible priority sessions after synchronization', () => {
+    expect(shouldOwnWebglContext(true, true, true)).toBe(true);
+    expect(shouldOwnWebglContext(true, true, false)).toBe(false);
   });
 });

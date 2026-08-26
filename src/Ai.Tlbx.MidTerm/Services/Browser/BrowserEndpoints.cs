@@ -111,6 +111,29 @@ public static class BrowserEndpoints
         BrowserUiBridge uiBridge,
         WebPreviewService webPreviewService)
     {
+        app.MapPost("/api/browser/agent-wheel", async (
+            Models.Browser.AgentHistoryWheelRequest request,
+            HttpContext ctx) =>
+        {
+            var result = await uiBridge.RequestAgentWheelAsync(
+                request.SessionId.Trim(),
+                request.DeltaY ?? 120,
+                request.Steps ?? 1,
+                ctx.RequestAborted);
+            return result.Success
+                ? Results.Json(result, AppJsonContext.Default.AgentHistoryWheelResult)
+                : Results.Json(
+                    result,
+                    AppJsonContext.Default.AgentHistoryWheelResult,
+                    statusCode: StatusCodes.Status409Conflict);
+        });
+
+        app.MapPost("/api/browser/agent-wheel/result", (
+            Models.Browser.AgentHistoryWheelResult result) =>
+            uiBridge.CompleteAgentWheel(result)
+                ? Results.Ok()
+                : Results.NotFound());
+
         app.MapPost("/api/browser/detach", (Models.WebPreview.WebPreviewSessionRequest request) =>
         {
             return uiBridge.RequestDetach(
@@ -226,7 +249,7 @@ public static class BrowserEndpoints
             if (args.Count == 0)
             {
                 BrowserLog.Error($"Empty request ({body.Length} bytes)");
-                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  scroll [selector] [deltaY|top|bottom|left|right] [deltaX]\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--force|--hard]\n  outline [depth]     Page structure (tag+id+class tree)\n  attrs <selector>    Element attributes (no children)\n  css <selector> <props>  Computed CSS (comma-separated)\n  log [error|warn|all]    Console log buffer\n  links               All links on page\n  submit [selector]   Submit form (default: first form)\n  forms [selector]    Form structure and values\n  url                 Current upstream page URL\n  clearcookies        Clear browser-side cookies in iframe\n  clearstate          Clear browser-side cookies and storage in iframe\n  status              Preview bridge status\n  mobile <action>     Local Chrome mobile device control\n  claim               Explicitly claim preview ownership for this browser UI\n  claim-main          Make the selected browser preview the leading browser\n  capabilities [--json]  Compact command/capability discovery\n  inspect [--screenshot] Compact page/status/proxy diagnostic bundle\n  proxylog-summary [--limit N] Compact proxy request summary\n", statusCode: 400);
+                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  scroll [selector] [deltaY|top|bottom|left|right] [deltaX]\n  wheel [selector] [up|down|deltaY] [steps]\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--force|--hard]\n  outline [depth]     Page structure (tag+id+class tree)\n  attrs <selector>    Element attributes (no children)\n  css <selector> <props>  Computed CSS (comma-separated)\n  log [error|warn|all]    Console log buffer\n  links               All links on page\n  submit [selector]   Submit form (default: first form)\n  forms [selector]    Form structure and values\n  url                 Current upstream page URL\n  clearcookies        Clear browser-side cookies in iframe\n  clearstate          Clear browser-side cookies and storage in iframe\n  status              Preview bridge status\n  mobile <action>     Local Chrome mobile device control\n  claim               Explicitly claim preview ownership for this browser UI\n  claim-main          Make the selected browser preview the leading browser\n  capabilities [--json]  Compact command/capability discovery\n  inspect [--screenshot] Compact page/status/proxy diagnostic bundle\n  proxylog-summary [--limit N] Compact proxy request summary\n", statusCode: 400);
             }
 
             var command = args[0].ToLowerInvariant();
@@ -483,6 +506,13 @@ public static class BrowserEndpoints
             return ToJsonResult(result);
         });
 
+        app.MapPost("/api/browser/wheel", async (BrowserCommandRequest request, HttpContext ctx) =>
+        {
+            var cmd = WithCommand(request, "wheel");
+            var result = await commandService.ExecuteCommandAsync(cmd, ctx.RequestAborted);
+            return ToJsonResult(result);
+        });
+
         app.MapPost("/api/browser/exec", async (BrowserCommandRequest request, HttpContext ctx) =>
         {
             var cmd = WithCommand(request, "exec");
@@ -625,6 +655,8 @@ public static class BrowserEndpoints
                 "mt_outline [depth]",
                 "mt_text [selector]",
                 "mt_scroll [selector] [deltaY|top|bottom]",
+                "mt_wheel [selector] [up|down|deltaY] [steps]",
+                "mt_agent_wheel [up|down|deltaY] [steps] [sessionId]",
                 "mt_query <selector> --text",
                 "mt_exec <js>",
                 "mt_mobile open|status|rotate|keyboard|background|foreground|reload|screenshot|close",
@@ -836,6 +868,13 @@ public static class BrowserEndpoints
                 Selector = GetScrollSelector(args),
                 Value = BuildScrollValue(args)
             },
+            "wheel" => new BrowserCommandRequest
+            {
+                Command = "wheel",
+                Selector = GetWheelSelector(args),
+                DeltaY = GetWheelDeltaY(args),
+                Steps = GetWheelSteps(args)
+            },
             "fill" => new BrowserCommandRequest
             {
                 Command = "fill",
@@ -926,6 +965,9 @@ public static class BrowserEndpoints
                 MaxDepth = request.MaxDepth,
                 TextOnly = request.TextOnly,
                 Timeout = request.Timeout,
+                DeltaX = request.DeltaX,
+                DeltaY = request.DeltaY,
+                Steps = request.Steps,
                 SessionId = GetFlagValue(args, "--session"),
                 PreviewName = GetFlagValue(args, "--preview"),
                 PreviewId = request.PreviewId
@@ -1012,7 +1054,10 @@ public static class BrowserEndpoints
             Timeout = request.Timeout,
             SessionId = request.SessionId,
             PreviewName = request.PreviewName,
-            PreviewId = request.PreviewId
+            PreviewId = request.PreviewId,
+            DeltaX = request.DeltaX,
+            DeltaY = request.DeltaY,
+            Steps = request.Steps
         };
 
     private static IResult ToJsonResult(BrowserWsResult result)
@@ -1086,6 +1131,47 @@ public static class BrowserEndpoints
             || value.Equals("right", StringComparison.OrdinalIgnoreCase)
             || double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
     }
+
+    private static string? GetWheelSelector(List<string> args)
+    {
+        var first = GetPositional(args, 1);
+        return first is null || IsWheelValue(first) ? null : first;
+    }
+
+    private static double? GetWheelDeltaY(List<string> args)
+    {
+        var first = GetPositional(args, 1);
+        var raw = first is not null && IsWheelValue(first) ? first : GetPositional(args, 2);
+        if (raw is null || raw.Equals("down", StringComparison.OrdinalIgnoreCase))
+        {
+            return 120;
+        }
+
+        if (raw.Equals("up", StringComparison.OrdinalIgnoreCase))
+        {
+            return -120;
+        }
+
+        return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var deltaY)
+            ? deltaY
+            : null;
+    }
+
+    private static int? GetWheelSteps(List<string> args)
+    {
+        var first = GetPositional(args, 1);
+        var raw = first is not null && IsWheelValue(first)
+            ? GetPositional(args, 2)
+            : GetPositional(args, 3);
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var steps)
+            ? steps
+            : 1;
+    }
+
+    private static bool IsWheelValue(string value) =>
+        value.Equals("up", StringComparison.OrdinalIgnoreCase)
+        || value.Equals("down", StringComparison.OrdinalIgnoreCase)
+        || double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
 
     private static string? GetFlagValue(List<string> args, string flag)
     {

@@ -1737,6 +1737,93 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/browser/wheel': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['BrowserCommandRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['BrowserCommandResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/browser/agent-wheel': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['AgentHistoryWheelRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AgentHistoryWheelResult'];
+          };
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AgentHistoryWheelResult'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/browser/main': {
     parameters: {
       query?: never;
@@ -3443,6 +3530,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/agent-controller/installations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AgentControllerInstallationDto'][];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/users': {
     parameters: {
       query?: never;
@@ -3799,6 +3921,54 @@ export interface components {
     ActiveShareGrantListResponse: {
       shares: components['schemas']['ActiveShareGrantInfo'][];
     };
+    AgentControllerInstallationDto: {
+      profile: string;
+      name: string;
+      protocol: string;
+      command: string;
+      supportsResume: boolean;
+    };
+    AgentHistoryScrollMetrics: {
+      /** Format: double */
+      scrollTop: number;
+      /** Format: double */
+      scrollHeight: number;
+      /** Format: double */
+      clientHeight: number;
+      atTop: boolean;
+      atBottom: boolean;
+      /** Format: double */
+      progress: number;
+      /** Format: int32 */
+      navigatorValue: number;
+      /** Format: int32 */
+      navigatorMaximum: number;
+      anchorKey: null | string;
+      /** Format: int32 */
+      anchorAbsoluteIndex: null | number;
+      /** Format: double */
+      anchorTopOffsetPx: null | number;
+      /** Format: double */
+      anchorResidualPx: null | number;
+    };
+    AgentHistoryWheelRequest: {
+      sessionId: string;
+      /** Format: double */
+      deltaY?: null | number;
+      /** Format: int32 */
+      steps?: null | number;
+    };
+    AgentHistoryWheelResult: {
+      requestId: string;
+      success: boolean;
+      error: null | string;
+      sessionId: string;
+      /** Format: int32 */
+      cancelledSteps: number;
+      before: null | components['schemas']['AgentHistoryScrollMetrics'];
+      after: null | components['schemas']['AgentHistoryScrollMetrics'];
+      samples: components['schemas']['AgentHistoryScrollMetrics'][];
+    };
     AgentSessionFeedResponse: {
       sessionId: string;
       source: string;
@@ -3904,6 +4074,7 @@ export interface components {
       effort?: null | string;
       planMode?: null | string;
       permissionMode?: null | string;
+      fastMode?: null | string;
       attachments: components['schemas']['AppServerControlAttachmentReference'][];
       terminalReplay: components['schemas']['AppServerControlTerminalReplayStep'][];
     };
@@ -3964,6 +4135,12 @@ export interface components {
       sessionId?: null | string;
       previewName?: null | string;
       previewId?: null | string;
+      /** Format: double */
+      deltaX?: null | number;
+      /** Format: double */
+      deltaY?: null | number;
+      /** Format: int32 */
+      steps?: null | number;
     };
     BrowserCommandResponse: {
       success: boolean;
@@ -4080,6 +4257,7 @@ export interface components {
       spaceId?: null | string;
       workspacePath?: null | string;
       surface?: null | string;
+      launchCommand?: null | string;
     };
     CreateShareLinkRequest: {
       sessionId: string;
@@ -4320,9 +4498,6 @@ export interface components {
       codexYoloDefault: boolean;
       codexDefaultAppServerControlModel: string;
       codexEnvironmentVariables: string;
-      claudeDangerouslySkipPermissionsDefault: boolean;
-      claudeDefaultAppServerControlModel: string;
-      claudeEnvironmentVariables: string;
       agentMessageFontFamily: string;
       showAgentMessageTimestamps: boolean;
       showUnknownAgentMessages: boolean;
@@ -4377,6 +4552,7 @@ export interface components {
       /** Format: int32 */
       scrollbackBytes: number;
       bellStyle: components['schemas']['BellStyleSetting'];
+      notificationPriority: components['schemas']['NotificationPrioritySetting'];
       copyOnSelect: boolean;
       rightClickPaste: boolean;
       clipboardShortcuts: components['schemas']['ClipboardShortcutsSetting'];
@@ -4422,6 +4598,8 @@ export interface components {
       name: string;
       ip: string;
     };
+    /** @enum {unknown} */
+    NotificationPrioritySetting: 'normal' | 'important';
     PathsResponse: {
       settingsFile: string;
       secretsFile: string;

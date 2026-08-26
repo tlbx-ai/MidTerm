@@ -239,8 +239,8 @@ Agent Controller Session quick settings are a separate settings surface shown on
 
 | Control | Backing key / source | Persistence | Applies | What it does |
 | --- | --- | --- | --- | --- |
-| Model | session draft plus `codexDefaultAppServerControlModel` / `claudeDefaultAppServerControlModel` | provider-sticky plus `settings.json` for remembered default model | Next turn | Chooses the model sent with the next Agent Controller Session turn. The dropdown is provider-specific and includes presets plus current custom values. Changing it also updates the stored default model for that provider. |
-| Effort | session draft | provider-sticky in `localStorage` | Next turn | Chooses the next-turn reasoning effort (`Default`, `Low`, `Medium`, `High`). |
+| Model | session draft plus `codexDefaultAppServerControlModel` / `claudeDefaultAppServerControlModel` | provider-sticky plus `settings.json` for remembered user selection | Next turn | Chooses the model sent with the next Agent Controller Session turn. With no Codex user selection, tlbx uses the current model marked as default by the live Codex model catalog instead of a hard-coded model name. For Codex, tlbx also supplies the exact effective turn selection as trusted runtime context so the agent does not confuse it with a global default. Changing the dropdown records an explicit provider model selection. |
+| Effort | session draft | provider-sticky in `localStorage` | Next turn | Chooses the next-turn reasoning effort. Codex defaults to `Medium` when the user has not selected another effort. |
 | Plan | session draft | provider-sticky in `localStorage` | Next turn | Chooses whether the next Agent Controller Session turn starts with plan mode off or on. |
 | Permissions | session draft | provider-sticky in `localStorage` | Next turn | Chooses `Manual` vs `Auto` approval mode for the next Agent Controller Session turn. Defaults are seeded from `codexYoloDefault` or `claudeDangerouslySkipPermissionsDefault`. |
 | Resume | provider resume picker | action | Immediate | Opens the provider-backed "Resume Conversation" picker for eligible Agent Controller Sessions tied to a space and working directory. |
@@ -275,7 +275,7 @@ These fields exist in the settings model but are not currently first-class rows 
 | `defaultCols` | hidden model-only field | New sessions | Fallback default terminal width used when sizing a new session. No current UI row. |
 | `defaultRows` | hidden model-only field | New sessions | Fallback default terminal height used when sizing a new session. No current UI row. |
 | `minimumContrastRatio` | hidden model-only field | Immediate | Passed through to xterm's `minimumContrastRatio` option for terminal text contrast. No current UI row. |
-| `codexDefaultAppServerControlModel` | Agent Controller Session quick settings `Model` | New Agent Controller Session turns / sessions | Remembers the preferred default Codex model used to seed future Agent Controller Sessions. |
+| `codexDefaultAppServerControlModel` | Agent Controller Session quick settings `Model` | New Agent Controller Session turns / sessions | Remembers an explicit Codex model selection. Empty means automatic: use the current default from Codex `model/list`. |
 | `claudeDefaultAppServerControlModel` | Agent Controller Session quick settings `Model` | New Agent Controller Session turns / sessions | Remembers the preferred default Claude model used to seed future Agent Controller Sessions. |
 | `terminalColorSchemes` | Terminal custom scheme editor | Immediate | Stores the saved custom terminal palette definitions. |
 | `managerBarButtons` | Automation Bar button editor | Immediate | Stores the full Automation Bar button definitions and triggers. |

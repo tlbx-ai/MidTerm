@@ -24,6 +24,14 @@ public interface IProcessMonitor : IDisposable
     void StopMonitoring();
 
     /// <summary>
+    /// Notify the monitor that terminal input is active. Polling implementations
+    /// may temporarily increase their refresh cadence.
+    /// </summary>
+    void NotifyActivity()
+    {
+    }
+
+    /// <summary>
     /// Get current foreground process info synchronously.
     /// Returns shell info if no child process is running.
     /// </summary>

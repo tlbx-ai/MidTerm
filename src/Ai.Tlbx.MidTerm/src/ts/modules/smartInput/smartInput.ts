@@ -157,6 +157,7 @@ let appServerControlQuickSettingsRow: HTMLDivElement | null = null;
 let appServerControlQuickSettingsActions: HTMLDivElement | null = null;
 let appServerControlModelSelect: HTMLSelectElement | null = null;
 let appServerControlEffortSelect: HTMLSelectElement | null = null;
+let appServerControlFastToggle: HTMLButtonElement | null = null;
 let appServerControlPlanSelect: HTMLSelectElement | null = null;
 let appServerControlPermissionSelect: HTMLSelectElement | null = null;
 let appServerControlSettingsSummaryBtn: HTMLButtonElement | null = null;
@@ -1275,6 +1276,17 @@ function createDockedDOM(): void {
         effort: appServerControlEffortSelect?.value ?? null,
       });
     },
+    onAppServerControlFastToggle: () => {
+      const sessionId = $activeSessionId.get();
+      if (!sessionId || getAppServerControlQuickSettingsProvider(sessionId) !== 'codex') {
+        return;
+      }
+
+      const draft = getAppServerControlQuickSettingsDraft(sessionId);
+      setAppServerControlQuickSettingsDraft(sessionId, {
+        fastMode: draft.fastMode === 'on' ? 'off' : 'on',
+      });
+    },
     onAppServerControlModelChange: () => {
       const sessionId = $activeSessionId.get();
       if (!sessionId || !isAppServerControlActiveSession(sessionId)) {
@@ -1508,6 +1520,7 @@ function createDockedDOM(): void {
   appServerControlQuickSettingsActions = dom.appServerControlQuickSettingsActions;
   appServerControlModelSelect = dom.appServerControlModelSelect;
   appServerControlEffortSelect = dom.appServerControlEffortSelect;
+  appServerControlFastToggle = dom.appServerControlFastToggle;
   appServerControlPlanSelect = dom.appServerControlPlanSelect;
   appServerControlPermissionSelect = dom.appServerControlPermissionSelect;
   appServerControlAttachmentHost = dom.appServerControlAttachmentHost;
@@ -1817,6 +1830,7 @@ function renderAppServerControlStatusRow(layoutState: AdaptiveFooterLayoutState)
     !appServerControlQuickSettingsActions ||
     !appServerControlModelSelect ||
     !appServerControlEffortSelect ||
+    !appServerControlFastToggle ||
     !appServerControlPlanSelect ||
     !appServerControlPermissionSelect
   ) {
@@ -2766,6 +2780,7 @@ function syncAppServerControlQuickSettingsControls(): void {
     appServerControlQuickSettingsActions,
     appServerControlModelSelect,
     appServerControlEffortSelect,
+    appServerControlFastToggle,
     appServerControlPlanSelect,
     appServerControlPermissionSelect,
     appServerControlSettingsSummaryBtn,

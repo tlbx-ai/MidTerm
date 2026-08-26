@@ -58,8 +58,8 @@ if (-not (Test-Path $mtExe)) { throw "mt publish failed - mt.exe not found" }
 # Step 5: Publish mthost as self-contained
 Write-Host "[5/6] Publishing mthost (self-contained debug)..." -ForegroundColor Yellow
 $mthostProj = Join-Path $repoRoot "src\Ai.Tlbx.MidTerm.TtyHost\Ai.Tlbx.MidTerm.TtyHost.csproj"
-$mthostPublishDir = Join-Path $repoRoot "src\Ai.Tlbx.MidTerm.TtyHost\bin\Debug\net10.0\win-x64"
-dotnet publish $mthostProj -c Debug -r win-x64 --self-contained -p:PublishAot=false -p:PublishSingleFile=false 2>&1 | Out-Null
+$mthostPublishDir = Join-Path $repoRoot "src\Ai.Tlbx.MidTerm.TtyHost\bin\Debug\net10.0-windows10.0.19041.0\win-x64"
+dotnet publish $mthostProj -c Debug -f net10.0-windows10.0.19041.0 -r win-x64 --self-contained -p:PublishAot=false -p:PublishSingleFile=false 2>&1 | Out-Null
 $mthostExe = Join-Path $mthostPublishDir "mthost.exe"
 if (-not (Test-Path $mthostExe)) { throw "mthost publish failed - mthost.exe not found" }
 

@@ -6,7 +6,7 @@ namespace Ai.Tlbx.MidTerm.Settings;
 
 public sealed class MidTermSettings
 {
-    public const int DefaultScrollbackLines = 2000;
+    public const int DefaultScrollbackLines = 10000;
     public const int MaxScrollbackLines = 10000;
     public const int DefaultScrollbackBytes = 2 * 1024 * 1024;
     public const int MinScrollbackBytes = 64 * 1024;
@@ -27,9 +27,6 @@ public sealed class MidTermSettings
     public bool CodexYoloDefault { get; set; } = false;
     public string CodexDefaultAppServerControlModel { get; set; } = "";
     public string CodexEnvironmentVariables { get; set; } = "";
-    public bool ClaudeDangerouslySkipPermissionsDefault { get; set; } = false;
-    public string ClaudeDefaultAppServerControlModel { get; set; } = "";
-    public string ClaudeEnvironmentVariables { get; set; } = "";
     public string AgentMessageFontFamily { get; set; } = "default";
     public bool ShowAgentMessageTimestamps { get; set; } = false;
     public bool ShowUnknownAgentMessages { get; set; } = true;
@@ -86,6 +83,7 @@ public sealed class MidTermSettings
     public int ScrollbackLines { get; set; } = DefaultScrollbackLines;
     public int ScrollbackBytes { get; set; } = DefaultScrollbackBytes;
     public BellStyleSetting BellStyle { get; set; } = BellStyleSetting.Notification;
+    public NotificationPrioritySetting NotificationPriority { get; set; } = NotificationPrioritySetting.Normal;
     public bool CopyOnSelect { get; set; } = false;
     public bool RightClickPaste { get; set; } = true;
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;

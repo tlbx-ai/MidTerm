@@ -69,6 +69,27 @@ Observed aggregate:
 
 This is a smoke baseline, not a proof that leaks cannot exist. Treat regressions in heap, DOM node count, listener count, p95 switch latency, or long-task count as candidates for focused trace/CPU-profile inspection.
 
+## Six Live Terminals Resource Profile
+
+`run-live-terminal-resource-profile.mjs` opens six real terminal tabs, keeps all six
+PTYs producing bounded continuous output, and samples browser/tlbx CPU and memory. It uses
+an isolated visible Chrome profile, records a zero-session baseline in the same run, splits
+tlbx-owned processes from shell/console processes, switches through every busy session and
+records end-to-end catch-up latency, then waits five seconds before steady-state sampling.
+It deletes every temporary terminal before closing. Set `TLBX_PERF_CPU_PROFILE=1` when a V8
+CPU profile is needed; it is off by default so its growing trace buffer cannot inflate the
+RAM measurement. Override the settling and switch phases with
+`TLBX_PERF_WARMUP_SECONDS` and `TLBX_PERF_SWITCH_CYCLES` when needed.
+
+```powershell
+$env:TLBX_PERF_URL = 'https://127.0.0.1:2100/'
+$env:TLBX_PERF_SERVER_PID = '<source mt PID>'
+node scripts/perf/run-live-terminal-resource-profile.mjs
+```
+
+The resulting `summary.json`, `samples.json`, and optional `cpu-profile.json` are written below
+`%USERPROFILE%\.codex\artifacts\chrome-perf\<timestamp>-tlbx-live-terminal-resources\`.
+
 ## Mux Lifecycle And Recovery Scenario
 
 `midterm-background-live-output-smoke.js` keeps a real terminal live while output is

@@ -23,10 +23,14 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("mt_apply_update()", shell, StringComparison.Ordinal);
         Assert.Contains("$_MT/api/update/apply", shell, StringComparison.Ordinal);
         Assert.Contains("Current version:", shell, StringComparison.Ordinal);
+        Assert.Contains("latestVersion", shell, StringComparison.Ordinal);
+        Assert.Contains("Update did not reach expected version", shell, StringComparison.Ordinal);
 
         Assert.Contains("function Mt-ApplyUpdate", powershell, StringComparison.Ordinal);
         Assert.Contains("$script:_MT/api/update/apply", powershell, StringComparison.Ordinal);
         Assert.Contains("Current version:", powershell, StringComparison.Ordinal);
+        Assert.Contains("$update.latestVersion", powershell, StringComparison.Ordinal);
+        Assert.Contains("Update did not reach expected version", powershell, StringComparison.Ordinal);
         Assert.Contains("_MBR", shell, StringComparison.Ordinal);
         Assert.Contains("_MJR", shell, StringComparison.Ordinal);
         Assert.Contains("_MCURL --fail-with-body -sSk -b", shell, StringComparison.Ordinal);
@@ -56,6 +60,8 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("Authorization: Bearer $($env:MT_API_KEY)", powershell, StringComparison.Ordinal);
         Assert.Contains("& curl.exe --fail-with-body -sSk -H", powershell, StringComparison.Ordinal);
         Assert.Contains("& curl.exe --fail-with-body -sSk -b", powershell, StringComparison.Ordinal);
+        Assert.Contains("if ($exitCode -ne 0)", powershell, StringComparison.Ordinal);
+        Assert.Contains("throw \"tlbx API request failed (curl exit $exitCode): $detail\"", powershell, StringComparison.Ordinal);
         Assert.Contains("Treat it like a local session secret", powershell, StringComparison.Ordinal);
     }
 
@@ -179,6 +185,9 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("mt_sendkeys()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_inject()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_activity()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_notify()", shell, StringComparison.Ordinal);
+        Assert.Contains("$_MT/api/notifications", shell, StringComparison.Ordinal);
+        Assert.Contains("--priority must be normal or important", shell, StringComparison.Ordinal);
         Assert.Contains("mt_attention()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_control_plane()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_agent_capabilities()", shell, StringComparison.Ordinal);
@@ -193,6 +202,14 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("api/input-history?sessionId=", shell, StringComparison.Ordinal);
         Assert.Contains("[ -n \"$sid\" ] || { echo \"Session id required.\"", shell, StringComparison.Ordinal);
         Assert.Contains("mt_bootstrap()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_acp_new()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_acp_history()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_acp_turn()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_acp_interrupt()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_acp_steer()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_acp_compact()", shell, StringComparison.Ordinal);
+        Assert.Contains("appServerControlOnly", shell, StringComparison.Ordinal);
+        Assert.Contains("/agent-control/turn", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("mt_supervise", shell, StringComparison.Ordinal);
         Assert.Contains("mt_ctrlc()", shell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Redraw", powershell, StringComparison.Ordinal);
@@ -201,6 +218,13 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-SendText", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Paste", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Prompt", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-AcpNew", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-AcpHistory", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-AcpTurn", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-AcpInterrupt", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-AcpSteer", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-AcpCompact", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_acp_turn -Value Mt-AcpTurn", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-PromptNow", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Slash", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Wake", powershell, StringComparison.Ordinal);
@@ -210,6 +234,10 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-SendKeys", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Inject", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Activity", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-Notify", powershell, StringComparison.Ordinal);
+        Assert.Contains("$script:_MT/api/notifications", powershell, StringComparison.Ordinal);
+        Assert.Contains("[ValidateSet(\"normal\", \"important\")]", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_notify -Value Mt-Notify", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Attention", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-ControlPlane", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-AgentCapabilities", powershell, StringComparison.Ordinal);
@@ -423,6 +451,52 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("arg2=<quote\"value>", childOutput, StringComparison.Ordinal);
         Assert.Contains("arg3=<slash and space\\>", childOutput, StringComparison.Ordinal);
         Assert.Equal("stderr-sentinel", childError.Trim());
+    }
+
+    [Fact]
+    public void WriteScripts_PowerShellRunIsolated_RemovesExpiredCompletedRuns()
+    {
+        var powershellPath = ResolvePowerShellPath();
+        if (powershellPath is null)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+        var expiredRun = Path.Combine(_tempDir, "runs", "expired-run");
+        Directory.CreateDirectory(expiredRun);
+        Directory.SetLastWriteTimeUtc(expiredRun, DateTime.UtcNow.AddDays(-15));
+
+        var startInfo = new ProcessStartInfo(powershellPath)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(Path.Combine(_tempDir, "tlbx_cli.ps1"));
+        startInfo.ArgumentList.Add("mt_run_isolated");
+        startInfo.ArgumentList.Add(powershellPath);
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add("exit 0");
+
+        using var process = Process.Start(startInfo)!;
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.True(process.ExitCode == 0, error + output);
+        Assert.False(Directory.Exists(expiredRun));
+
+        var shell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.sh"));
+        var powershell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.ps1"));
+        Assert.Contains("max_completed_runs=100", shell, StringComparison.Ordinal);
+        Assert.Contains("max_completed_kib=1048576", shell, StringComparison.Ordinal);
+        Assert.Contains("$maxCompletedRuns = 100", powershell, StringComparison.Ordinal);
+        Assert.Contains("$maxCompletedBytes = 1GB", powershell, StringComparison.Ordinal);
     }
 
     [Fact]

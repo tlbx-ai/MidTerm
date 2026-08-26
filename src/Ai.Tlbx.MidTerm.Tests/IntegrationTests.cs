@@ -20,6 +20,7 @@ using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 namespace Ai.Tlbx.MidTerm.Tests;
 
 public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime, IDisposable
@@ -95,6 +96,81 @@ public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Progr
         Assert.NotNull(state);
         Assert.NotNull(state.Sessions);
         Assert.NotNull(state.Sessions.Sessions);
+    }
+
+    [Fact]
+    public async Task WebSocket_State_ForwardsLiveTerminalNotifications()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var telemetry = scope.ServiceProvider.GetRequiredService<SessionTelemetryService>();
+        using var ws = await ConnectWebSocketAsync("/ws/state");
+
+        _ = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
+        await DrainAvailableTextMessagesAsync(ws, TimeSpan.FromMilliseconds(100));
+
+        telemetry.RecordOutput("session-notify", Encoding.UTF8.GetBytes("\x1b]9;Agent turn complete\a"));
+
+        var json = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
+        var message = System.Text.Json.JsonSerializer.Deserialize(
+            json,
+            AppJsonContext.Default.TerminalNotificationMessage);
+        Assert.NotNull(message);
+        Assert.Equal("terminal-notification", message.Type);
+        Assert.Equal("session-notify", message.SessionId);
+        Assert.Equal("osc9", message.Protocol);
+        Assert.Equal("Agent turn complete", message.Body);
+    }
+
+    [Fact]
+    public async Task Api_Notify_ForwardsForcedNotificationToStateWebSocket()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<TtyHostSessionManager>();
+        const string sessionId = "notify-s1";
+        SeedSession(manager, new SessionInfo
+        {
+            Id = sessionId,
+            Pid = 42,
+            HostPid = 43,
+            ShellType = "Pwsh",
+            CreatedAt = DateTime.UtcNow,
+            IsRunning = true,
+            CurrentDirectory = @"Q:\repos\Jpa"
+        }, order: 0);
+
+        try
+        {
+            using var ws = await ConnectWebSocketAsync("/ws/state");
+            _ = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
+            await DrainAvailableTextMessagesAsync(ws, TimeSpan.FromMilliseconds(100));
+
+            using var response = await _client.PostAsJsonAsync(
+                "/api/notifications",
+                new TerminalNotificationRequest
+                {
+                    SessionId = sessionId,
+                    Title = "tlbx",
+                    Body = "Ad hoc test",
+                    Priority = NotificationPrioritySetting.Important
+                },
+                AppJsonContext.Default.TerminalNotificationRequest);
+
+            Assert.Equal(System.Net.HttpStatusCode.NoContent, response.StatusCode);
+            var json = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
+            var message = System.Text.Json.JsonSerializer.Deserialize(
+                json,
+                AppJsonContext.Default.TerminalNotificationMessage);
+            Assert.NotNull(message);
+            Assert.Equal("cli", message.Protocol);
+            Assert.Equal("Ad hoc test", message.Body);
+            Assert.True(message.Force);
+            Assert.Equal(NotificationPrioritySetting.Important, message.Priority);
+            Assert.False(message.NativeHandled);
+        }
+        finally
+        {
+            RemoveSeedSession(manager, sessionId);
+        }
     }
 
     [Fact]

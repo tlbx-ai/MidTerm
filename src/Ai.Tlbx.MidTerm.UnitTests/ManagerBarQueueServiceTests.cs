@@ -273,13 +273,15 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
             "session-1",
             new AppServerControlTurnRequest
             {
-                Text = "queued turn"
+                Text = "queued turn",
+                FastMode = AppServerControlQuickSettings.FastModeOn
             });
 
         Assert.True(accepted);
         Assert.Null(entry);
         var turn = Assert.Single(runtime.SentTurns);
         Assert.Equal("queued turn", turn.Text);
+        Assert.Equal(AppServerControlQuickSettings.FastModeOn, turn.FastMode);
         Assert.Empty(service.GetSnapshot(["session-1"]));
     }
 
@@ -737,6 +739,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
                 Effort = request.Effort,
                 PlanMode = request.PlanMode,
                 PermissionMode = request.PermissionMode,
+                FastMode = request.FastMode,
                 TerminalReplay = request.TerminalReplay
                     .Select(static step => new AppServerControlTerminalReplayStep
                     {

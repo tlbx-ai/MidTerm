@@ -1,8 +1,16 @@
+using System.Globalization;
 using System.Text.Json;
 
 var sessionId = "grok-session-" + Guid.NewGuid().ToString("N");
 var activePromptId = string.Empty;
 var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_CAPTURE_PATH");
+var protocolVersion = int.TryParse(
+    Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_PROTOCOL_VERSION"),
+    NumberStyles.Integer,
+    CultureInfo.InvariantCulture,
+    out var configuredProtocolVersion)
+    ? configuredProtocolVersion
+    : 1;
 PersistLaunchCapture(capturePath, CreateLaunchCapture());
 
 while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
@@ -22,7 +30,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
         case "initialize":
             await WriteResponseAsync(id, new
             {
-                protocolVersion = 1,
+                protocolVersion,
                 agentCapabilities = new
                 {
                     loadSession = true,
@@ -58,6 +66,17 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
             activePromptId = id.ToString();
             var text = ReadPromptText(root);
             await WriteAvailableCommandsUpdateAsync(sessionId).ConfigureAwait(false);
+            await WriteNotificationAsync("session/update", new
+            {
+                sessionId,
+                update = new
+                {
+                    sessionUpdate = "usage_update",
+                    used = 1234,
+                    size = 128000,
+                    cost = new { amount = 0.0123, currency = "USD" }
+                }
+            }).ConfigureAwait(false);
             await WriteNotificationAsync("_x.ai/session_notification", new
             {
                 sessionId,

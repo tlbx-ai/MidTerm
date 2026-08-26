@@ -418,6 +418,40 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     return article;
   }
 
+  function syncElementAttributes(target: HTMLElement, source: HTMLElement): void {
+    for (const attribute of Array.from(target.attributes)) {
+      if (!source.hasAttribute(attribute.name)) {
+        target.removeAttribute(attribute.name);
+      }
+    }
+    for (const attribute of Array.from(source.attributes)) {
+      target.setAttribute(attribute.name, attribute.value);
+    }
+  }
+
+  function syncHistoryEntry(
+    article: HTMLElement,
+    entry: AppServerControlHistoryEntry,
+    sessionId: string,
+    options: {
+      artifactCluster?: ArtifactClusterInfo | null;
+      showAssistantBadge?: boolean;
+    } = {},
+  ): void {
+    const nextArticle = createHistoryEntry(entry, sessionId, options);
+    syncElementAttributes(article, nextArticle);
+
+    const currentBody = article.querySelector<HTMLElement>(':scope > .agent-history-body');
+    const nextBody = nextArticle.querySelector<HTMLElement>(':scope > .agent-history-body');
+    if (currentBody && nextBody) {
+      syncElementAttributes(currentBody, nextBody);
+      currentBody.replaceChildren(...Array.from(nextBody.childNodes));
+      nextBody.replaceWith(currentBody);
+    }
+
+    article.replaceChildren(...Array.from(nextArticle.childNodes));
+  }
+
   function applyHistoryEntryChrome(
     article: HTMLElement,
     entry: AppServerControlHistoryEntry,
@@ -1041,6 +1075,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     pruneAssistantMarkdownCache,
     renderRuntimeStats,
     syncBusyIndicatorEntry,
+    syncHistoryEntry,
   };
 }
 /* eslint-enable max-lines-per-function */

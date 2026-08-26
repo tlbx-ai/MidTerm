@@ -53,12 +53,13 @@ export function resolveHistoryScrollMode(args: {
   current: HistoryScrollMetrics;
   userInitiated: boolean;
   pendingAnchorRestore: boolean;
+  hasNewerHistory?: boolean;
 }): HistoryScrollMode {
   if (args.pendingAnchorRestore) {
     return 'restore-anchor';
   }
 
-  const nearBottom = isScrollContainerNearBottom(args.current);
+  const nearBottom = !args.hasNewerHistory && isScrollContainerNearBottom(args.current);
   const userScrolledUp =
     args.previous !== null &&
     Number.isFinite(args.previous.scrollTop) &&

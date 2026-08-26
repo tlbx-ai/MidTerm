@@ -9,7 +9,7 @@ public sealed class AiCliProfileService
     public const string CodexProfile = "codex";
     public const string ClaudeProfile = "claude";
     public const string GrokProfile = "grok";
-    public const string OpenCodeProfile = "open-code";
+    public const string OpenCodeProfile = "opencode";
     public const string GenericAiProfile = "generic-ai";
 
     public string DetectProfile(SessionInfoDto session)

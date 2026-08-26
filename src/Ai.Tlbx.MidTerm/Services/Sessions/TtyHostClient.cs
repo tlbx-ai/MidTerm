@@ -471,6 +471,33 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
     }
 
+    public async Task<TtyHostNotificationResponse> ShowNotificationAsync(
+        TtyHostNotificationRequest request,
+        CancellationToken ct = default)
+    {
+        if (!IsConnected)
+        {
+            return new TtyHostNotificationResponse { Error = "mthost is not connected." };
+        }
+
+        try
+        {
+            var msg = TtyHostProtocol.CreateShowNotification(request);
+            var response = await SendRequestAsync(
+                msg,
+                TtyHostMessageType.ShowNotificationAck,
+                ct).ConfigureAwait(false);
+            return response is null
+                ? new TtyHostNotificationResponse { Error = "mthost did not acknowledge the notification." }
+                : TtyHostProtocol.ParseShowNotificationAck(response)
+                    ?? new TtyHostNotificationResponse { Error = "mthost returned an invalid notification response." };
+        }
+        catch (Exception ex)
+        {
+            return new TtyHostNotificationResponse { Error = ex.Message };
+        }
+    }
+
     public async Task<byte[]?> PingAsync(byte[] pingData, CancellationToken ct = default)
     {
         if (!IsConnected) return null;
@@ -836,6 +863,7 @@ public sealed class TtyHostClient : IAsyncDisposable
             case TtyHostMessageType.SetOrderAck:
             case TtyHostMessageType.SetMetadataAck:
             case TtyHostMessageType.SetClipboardImageAck:
+            case TtyHostMessageType.ShowNotificationAck:
             case TtyHostMessageType.CloseAck:
             case TtyHostMessageType.Info:
             case TtyHostMessageType.AttachAck:

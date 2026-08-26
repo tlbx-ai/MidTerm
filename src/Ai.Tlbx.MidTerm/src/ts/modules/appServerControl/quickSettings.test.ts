@@ -10,6 +10,7 @@ import { $currentSettings, $sessions } from '../../stores';
 import {
   getAppServerControlResolvedProviderModel,
   getAppServerControlQuickSettingsDraft,
+  createAppServerControlTurnRequestWithQuickSettings,
   removeAppServerControlQuickSettingsSessionState,
   setAppServerControlQuickSettingsDraft,
 } from './quickSettings';
@@ -43,9 +44,6 @@ function createSettings(patch: Partial<MidTermSettingsPublic> = {}): MidTermSett
     codexYoloDefault: false,
     codexDefaultAppServerControlModel: '',
     codexEnvironmentVariables: '',
-    claudeDangerouslySkipPermissionsDefault: false,
-    claudeDefaultAppServerControlModel: '',
-    claudeEnvironmentVariables: '',
     ...patch,
   } as MidTermSettingsPublic;
 }
@@ -68,7 +66,7 @@ describe('appServerControl quick settings', () => {
     vi.unstubAllGlobals();
   });
 
-  it('defaults new codex drafts to gpt-5.5 when no stored model exists', () => {
+  it('leaves the codex model automatic and defaults effort to medium', () => {
     $sessions.set({
       'codex-default': {
         id: 'codex-default',
@@ -76,14 +74,37 @@ describe('appServerControl quick settings', () => {
       } as never,
     });
 
-    expect(getAppServerControlQuickSettingsDraft('codex-default').model).toBe('gpt-5.5');
+    expect(getAppServerControlQuickSettingsDraft('codex-default')).toMatchObject({
+      model: null,
+      effort: 'medium',
+      fastMode: 'off',
+    });
   });
 
-  it('resolves the concrete provider model for default codex AppServerControl sessions', () => {
-    expect(getAppServerControlResolvedProviderModel('codex')).toBe('gpt-5.5');
+  it('persists Codex fast mode and includes it in the next turn request', () => {
+    $sessions.set({
+      'codex-default': {
+        id: 'codex-default',
+        profileHint: 'codex',
+      } as never,
+    });
+
+    setAppServerControlQuickSettingsDraft('codex-default', { fastMode: 'on' });
+
+    expect(getAppServerControlQuickSettingsDraft('codex-default').fastMode).toBe('on');
+    expect(
+      createAppServerControlTurnRequestWithQuickSettings(
+        'codex-default',
+        'Use the fast service tier.',
+      ).fastMode,
+    ).toBe('on');
   });
 
-  it('maps obsolete Grok Build sticky model aliases to the current Grok default', () => {
+  it('does not invent a concrete codex model when no user default exists', () => {
+    expect(getAppServerControlResolvedProviderModel('codex')).toBeNull();
+  });
+
+  it('preserves ACP agent model ids without provider-specific alias rewriting', () => {
     globalThis.localStorage.setItem(
       'midterm:appServerControl-quick-settings:provider:grok',
       JSON.stringify({ model: 'grok-build' }),
@@ -95,9 +116,7 @@ describe('appServerControl quick settings', () => {
       } as never,
     });
 
-    expect(getAppServerControlQuickSettingsDraft('grok-stale').model).toBe(
-      'grok-4.20-0309-non-reasoning',
-    );
+    expect(getAppServerControlQuickSettingsDraft('grok-stale').model).toBe('grok-build');
   });
 
   it('persists the selected provider model into MidTerm settings', () => {

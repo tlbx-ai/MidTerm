@@ -27,7 +27,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         bool emitUnknownAgentNotification,
         bool emitBackgroundTerminalWaitNotification,
         bool emitMcpStartupStatus,
-        bool emitProtocolV2Surface)
+        bool emitProtocolV2Surface,
+        int turnCompletionDelayMs)
     {
         Endpoint = endpoint;
         LoadedThreadId = loadedThreadId;
@@ -40,6 +41,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         EmitBackgroundTerminalWaitNotification = emitBackgroundTerminalWaitNotification;
         EmitMcpStartupStatus = emitMcpStartupStatus;
         EmitProtocolV2Surface = emitProtocolV2Surface;
+        TurnCompletionDelayMs = turnCompletionDelayMs;
         _listener.Prefixes.Add(ToHttpPrefix(endpoint));
         _listener.Start();
         _acceptLoopTask = Task.Run(AcceptLoopAsync, _shutdown.Token);
@@ -67,6 +69,12 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public bool EmitProtocolV2Surface { get; }
 
+    public int TurnCompletionDelayMs { get; }
+
+    public bool? LastThreadResumeExcludeTurns { get; private set; }
+
+    public string? LastTurnServiceTier { get; private set; }
+
     public static FakeCodexWebSocketServer Start(
         string loadedThreadId,
         string assistantReply,
@@ -77,7 +85,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         bool emitUnknownAgentNotification = false,
         bool emitBackgroundTerminalWaitNotification = false,
         bool emitMcpStartupStatus = false,
-        bool emitProtocolV2Surface = false)
+        bool emitProtocolV2Surface = false,
+        int turnCompletionDelayMs = 0)
     {
         var endpoint = string.Create(CultureInfo.InvariantCulture, $"ws://127.0.0.1:{GetFreePort()}/");
         return new FakeCodexWebSocketServer(
@@ -91,7 +100,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
             emitUnknownAgentNotification,
             emitBackgroundTerminalWaitNotification,
             emitMcpStartupStatus,
-            emitProtocolV2Surface);
+            emitProtocolV2Surface,
+            turnCompletionDelayMs);
     }
 
     public async ValueTask DisposeAsync()
@@ -274,6 +284,12 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                         break;
 
                     case "thread/resume" when id is not null:
+                        LastThreadResumeExcludeTurns =
+                            @params.ValueKind == JsonValueKind.Object &&
+                            @params.TryGetProperty("excludeTurns", out var excludeTurnsElement) &&
+                            excludeTurnsElement.ValueKind is JsonValueKind.True or JsonValueKind.False
+                                ? excludeTurnsElement.GetBoolean()
+                                : null;
                         await SendJsonAsync(socket, new
                         {
                             id,
@@ -330,6 +346,12 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                         break;
 
                     case "turn/start" when id is not null:
+                        LastTurnServiceTier =
+                            @params.ValueKind == JsonValueKind.Object &&
+                            @params.TryGetProperty("serviceTier", out var serviceTierElement) &&
+                            serviceTierElement.ValueKind == JsonValueKind.String
+                                ? serviceTierElement.GetString()
+                                : null;
                         var turnId = "turn-remote-1";
                         var turnText = ReadTurnText(@params) ?? "Continue from the shared thread.";
                         await SendJsonAsync(socket, new
@@ -529,6 +551,11 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }, _shutdown.Token).ConfigureAwait(false);
                         }
+                        if (TurnCompletionDelayMs > 0)
+                        {
+                            await Task.Delay(TurnCompletionDelayMs, _shutdown.Token).ConfigureAwait(false);
+                        }
+
                         await SendJsonAsync(socket, new
                         {
                             method = "item/agentMessage/delta",
@@ -633,6 +660,21 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                             }, _shutdown.Token).ConfigureAwait(false);
                         }
 
+                        break;
+
+                    case "turn/steer" when id is not null:
+                        await SendJsonAsync(socket, new
+                        {
+                            id,
+                            result = new
+                            {
+                                turnId = GetString(@params, "expectedTurnId") ?? "turn-remote-1"
+                            }
+                        }, _shutdown.Token).ConfigureAwait(false);
+                        break;
+
+                    case "thread/compact/start" when id is not null:
+                        await SendJsonAsync(socket, new { id, result = new { } }, _shutdown.Token).ConfigureAwait(false);
                         break;
 
                     case "turn/interrupt" when id is not null:

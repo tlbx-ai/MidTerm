@@ -502,13 +502,21 @@ public sealed class HistoryService : IDisposable
             return null;
         }
 
-        return profile.Trim().ToLowerInvariant() switch
+        var normalized = profile.Trim().ToLowerInvariant();
+        if (string.Equals(normalized, "claude", StringComparison.Ordinal) ||
+            !IsValidAgentControllerProfile(normalized))
         {
-            "codex" => "codex",
-            "claude" => "claude",
-            "grok" => "grok",
-            _ => null
-        };
+            return null;
+        }
+
+        return normalized;
+    }
+
+    private static bool IsValidAgentControllerProfile(string profile)
+    {
+        return profile.Length > 0 &&
+               char.IsAsciiLetterOrDigit(profile[0]) &&
+               profile.All(static ch => char.IsAsciiLetterOrDigit(ch) || ch is '.' or '_' or '-');
     }
 
     private static string? NormalizeLaunchOrigin(string? launchOrigin)
@@ -525,12 +533,12 @@ public sealed class HistoryService : IDisposable
             HistorySurfaceTypes.Codex => HistorySurfaceTypes.Codex,
             HistorySurfaceTypes.Claude => HistorySurfaceTypes.Claude,
             HistorySurfaceTypes.Grok => HistorySurfaceTypes.Grok,
+            HistorySurfaceTypes.Acp => HistorySurfaceTypes.Acp,
             _ => NormalizeLaunchMode(launchMode) == LaunchEntryLaunchModes.AppServerControl
                 ? NormalizeProfile(profile) switch
                 {
-                    "claude" => HistorySurfaceTypes.Claude,
-                    "grok" => HistorySurfaceTypes.Grok,
-                    _ => HistorySurfaceTypes.Codex
+                    "codex" => HistorySurfaceTypes.Codex,
+                    _ => HistorySurfaceTypes.Acp
                 }
                 : HistorySurfaceTypes.Terminal
         };

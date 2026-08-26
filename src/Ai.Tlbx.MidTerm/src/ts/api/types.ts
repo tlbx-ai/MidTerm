@@ -20,6 +20,8 @@ export type Schemas = components['schemas'];
 // API Response Types (re-exported from generated)
 // =============================================================================
 
+export type AgentControllerInstallation = Schemas['AgentControllerInstallationDto'];
+
 // Auth
 export type AuthResponse = Schemas['AuthResponse'];
 export type AuthStatusResponse = Schemas['AuthStatusResponse'];
@@ -132,6 +134,7 @@ export interface AppServerControlQuickSettingsPayload {
   effort?: string | null;
   planMode: string;
   permissionMode: string;
+  fastMode?: string;
   modelOptions?: AppServerControlQuickSettingsOption[];
   effortOptions?: AppServerControlQuickSettingsOption[];
 }
@@ -141,6 +144,7 @@ export interface AppServerControlQuickSettingsSummary {
   effort?: string | null;
   planMode: string;
   permissionMode: string;
+  fastMode?: string;
   modelOptions?: AppServerControlQuickSettingsOption[];
   effortOptions?: AppServerControlQuickSettingsOption[];
 }
@@ -318,6 +322,7 @@ export interface AppServerControlTurnRequest {
   effort?: string | null;
   planMode?: string | null;
   permissionMode?: string | null;
+  fastMode?: string | null;
   attachments: AppServerControlAttachmentReference[];
   terminalReplay?: AppServerControlTerminalReplayStep[];
 }
@@ -408,7 +413,7 @@ export type CreateHistoryRequest = Schemas['CreateHistoryRequest'] & {
   notes?: string | null;
   dedupeKey?: string | null;
   launchOrigin?: string | null;
-  surfaceType?: 'trm' | 'cdx' | 'cld' | 'grk';
+  surfaceType?: 'trm' | 'cdx' | 'cld' | 'grk' | 'acp';
   foregroundProcessName?: string | null;
   foregroundProcessCommandLine?: string | null;
   foregroundProcessDisplayName?: string | null;

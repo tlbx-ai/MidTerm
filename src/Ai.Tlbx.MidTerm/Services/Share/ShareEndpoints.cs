@@ -136,7 +136,6 @@ public static class ShareEndpoints
         shared.DefaultWorkingDirectory = "";
         shared.TerminalEnvironmentVariables = "";
         shared.CodexEnvironmentVariables = "";
-        shared.ClaudeEnvironmentVariables = "";
         shared.RunAsUser = null;
         shared.RunAsUserSid = null;
         shared.AuthenticationEnabled = false;

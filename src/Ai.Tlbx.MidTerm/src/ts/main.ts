@@ -17,6 +17,7 @@ import {
   connectSettingsWebSocket,
   handleStateUpdate,
   setSelectSessionCallback,
+  setTerminalNotificationCallback,
   sendInput,
   requestBufferRefresh,
   updateTerminalVisibility,
@@ -25,11 +26,12 @@ import {
   setSuppressHeatCallback,
   reportBrowserActivity,
 } from './modules/comms';
+import { connectInitialSessionTransports } from './modules/comms/initialMuxConnection';
 import { initBadges } from './modules/badges';
 import {
   preloadTerminalFont,
   initCalibrationTerminal,
-  setShowBellCallback,
+  setShowTerminalNotificationCallback,
   setupResizeObserver,
   setupVisualViewport,
   bindSearchEvents,
@@ -98,12 +100,12 @@ import {
   type LaunchEntry,
 } from './modules/history';
 import { linkAndReplayRemoteBookmark } from './modules/history/remoteBookmarkLaunch';
+import { buildLocalBookmarkLaunchRequest } from './modules/history/bookmarkLaunch';
 import {
   isAppServerControlHistoryEntry,
   normalizeHistoryAppServerControlProfile,
 } from './modules/history/launchMode';
 import { getForegroundInfo, addProcessStateListener } from './modules/process';
-import { buildReplayCommand } from './modules/sidebar/processDisplay';
 import {
   initTouchController,
   dismissTouchController,
@@ -174,6 +176,7 @@ import { createMidtermPerfDebugApi } from './modules/perf/midtermPerfDebug';
 import {
   cacheDOMElements,
   sessionTerminals,
+  hiddenSessionIds,
   dom,
   setFontsReadyPromise,
   newlyCreatedSessions,
@@ -206,6 +209,11 @@ import {
   setSessionNotes,
 } from './api/client';
 import type { ShellType } from './api/types';
+import {
+  buildTerminalNotificationBody,
+  shouldShowDesktopTerminalNotification,
+  type TerminalNotificationSignal,
+} from './modules/terminal/terminalNotifications';
 
 // Create logger for main module
 const log = createLogger('main');
@@ -406,11 +414,13 @@ async function init(): Promise<void> {
   void fontPromise.then(() => initCalibrationTerminal());
 
   registerCallbacks();
+  initSessionTabs();
+  initAgentView();
+  initFileBrowser();
   getOrCreateClientId(); // Ensure mt-client-id cookie exists before WS upgrade
   await initializeTabIdentity();
   bindTerminalVisibilitySync();
-  connectStateWebSocket();
-  connectMuxWebSocket();
+  connectInitialSessionTransports();
   connectSettingsWebSocket();
 
   bindEvents();
@@ -431,9 +441,6 @@ async function init(): Promise<void> {
   initMobilePiP();
   initDevSoftKeyboardSimulator();
   initManagerBar();
-  initSessionTabs();
-  initAgentView();
-  initFileBrowser();
   initGitPanel();
   connectGitWebSocket();
   initCommandsPanel();
@@ -457,7 +464,7 @@ async function init(): Promise<void> {
   // Single bootstrap call replaces: fetchVersion, fetchNetworks, fetchSettings,
   // checkAuthStatus, checkUpdateResult, and checkSystemHealth
   void fetchBootstrap();
-  requestNotificationPermission();
+  bindNotificationPermissionRequest();
   initDiagnosticsPanel();
   bindHubSettings();
 
@@ -497,7 +504,10 @@ async function initShared(): Promise<void> {
   await initializeTabIdentity();
 
   setSelectSessionCallback(selectSession);
-  setShowBellCallback(showBellNotification);
+  setTerminalNotificationCallback(showTerminalNotification);
+  setShowTerminalNotificationCallback((sessionId, signal) => {
+    if (isHubSessionId(sessionId)) showTerminalNotification(sessionId, signal);
+  });
   addProcessStateListener((sessionId, state) => {
     setProcessState(sessionId, { ...state });
   });
@@ -543,12 +553,22 @@ function getVisibleTerminalSessionIds(): string[] {
 function syncMuxTerminalVisibility(): void {
   const activeSessionId = $activeSessionId.get();
   const visibleSessionIds = getVisibleTerminalSessionIds();
-  updateTerminalVisibility(activeSessionId, visibleSessionIds);
-
   const prioritySessionIds = new Set(visibleSessionIds);
   if (activeSessionId && !isHubSessionId(activeSessionId)) {
     prioritySessionIds.add(activeSessionId);
   }
+  const backgroundSessionIds: string[] = [];
+  sessionTerminals.forEach((_state, sessionId) => {
+    if (
+      !isHubSessionId(sessionId) &&
+      !hiddenSessionIds.has(sessionId) &&
+      !prioritySessionIds.has(sessionId)
+    ) {
+      backgroundSessionIds.push(sessionId);
+    }
+  });
+  updateTerminalVisibility(activeSessionId, visibleSessionIds, backgroundSessionIds);
+
   syncWebglSessionPriority([...prioritySessionIds]);
 }
 
@@ -603,7 +623,10 @@ function bindTerminalVisibilitySync(): void {
 
 function registerCallbacks(): void {
   setSelectSessionCallback(selectSession);
-  setShowBellCallback(showBellNotification);
+  setTerminalNotificationCallback(showTerminalNotification);
+  setShowTerminalNotificationCallback((sessionId, signal) => {
+    if (isHubSessionId(sessionId)) showTerminalNotification(sessionId, signal);
+  });
 
   addProcessStateListener((sessionId, state) => {
     setProcessState(sessionId, { ...state });
@@ -971,25 +994,13 @@ async function spawnFromHistory(
     }
   }
 
-  apiCreateSession({
-    cols,
-    rows,
-    shell: entry.shellType || null,
-    workingDirectory: entry.workingDirectory || null,
-  })
+  apiCreateSession(buildLocalBookmarkLaunchRequest(entry, cols, rows))
     .then(({ data }) => {
       if (!data) return;
       setSession(data);
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
       attachBookmarkToSession(data.id, entry.id, entry.label ?? null, entry.notes ?? null);
-
-      if (entry.commandLine) {
-        const replayCmd = buildReplayCommand(entry.executable, entry.commandLine);
-        setTimeout(() => {
-          sendInput(data.id, replayCmd + '\r');
-        }, 100);
-      }
     })
     .catch((e: unknown) => {
       log.error(() => `Failed to spawn from history: ${String(e)}`);
@@ -1049,10 +1060,7 @@ async function resumeAppServerControlConversationFromCommandBay(args: {
     });
 }
 
-function buildAppServerControlHistoryDedupeKey(
-  profile: 'codex' | 'claude' | 'grok',
-  workingDirectory: string,
-): string {
+function buildAppServerControlHistoryDedupeKey(profile: string, workingDirectory: string): string {
   const normalizedPath = workingDirectory
     .replace(/\\/g, '/')
     .trim()
@@ -1072,7 +1080,41 @@ function requestNotificationPermission(): void {
   }
 }
 
-function showBellNotification(sessionId: string): void {
+function bindNotificationPermissionRequest(): void {
+  const bellStyle = document.getElementById('setting-bell-style');
+  if (!(bellStyle instanceof HTMLSelectElement)) return;
+
+  const requestForNotificationStyle = (): void => {
+    if (bellStyle.value === 'notification' || bellStyle.value === 'both') {
+      requestNotificationPermission();
+    }
+  };
+  bellStyle.addEventListener('pointerdown', requestForNotificationStyle);
+  bellStyle.addEventListener('change', requestForNotificationStyle);
+}
+
+function shouldCreateBrowserTerminalNotification(
+  sessionId: string,
+  bellStyle: string,
+  signal: TerminalNotificationSignal,
+): boolean {
+  return (
+    (bellStyle === 'notification' || bellStyle === 'both') &&
+    !signal.nativeHandled &&
+    'Notification' in window &&
+    Notification.permission === 'granted' &&
+    shouldShowDesktopTerminalNotification(
+      {
+        documentHidden: document.hidden,
+        documentFocused: document.hasFocus(),
+        sourceSessionActive: $activeSessionId.get() === sessionId,
+      },
+      signal.force === true,
+    )
+  );
+}
+
+function showTerminalNotification(sessionId: string, signal: TerminalNotificationSignal): void {
   const settings = $currentSettings.get();
   if (!settings) return;
   if (bellNotificationsSuppressed) return;
@@ -1081,36 +1123,46 @@ function showBellNotification(sessionId: string): void {
   const session = getSession(sessionId);
   const title = session ? getSessionDisplayName(session) : 'Terminal';
 
-  if (
-    (bellStyle === 'notification' || bellStyle === 'both') &&
-    Notification.permission === 'granted' &&
-    document.hidden
-  ) {
+  if (shouldCreateBrowserTerminalNotification(sessionId, bellStyle, signal)) {
     // Close existing notification for this session (deduplication)
     const existing = activeNotifications.get(sessionId);
     if (existing) {
       existing.close();
     }
 
-    const notification = new Notification(title, {
-      body: 'Needs your attention',
-      icon: '/favicon.ico',
-      tag: `midterm-bell-${sessionId}`,
-    });
+    let notification: Notification;
+    try {
+      notification = new Notification(title, {
+        body: buildTerminalNotificationBody(signal),
+        icon: '/favicon.ico',
+        tag: `tlbx-terminal-${sessionId}`,
+        requireInteraction: signal.priority === 'important',
+      });
+    } catch {
+      return;
+    }
 
     activeNotifications.set(sessionId, notification);
 
     notification.onclick = () => {
       window.focus();
+      selectSession(sessionId);
       notification.close();
-      activeNotifications.delete(sessionId);
+      if (activeNotifications.get(sessionId) === notification) {
+        activeNotifications.delete(sessionId);
+      }
     };
 
-    // Auto-close after 15 seconds
-    setTimeout(() => {
-      notification.close();
-      activeNotifications.delete(sessionId);
-    }, 15000);
+    if (signal.priority !== 'important') {
+      // Normal notifications are transient. Important browser fallbacks remain
+      // until the user interacts because native urgent delivery was unavailable.
+      setTimeout(() => {
+        notification.close();
+        if (activeNotifications.get(sessionId) === notification) {
+          activeNotifications.delete(sessionId);
+        }
+      }, 15000);
+    }
   }
 
   if (bellStyle === 'visual' || bellStyle === 'both') {

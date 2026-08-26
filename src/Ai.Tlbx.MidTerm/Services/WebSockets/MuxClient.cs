@@ -64,13 +64,16 @@ internal sealed class SharedOutputBuffer
 /// </summary>
 public sealed class MuxClient : IAsyncDisposable
 {
-    private const int FlushThresholdBytes = MuxProtocol.CompressionThreshold;
+    private const int ForegroundFlushThresholdBytes = MuxProtocol.CompressionThreshold;
+    private const int BackgroundFlushThresholdBytes = 64 * 1024;
     private const int MaxBufferBytesPerSession = 256 * 1024; // 256KB per session
     private const int MaxQueuedItems = 1000;
+    private const int InputDrainMaxItemsPerPass = 64;
     private const int MaxFrameChunkBytes = 32 * 1024;
     private const int ActiveFlushMaxChunksPerPass = 8;
     private static readonly TimeSpan ActiveFlushInterval = TimeSpan.FromMilliseconds(12);
-    private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(15);
+    private static readonly TimeSpan VisibleFlushInterval = TimeSpan.FromMilliseconds(15);
+    private static readonly TimeSpan BackgroundFlushInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan SlowSendDegradedThreshold = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan TransportDegradedDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan DegradedLogInterval = TimeSpan.FromSeconds(5);
@@ -100,6 +103,7 @@ public sealed class MuxClient : IAsyncDisposable
     private readonly Func<TerminalResumeModeSetting> _getResumeMode;
     private readonly Action<string, string, ulong, long>? _outputFrameSent;
     private FrozenSet<string> _visibleSessionIds = FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
+    private FrozenSet<string> _backgroundSessionIds = FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
     private long _transportDegradedUntilMs;
     private long _lastDegradedLogAtMs;
     private int _nextRecoveryGeneration;
@@ -374,6 +378,7 @@ public sealed class MuxClient : IAsyncDisposable
     public void SetActiveSession(string? sessionId)
     {
         _activeSessionId = sessionId is not null && CanAccessSession(sessionId) ? sessionId : null;
+        _inputChannel.Writer.TryWrite(OutputItem.WakeProcessor);
     }
 
     public void SetVisibleSessions(HashSet<string> sessionIds)
@@ -381,6 +386,7 @@ public sealed class MuxClient : IAsyncDisposable
         if (sessionIds.Count == 0)
         {
             _visibleSessionIds = FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
+            _inputChannel.Writer.TryWrite(OutputItem.WakeProcessor);
             return;
         }
 
@@ -390,6 +396,25 @@ public sealed class MuxClient : IAsyncDisposable
         _visibleSessionIds = visibleSessions.Length == 0
             ? FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal)
             : FrozenSet.ToFrozenSet(visibleSessions, StringComparer.Ordinal);
+        _inputChannel.Writer.TryWrite(OutputItem.WakeProcessor);
+    }
+
+    public void SetBackgroundSessions(HashSet<string> sessionIds)
+    {
+        if (sessionIds.Count == 0)
+        {
+            _backgroundSessionIds = FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
+            _inputChannel.Writer.TryWrite(OutputItem.WakeProcessor);
+            return;
+        }
+
+        var backgroundSessions = sessionIds
+            .Where(CanAccessSession)
+            .ToArray();
+        _backgroundSessionIds = backgroundSessions.Length == 0
+            ? FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal)
+            : FrozenSet.ToFrozenSet(backgroundSessions, StringComparer.Ordinal);
+        _inputChannel.Writer.TryWrite(OutputItem.WakeProcessor);
     }
 
     internal bool TryGetPausedSession(string sessionId, out PausedSessionOutput paused)
@@ -402,6 +427,17 @@ public sealed class MuxClient : IAsyncDisposable
         foreach (var entry in _pausedSessions)
         {
             if (IsActiveSession(entry.Key) || _visibleSessionIds.Contains(entry.Key))
+            {
+                yield return entry;
+            }
+        }
+    }
+
+    internal IEnumerable<KeyValuePair<string, PausedSessionOutput>> GetBackgroundPausedSessions()
+    {
+        foreach (var entry in _pausedSessions)
+        {
+            if (_backgroundSessionIds.Contains(entry.Key))
             {
                 yield return entry;
             }
@@ -658,10 +694,13 @@ public sealed class MuxClient : IAsyncDisposable
                     }
                 }
 
-                // 2. Drain all immediately available items into buffers
-                while (reader.TryRead(out var item))
+                // 2. Bound queue work so a continuously replenished background
+                // stream cannot indefinitely postpone an active-session flush.
+                var drainedItems = 0;
+                while (drainedItems < InputDrainMaxItemsPerPass && reader.TryRead(out var item))
                 {
                     BufferOutput(item);
+                    drainedItems++;
                 }
 
                 // 3. Flush what's due (active immediately, background if threshold/time)
@@ -787,7 +826,7 @@ public sealed class MuxClient : IAsyncDisposable
         {
             var queuedDelay = Stopwatch.GetElapsedTime(activeBuffer.QueuedAtTicks, nowTicks);
             if (activeBuffer.DroppedBytes > 0
-                || activeBuffer.TotalBytes >= FlushThresholdBytes
+                || activeBuffer.TotalBytes >= ForegroundFlushThresholdBytes
                 || queuedDelay >= ActiveFlushInterval)
             {
                 if (activeBuffer.TotalBytes > 0)
@@ -804,12 +843,14 @@ public sealed class MuxClient : IAsyncDisposable
             }
         }
 
-        // Background sessions: flush if size threshold OR time elapsed
+        // Non-active sessions are split into visible panes and low-frequency
+        // hidden terminal ingest. xterm parses hidden batches while its own
+        // IntersectionObserver keeps renderer refreshes paused.
         foreach (var (sessionId, buffer) in _sessionBuffers)
         {
             if ((buffer.TotalBytes == 0 && buffer.DroppedBytes == 0) || sessionId == activeId) continue;
             if (_activeRecoveries.ContainsKey(sessionId)) continue;
-            if (IsTransportDegradedAt(Environment.TickCount64) && !ShouldDeliverSession(sessionId))
+            if (!ShouldDeliverSession(sessionId))
             {
                 PauseSessionOutput(sessionId, buffer.LastSequenceEndExclusive, buffer.TotalBytes);
                 buffer.Reset();
@@ -818,10 +859,13 @@ public sealed class MuxClient : IAsyncDisposable
                 continue;
             }
 
+            var isVisible = _visibleSessionIds.Contains(sessionId);
+            var flushInterval = isVisible ? VisibleFlushInterval : BackgroundFlushInterval;
+            var flushThreshold = isVisible ? ForegroundFlushThresholdBytes : BackgroundFlushThresholdBytes;
             var elapsed = Stopwatch.GetElapsedTime(buffer.LastFlushTicks, nowTicks);
             if (buffer.DroppedBytes > 0
-                || buffer.TotalBytes >= FlushThresholdBytes
-                || elapsed >= FlushInterval)
+                || buffer.TotalBytes >= flushThreshold
+                || elapsed >= flushInterval)
             {
                 if (buffer.TotalBytes > 0)
                 {
@@ -861,7 +905,8 @@ public sealed class MuxClient : IAsyncDisposable
 
             var remaining = string.Equals(sessionId, activeId, StringComparison.Ordinal)
                 ? ActiveFlushInterval - Stopwatch.GetElapsedTime(buffer.QueuedAtTicks, nowTicks)
-                : FlushInterval - Stopwatch.GetElapsedTime(buffer.LastFlushTicks, nowTicks);
+                : (_visibleSessionIds.Contains(sessionId) ? VisibleFlushInterval : BackgroundFlushInterval)
+                    - Stopwatch.GetElapsedTime(buffer.LastFlushTicks, nowTicks);
             if (remaining <= TimeSpan.Zero)
             {
                 return TimeSpan.Zero;
@@ -1020,17 +1065,23 @@ public sealed class MuxClient : IAsyncDisposable
             return false;
         }
 
-        if (!IsTransportDegradedAt(Environment.TickCount64))
-        {
-            return true;
-        }
-
         if (IsActiveSession(sessionId) || _visibleSessionIds.Contains(sessionId))
         {
             return true;
         }
 
-        return _activeSessionId is null && _visibleSessionIds.Count == 0;
+        if (_backgroundSessionIds.Contains(sessionId))
+        {
+            return !IsTransportDegraded;
+        }
+
+        // Before browser visibility hints arrive, preserve the compatibility
+        // behavior and deliver every accessible session. Once a browser names
+        // an active, visible, or background terminal, unmounted sessions stay
+        // live in mthost but their bytes are held at the last delivered cursor.
+        return _activeSessionId is null
+            && _visibleSessionIds.Count == 0
+            && _backgroundSessionIds.Count == 0;
     }
 
     public bool IsActiveSession(string sessionId)
@@ -1038,6 +1089,8 @@ public sealed class MuxClient : IAsyncDisposable
         var activeId = _activeSessionId;
         return activeId is not null && string.Equals(activeId, sessionId, StringComparison.Ordinal);
     }
+
+    internal string? ActiveSessionId => _activeSessionId;
 
     public bool ShouldUseQuickResume()
     {

@@ -1712,7 +1712,7 @@
                           min="500"
                           max="10000"
                           step="500"
-                          value="2000"
+                          value="10000"
                         />
                         <button type="button" class="inline-save-btn" title="Save">
                           <span class="icon">&#xe90f;</span>
@@ -1787,6 +1787,28 @@
                         <option value="off" data-i18n="settings.options.bellOff">Off</option>
                       </select>
                     </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-notification-priority"
+                        data-i18n="settings.behavior.notificationPriority"
+                        >Notification Priority</label
+                      >
+                      <select id="setting-notification-priority">
+                        <option value="normal" data-i18n="settings.options.notificationPriorityNormal">
+                          Normal
+                        </option>
+                        <option
+                          value="important"
+                          data-i18n="settings.options.notificationPriorityImportant"
+                        >
+                          Important
+                        </option>
+                      </select>
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.notificationPriorityHint">
+                      Important uses native Windows urgent notifications to request delivery through
+                      Do Not Disturb. Windows remains in control and asks for permission.
+                    </p>
                     <div class="setting-row">
                       <label for="setting-copy-on-select" data-i18n="settings.behavior.copyOnSelect"
                         >Copy on Select</label
@@ -1962,33 +1984,6 @@
                     </div>
                   </div>
 
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.aiAgents.claudeDefaults">Claude Defaults</h3>
-                    <div class="setting-row">
-                      <label
-                        for="setting-claude-dangerously-skip-permissions-default"
-                        data-i18n="settings.agentUi.claudeDangerouslySkipPermissionsDefault"
-                        >Enable Claude --dangerously-skip-permissions by default</label
-                      >
-                      <input
-                        type="checkbox"
-                        id="setting-claude-dangerously-skip-permissions-default"
-                      />
-                    </div>
-                    <div class="setting-row setting-row-stack">
-                      <label for="setting-claude-env" data-i18n="settings.agentUi.claudeEnv"
-                        >Claude Environment Variables</label
-                      >
-                      <textarea
-                        id="setting-claude-env"
-                        class="settings-textarea"
-                        rows="5"
-                        spellcheck="false"
-                        data-i18n-placeholder="settings.agentUi.agentEnvHint"
-                        placeholder="KEY=value"
-                      ></textarea>
-                    </div>
-                  </div>
                 </section>
 
                 <section class="settings-panel hidden" data-panel="workflow">

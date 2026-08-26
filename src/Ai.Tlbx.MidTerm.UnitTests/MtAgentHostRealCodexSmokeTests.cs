@@ -51,11 +51,17 @@ public sealed class MtAgentHostRealCodexSmokeTests
             var attachResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-real");
             Assert.Equal("accepted", attachResult.Status);
 
-            _ = await WaitForReadyWindowAsync(
+            var readyWindow = await WaitForReadyWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
                 "session-real-codex");
+            var selectedModel = readyWindow.QuickSettings.Model;
+            Assert.False(string.IsNullOrWhiteSpace(selectedModel));
+            Assert.Contains(
+                readyWindow.QuickSettings.ModelOptions,
+                option => option.IsDefault && string.Equals(option.Value, selectedModel, StringComparison.OrdinalIgnoreCase));
+            Assert.Equal("medium", readyWindow.QuickSettings.Effort);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -64,7 +70,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 Type = "turn.start",
                 StartTurn = new AppServerControlTurnRequest
                 {
-                    Text = $"Reply with exactly {marker} and nothing else.",
+                    Text = $"Reply with exactly {marker}:<selected-model> and nothing else. Replace <selected-model> with the model selected for this turn in the authoritative tlbx runtime context.",
                     Attachments = []
                 }
             });
@@ -79,7 +85,12 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 pendingPatches,
                 "session-real-codex",
                 "completed");
-            Assert.Contains(marker, AppServerControlHostTestClient.CollectAssistantText(turnWindow), StringComparison.Ordinal);
+            Assert.Equal(selectedModel, turnWindow.CurrentTurn.Model);
+            Assert.Equal("medium", turnWindow.CurrentTurn.Effort);
+            Assert.Contains(
+                $"{marker}:{selectedModel}",
+                AppServerControlHostTestClient.CollectAssistantText(turnWindow),
+                StringComparison.OrdinalIgnoreCase);
             Assert.True(
                 turnWindow.History.Any(item => item.Streaming || item.ItemType is not null),
                 "Expected canonical history items in the completed real Codex turn.");

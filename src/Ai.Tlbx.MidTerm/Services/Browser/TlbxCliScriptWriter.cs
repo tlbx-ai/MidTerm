@@ -176,6 +176,38 @@ public static class TlbxCliScriptWriter
           esac
         }
 
+        _M_CLEAN_RUNS() {
+          local runs_root="$1" run_dir run_pid run_size_kib
+          local max_completed_runs=100 max_completed_kib=1048576 completed_count=0 completed_kib=0
+          [ -d "$runs_root" ] || return 0
+          while IFS= read -r -d '' run_dir; do
+            run_pid=""
+            [ -f "$run_dir/pid" ] && IFS= read -r run_pid <"$run_dir/pid"
+            if [[ "$run_pid" =~ ^[0-9]+$ ]] && kill -0 "$run_pid" 2>/dev/null; then
+              continue
+            fi
+            if [ -n "$(find "$run_dir" -maxdepth 0 -mtime +14 -print -quit 2>/dev/null)" ]; then
+              rm -rf -- "$run_dir"
+            fi
+          done < <(find "$runs_root" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+
+          while IFS= read -r run_dir; do
+            [ -n "$run_dir" ] || continue
+            run_pid=""
+            [ -f "$run_dir/pid" ] && IFS= read -r run_pid <"$run_dir/pid"
+            if [[ "$run_pid" =~ ^[0-9]+$ ]] && kill -0 "$run_pid" 2>/dev/null; then
+              continue
+            fi
+            completed_count=$((completed_count + 1))
+            run_size_kib="$(du -sk "$run_dir" 2>/dev/null | awk '{print $1}')"
+            [[ "$run_size_kib" =~ ^[0-9]+$ ]] || run_size_kib=0
+            completed_kib=$((completed_kib + run_size_kib))
+            if [ "$completed_count" -gt "$max_completed_runs" ] || [ "$completed_kib" -gt "$max_completed_kib" ]; then
+              rm -rf -- "$run_dir"
+            fi
+          done < <(find "$runs_root" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort -r)
+        }
+
         # mt_run_isolated EXECUTABLE [ARG ...]  — start a non-interactive child without inheriting terminal stdio
         mt_run_isolated() {
           if [ $# -lt 1 ] || [ -z "${1:-}" ]; then
@@ -195,6 +227,7 @@ public static class TlbxCliScriptWriter
 
           local runs_root="$_MTDIR/runs" run_dir run_id stdout_path stderr_path pid
           mkdir -p -- "$runs_root" || return $?
+          _M_CLEAN_RUNS "$runs_root"
           run_dir="$(mktemp -d "$runs_root/$(date -u +%Y%m%dT%H%M%SZ)-XXXXXXXX")" || return $?
           run_id="${run_dir##*/}"
           stdout_path="$run_dir/stdout.log"
@@ -203,6 +236,7 @@ public static class TlbxCliScriptWriter
 
           (exec nohup "$executable" "$@") </dev/null >>"$stdout_path" 2>>"$stderr_path" &
           pid=$!
+          (umask 077; printf '%s\n' "$pid" >"$run_dir/pid")
           disown "$pid" 2>/dev/null || true
           printf '{"pid":%s,"runId":"%s","stdoutPath":"%s","stderrPath":"%s"}\n' \
             "$pid" "$(_MJSONESC "$run_id")" "$(_MJSONESC "$stdout_path")" "$(_MJSONESC "$stderr_path")"
@@ -255,6 +289,22 @@ public static class TlbxCliScriptWriter
             selector="window"
           fi
           if [ -n "$dx" ]; then _MBB scroll "$selector" "$value" "$dx"; else _MBB scroll "$selector" "$value"; fi
+        }
+        # mt_wheel [SELECTOR] [up|down|DELTA_Y] [STEPS]  — send wheel events and report measured scroll progress
+        mt_wheel() {
+          local selector="${1:-window}" direction="${2:-down}" steps="${3:-1}"
+          if [[ "$selector" =~ ^(up|down|-?[0-9]+([.][0-9]+)?)$ ]]; then
+            steps="${2:-1}"
+            direction="$selector"
+            selector="window"
+          fi
+          _MBB wheel "$selector" "$direction" "$steps"
+        }
+        # mt_agent_wheel [up|down|DELTA_Y] [STEPS] [SESSION_ID]  — wheel the visible ACP history and return measured position
+        mt_agent_wheel() {
+          local direction="${1:-down}" steps="${2:-1}" sid="${3:-$(_MSID)}" delta="120"
+          if [ "$direction" = "up" ]; then delta="-120"; elif [ "$direction" != "down" ]; then delta="$direction"; fi
+          _MJR -d "{\"sessionId\":\"$(_ME "$sid")\",\"deltaY\":$delta,\"steps\":$steps}" "$_MT/api/browser/agent-wheel"
         }
         # mt_submit [FORM_SELECTOR]  — submit form via JS (default: first form)
         mt_submit()  { local s="${1:-form}"; _MBB submit "$s"; }
@@ -400,21 +450,32 @@ public static class TlbxCliScriptWriter
         # mt_apply_update [SOURCE]  — apply pending update and wait for server to return
         mt_apply_update() {
           local source="${1:-}" url="$_MT/api/update/apply"
+          local target=""
           if [ -n "$source" ]; then
             url="$url?source=$(_ME "$source")"
+          else
+            target=$(_MC "$_MT/api/update/check" 2>/dev/null | sed -n 's/.*"latestVersion":"\([^"]*\)".*/\1/p')
+          fi
+          if [ -n "${MT_SESSION_ID:-}" ]; then
+            case "$url" in
+              *\?*) url="$url&detached=true" ;;
+              *) url="$url?detached=true" ;;
+            esac
           fi
           _MC -X POST "$url" || return $?
           sleep 3
           local i version
           for ((i=0; i<90; i++)); do
-            version=$(_MCURL -sfk "$_MT/api/version" 2>/dev/null) && break
+            version=$(_MCURL -sfk "$_MT/api/version" 2>/dev/null) || version=""
+            version=${version#\"}; version=${version%\"}
+            if [ -n "$version" ] && { [ -z "$target" ] || [ "$version" = "$target" ]; }; then
+              printf 'Current version: %s\n' "$version"
+              return 0
+            fi
             sleep 1
           done
-          if [ -n "$version" ]; then
-            printf 'Current version: %s\n' "$version"
-          else
-            echo "Update triggered. Server restart still in progress."
-          fi
+          echo "Update did not reach expected version ${target:-unknown}; current version: ${version:-unreachable}." >&2
+          return 1
         }
 
         # Session management
@@ -670,6 +731,28 @@ public static class TlbxCliScriptWriter
           [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
           _MC -X POST "$_MT/api/sessions/$sid/inject-guidance"
         }
+        # mt_notify [--title TITLE] [--priority normal|important] [--session SESSION_ID] TEXT...
+        mt_notify() {
+          local title="tlbx" priority="" sid="" body priority_json=""
+          while [ $# -gt 0 ]; do
+            case "$1" in
+              --title) [ $# -ge 2 ] || { echo "--title requires a value." >&2; return 1; }; title="$2"; shift 2 ;;
+              --priority) [ $# -ge 2 ] || { echo "--priority requires a value." >&2; return 1; }; priority="$2"; shift 2 ;;
+              --session) [ $# -ge 2 ] || { echo "--session requires a value." >&2; return 1; }; sid="$2"; shift 2 ;;
+              --) shift; break ;;
+              *) break ;;
+            esac
+          done
+          body="$*"
+          [ -n "$sid" ] || sid="$(_MSID)"
+          [ -n "$sid" ] || { echo "Session id required. Use --session or mt_context." >&2; return 1; }
+          [ -n "$body" ] || { echo "Notification text required." >&2; return 1; }
+          if [ -n "$priority" ]; then
+            case "$priority" in normal|important) ;; *) echo "--priority must be normal or important." >&2; return 1 ;; esac
+            priority_json=",\"priority\":\"$priority\""
+          fi
+          _MJ -d "{\"sessionId\":\"$(_MJE "$sid")\",\"title\":\"$(_MJE "$title")\",\"body\":\"$(_MJE "$body")\"$priority_json}" "$_MT/api/notifications"
+        }
         # mt_activity [SESSION_ID] [SECONDS] [BELL_LIMIT]  — output heatmap + bell history as JSON
         mt_activity() {
           local sid seconds bells
@@ -856,6 +939,56 @@ public static class TlbxCliScriptWriter
           body+='}'
           _MJ -d "$body" "$_MT/api/workers/bootstrap"
         }
+        # mt_acp_new NAME CWD [PROFILE]  — create a native Agent Controller session
+        mt_acp_new() {
+          [ $# -ge 2 ] || { echo "Usage: mt_acp_new NAME CWD [PROFILE]" >&2; return 1; }
+          local name="$1" cwd="$2" profile="${3:-codex}"
+          local body="{\"name\":\"$(_MJE "$name")\",\"workingDirectory\":\"$(_MJE "$cwd")\",\"profile\":\"$(_MJE "$profile")\",\"agentControlled\":true,\"injectGuidance\":true,\"appServerControlOnly\":true}"
+          _MJ -d "$body" "$_MT/api/workers/bootstrap"
+        }
+        # mt_acp_history [SESSION_ID] [START_INDEX] [COUNT] [VIEWPORT_WIDTH]
+        mt_acp_history() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then sid="$1"; shift; else sid="$(_MSID)"; fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          local start="${1:-}" count="${2:-}" width="${3:-}"
+          local query="?"
+          [ -n "$start" ] && query+="startIndex=$start&"
+          [ -n "$count" ] && query+="count=$count&"
+          [ -n "$width" ] && query+="viewportWidth=$width&"
+          _MC "$_MT/api/sessions/$sid/agent-control/history$query"
+        }
+        # mt_acp_turn [SESSION_ID] TEXT  — submit a structured turn; configure with MT_ACP_MODEL/EFFORT/PLAN_MODE/PERMISSION_MODE
+        mt_acp_turn() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then sid="$1"; shift; else sid="$(_MSID)"; fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -gt 0 ] || { echo "Text required." >&2; return 1; }
+          local body="{\"text\":\"$(_MJE "$*")\",\"model\":\"$(_MJE "${MT_ACP_MODEL:-}")\",\"effort\":\"$(_MJE "${MT_ACP_EFFORT:-}")\",\"planMode\":\"$(_MJE "${MT_ACP_PLAN_MODE:-}")\",\"permissionMode\":\"$(_MJE "${MT_ACP_PERMISSION_MODE:-}")\"}"
+          _MJ -d "$body" "$_MT/api/sessions/$sid/agent-control/turn"
+        }
+        # mt_acp_interrupt [SESSION_ID] [TURN_ID]
+        mt_acp_interrupt() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then sid="$1"; shift; else sid="$(_MSID)"; fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MJ -d "{\"turnId\":\"$(_MJE "${1:-}")\"}" "$_MT/api/sessions/$sid/agent-control/interrupt"
+        }
+        # mt_acp_steer [SESSION_ID] EXPECTED_TURN_ID TEXT
+        mt_acp_steer() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then sid="$1"; shift; else sid="$(_MSID)"; fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -ge 2 ] || { echo "Expected turn id and text required." >&2; return 1; }
+          local turn_id="$1"; shift
+          _MJ -d "{\"expectedTurnId\":\"$(_MJE "$turn_id")\",\"text\":\"$(_MJE "$*")\"}" "$_MT/api/sessions/$sid/agent-control/steer"
+        }
+        # mt_acp_compact [SESSION_ID]
+        mt_acp_compact() {
+          local sid="${1:-$(_MSID)}"
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MJ -d '{}' "$_MT/api/sessions/$sid/agent-control/compact"
+        }
         # mt_new_session [SHELL] [CWD]  — create a new terminal session, returns JSON with session id
         mt_new_session() {
           local shell="${1:-}" cwd="${2:-}"
@@ -924,19 +1057,33 @@ public static class TlbxCliScriptWriter
         $script:_MK = "mm-session={{token}}"
 
         function script:_MC {
-            if ($env:MT_API_KEY) {
-                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @args
+            $output = if ($env:MT_API_KEY) {
+                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @args 2>&1
             } else {
-                & curl.exe --fail-with-body -sSk -b $script:_MK @args
+                & curl.exe --fail-with-body -sSk -b $script:_MK @args 2>&1
             }
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) {
+                $detail = ($output | Out-String).Trim()
+                if ($detail) { throw "tlbx API request failed (curl exit $exitCode): $detail" }
+                throw "tlbx API request failed (curl exit $exitCode)."
+            }
+            $output
         }
         function script:_MJ { _MC -X POST -H "Content-Type: application/json" @args }
         function script:_MBR {
-            if ($env:MT_API_KEY) {
-                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @args
+            $output = if ($env:MT_API_KEY) {
+                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @args 2>&1
             } else {
-                & curl.exe --fail-with-body -sSk -b $script:_MK @args
+                & curl.exe --fail-with-body -sSk -b $script:_MK @args 2>&1
             }
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) {
+                $detail = ($output | Out-String).Trim()
+                if ($detail) { throw "tlbx API request failed (curl exit $exitCode): $detail" }
+                throw "tlbx API request failed (curl exit $exitCode)."
+            }
+            $output
         }
         function script:_MJR { _MBR -X POST -H "Content-Type: application/json" @args }
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
@@ -1157,6 +1304,51 @@ public static class TlbxCliScriptWriter
             }
         }
 
+        function _MCleanRuns {
+            param([string]$RunsRoot)
+            if (-not (Test-Path -LiteralPath $RunsRoot -PathType Container)) {
+                return
+            }
+
+            $cutoff = [DateTime]::UtcNow.AddDays(-14)
+            foreach ($runDirectory in Get-ChildItem -LiteralPath $RunsRoot -Directory -ErrorAction SilentlyContinue) {
+                $runPid = 0
+                $pidPath = Join-Path $runDirectory.FullName "pid"
+                if (Test-Path -LiteralPath $pidPath -PathType Leaf) {
+                    [void][int]::TryParse((Get-Content -LiteralPath $pidPath -Raw).Trim(), [ref]$runPid)
+                }
+                if ($runPid -gt 0 -and (Get-Process -Id $runPid -ErrorAction SilentlyContinue)) {
+                    continue
+                }
+                if ($runDirectory.LastWriteTimeUtc -lt $cutoff) {
+                    Remove-Item -LiteralPath $runDirectory.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+
+            $maxCompletedRuns = 100
+            $maxCompletedBytes = 1GB
+            $completedCount = 0
+            [long]$completedBytes = 0
+            foreach ($runDirectory in Get-ChildItem -LiteralPath $RunsRoot -Directory -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTimeUtc -Descending) {
+                $runPid = 0
+                $pidPath = Join-Path $runDirectory.FullName "pid"
+                if (Test-Path -LiteralPath $pidPath -PathType Leaf) {
+                    [void][int]::TryParse((Get-Content -LiteralPath $pidPath -Raw).Trim(), [ref]$runPid)
+                }
+                if ($runPid -gt 0 -and (Get-Process -Id $runPid -ErrorAction SilentlyContinue)) {
+                    continue
+                }
+
+                $completedCount++
+                $completedBytes += [long](Get-ChildItem -LiteralPath $runDirectory.FullName -File -Recurse -ErrorAction SilentlyContinue |
+                    Measure-Object Length -Sum).Sum
+                if ($completedCount -gt $maxCompletedRuns -or $completedBytes -gt $maxCompletedBytes) {
+                    Remove-Item -LiteralPath $runDirectory.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+
         # Mt-RunIsolated EXECUTABLE [ARG ...]  — start a non-interactive child without inheriting terminal stdio
         function Mt-RunIsolated {
             [CmdletBinding()]
@@ -1178,6 +1370,7 @@ public static class TlbxCliScriptWriter
             }
 
             $runsRoot = Join-Path $PSScriptRoot "runs"
+            _MCleanRuns $runsRoot
             $runId = "{0:yyyyMMddTHHmmssfffZ}-{1}" -f [DateTime]::UtcNow, ([Guid]::NewGuid().ToString("N").Substring(0, 8))
             $runDirectory = Join-Path $runsRoot $runId
             $stdoutPath = Join-Path $runDirectory "stdout.log"
@@ -1204,6 +1397,7 @@ public static class TlbxCliScriptWriter
 
             try {
                 $process = Start-Process @startParameters
+                [IO.File]::WriteAllText((Join-Path $runDirectory "pid"), "$($process.Id)`n")
             } catch {
                 Remove-Item -LiteralPath $runDirectory -Recurse -Force -ErrorAction SilentlyContinue
                 throw
@@ -1268,6 +1462,22 @@ public static class TlbxCliScriptWriter
                 "$($DeltaY.ToString([System.Globalization.CultureInfo]::InvariantCulture)) $($DeltaX.ToString([System.Globalization.CultureInfo]::InvariantCulture))"
             }
             _MBB scroll $Selector $value
+        }
+        # Mt-Wheel [-Selector CSS_SELECTOR] [-Direction up|down|DELTA_Y] [-Steps N]  — send wheel events and report measured scroll progress
+        function Mt-Wheel {
+            param([string]$Selector = "window", [string]$Direction = "down", [int]$Steps = 1)
+            if ($Selector -match '^(up|down|-?[0-9]+([.][0-9]+)?)$') {
+                $Steps = if ($Direction -match '^\d+$') { [int]$Direction } else { $Steps }
+                $Direction = $Selector
+                $Selector = "window"
+            }
+            _MBB wheel $Selector $Direction $Steps
+        }
+        # Mt-AgentWheel [-Direction up|down|DELTA_Y] [-Steps N] [-SessionId ID]  — wheel the visible ACP history and return measured position
+        function Mt-AgentWheel {
+            param([string]$Direction = "down", [int]$Steps = 1, [string]$SessionId = (_MSID))
+            $delta = if ($Direction -eq "up") { -120 } elseif ($Direction -eq "down") { 120 } else { [double]::Parse($Direction, [System.Globalization.CultureInfo]::InvariantCulture) }
+            _MJR -d (_MH @{sessionId=$SessionId; deltaY=$delta; steps=$Steps}) "$script:_MT/api/browser/agent-wheel"
         }
         # Mt-Submit [-Selector FORM_SELECTOR]  — submit form via JS (default: first form)
         function Mt-Submit  { param([string]$Selector = "form") _MBB submit $Selector }
@@ -1404,20 +1614,36 @@ public static class TlbxCliScriptWriter
         function Mt-ApplyUpdate {
             param([string]$Source)
             $url = "$script:_MT/api/update/apply"
+            $targetVersion = $null
             if ($Source) {
                 $url += "?source=$([Uri]::EscapeDataString($Source))"
             }
+            else {
+                try {
+                    $update = (_MC "$script:_MT/api/update/check") | ConvertFrom-Json
+                    $targetVersion = $update.latestVersion
+                }
+                catch {}
+            }
+            if ($env:MT_SESSION_ID) {
+                $separator = if ($url.Contains('?')) { '&' } else { '?' }
+                $url += "${separator}detached=true"
+            }
             _MC -X POST $url
             Start-Sleep -Seconds 3
+            $currentVersion = $null
             for ($i = 0; $i -lt 90; $i++) {
                 $version = & curl.exe -sfk "$script:_MT/api/version" 2>$null
                 if ($LASTEXITCODE -eq 0 -and $version) {
-                    Write-Output "Current version: $version"
-                    return
+                    $currentVersion = $version.Trim().Trim('"')
+                    if (-not $targetVersion -or $currentVersion -eq $targetVersion) {
+                        Write-Output "Current version: $currentVersion"
+                        return
+                    }
                 }
                 Start-Sleep -Seconds 1
             }
-            Write-Output "Update triggered. Server restart still in progress."
+            Write-Error "Update did not reach expected version $($targetVersion ?? 'unknown'); current version: $($currentVersion ?? 'unreachable')."
         }
 
         # Session management
@@ -1658,6 +1884,20 @@ public static class TlbxCliScriptWriter
             if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
             _MC -X POST "$script:_MT/api/sessions/$($resolved.SessionId)/inject-guidance"
         }
+        # Mt-Notify [-Message] TEXT [-Title TITLE] [-Priority normal|important] [-SessionId SESSION_ID]
+        function Mt-Notify {
+            param(
+                [Parameter(Mandatory=$true, Position=0)][string]$Message,
+                [string]$Title = "tlbx",
+                [ValidateSet("normal", "important")][string]$Priority,
+                [string]$SessionId
+            )
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required. Use -SessionId or Mt-Context."; return }
+            $body = _MH @{ sessionId=$SessionId; title=$Title; body=$Message }
+            if ($Priority) { $body.priority = $Priority }
+            _MJ -d $body "$script:_MT/api/notifications"
+        }
         # Mt-Activity [SESSION_ID] [SECONDS] [BELL_LIMIT]  — output heatmap + bell history as JSON
         function Mt-Activity {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
@@ -1870,6 +2110,73 @@ public static class TlbxCliScriptWriter
                 slashCommands = $SlashCommands
             }) "$script:_MT/api/workers/bootstrap"
         }
+        # Mt-AcpNew -Name NAME -Cwd PATH [-Profile PROFILE]  — create a native Agent Controller session
+        function Mt-AcpNew {
+            param(
+                [Parameter(Mandatory=$true)][string]$Name,
+                [Parameter(Mandatory=$true)][string]$Cwd,
+                [string]$Profile = "codex"
+            )
+            _MJ -d (_MH @{
+                name = $Name
+                workingDirectory = $Cwd
+                profile = $Profile
+                agentControlled = $true
+                injectGuidance = $true
+                appServerControlOnly = $true
+            }) "$script:_MT/api/workers/bootstrap"
+        }
+        # Mt-AcpHistory [-SessionId ID] [-StartIndex N] [-Count N] [-ViewportWidth N]
+        function Mt-AcpHistory {
+            param([string]$SessionId, [int]$StartIndex = -1, [int]$Count = -1, [int]$ViewportWidth = -1)
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            $query = [System.Web.HttpUtility]::ParseQueryString('')
+            if ($StartIndex -ge 0) { $query['startIndex'] = $StartIndex }
+            if ($Count -gt 0) { $query['count'] = $Count }
+            if ($ViewportWidth -gt 0) { $query['viewportWidth'] = $ViewportWidth }
+            $suffix = if ($query.Count -gt 0) { "?$($query.ToString())" } else { '' }
+            _MC "$script:_MT/api/sessions/$SessionId/agent-control/history$suffix"
+        }
+        # Mt-AcpTurn TEXT [-SessionId ID] [-Model MODEL] [-Effort LEVEL] [-PlanMode MODE] [-PermissionMode MODE]
+        function Mt-AcpTurn {
+            param(
+                [Parameter(Mandatory=$true, Position=0)][string]$Text,
+                [string]$SessionId,
+                [string]$Model = $env:MT_ACP_MODEL,
+                [string]$Effort = $env:MT_ACP_EFFORT,
+                [string]$PlanMode = $env:MT_ACP_PLAN_MODE,
+                [string]$PermissionMode = $env:MT_ACP_PERMISSION_MODE
+            )
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            _MJ -d (_MH @{ text=$Text; model=$Model; effort=$Effort; planMode=$PlanMode; permissionMode=$PermissionMode }) "$script:_MT/api/sessions/$SessionId/agent-control/turn"
+        }
+        # Mt-AcpInterrupt [-SessionId ID] [-TurnId ID]
+        function Mt-AcpInterrupt {
+            param([string]$SessionId, [string]$TurnId)
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            _MJ -d (_MH @{ turnId=$TurnId }) "$script:_MT/api/sessions/$SessionId/agent-control/interrupt"
+        }
+        # Mt-AcpSteer -ExpectedTurnId ID -Text TEXT [-SessionId ID]
+        function Mt-AcpSteer {
+            param(
+                [Parameter(Mandatory=$true)][string]$ExpectedTurnId,
+                [Parameter(Mandatory=$true)][string]$Text,
+                [string]$SessionId
+            )
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            _MJ -d (_MH @{ expectedTurnId=$ExpectedTurnId; text=$Text }) "$script:_MT/api/sessions/$SessionId/agent-control/steer"
+        }
+        # Mt-AcpCompact [-SessionId ID]
+        function Mt-AcpCompact {
+            param([string]$SessionId)
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            _MJ -d '{}' "$script:_MT/api/sessions/$SessionId/agent-control/compact"
+        }
         # Mt-NewSession [-Shell SHELL] [-Cwd PATH]  — create a new terminal session
         function Mt-NewSession {
             param([string]$Shell, [string]$Cwd)
@@ -1923,6 +2230,8 @@ public static class TlbxCliScriptWriter
         Set-Alias -Name mt_log -Value Mt-Log
         Set-Alias -Name mt_text -Value Mt-Text
         Set-Alias -Name mt_scroll -Value Mt-Scroll
+        Set-Alias -Name mt_wheel -Value Mt-Wheel
+        Set-Alias -Name mt_agent_wheel -Value Mt-AgentWheel
         Set-Alias -Name mt_submit -Value Mt-Submit
         Set-Alias -Name mt_url -Value Mt-Url
         Set-Alias -Name mt_links -Value Mt-Links
@@ -1970,6 +2279,7 @@ public static class TlbxCliScriptWriter
         Set-Alias -Name mt_left -Value Mt-Left
         Set-Alias -Name mt_right -Value Mt-Right
         Set-Alias -Name mt_inject -Value Mt-Inject
+        Set-Alias -Name mt_notify -Value Mt-Notify
         Set-Alias -Name mt_activity -Value Mt-Activity
         Set-Alias -Name mt_attention -Value Mt-Attention
         Set-Alias -Name mt_control_plane -Value Mt-ControlPlane
@@ -1991,6 +2301,12 @@ public static class TlbxCliScriptWriter
         Set-Alias -Name mt_input_history_delete -Value Mt-InputHistoryDelete
         Set-Alias -Name mt_input_history_clear -Value Mt-InputHistoryClear
         Set-Alias -Name mt_bootstrap -Value Mt-Bootstrap
+        Set-Alias -Name mt_acp_new -Value Mt-AcpNew
+        Set-Alias -Name mt_acp_history -Value Mt-AcpHistory
+        Set-Alias -Name mt_acp_turn -Value Mt-AcpTurn
+        Set-Alias -Name mt_acp_interrupt -Value Mt-AcpInterrupt
+        Set-Alias -Name mt_acp_steer -Value Mt-AcpSteer
+        Set-Alias -Name mt_acp_compact -Value Mt-AcpCompact
         Set-Alias -Name mt_new_session -Value Mt-NewSession
         Set-Alias -Name mt_split -Value Mt-Split
         Set-Alias -Name mt_detach -Value Mt-Detach

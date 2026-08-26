@@ -568,9 +568,6 @@ public sealed class SettingsService
         current.CodexYoloDefault = old.CodexYoloDefault;
         current.CodexDefaultAppServerControlModel = old.CodexDefaultAppServerControlModel;
         current.CodexEnvironmentVariables = old.CodexEnvironmentVariables;
-        current.ClaudeDangerouslySkipPermissionsDefault = old.ClaudeDangerouslySkipPermissionsDefault;
-        current.ClaudeDefaultAppServerControlModel = old.ClaudeDefaultAppServerControlModel;
-        current.ClaudeEnvironmentVariables = old.ClaudeEnvironmentVariables;
         current.FontSize = old.FontSize;
         current.FontFamily = old.FontFamily;
         current.CustomGlyphs = old.CustomGlyphs;
@@ -600,6 +597,7 @@ public sealed class SettingsService
         current.ScrollbackLines = old.ScrollbackLines;
         current.ScrollbackBytes = old.ScrollbackBytes;
         current.BellStyle = old.BellStyle;
+        current.NotificationPriority = old.NotificationPriority;
         current.CopyOnSelect = old.CopyOnSelect;
         current.RightClickPaste = old.RightClickPaste;
         current.ClipboardShortcuts = old.ClipboardShortcuts;

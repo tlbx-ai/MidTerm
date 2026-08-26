@@ -32,13 +32,14 @@ export function applyFetchedAppServerControlHistoryWindow(
   sessionId: string,
   state: SessionAppServerControlViewState,
   snapshot: AppServerControlHistorySnapshot,
+  options: { requireRevisionMatch?: boolean } = {},
 ): boolean {
   const currentSnapshot = state.snapshot;
   const windowRevision = snapshot.windowRevision ?? null;
   if (
     state.historyWindowRevision &&
-    windowRevision &&
-    windowRevision !== state.historyWindowRevision
+    ((windowRevision !== null && windowRevision !== state.historyWindowRevision) ||
+      (options.requireRevisionMatch === true && windowRevision === null))
   ) {
     return false;
   }

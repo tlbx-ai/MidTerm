@@ -48,6 +48,7 @@ public static class MuxProtocol
     public const byte TypeInputTraceResult = 0x10; // Server -> Client: sampled input latency trace result
     public const byte TypeRecoveryBegin = 0x11; // Server -> Client: ordered per-session recovery starts
     public const byte TypeRecoveryEnd = 0x12; // Server -> Client: ordered per-session recovery completed
+    public const byte TypeBackgroundSessionsHint = 0x13; // Client -> Server: hidden terminals kept parsed without render priority
 
     // Compression settings
     public const int CompressionChunkSize = 256 * 1024; // Chunk large data before compressing
@@ -428,8 +429,18 @@ public static class MuxProtocol
 
     public static byte[] CreateVisibleSessionsHintFrame(IReadOnlyCollection<string> sessionIds)
     {
+        return CreateSessionIdsHintFrame(TypeVisibleSessionsHint, sessionIds);
+    }
+
+    public static byte[] CreateBackgroundSessionsHintFrame(IReadOnlyCollection<string> sessionIds)
+    {
+        return CreateSessionIdsHintFrame(TypeBackgroundSessionsHint, sessionIds);
+    }
+
+    private static byte[] CreateSessionIdsHintFrame(byte type, IReadOnlyCollection<string> sessionIds)
+    {
         var frame = new byte[HeaderSize + (sessionIds.Count * 8)];
-        frame[0] = TypeVisibleSessionsHint;
+        frame[0] = type;
         var offset = HeaderSize;
         foreach (var sessionId in sessionIds)
         {
@@ -484,6 +495,16 @@ public static class MuxProtocol
     }
 
     public static HashSet<string> ParseVisibleSessionsHintPayload(ReadOnlySpan<byte> payload)
+    {
+        return ParseSessionIdsHintPayload(payload);
+    }
+
+    public static HashSet<string> ParseBackgroundSessionsHintPayload(ReadOnlySpan<byte> payload)
+    {
+        return ParseSessionIdsHintPayload(payload);
+    }
+
+    private static HashSet<string> ParseSessionIdsHintPayload(ReadOnlySpan<byte> payload)
     {
         var sessionIds = new HashSet<string>(StringComparer.Ordinal);
         for (var offset = 0; offset + 8 <= payload.Length; offset += 8)

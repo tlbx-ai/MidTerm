@@ -100,10 +100,13 @@ function resolveGeneralTerminalOptions(
     | 'theme'
     | 'windowsPty'
   > = {
-    cursorBlink: currentSettings?.cursorBlink ?? false,
+    // Enabled once the terminal owns input in a visible, focused browser window.
+    // Starting inactive prevents background-created terminals from spinning a
+    // cursor render loop before they ever receive a DOM blur event.
+    cursorBlink: false,
     cursorStyle: currentSettings?.cursorStyle ?? 'block',
     cursorInactiveStyle: currentSettings?.cursorInactiveStyle ?? 'none',
-    scrollback: currentSettings?.scrollbackLines ?? 2000,
+    scrollback: currentSettings?.scrollbackLines ?? 10000,
     smoothScrollDuration: currentSettings?.smoothScrolling ? 50 : 0,
     allowProposedApi: true,
     allowTransparency: true,

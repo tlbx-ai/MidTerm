@@ -9,6 +9,131 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MtAgentHostCodexIntegrationTests
 {
     [Fact]
+    public async Task MtAgentHost_CanSteerAndCompactFakeCodexThread()
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start(
+            loadedThreadId: "thread-control-1",
+            assistantReply: "Controlled.",
+            turnCompletionDelayMs: 1_500);
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+
+        try
+        {
+            var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Contains("turn.steer", hello.Capabilities);
+            Assert.Contains("thread.compact", hello.Capabilities);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-control",
+                SessionId = "session-control",
+                Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = "session-control",
+                    Provider = "codex",
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    AttachPoint = new SessionAgentAttachPoint
+                    {
+                        Provider = SessionAgentAttachPoint.CodexProvider,
+                        TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                        Endpoint = fakeServer.Endpoint,
+                        SharedRuntime = true,
+                        Source = "test",
+                        PreferredThreadId = "thread-control-1"
+                    },
+                    ResumeThreadId = "thread-control-1"
+                }
+            });
+            Assert.Equal(
+                "accepted",
+                (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput,
+                    pendingPatches,
+                    "cmd-attach-control")).Status);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-control",
+                SessionId = "session-control",
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest
+                {
+                    Text = "Keep this turn open briefly.",
+                    FastMode = AppServerControlQuickSettings.FastModeOn
+                }
+            });
+            var turnResult = await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput,
+                pendingPatches,
+                "cmd-turn-control");
+            Assert.Equal("accepted", turnResult.Status);
+            Assert.True(fakeServer.LastThreadResumeExcludeTurns);
+            Assert.Equal("fast", fakeServer.LastTurnServiceTier);
+            var activeTurnId = Assert.IsType<string>(turnResult.Accepted?.TurnId);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-second-turn-control",
+                SessionId = "session-control",
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest
+                {
+                    Text = "This must not become implicit steering."
+                }
+            });
+            var secondTurnResult = await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput,
+                pendingPatches,
+                "cmd-second-turn-control");
+            Assert.Equal("rejected", secondTurnResult.Status);
+            Assert.Contains("turn.steer", secondTurnResult.Message, StringComparison.Ordinal);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-steer",
+                SessionId = "session-control",
+                Type = "turn.steer",
+                SteerTurn = new AppServerControlSteerRequest
+                {
+                    ExpectedTurnId = activeTurnId,
+                    Text = "Append this instruction."
+                }
+            });
+            var steerResult = await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput,
+                pendingPatches,
+                "cmd-steer");
+            Assert.Equal("accepted", steerResult.Status);
+            Assert.Equal(activeTurnId, steerResult.Accepted?.TurnId);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-compact",
+                SessionId = "session-control",
+                Type = "thread.compact"
+            });
+            Assert.Equal(
+                "accepted",
+                (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput,
+                    pendingPatches,
+                    "cmd-compact")).Status);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
     public async Task MtAgentHost_CanDriveFakeCodexAttachTurnApprovalAndAttachments()
     {
         using var fakeCodex = FakeCodexPathScope.Create();
@@ -110,6 +235,12 @@ public sealed class MtAgentHostCodexIntegrationTests
                 "session-1",
                 "completed");
             Assert.Contains(resolveWindow.Requests, entry => entry.RequestId == request.RequestId && entry.Decision == "accept");
+            var userItem = Assert.Single(resolveWindow.Items, item => item.ItemType == "user_message");
+            Assert.StartsWith("local-user:", userItem.ItemId, StringComparison.Ordinal);
+            Assert.Equal("completed", userItem.Status);
+            Assert.Contains(
+                resolveWindow.History,
+                entry => entry.Kind == "user" && entry.Status == "completed");
         }
         finally
         {
@@ -232,8 +363,10 @@ public sealed class MtAgentHostCodexIntegrationTests
     public async Task MtAgentHost_SpawnsFakeCodexAppServerWithExpectedColdAttachParameters()
     {
         var originalYoloDefault = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT");
+        var originalDefaultModel = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL");
         var originalRemoteCompactionDisabled = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED");
         Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", "false");
+        Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL", null);
         Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED", null);
 
         using var fakeCodex = FakeCodexPathScope.Create();
@@ -262,7 +395,7 @@ public sealed class MtAgentHostCodexIntegrationTests
             var attachResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-cold-launch");
             Assert.Equal("accepted", attachResult.Status);
 
-            _ = await WaitForReadyWindowAsync(
+            var readyWindow = await WaitForReadyWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
@@ -277,6 +410,7 @@ public sealed class MtAgentHostCodexIntegrationTests
             Assert.Equal(fakeCodex.Root, capture.ProcessWorkingDirectory);
             Assert.Contains("initialize", capture.Methods);
             Assert.Contains("initialized", capture.Methods);
+            Assert.Equal(2, capture.Methods.Count(static method => method == "model/list"));
             Assert.Contains("thread/start", capture.Methods);
             Assert.DoesNotContain("thread/resume", capture.Methods);
             Assert.Equal("midterm", capture.InitializeClientName);
@@ -288,6 +422,38 @@ public sealed class MtAgentHostCodexIntegrationTests
             Assert.Equal("workspace-write", capture.ThreadStartSandbox);
             Assert.False(capture.ThreadStartExperimentalRawEvents);
             Assert.False(capture.ThreadStartPersistExtendedHistory);
+            Assert.Contains(
+                readyWindow.QuickSettings.ModelOptions,
+                static option => option.Value == "gpt-5.6-sol");
+            Assert.Equal("gpt-5.6-sol", readyWindow.QuickSettings.Model);
+            Assert.Equal("medium", readyWindow.QuickSettings.Effort);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-provider-default",
+                SessionId = "session-cold-launch",
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest
+                {
+                    Text = "Use the automatic defaults.",
+                    Model = "",
+                    Effort = ""
+                }
+            });
+            Assert.Equal(
+                "accepted",
+                (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput,
+                    pendingPatches,
+                    "cmd-turn-provider-default")).Status);
+
+            capture = await WaitForFakeCodexLaunchCaptureAsync(
+                fakeCodex.CapturePath,
+                static launch => !string.IsNullOrWhiteSpace(launch.TurnStartRuntimeContextValue));
+            Assert.Equal("gpt-5.6-sol", capture.TurnStartModel);
+            Assert.Equal("medium", capture.TurnStartEffort);
+            Assert.Contains("\"selectedModel\":\"gpt-5.6-sol\"", capture.TurnStartRuntimeContextValue, StringComparison.Ordinal);
+            Assert.Contains("\"selectedReasoningEffort\":\"medium\"", capture.TurnStartRuntimeContextValue, StringComparison.Ordinal);
         }
         finally
         {
@@ -299,7 +465,89 @@ public sealed class MtAgentHostCodexIntegrationTests
             _ = await process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
             Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", originalYoloDefault);
+            Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL", originalDefaultModel);
             Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED", originalRemoteCompactionDisabled);
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_SendsSelectedCodexModelAndAuthoritativeRuntimeContextPerTurn()
+    {
+        var originalDefaultModel = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL");
+        Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL", "gpt-5.5");
+
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-model-selection",
+                SessionId = "session-model-selection",
+                Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = "session-model-selection",
+                    Provider = "codex",
+                    WorkingDirectory = fakeCodex.Root
+                }
+            });
+            Assert.Equal(
+                "accepted",
+                (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput,
+                    pendingPatches,
+                    "cmd-attach-model-selection")).Status);
+            _ = await WaitForReadyWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                "session-model-selection");
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-model-selection",
+                SessionId = "session-model-selection",
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest
+                {
+                    Text = "Which model is active?",
+                    Model = "gpt-5.6-sol",
+                    Effort = "medium"
+                }
+            });
+            Assert.Equal(
+                "accepted",
+                (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput,
+                    pendingPatches,
+                    "cmd-turn-model-selection")).Status);
+
+            var capture = await WaitForFakeCodexLaunchCaptureAsync(
+                fakeCodex.CapturePath,
+                static launch => !string.IsNullOrWhiteSpace(launch.TurnStartRuntimeContextValue));
+
+            Assert.Equal("gpt-5.6-sol", capture.TurnStartModel);
+            Assert.Equal("medium", capture.TurnStartEffort);
+            Assert.Equal("application", capture.TurnStartRuntimeContextKind);
+            Assert.Contains("\"selectedModel\":\"gpt-5.6-sol\"", capture.TurnStartRuntimeContextValue, StringComparison.Ordinal);
+            Assert.Contains("\"selectedReasoningEffort\":\"medium\"", capture.TurnStartRuntimeContextValue, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"selectedModel\":\"gpt-5.5\"", capture.TurnStartRuntimeContextValue, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL", originalDefaultModel);
         }
     }
 
@@ -1533,5 +1781,13 @@ public sealed class MtAgentHostCodexIntegrationTests
         public bool? ThreadStartExperimentalRawEvents { get; set; }
 
         public bool? ThreadStartPersistExtendedHistory { get; set; }
+
+        public string? TurnStartModel { get; set; }
+
+        public string? TurnStartEffort { get; set; }
+
+        public string? TurnStartRuntimeContextKind { get; set; }
+
+        public string? TurnStartRuntimeContextValue { get; set; }
     }
 }

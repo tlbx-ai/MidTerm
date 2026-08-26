@@ -49,6 +49,8 @@ $SettingsDir = [System.IO.Path]::GetFullPath($SettingsDir)
 $ReservedPorts = @(2000, 2001)
 $CodeWatchRoot = Join-Path $RepoRoot "src"
 $DebugWebOutputDir = Join-Path $WebProjectDir "bin\Debug\net10.0"
+$DevAgentHostRoot = Join-Path $RepoRoot ".dev\bin\mtagenthost"
+$script:currentAgentHostPath = $null
 
 function Test-StableSupervisor {
     try {
@@ -208,10 +210,20 @@ function Invoke-StaticAssetSync {
 
 function Build-AgentHost {
     Write-Host "  Building local mtagenthost..." -ForegroundColor DarkGray
-    & dotnet build $AgentHostProjectFile -c Debug --nologo
+    $generation = [DateTimeOffset]::UtcNow.ToString("yyyyMMddHHmmssfff")
+    $outputDir = Join-Path $DevAgentHostRoot $generation
+    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+    & dotnet build $AgentHostProjectFile -c Debug --nologo --output $outputDir
     if ($LASTEXITCODE -ne 0) {
         throw "mtagenthost build failed"
     }
+
+    $hostDll = Join-Path $outputDir "mtagenthost.dll"
+    if (-not (Test-Path $hostDll)) {
+        throw "Shadow-built mtagenthost was not found at $hostDll"
+    }
+
+    $script:currentAgentHostPath = $hostDll
 }
 
 function Build-TmuxShim {
@@ -399,7 +411,7 @@ function Stop-StaleSourceServerProcesses {
     }
 }
 
-function Stop-DevProcess($state, [string]$reason) {
+function Stop-DevProcess($state, [string]$reason, [switch]$PreserveChildren) {
     if ($null -eq $state -or $null -eq $state.Process) {
         return
     }
@@ -409,7 +421,19 @@ function Stop-DevProcess($state, [string]$reason) {
         return
     }
 
-    Stop-ProcessTree -ProcessId $process.Id -Reason $reason
+    if (-not $PreserveChildren) {
+        Stop-ProcessTree -ProcessId $process.Id -Reason $reason
+        return
+    }
+
+    Write-Host "  Stopping web process $($process.Id) while preserving session hosts ($reason)..." -ForegroundColor DarkGray
+    try {
+        $process.Kill($false)
+        $process.WaitForExit(10000)
+    }
+    catch {
+        throw "Failed to stop local source tlbx web process $($process.Id): $($_.Exception.Message)"
+    }
 }
 
 function Start-DevServer([string]$resolvedTtyHostPath) {
@@ -432,6 +456,7 @@ function Start-DevServer([string]$resolvedTtyHostPath) {
     $psi.CreateNoWindow = $false
     $psi.Environment["MIDTERM_SETTINGS_DIR"] = $SettingsDir
     $psi.Environment["MIDTERM_TTYHOST_PATH"] = $resolvedTtyHostPath
+    $psi.Environment["MIDTERM_APP_SERVER_CONTROL_AGENTHOST_PATH"] = $script:currentAgentHostPath
     $psi.Environment["MIDTERM_LAUNCH_MODE"] = "source-dev"
     $psi.Environment["MIDTERM_SOURCE_WWWROOT"] = $WebRootDir
 
@@ -498,6 +523,9 @@ Write-Host "  tlbx Local Source Dev" -ForegroundColor Cyan
 Write-Host "  ───────────────────────────────────────────" -ForegroundColor DarkGray
 Write-Host "  Stable service : https://localhost:2000 ($stableVersion, kept alive)" -ForegroundColor DarkGray
 Write-Host "  Source server  : https://$BindAddress`:$Port" -ForegroundColor DarkGray
+if ($BindAddress -eq "127.0.0.1") {
+    Write-Host "  Stable overlay : https://localhost:2000/?devAssets=https://127.0.0.1:$Port" -ForegroundColor DarkGray
+}
 if ($Tailnet) {
     Write-Host "  Exposure       : tailnet only, authentication preflight passed" -ForegroundColor DarkGray
 }
@@ -518,7 +546,11 @@ try {
     $serverState = Start-DevServer -resolvedTtyHostPath $resolvedTtyHostPath
 
     Write-Host ""
-    Write-Host "[4/4] Dev loop active. Open https://$BindAddress`:$Port in the tlbx dev browser." -ForegroundColor Green
+    if ($BindAddress -eq "127.0.0.1") {
+        Write-Host "[4/4] Dev loop active. Open https://localhost:2000/?devAssets=https://127.0.0.1:$Port to keep stable sessions." -ForegroundColor Green
+    } else {
+        Write-Host "[4/4] Dev loop active. Open https://$BindAddress`:$Port in the tlbx dev browser." -ForegroundColor Green
+    }
     Write-Host ""
 
     while ($true) {
@@ -537,7 +569,9 @@ try {
         }
 
         if ($changedPath) {
-            Stop-DevProcess -state $serverState -reason "C# change detected: $changedPath"
+            # mthost and mtagenthost own terminal and Agent Controller continuity.
+            # A source-web rebuild must replace mt only, then let the new mt reconnect.
+            Stop-DevProcess -state $serverState -reason "C# change detected: $changedPath" -PreserveChildren
             Start-Sleep -Milliseconds 300
             $serverState = Start-DevServer -resolvedTtyHostPath $resolvedTtyHostPath
         }

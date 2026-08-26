@@ -80,7 +80,7 @@ public static class Program
             Current scope:
               - stdio JSON transport
               - owned IPC transport for persistent tlbx reconnect
-              - real Codex, Claude, and Grok runtimes
+              - real Codex app-server and standard ACP runtimes
               - synthetic provider mode for protocol/integration testing
             """);
     }

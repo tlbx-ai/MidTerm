@@ -46,9 +46,11 @@ structured agent surface.
 Agent Controller Sessions provide provider-neutral history and timeline
 rendering for supported runtimes, including progressive output, tool activity,
 diffs, approvals, questions, interruption, model and mode controls, and staged
-attachments. The current new-session launcher exposes Codex and Grok Build;
-exact capabilities remain provider- and runtime-dependent. Claude Code remains
-fully usable as a terminal-native CLI without being advertised in that launcher.
+attachments. The new-session launcher detects installed supported runtimes and
+currently recognizes Codex app-server plus standard ACP agents such as Grok
+Build and OpenCode; exact capabilities remain provider- and runtime-dependent.
+Claude Code remains fully usable as a terminal-native CLI without being
+advertised as a structured Agent Controller runtime.
 
 ## Terminal workspace
 

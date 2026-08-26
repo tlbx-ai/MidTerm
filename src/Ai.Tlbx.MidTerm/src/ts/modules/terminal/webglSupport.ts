@@ -9,3 +9,12 @@ export function shouldUseWebglRenderer(
 
   return true;
 }
+
+export function shouldOwnWebglContext(
+  ownershipManaged: boolean,
+  priorityKnown: boolean,
+  hasPriority: boolean,
+): boolean {
+  if (!ownershipManaged) return true;
+  return !priorityKnown || hasPriority;
+}
