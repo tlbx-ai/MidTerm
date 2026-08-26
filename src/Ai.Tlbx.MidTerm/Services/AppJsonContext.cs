@@ -111,6 +111,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(SessionAttentionItem))]
 [JsonSerializable(typeof(List<SessionAttentionItem>))]
 [JsonSerializable(typeof(WorkerBootstrapRequest))]
+[JsonSerializable(typeof(AgentControllerInstallationDto))]
+[JsonSerializable(typeof(List<AgentControllerInstallationDto>))]
 [JsonSerializable(typeof(WorkerBootstrapResponse))]
 [JsonSerializable(typeof(ProviderResumeCatalogEntryDto))]
 [JsonSerializable(typeof(List<ProviderResumeCatalogEntryDto>))]
@@ -388,5 +390,4 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 

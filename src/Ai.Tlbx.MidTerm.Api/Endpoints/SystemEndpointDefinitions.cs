@@ -67,6 +67,10 @@ public static class SystemEndpointDefinitions
             handler.GetShells())
             .Produces<List<ShellInfoDto>>(StatusCodes.Status200OK, "application/json");
 
+        app.MapGet("/api/agent-controller/installations", (ISystemHandler handler) =>
+            handler.GetAgentControllerInstallations())
+            .Produces<List<AgentControllerInstallationDto>>(StatusCodes.Status200OK, "application/json");
+
         app.MapGet("/api/users", (ISystemHandler handler) =>
             handler.GetUsers())
             .Produces<List<UserInfo>>(StatusCodes.Status200OK, "application/json");

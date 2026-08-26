@@ -60,7 +60,6 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.Equal(0, settings.TerminalTransparency);
         Assert.Equal(10000, settings.ScrollbackLines);
         Assert.Equal(string.Empty, settings.CodexDefaultAppServerControlModel);
-        Assert.Equal(string.Empty, settings.ClaudeDefaultAppServerControlModel);
     }
 
     [Fact]

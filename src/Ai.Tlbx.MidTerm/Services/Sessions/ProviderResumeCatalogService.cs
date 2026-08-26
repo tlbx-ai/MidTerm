@@ -9,7 +9,6 @@ public sealed class ProviderResumeCatalogService
 {
     private static readonly TimeSpan CodexHotSessionCooldown = TimeSpan.FromSeconds(12);
     private readonly string _codexHome;
-    private readonly string _claudeHome;
 
     public ProviderResumeCatalogService()
         : this(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))
@@ -22,7 +21,6 @@ public sealed class ProviderResumeCatalogService
             ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
             : userProfileDirectory;
         _codexHome = Path.Combine(home, ".codex");
-        _claudeHome = Path.Combine(home, ".claude");
     }
 
     public IReadOnlyList<ProviderResumeCatalogEntryDto> GetCandidates(
@@ -36,7 +34,6 @@ public sealed class ProviderResumeCatalogService
         return normalizedProvider switch
         {
             AiCliProfileService.CodexProfile => GetCodexCandidates(normalizedWorkingDirectory, includeAllDirectories, ct),
-            AiCliProfileService.ClaudeProfile => GetClaudeCandidates(normalizedWorkingDirectory, includeAllDirectories, ct),
             _ => []
         };
     }
@@ -65,46 +62,6 @@ public sealed class ProviderResumeCatalogService
             ct.ThrowIfCancellationRequested();
 
             var candidate = TryReadCodexCandidate(file, normalizedWorkingDirectory, includeAllDirectories);
-            if (candidate is null || !seen.Add(candidate.SessionId))
-            {
-                continue;
-            }
-
-            candidates.Add(candidate);
-            if (candidates.Count >= 60)
-            {
-                break;
-            }
-        }
-
-        return candidates;
-    }
-
-    private IReadOnlyList<ProviderResumeCatalogEntryDto> GetClaudeCandidates(
-        string? normalizedWorkingDirectory,
-        bool includeAllDirectories,
-        CancellationToken ct)
-    {
-        var projectsRoot = Path.Combine(_claudeHome, "projects");
-        if (!Directory.Exists(projectsRoot))
-        {
-            return [];
-        }
-
-        var candidates = new List<ProviderResumeCatalogEntryDto>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var path in Directory.EnumerateFiles(projectsRoot, "*.jsonl", SearchOption.AllDirectories)
-                     .Where(static path => !path.Contains(
-                         $"{Path.DirectorySeparatorChar}subagents{Path.DirectorySeparatorChar}",
-                         StringComparison.OrdinalIgnoreCase))
-                     .Select(static path => new FileInfo(path))
-                     .OrderByDescending(static file => file.LastWriteTimeUtc)
-                     .Take(300))
-        {
-            ct.ThrowIfCancellationRequested();
-
-            var candidate = TryReadClaudeCandidate(path, normalizedWorkingDirectory, includeAllDirectories);
             if (candidate is null || !seen.Add(candidate.SessionId))
             {
                 continue;
@@ -186,80 +143,6 @@ public sealed class ProviderResumeCatalogService
             updatedAtUtc);
     }
 
-    private static ProviderResumeCatalogEntryDto? TryReadClaudeCandidate(
-        FileInfo file,
-        string? normalizedWorkingDirectory,
-        bool includeAllDirectories)
-    {
-        using var reader = OpenSharedReaderOrNull(file.FullName);
-        if (reader is null)
-        {
-            return null;
-        }
-
-        string? sessionId = null;
-        string? workingDirectory = null;
-        string? normalizedCwd = null;
-        string? lastUserMessage = null;
-
-        while (reader.ReadLine() is { } line)
-        {
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                continue;
-            }
-
-            try
-            {
-                using var json = JsonDocument.Parse(line);
-                var root = json.RootElement;
-
-                if (TryGetString(root, "sessionId", out var parsedSessionId))
-                {
-                    sessionId = parsedSessionId;
-                }
-
-                if (TryGetString(root, "cwd", out var parsedWorkingDirectory))
-                {
-                    workingDirectory = parsedWorkingDirectory;
-                    normalizedCwd = NormalizePathOrNull(parsedWorkingDirectory);
-                }
-
-                if (!includeAllDirectories &&
-                    !string.Equals(normalizedCwd, normalizedWorkingDirectory, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                if (TryReadClaudeUserMessage(root, out var message))
-                {
-                    lastUserMessage = message;
-                }
-            }
-            catch
-            {
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(workingDirectory))
-        {
-            return null;
-        }
-
-        if (!includeAllDirectories &&
-            !string.Equals(normalizedCwd, normalizedWorkingDirectory, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        return CreateCandidate(
-            AiCliProfileService.ClaudeProfile,
-            sessionId,
-            workingDirectory,
-            lastUserMessage,
-            file.LastWriteTimeUtc);
-    }
-
     private static ProviderResumeCatalogEntryDto CreateCandidate(
         string provider,
         string sessionId,
@@ -326,54 +209,6 @@ public sealed class ProviderResumeCatalogService
             if (item.ValueKind != JsonValueKind.Object ||
                 !TryGetString(item, "type", out var itemType) ||
                 !string.Equals(itemType, "input_text", StringComparison.Ordinal) ||
-                !TryGetString(item, "text", out var text))
-            {
-                continue;
-            }
-
-            parts.Add(text);
-        }
-
-        message = parts.Count == 0 ? null : string.Join(" ", parts);
-        return !string.IsNullOrWhiteSpace(message);
-    }
-
-    private static bool TryReadClaudeUserMessage(JsonElement root, out string? message)
-    {
-        message = null;
-        if (!TryGetString(root, "type", out var rootType) ||
-            !string.Equals(rootType, "user", StringComparison.Ordinal) ||
-            !root.TryGetProperty("message", out var payload) ||
-            payload.ValueKind != JsonValueKind.Object ||
-            !TryGetString(payload, "role", out var role) ||
-            !string.Equals(role, "user", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        if (!payload.TryGetProperty("content", out var content))
-        {
-            return false;
-        }
-
-        if (content.ValueKind == JsonValueKind.String)
-        {
-            message = content.GetString();
-            return !string.IsNullOrWhiteSpace(message);
-        }
-
-        if (content.ValueKind != JsonValueKind.Array)
-        {
-            return false;
-        }
-
-        var parts = new List<string>();
-        using var items = content.EnumerateArray();
-        foreach (var item in items)
-        {
-            if (item.ValueKind != JsonValueKind.Object ||
-                !TryGetString(item, "type", out var itemType) ||
-                !string.Equals(itemType, "text", StringComparison.Ordinal) ||
                 !TryGetString(item, "text", out var text))
             {
                 continue;

@@ -1849,7 +1849,15 @@ export function initCalibrationTerminal(): Promise<void> {
 
     terminal.open(container);
 
-    requestAnimationFrame(() => {
+    let completed = false;
+    let frameId: number | null = null;
+    let fallbackTimerId: number | null = null;
+    const completeCalibration = (): void => {
+      if (completed) return;
+      completed = true;
+      if (frameId !== null) cancelAnimationFrame(frameId);
+      if (fallbackTimerId !== null) window.clearTimeout(fallbackTimerId);
+
       const screen = container.querySelector<HTMLElement>('.xterm-screen');
       if (screen && terminal.cols > 0 && terminal.rows > 0) {
         const cellWidth = screen.offsetWidth / terminal.cols;
@@ -1873,7 +1881,13 @@ export function initCalibrationTerminal(): Promise<void> {
       terminal.dispose();
       container.remove();
       resolve();
-    });
+    };
+
+    frameId = requestAnimationFrame(completeCalibration);
+    // Background and embedded browser frames may throttle requestAnimationFrame
+    // indefinitely. Session launch must never wait forever for an optional
+    // terminal sizing calibration.
+    fallbackTimerId = window.setTimeout(completeCalibration, 250);
   });
   return calibrationPromise;
 }

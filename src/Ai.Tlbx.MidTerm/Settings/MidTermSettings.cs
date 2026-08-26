@@ -27,9 +27,6 @@ public sealed class MidTermSettings
     public bool CodexYoloDefault { get; set; } = false;
     public string CodexDefaultAppServerControlModel { get; set; } = "";
     public string CodexEnvironmentVariables { get; set; } = "";
-    public bool ClaudeDangerouslySkipPermissionsDefault { get; set; } = false;
-    public string ClaudeDefaultAppServerControlModel { get; set; } = "";
-    public string ClaudeEnvironmentVariables { get; set; } = "";
     public string AgentMessageFontFamily { get; set; } = "default";
     public bool ShowAgentMessageTimestamps { get; set; } = false;
     public bool ShowUnknownAgentMessages { get; set; } = true;

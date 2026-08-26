@@ -2850,6 +2850,28 @@
         }
       }
     },
+    "/api/agent-controller/installations": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentControllerInstallationDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/users": {
       "get": {
         "tags": [
@@ -3107,6 +3129,33 @@
             "items": {
               "$ref": "#/components/schemas/ActiveShareGrantInfo"
             }
+          }
+        }
+      },
+      "AgentControllerInstallationDto": {
+        "required": [
+          "profile",
+          "name",
+          "protocol",
+          "command",
+          "supportsResume"
+        ],
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "supportsResume": {
+            "type": "boolean"
           }
         }
       },
@@ -5519,9 +5568,6 @@
           "codexYoloDefault",
           "codexDefaultAppServerControlModel",
           "codexEnvironmentVariables",
-          "claudeDangerouslySkipPermissionsDefault",
-          "claudeDefaultAppServerControlModel",
-          "claudeEnvironmentVariables",
           "agentMessageFontFamily",
           "showAgentMessageTimestamps",
           "showUnknownAgentMessages",
@@ -5631,15 +5677,6 @@
             "type": "string"
           },
           "codexEnvironmentVariables": {
-            "type": "string"
-          },
-          "claudeDangerouslySkipPermissionsDefault": {
-            "type": "boolean"
-          },
-          "claudeDefaultAppServerControlModel": {
-            "type": "string"
-          },
-          "claudeEnvironmentVariables": {
             "type": "string"
           },
           "agentMessageFontFamily": {

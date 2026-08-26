@@ -43,7 +43,6 @@ type AppServerControlPermissionMode = AppServerControlQuickSettingsSummary['perm
 type AppServerControlFastMode = 'off' | 'on';
 
 const QUICK_SETTINGS_PROVIDER_STORAGE_PREFIX = 'midterm:appServerControl-quick-settings:provider:';
-const DEFAULT_GROK_MODEL = 'grok-4.20-0309-non-reasoning';
 const DEFAULT_PLAN_MODE: AppServerControlPlanMode = 'off';
 const DEFAULT_PERMISSION_MODE: AppServerControlPermissionMode = 'manual';
 const DEFAULT_FAST_MODE: AppServerControlFastMode = 'off';
@@ -67,15 +66,10 @@ function normalizeOptionalValue(value: string | null | undefined): string | null
 }
 
 function normalizeProviderModel(
-  provider: string | null,
+  _provider: string | null,
   value: string | null | undefined,
 ): string | null {
-  const normalized = normalizeOptionalValue(value);
-  if (provider === 'grok' && normalized === 'grok-build') {
-    return DEFAULT_GROK_MODEL;
-  }
-
-  return normalized;
+  return normalizeOptionalValue(value);
 }
 
 function normalizePlanMode(value: string | null | undefined): AppServerControlPlanMode {
@@ -229,16 +223,6 @@ function resolveRememberedProviderModel(
     return normalizeOptionalValue(currentSettings?.codexDefaultAppServerControlModel);
   }
 
-  if (provider === 'claude') {
-    return (
-      normalizeOptionalValue(currentSettings?.claudeDefaultAppServerControlModel) ?? legacyModel
-    );
-  }
-
-  if (provider === 'grok') {
-    return normalizeProviderModel(provider, legacyModel) ?? DEFAULT_GROK_MODEL;
-  }
-
   return legacyModel;
 }
 
@@ -247,7 +231,7 @@ export function getAppServerControlResolvedProviderModel(provider: string | null
 }
 
 function persistRememberedProviderModel(provider: string | null, model: string | null): void {
-  if (provider !== 'codex' && provider !== 'claude') {
+  if (provider !== 'codex') {
     return;
   }
 
@@ -270,19 +254,14 @@ function persistRememberedProviderModel(provider: string | null, model: string |
   }
 
   const nextStoredValue = normalizeOptionalValue(model) ?? '';
-  const currentStoredValue =
-    provider === 'codex'
-      ? currentSettings.codexDefaultAppServerControlModel
-      : currentSettings.claudeDefaultAppServerControlModel;
+  const currentStoredValue = currentSettings.codexDefaultAppServerControlModel;
   if (currentStoredValue === nextStoredValue) {
     return;
   }
 
   const nextSettings: MidTermSettingsPublic = {
     ...currentSettings,
-    ...(provider === 'codex'
-      ? { codexDefaultAppServerControlModel: nextStoredValue }
-      : { claudeDefaultAppServerControlModel: nextStoredValue }),
+    codexDefaultAppServerControlModel: nextStoredValue,
   };
 
   setCurrentSettings(nextSettings);
@@ -293,20 +272,14 @@ function persistRememberedProviderModel(provider: string | null, model: string |
       }
 
       const latestSettings = getCurrentSettings();
-      const latestStoredValue =
-        provider === 'codex'
-          ? (latestSettings?.codexDefaultAppServerControlModel ?? '')
-          : (latestSettings?.claudeDefaultAppServerControlModel ?? '');
+      const latestStoredValue = latestSettings?.codexDefaultAppServerControlModel ?? '';
       if (latestStoredValue === nextStoredValue) {
         setCurrentSettings(currentSettings);
       }
     })
     .catch(() => {
       const latestSettings = getCurrentSettings();
-      const latestStoredValue =
-        provider === 'codex'
-          ? (latestSettings?.codexDefaultAppServerControlModel ?? '')
-          : (latestSettings?.claudeDefaultAppServerControlModel ?? '');
+      const latestStoredValue = latestSettings?.codexDefaultAppServerControlModel ?? '';
       if (latestStoredValue === nextStoredValue) {
         setCurrentSettings(currentSettings);
       }
@@ -331,9 +304,7 @@ function resolveSessionProvider(sessionId: string | null | undefined): string | 
   }
 
   const normalized = hinted.trim().toLowerCase();
-  return normalized === 'codex' || normalized === 'claude' || normalized === 'grok'
-    ? normalized
-    : null;
+  return normalized !== 'claude' && /^[a-z0-9][a-z0-9._-]*$/.test(normalized) ? normalized : null;
 }
 
 function resolveDefaultPermissionMode(provider: string | null): AppServerControlPermissionMode {
@@ -350,10 +321,6 @@ function resolveDefaultPermissionMode(provider: string | null): AppServerControl
 
   if (provider === 'codex') {
     return settings.codexYoloDefault ? 'auto' : 'manual';
-  }
-
-  if (provider === 'claude') {
-    return settings.claudeDangerouslySkipPermissionsDefault ? 'auto' : 'manual';
   }
 
   return DEFAULT_PERMISSION_MODE;

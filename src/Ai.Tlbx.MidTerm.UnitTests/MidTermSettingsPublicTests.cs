@@ -293,21 +293,17 @@ public sealed class MidTermSettingsPublicTests
     {
         var settings = new MidTermSettings
         {
-            CodexDefaultAppServerControlModel = "gpt-5.4-codex",
-            ClaudeDefaultAppServerControlModel = "claude-sonnet-4-6"
+            CodexDefaultAppServerControlModel = "gpt-5.4-codex"
         };
 
         var publicSettings = MidTermSettingsPublic.FromSettings(settings);
 
         Assert.Equal("gpt-5.4-codex", publicSettings.CodexDefaultAppServerControlModel);
-        Assert.Equal("claude-sonnet-4-6", publicSettings.ClaudeDefaultAppServerControlModel);
 
         settings.CodexDefaultAppServerControlModel = string.Empty;
-        settings.ClaudeDefaultAppServerControlModel = string.Empty;
         publicSettings.ApplyTo(settings);
 
         Assert.Equal("gpt-5.4-codex", settings.CodexDefaultAppServerControlModel);
-        Assert.Equal("claude-sonnet-4-6", settings.ClaudeDefaultAppServerControlModel);
     }
 
     [Fact]

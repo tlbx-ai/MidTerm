@@ -4,7 +4,7 @@
 
 This document is the source of truth for the visual and interaction design of tlbx Agent Controller Session. It exists to prevent Agent Controller Session UI behavior from drifting across ad hoc iterations.
 
-Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The current new-session launcher exposes Codex and Grok Build. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
+Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The new-session launcher discovers locally installed supported runtimes and currently recognizes Codex app-server plus standard ACP agents such as Grok Build and OpenCode. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
 
 Any future Agent Controller Session UI change that affects layout, hierarchy, history ordering, timeline rendering, typography, spacing, scrolling, item rendering, or interaction states must update this document with the new fundamental rule or revised rationale.
 
@@ -59,9 +59,10 @@ Future refactors may improve or replace the implementation of any of the above, 
 
 New Agent Controller Session work must use the following concept names consistently:
 
-- use `Agent Controller` for software that speaks the App Server Protocol and provides an agent-control UI
+- use `Agent Controller` for software that speaks a supported structured agent protocol and provides an agent-control UI
 - use `Agent Controller Session` for one live controlled provider conversation
-- use `App Server Protocol` for the protocol boundary spoken between an Agent Controller and tlbx's provider runtime
+- use `provider protocol` for the runtime boundary; currently Codex app-server or Agent Client Protocol (ACP) v1 over stdio
+- use `ACP client runtime` for tlbx's standards-based client implementation that drives registered ACP agents without provider-specific stream parsing
 - use `Agent Controller Runtime` for the backend-owned provider runtime that drives an Agent Controller Session
 - use `history` for the canonical ordered Agent Controller Session item sequence
 - use `history item` for one canonical renderable entry
@@ -528,7 +529,7 @@ The canonical history contract must satisfy the following:
 
 - not yet implemented: older transport-era naming and `transcript` naming still leak through non-browser services, reducer internals, host-owned canonical state types, and some debug/test surfaces even though the active browser/websocket path is now history-first
 - not yet implemented: interview interactions now render inline in the timeline with a dedicated request widget, but they are still modeled as request summaries plus request history rows rather than a fully separate canonical `interview` item type end to end
-- not yet implemented: Codex interview/user-input is supported through a verified structured runtime contract, but Claude interview/user-input remains explicitly unsupported until tlbx integrates a verified structured Claude contract instead of a guessed bridge
+- not yet implemented: ACP session capability differences still need broader conformance coverage across additional registry agents beyond Grok Build and OpenCode
 
 ## Dev Diagnostics
 
@@ -574,8 +575,10 @@ Status in this branch/work item:
 - implemented: hidden/background Agent Controller Sessions may continue ingesting runtime state, but history DOM work is deferred until that Agent Controller Session surface is visible again
 - implemented: hidden/background Agent Controller Sessions clear rendered history DOM and compact retained browser-side history back to a bounded latest window without interrupting the live runtime
 - implemented: Agent Controller Session history is treated as a bounded browser-side view window over tlbx-owned canonical history rather than as an unbounded full-history browser cache
-- implemented: Codex, Claude, and Grok Agent Controller runtimes route through `mtagenthost` as the single structured runtime boundary; `SessionAppServerControlRuntimeService` no longer falls back to a second in-process Codex runtime when host attach fails
-- implemented: Claude Agent Controller Session no longer injects or parses a tlbx-invented XML user-input bridge in the active runtime path; unsupported Claude interview/user-input now remains unsupported instead of relying on guessed protocol behavior
+- implemented: Codex app-server and the generic ACP client runtime route through `mtagenthost` as the single structured runtime boundary; `SessionAppServerControlRuntimeService` no longer falls back to a second in-process Codex runtime when host attach fails
+- implemented: the unsupported, unmaintained Claude stream-json adapter and its invented XML user-input bridge have been removed; Claude Code remains a normal terminal-native CLI instead of being advertised as an Agent Controller runtime
+- implemented: the ACP client performs the standard `initialize` and `session/new` flow, consumes canonical `session/update` notifications, handles permission requests and cancellation, and prefers `session/set_config_option` while retaining protocol-level legacy mode/model fallbacks
+- implemented: the new-session launcher queries locally installed Agent Controller runtimes and offers only detected Codex app-server and registered ACP agents; the selected ACP profile is preserved by bookmarks and relaunch
 - implemented: Agent Controller Session retains canonical user-facing history rather than a hidden durable raw-event archive
 - implemented: tlbx-side Agent Controller Session persistence now writes canonical reduced session state instead of appending provider-shaped event logs, while transient live event backlog stays bounded in memory only
 - implemented: mouseup inside the Agent Controller Session surface no longer routes through terminal focus reclaim, so drag text selection in Agent Controller Session remains intact after the mouse button is released
@@ -681,7 +684,7 @@ Status in this branch/work item:
 - implemented: when terminal transparency is fully opaque, active Agent Controller Sessions render over an opaque terminal-toned underlay so wallpaper and hidden sibling panels do not glow through the Agent Controller Session surface
 - implemented: workspace parent shells stay transparent so active Terminal and Agent Controller Session panes sit directly over the app wallpaper without extra translucent backdrop layers
 - implemented: Agent Controller Session terminal-transparency ownership is limited to the outer Agent Controller Session pane backdrop; inner chat/composer wrappers stay transparent so UI transparency and stacked underlays do not alter the effective Agent Controller Session pane opacity
-- implemented: Codex/Claude history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened
+- implemented: Agent Controller history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened
 - implemented: the trailing busy bubble now ignores in-progress user-prompt items for its label, phase-locks both its sweep and spinner animations to a shared wallclock-derived phase, and keeps the existing busy DOM node alive across live label/elapsed updates so redraws do not visibly restart the motion
 - implemented: the trailing busy-label text highlight now mirrors at the right edge and travels back left through the word instead of snapping from the end back to the first letter
 - implemented: the shared Command Bay queue now renders as a vertical stack above the composer and is backed by tlbx-owned persistent queue state rather than browser-local Agent Controller Session-only submission state

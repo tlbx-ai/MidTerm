@@ -70,6 +70,8 @@ tlbx runs any terminal-native tool in a real PTY, but it is shaped around long-r
 - **Verify the result:** open the app beside the agent; inspect DOM, console/proxy logs, responsive layouts, and screenshots.
 - **Leave and return:** sessions survive browser disconnects, device changes, and travel.
 
+For agents that implement the open [Agent Client Protocol (ACP)](https://agentclientprotocol.com/), tlbx also provides a structured Agent Controller surface instead of interpreting terminal output. The new-session launcher detects locally installed ACP agents, currently including **Grok Build** (`grok agent stdio`) and **OpenCode** (`opencode acp`), alongside the native Codex app-server integration. Model and mode controls, streamed activity, permissions, cancellation, and bookmarks remain provider-neutral; exact capabilities depend on the selected agent. Claude Code remains available through its supported terminal-native CLI, not through a tlbx-specific stream adapter.
+
 ## Not SSH in a browser
 
 SSH opens a shell connection. tlbx reopens the machine's living context: agents, terminals, files, Git, notes, logs, and app previews.

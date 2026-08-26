@@ -3530,6 +3530,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/agent-controller/installations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AgentControllerInstallationDto'][];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/users': {
     parameters: {
       query?: never;
@@ -3885,6 +3920,13 @@ export interface components {
     };
     ActiveShareGrantListResponse: {
       shares: components['schemas']['ActiveShareGrantInfo'][];
+    };
+    AgentControllerInstallationDto: {
+      profile: string;
+      name: string;
+      protocol: string;
+      command: string;
+      supportsResume: boolean;
     };
     AgentHistoryScrollMetrics: {
       /** Format: double */
@@ -4456,9 +4498,6 @@ export interface components {
       codexYoloDefault: boolean;
       codexDefaultAppServerControlModel: string;
       codexEnvironmentVariables: string;
-      claudeDangerouslySkipPermissionsDefault: boolean;
-      claudeDefaultAppServerControlModel: string;
-      claudeEnvironmentVariables: string;
       agentMessageFontFamily: string;
       showAgentMessageTimestamps: boolean;
       showUnknownAgentMessages: boolean;

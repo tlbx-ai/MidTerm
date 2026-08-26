@@ -135,30 +135,6 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'newline-delimited KEY=VALUE env vars',
     applyMode: 'new-session',
   }),
-  controlEntry(
-    'claudeDangerouslySkipPermissionsDefault',
-    'setting-claude-dangerously-skip-permissions-default',
-    'checkbox',
-    false,
-    {
-      editable: true,
-      storage: 'settings.json',
-      validation: 'boolean',
-      applyMode: 'new-session',
-    },
-  ),
-  preserveEntry('claudeDefaultAppServerControlModel', '', {
-    editable: true,
-    storage: 'settings.json',
-    validation: 'string model id, empty allowed',
-    applyMode: 'new-session',
-  }),
-  controlEntry('claudeEnvironmentVariables', 'setting-claude-env', 'textarea', '', {
-    editable: true,
-    storage: 'settings.json',
-    validation: 'newline-delimited KEY=VALUE env vars',
-    applyMode: 'new-session',
-  }),
   controlEntry('agentMessageFontFamily', 'setting-agent-message-font-family', 'select', 'default', {
     editable: true,
     storage: 'settings.json',

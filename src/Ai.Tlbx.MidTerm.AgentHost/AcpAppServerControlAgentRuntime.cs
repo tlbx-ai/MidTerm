@@ -7,19 +7,23 @@ using Ai.Tlbx.MidTerm.Common.Protocol;
 
 namespace Ai.Tlbx.MidTerm.AgentHost;
 
-internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAgentRuntime
+internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRuntime
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly TimeSpan AttachRequestTimeout = TimeSpan.FromSeconds(20);
 
     private readonly Action<AppServerControlProviderEvent> _emit;
+    private readonly string _provider;
+    private readonly string _agentName;
+    private readonly IReadOnlyList<string> _executableArguments;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingRequests = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _pendingPromptTurns = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, PendingPermissionRequest> _pendingPermissions = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, GrokToolState> _tools = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, AcpToolState> _tools = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _configOptionIds = new(StringComparer.Ordinal);
     private Process? _process;
     private StreamReader? _output;
     private StreamReader? _error;
@@ -36,17 +40,30 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
     private string? _activeTurnEffort;
     private string? _availableCommandsSignature;
     private string? _lastSessionNotificationSignature;
+    private string? _currentModeId;
+    private string? _planModeId;
+    private string? _defaultModeId;
+    private bool _supportsLegacyModels;
     private AppServerControlQuickSettingsSummary _quickSettings = new();
     private int _nextRequestId;
     private long _sequence;
     private bool _disposed;
 
-    public GrokAcpAppServerControlAgentRuntime(Action<AppServerControlProviderEvent> emit)
+    public AcpAppServerControlAgentRuntime(
+        string provider,
+        string? agentName,
+        IReadOnlyList<string>? executableArguments,
+        Action<AppServerControlProviderEvent> emit)
     {
+        _provider = string.IsNullOrWhiteSpace(provider)
+            ? throw new ArgumentException("ACP provider is required.", nameof(provider))
+            : provider.Trim().ToLowerInvariant();
+        _agentName = string.IsNullOrWhiteSpace(agentName) ? _provider : agentName.Trim();
+        _executableArguments = executableArguments?.ToArray() ?? [];
         _emit = emit;
     }
 
-    public string Provider => "grok";
+    public string Provider => _provider;
 
     public async ValueTask DisposeAsync()
     {
@@ -74,9 +91,9 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolvePermissionRequestAsync(command, ct).ConfigureAwait(false),
-                "user-input.resolve" => throw new InvalidOperationException("Grok ACP user-input resolution is not supported yet."),
+                "user-input.resolve" => throw new InvalidOperationException($"{_agentName} ACP user-input resolution is not supported yet."),
                 "thread.goal.set" => Accepted(command.CommandId, command.SessionId),
-                _ => throw new InvalidOperationException($"Unsupported Grok command '{command.Type}'.")
+                _ => throw new InvalidOperationException($"Unsupported ACP command '{command.Type}' for {_agentName}.")
             };
         }
         finally
@@ -90,20 +107,18 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         var attach = command.AttachRuntime ?? throw new InvalidOperationException("runtime.attach payload is required.");
         if (!string.Equals(attach.Provider, Provider, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Grok runtime cannot attach provider '{attach.Provider}'.");
+            throw new InvalidOperationException($"ACP runtime for '{Provider}' cannot attach provider '{attach.Provider}'.");
         }
 
         if (string.IsNullOrWhiteSpace(attach.WorkingDirectory) || !Directory.Exists(attach.WorkingDirectory))
         {
-            throw new InvalidOperationException("Grok working directory is required.");
+            throw new InvalidOperationException($"{_agentName} ACP working directory is required.");
         }
 
-        var binaryPath = string.IsNullOrWhiteSpace(attach.ExecutablePath)
-            ? FindExecutableInPath("grok", attach.UserProfileDirectory)
-            : attach.ExecutablePath;
+        var binaryPath = attach.ExecutablePath;
         if (string.IsNullOrWhiteSpace(binaryPath) || !File.Exists(binaryPath))
         {
-            throw new InvalidOperationException("Grok CLI was not found. Install Grok Build and make sure grok is on PATH.");
+            throw new InvalidOperationException($"{_agentName} ACP executable was not found.");
         }
 
         await DisposeProcessAsync().ConfigureAwait(false);
@@ -115,7 +130,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         _providerThreadId = null;
         _quickSettings = CreateDefaultQuickSettings();
 
-        await StartGrokProcessAsync(ct).ConfigureAwait(false);
+        await StartAcpProcessAsync(ct).ConfigureAwait(false);
 
         var initializeResult = await SendRequestAsync(
                 "initialize",
@@ -125,6 +140,13 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
                     writer.WriteNumber("protocolVersion", 1);
                     writer.WritePropertyName("clientCapabilities");
                     writer.WriteStartObject();
+                    writer.WritePropertyName("session");
+                    writer.WriteStartObject();
+                    writer.WritePropertyName("configOptions");
+                    writer.WriteStartObject();
+                    writer.WriteBoolean("boolean", true);
+                    writer.WriteEndObject();
+                    writer.WriteEndObject();
                     writer.WritePropertyName("fs");
                     writer.WriteStartObject();
                     writer.WriteBoolean("readTextFile", false);
@@ -134,7 +156,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
                     writer.WriteEndObject();
                     writer.WritePropertyName("clientInfo");
                     writer.WriteStartObject();
-                    writer.WriteString("name", "midterm");
+                    writer.WriteString("name", "tlbx");
                     writer.WriteString("title", "tlbx");
                     writer.WriteString("version", "dev");
                     writer.WriteEndObject();
@@ -160,7 +182,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             .ConfigureAwait(false);
 
         _providerThreadId = GetString(newSessionResult, "sessionId")
-                            ?? "grok-session-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+                            ?? $"{Provider}-session-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
         _quickSettings = CreateQuickSettingsFromState(initializeResult, newSessionResult);
 
         return Accepted(
@@ -168,16 +190,16 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             command.SessionId,
             events:
             [
-                CreateEvent("session.started", null, null, null, "mtagenthost.grok-acp", "runtime.attach", attach, appServerControlEvent =>
+                CreateEvent("session.started", null, null, null, "mtagenthost.acp", "runtime.attach", attach, appServerControlEvent =>
                 {
                     appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
                     {
                         State = "starting",
                         StateLabel = "Starting",
-                        Reason = "Grok ACP runtime attached."
+                        Reason = $"{_agentName} ACP runtime attached."
                     };
                 }),
-                CreateEvent("thread.started", null, null, null, "grok.acp", "session/new", newSessionResult, appServerControlEvent =>
+                CreateEvent("thread.started", null, null, null, "acp", "session/new", newSessionResult, appServerControlEvent =>
                 {
                     appServerControlEvent.ThreadState = new AppServerControlProviderThreadStatePayload
                     {
@@ -186,16 +208,16 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
                         ProviderThreadId = _providerThreadId
                     };
                 }),
-                CreateEvent("session.ready", null, null, null, "grok.acp", "session/new", newSessionResult, appServerControlEvent =>
+                CreateEvent("session.ready", null, null, null, "acp", "session/new", newSessionResult, appServerControlEvent =>
                 {
                     appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
                     {
                         State = "ready",
                         StateLabel = "Ready",
-                        Reason = "Grok ACP runtime is ready for the next turn."
+                        Reason = $"{_agentName} ACP runtime is ready for the next turn."
                     };
                 }),
-                CreateQuickSettingsUpdatedEvent(_quickSettings, "grok.acp", "session/new", newSessionResult)
+                CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", "session/new", newSessionResult)
             ]);
     }
 
@@ -204,12 +226,15 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         EnsureAttached();
         if (!string.IsNullOrWhiteSpace(_activeTurnId))
         {
-            throw new InvalidOperationException("Grok already has an active ACP turn.");
+            throw new InvalidOperationException($"{_agentName} already has an active ACP turn.");
         }
 
         var request = command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required.");
         var quickSettings = ResolveRequestedQuickSettings(request);
-        var promptBlocks = BuildPromptBlocks(request, quickSettings.PlanMode);
+        await ApplyRequestedQuickSettingsAsync(quickSettings, ct).ConfigureAwait(false);
+        var promptBlocks = BuildPromptBlocks(
+            request,
+            _planModeId is null ? quickSettings.PlanMode : AppServerControlQuickSettings.PlanModeOff);
         if (promptBlocks.Count == 0)
         {
             throw new InvalidOperationException("App Server Controller turn input must include text or attachments.");
@@ -252,7 +277,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
                 "failed",
                 "Failed",
                 "send_failed",
-                "Failed to send Grok ACP prompt.",
+                $"Failed to send {_agentName} ACP prompt.",
                 string.Empty);
             ResetTurnState();
             throw;
@@ -298,16 +323,16 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         return
         [
             CreateQuickSettingsUpdatedEvent(_quickSettings, "midterm.appServerControl", "turn.start", request),
-            CreateEvent("session.state.changed", _activeTurnId, null, null, "grok.acp", "session/prompt", request, appServerControlEvent =>
+            CreateEvent("session.state.changed", _activeTurnId, null, null, "acp", "session/prompt", request, appServerControlEvent =>
             {
                 appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
                 {
                     State = "running",
                     StateLabel = "Running",
-                    Reason = "Grok ACP turn started."
+                    Reason = $"{_agentName} ACP turn started."
                 };
             }),
-            CreateEvent("turn.started", _activeTurnId, null, null, "grok.acp", "session/prompt", request, appServerControlEvent =>
+            CreateEvent("turn.started", _activeTurnId, null, null, "acp", "session/prompt", request, appServerControlEvent =>
             {
                 appServerControlEvent.TurnStarted = new AppServerControlProviderTurnStartedPayload
                 {
@@ -325,7 +350,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             : command.InterruptTurn!.TurnId;
         if (string.IsNullOrWhiteSpace(turnId))
         {
-            throw new InvalidOperationException("Grok does not have an active turn to interrupt.");
+            throw new InvalidOperationException($"{_agentName} does not have an active turn to interrupt.");
         }
 
         await WriteJsonRpcNotificationAsync(
@@ -365,7 +390,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             },
             events:
             [
-                CreateEvent("turn.aborted", turnId, null, null, "grok.acp", "session/cancel", command.InterruptTurn, appServerControlEvent =>
+                CreateEvent("turn.aborted", turnId, null, null, "acp", "session/cancel", command.InterruptTurn, appServerControlEvent =>
                 {
                     appServerControlEvent.TurnCompleted = new AppServerControlProviderTurnCompletedPayload
                     {
@@ -374,13 +399,13 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
                         StopReason = "interrupt"
                     };
                 }),
-                CreateEvent("session.state.changed", turnId, null, null, "grok.acp", "session/cancel", command.InterruptTurn, appServerControlEvent =>
+                CreateEvent("session.state.changed", turnId, null, null, "acp", "session/cancel", command.InterruptTurn, appServerControlEvent =>
                 {
                     appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
                     {
                         State = "ready",
                         StateLabel = "Ready",
-                        Reason = "Grok turn interrupted."
+                        Reason = $"{_agentName} turn interrupted."
                     };
                 })
             ]);
@@ -391,7 +416,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         var request = command.ResolveRequest ?? throw new InvalidOperationException("request.resolve payload is required.");
         if (!_pendingPermissions.TryRemove(request.RequestId, out var pending))
         {
-            throw new InvalidOperationException($"Grok ACP permission request was not found: {request.RequestId}");
+            throw new InvalidOperationException($"{_agentName} ACP permission request was not found: {request.RequestId}");
         }
 
         var selectedOption = SelectPermissionOption(pending.Options, request.Decision);
@@ -415,7 +440,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             },
             events:
             [
-                CreateEvent("request.resolved", pending.TurnId, null, request.RequestId, "grok.acp", "session/request_permission", request, appServerControlEvent =>
+                CreateEvent("request.resolved", pending.TurnId, null, request.RequestId, "acp", "session/request_permission", request, appServerControlEvent =>
                 {
                     appServerControlEvent.RequestResolved = new AppServerControlProviderRequestResolvedPayload
                     {
@@ -426,11 +451,11 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             ]);
     }
 
-    private async Task StartGrokProcessAsync(CancellationToken ct)
+    private async Task StartAcpProcessAsync(CancellationToken ct)
     {
         var startInfo = CreateProcessStartInfo(
             _binaryPath!,
-            BuildArguments(_quickSettings.PermissionMode, _quickSettings.Model),
+            BuildArguments(),
             _workingDirectory!);
 
         Process? process = new Process
@@ -442,9 +467,11 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         {
             AppServerControlProviderRuntimeConfiguration.ApplyUserProfileEnvironment(process.StartInfo, _userProfileDirectory);
             AppServerControlProviderRuntimeConfiguration.ApplyEnvironmentVariables(process.StartInfo, Provider);
+            process.StartInfo.Environment.Remove("FORCE_COLOR");
+            process.StartInfo.Environment["NO_COLOR"] = "1";
             if (!process.Start())
             {
-                throw new InvalidOperationException("Grok process could not be started.");
+                throw new InvalidOperationException($"{_agentName} ACP process could not be started.");
             }
 
             var startedProcess = process;
@@ -480,7 +507,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
 
                 if (!string.IsNullOrWhiteSpace(line))
                 {
-                    await HandleGrokLineAsync(line, ct).ConfigureAwait(false);
+                    await HandleAcpLineAsync(line, ct).ConfigureAwait(false);
                 }
             }
         }
@@ -489,7 +516,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         }
         catch (Exception ex)
         {
-            EmitRuntimeMessage("runtime.error", "Grok ACP stream failed.", ex.Message);
+            EmitRuntimeMessage("runtime.error", $"{_agentName} ACP stream failed.", ex.Message);
         }
         finally
         {
@@ -523,7 +550,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         }
     }
 
-    private async Task HandleGrokLineAsync(string line, CancellationToken ct)
+    private async Task HandleAcpLineAsync(string line, CancellationToken ct)
     {
         using var document = JsonDocument.Parse(line);
         var root = document.RootElement;
@@ -555,7 +582,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
                 }
                 else
                 {
-                    EmitRuntimeMessage("runtime.notice", "Grok ACP notification ignored.", method ?? line);
+                    EmitRuntimeMessage("runtime.notice", $"{_agentName} ACP notification ignored.", method ?? line);
                 }
 
                 break;
@@ -608,6 +635,9 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             case "config_option_update":
                 HandleConfigOptionUpdate(updateElement, root, rawLine);
                 return;
+            case "current_mode_update":
+                _currentModeId = GetString(updateElement, "currentModeId");
+                return;
         }
 
         var turnId = _activeTurnId;
@@ -619,10 +649,10 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         switch (updateType)
         {
             case "agent_message_chunk":
-                EmitContentDelta(turnId, "assistant_text", ExtractContentText(updateElement), "grok.acp", updateType, root, rawLine);
+                EmitContentDelta(turnId, "assistant_text", ExtractContentText(updateElement), "acp", updateType, root, rawLine);
                 break;
             case "agent_thought_chunk":
-                EmitContentDelta(turnId, "reasoning_text", ExtractContentText(updateElement), "grok.acp", updateType, root, rawLine);
+                EmitContentDelta(turnId, "reasoning_text", ExtractContentText(updateElement), "acp", updateType, root, rawLine);
                 break;
             case "plan":
                 EmitPlan(turnId, updateElement, root, rawLine);
@@ -636,7 +666,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             default:
                 if (!string.IsNullOrWhiteSpace(updateType))
                 {
-                    EmitRuntimeMessage("runtime.notice", $"Grok ACP update ignored: {updateType}", rawLine);
+                    EmitRuntimeMessage("runtime.notice", $"{_agentName} ACP update ignored: {updateType}", rawLine);
                 }
 
                 break;
@@ -660,10 +690,10 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
 
         _availableCommandsSignature = signature;
         var message = commands.Count == 0
-            ? "Grok ACP tools updated."
-            : $"Grok commands available: {FormatNamePreview(commands)}.";
+            ? $"{_agentName} ACP tools updated."
+            : $"{_agentName} commands available: {FormatNamePreview(commands)}.";
         var detail = BuildAvailableCommandsDetail(commands, tools);
-        EmitRuntimeMessage("agent.state", message, detail, "grok.acp", "available_commands_update", root, rawLine);
+        EmitRuntimeMessage("agent.state", message, detail, "acp", "available_commands_update", root, rawLine);
     }
 
     private void HandleSessionNotification(JsonElement root, string rawLine, string? method)
@@ -681,7 +711,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         }
 
         _lastSessionNotificationSignature = signature;
-        EmitRuntimeMessage("agent.state", message, rawLine, "grok.acp", method, root, rawLine);
+        EmitRuntimeMessage("agent.state", message, rawLine, "acp", method, root, rawLine);
     }
 
     private async Task HandlePermissionRequestAsync(JsonElement root, string rawLine, CancellationToken ct)
@@ -711,13 +741,13 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         }
 
         var title = toolCall is { ValueKind: JsonValueKind.Object } toolElement
-            ? GetString(toolElement, "title") ?? GetString(toolElement, "toolCallId") ?? "Grok tool call"
-            : "Grok tool call";
+            ? GetString(toolElement, "title") ?? GetString(toolElement, "toolCallId") ?? $"{_agentName} tool call"
+            : $"{_agentName} tool call";
         var detail = toolCall is { ValueKind: JsonValueKind.Object } detailElement
             ? detailElement.GetRawText()
             : rawLine;
         _pendingPermissions[requestId] = new PendingPermissionRequest(idElement.Clone(), turnId, options);
-        _emit(CreateEvent("request.opened", turnId, null, requestId, "grok.acp", "session/request_permission", root, appServerControlEvent =>
+        _emit(CreateEvent("request.opened", turnId, null, requestId, "acp", "session/request_permission", root, appServerControlEvent =>
         {
             appServerControlEvent.RequestOpened = new AppServerControlProviderRequestOpenedPayload
             {
@@ -730,12 +760,12 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
 
     private void HandleToolCall(string turnId, JsonElement update, JsonElement root, string rawLine)
     {
-        var toolCallId = GetString(update, "toolCallId") ?? "grok-tool-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var toolCallId = GetString(update, "toolCallId") ?? $"{Provider}-tool-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
         var title = GetString(update, "title") ?? toolCallId;
         var kind = GetString(update, "kind");
         var status = NormalizeToolStatus(GetString(update, "status"));
         var detail = BuildToolDetail(update);
-        _tools[toolCallId] = new GrokToolState
+        _tools[toolCallId] = new AcpToolState
         {
             ItemId = toolCallId,
             ItemType = NormalizeToolItemType(kind, title),
@@ -743,7 +773,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             Detail = new StringBuilder(detail)
         };
 
-        _emit(CreateEvent(status == "completed" ? "item.completed" : "item.started", turnId, toolCallId, null, "grok.acp", "tool_call", root, appServerControlEvent =>
+        _emit(CreateEvent(status == "completed" ? "item.completed" : "item.started", turnId, toolCallId, null, "acp", "tool_call", root, appServerControlEvent =>
         {
             appServerControlEvent.Item = new AppServerControlProviderItemPayload
             {
@@ -757,10 +787,10 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
 
     private void HandleToolCallUpdate(string turnId, JsonElement update, JsonElement root, string rawLine)
     {
-        var toolCallId = GetString(update, "toolCallId") ?? "grok-tool-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var toolCallId = GetString(update, "toolCallId") ?? $"{Provider}-tool-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
         if (!_tools.TryGetValue(toolCallId, out var state))
         {
-            state = new GrokToolState
+            state = new AcpToolState
             {
                 ItemId = toolCallId,
                 ItemType = NormalizeToolItemType(GetString(update, "kind"), GetString(update, "title")),
@@ -782,7 +812,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
 
         var status = NormalizeToolStatus(GetString(update, "status"));
         var eventType = status is "completed" or "failed" or "cancelled" ? "item.completed" : "item.started";
-        _emit(CreateEvent(eventType, turnId, state.ItemId, null, "grok.acp", "tool_call_update", root, appServerControlEvent =>
+        _emit(CreateEvent(eventType, turnId, state.ItemId, null, "acp", "tool_call_update", root, appServerControlEvent =>
         {
             appServerControlEvent.Item = new AppServerControlProviderItemPayload
             {
@@ -796,7 +826,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         var diff = ExtractDiff(update);
         if (!string.IsNullOrWhiteSpace(diff))
         {
-            _emit(CreateEvent("diff.updated", turnId, state.ItemId, null, "grok.acp", "tool_call_update", root, appServerControlEvent =>
+            _emit(CreateEvent("diff.updated", turnId, state.ItemId, null, "acp", "tool_call_update", root, appServerControlEvent =>
             {
                 appServerControlEvent.DiffUpdated = new AppServerControlProviderDiffUpdatedPayload
                 {
@@ -815,7 +845,8 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         }
 
         _quickSettings = updated;
-        _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "grok.acp", "config_option_update", root, rawLine));
+        CaptureConfigOptions(Traverse(update, "configOptions"));
+        _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", "config_option_update", root, rawLine));
     }
 
     private void EmitContentDelta(
@@ -850,7 +881,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             return;
         }
 
-        _emit(CreateEvent("plan.completed", turnId, null, null, "grok.acp", "plan", root, appServerControlEvent =>
+        _emit(CreateEvent("plan.completed", turnId, null, null, "acp", "plan", root, appServerControlEvent =>
         {
             appServerControlEvent.PlanCompleted = new AppServerControlProviderPlanCompletedPayload
             {
@@ -861,7 +892,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
 
     private void CompleteTurn(string turnId, string state, string stateLabel, string? stopReason, string? errorMessage, string rawLine)
     {
-        _emit(CreateEvent("turn.completed", turnId, null, null, "grok.acp", "session/prompt", null, appServerControlEvent =>
+        _emit(CreateEvent("turn.completed", turnId, null, null, "acp", "session/prompt", null, appServerControlEvent =>
         {
             appServerControlEvent.TurnCompleted = new AppServerControlProviderTurnCompletedPayload
             {
@@ -871,13 +902,13 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
                 ErrorMessage = errorMessage
             };
         }, rawLine));
-        _emit(CreateEvent("session.state.changed", turnId, null, null, "grok.acp", "session/prompt", null, appServerControlEvent =>
+        _emit(CreateEvent("session.state.changed", turnId, null, null, "acp", "session/prompt", null, appServerControlEvent =>
         {
             appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
             {
                 State = "ready",
                 StateLabel = "Ready",
-                Reason = state == "failed" ? "Grok turn failed." : "Grok turn completed."
+                Reason = state == "failed" ? $"{_agentName} turn failed." : $"{_agentName} turn completed."
             };
         }, rawLine));
 
@@ -988,7 +1019,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
 
     private async Task WriteJsonLineAsync(Action<Utf8JsonWriter> writePayload, CancellationToken ct)
     {
-        var input = _input ?? throw new InvalidOperationException("Grok process input stream is unavailable.");
+        var input = _input ?? throw new InvalidOperationException($"{_agentName} ACP process input stream is unavailable.");
         await _writeGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -1011,7 +1042,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
     {
         foreach (var pending in _pendingRequests.Values)
         {
-            pending.TrySetException(new InvalidOperationException("Grok ACP runtime is shutting down."));
+            pending.TrySetException(new InvalidOperationException($"{_agentName} ACP runtime is shutting down."));
         }
 
         _pendingRequests.Clear();
@@ -1067,17 +1098,17 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         if (!_shutdown.IsCancellationRequested && !string.IsNullOrWhiteSpace(_activeTurnId) && process.ExitCode != 0)
         {
             var turnId = _activeTurnId;
-            _emit(CreateEvent("turn.completed", turnId, null, null, "grok.acp", "process.exit", new { process.ExitCode }, appServerControlEvent =>
+            _emit(CreateEvent("turn.completed", turnId, null, null, "acp", "process.exit", new { process.ExitCode }, appServerControlEvent =>
             {
                 appServerControlEvent.TurnCompleted = new AppServerControlProviderTurnCompletedPayload
                 {
                     State = "failed",
                     StateLabel = "Failed",
                     StopReason = "process_exit",
-                    ErrorMessage = $"Grok exited with code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}."
+                    ErrorMessage = $"{_agentName} exited with code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}."
                 };
             }));
-            EmitRuntimeMessage("runtime.error", "Grok ACP process exited unexpectedly.", $"Exit code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
+            EmitRuntimeMessage("runtime.error", $"{_agentName} ACP process exited unexpectedly.", $"Exit code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
             ResetTurnState();
         }
     }
@@ -1091,7 +1122,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             _process is null ||
             _process.HasExited)
         {
-            throw new InvalidOperationException("Grok ACP runtime is not attached.");
+            throw new InvalidOperationException($"{_agentName} ACP runtime is not attached.");
         }
     }
 
@@ -1102,11 +1133,9 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
 
     private AppServerControlQuickSettingsSummary CreateDefaultQuickSettings()
     {
-        var defaultPermissionMode = AppServerControlProviderRuntimeConfiguration.GetGrokAlwaysApproveDefault()
-            ? AppServerControlQuickSettings.PermissionModeAuto
-            : AppServerControlQuickSettings.PermissionModeManual;
+        const string defaultPermissionMode = AppServerControlQuickSettings.PermissionModeManual;
         return AppServerControlQuickSettings.CreateSummary(
-            AppServerControlProviderRuntimeConfiguration.GetGrokDefaultModel(),
+            null,
             null,
             AppServerControlQuickSettings.PlanModeOff,
             defaultPermissionMode,
@@ -1115,7 +1144,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
 
     private AppServerControlQuickSettingsSummary ResolveRequestedQuickSettings(AppServerControlTurnRequest request)
     {
-        var requestedModel = AppServerControlProviderRuntimeConfiguration.NormalizeGrokModel(request.Model);
+        var requestedModel = NormalizeOptional(request.Model);
         return AppServerControlQuickSettings.CreateSummary(
             requestedModel ?? _quickSettings.Model,
             request.Effort ?? _quickSettings.Effort,
@@ -1128,7 +1157,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
     {
         return new AppServerControlQuickSettingsSummary
         {
-            Model = _quickSettings.Model ?? requested.Model,
+            Model = requested.Model ?? _quickSettings.Model,
             Effort = requested.Effort,
             PlanMode = requested.PlanMode,
             PermissionMode = requested.PermissionMode,
@@ -1137,12 +1166,106 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         };
     }
 
+    private async Task ApplyRequestedQuickSettingsAsync(
+        AppServerControlQuickSettingsSummary requested,
+        CancellationToken ct)
+    {
+        if (!string.Equals(requested.Model, _quickSettings.Model, StringComparison.Ordinal) &&
+            !string.IsNullOrWhiteSpace(requested.Model))
+        {
+            if (_configOptionIds.TryGetValue("model", out var configId))
+            {
+                await SetConfigOptionAsync(configId, requested.Model, ct).ConfigureAwait(false);
+            }
+            else if (_supportsLegacyModels)
+            {
+                await SetLegacyModelAsync(requested.Model, ct).ConfigureAwait(false);
+            }
+        }
+
+        if (!string.Equals(requested.Effort, _quickSettings.Effort, StringComparison.Ordinal) &&
+            !string.IsNullOrWhiteSpace(requested.Effort) &&
+            _configOptionIds.TryGetValue("effort", out var effortConfigId))
+        {
+            await SetConfigOptionAsync(effortConfigId, requested.Effort, ct).ConfigureAwait(false);
+        }
+
+        var requestedModeId = string.Equals(
+            requested.PlanMode,
+            AppServerControlQuickSettings.PlanModeOn,
+            StringComparison.Ordinal)
+            ? _planModeId
+            : _defaultModeId;
+        if (!string.IsNullOrWhiteSpace(requestedModeId) &&
+            !string.Equals(requestedModeId, _currentModeId, StringComparison.Ordinal))
+        {
+            await SetLegacyModeAsync(requestedModeId, ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task SetConfigOptionAsync(string configId, string value, CancellationToken ct)
+    {
+        var result = await SendRequestAsync(
+                "session/set_config_option",
+                writer =>
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("sessionId", _providerThreadId);
+                    writer.WriteString("configId", configId);
+                    writer.WriteString("value", value);
+                    writer.WriteEndObject();
+                },
+                AttachRequestTimeout,
+                ct)
+            .ConfigureAwait(false);
+        var updated = ApplyConfigOptions(_quickSettings, Traverse(result, "configOptions"));
+        if (updated is not null)
+        {
+            _quickSettings = updated;
+            CaptureConfigOptions(Traverse(result, "configOptions"));
+        }
+    }
+
+    private async Task SetLegacyModelAsync(string modelId, CancellationToken ct)
+    {
+        await SendRequestAsync(
+                "session/set_model",
+                writer =>
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("sessionId", _providerThreadId);
+                    writer.WriteString("modelId", modelId);
+                    writer.WriteEndObject();
+                },
+                AttachRequestTimeout,
+                ct)
+            .ConfigureAwait(false);
+    }
+
+    private async Task SetLegacyModeAsync(string modeId, CancellationToken ct)
+    {
+        await SendRequestAsync(
+                "session/set_mode",
+                writer =>
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("sessionId", _providerThreadId);
+                    writer.WriteString("modeId", modeId);
+                    writer.WriteEndObject();
+                },
+                AttachRequestTimeout,
+                ct)
+            .ConfigureAwait(false);
+        _currentModeId = modeId;
+    }
+
     private AppServerControlQuickSettingsSummary CreateQuickSettingsFromState(JsonElement initializeResult, JsonElement sessionResult)
     {
         var modelState = Traverse(sessionResult, "models") ?? Traverse(initializeResult, "_meta", "modelState");
-        var model = AppServerControlProviderRuntimeConfiguration.NormalizeGrokModel(GetString(modelState, "currentModelId"))
-                    ?? _quickSettings.Model
-                    ?? AppServerControlProviderRuntimeConfiguration.GetGrokDefaultModel();
+        _supportsLegacyModels = modelState is { ValueKind: JsonValueKind.Object };
+        CaptureConfigOptions(Traverse(sessionResult, "configOptions"));
+        CaptureModes(Traverse(sessionResult, "modes"));
+        var model = NormalizeOptional(GetString(modelState, "currentModelId")) ?? _quickSettings.Model;
         var summary = AppServerControlQuickSettings.CreateSummary(
             model,
             null,
@@ -1158,7 +1281,73 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             new AppServerControlQuickSettingsOption { Value = "xhigh", Label = "Extra high" },
             new AppServerControlQuickSettingsOption { Value = "max", Label = "Max" }
         ];
-        return summary;
+        return ApplyConfigOptions(summary, Traverse(sessionResult, "configOptions")) ?? summary;
+    }
+
+    private void CaptureConfigOptions(JsonElement? configOptions)
+    {
+        if (configOptions is not { ValueKind: JsonValueKind.Array } options)
+        {
+            return;
+        }
+
+        using var optionEnumerator = options.EnumerateArray();
+        while (optionEnumerator.MoveNext())
+        {
+            var option = optionEnumerator.Current;
+            var id = GetString(option, "id");
+            var category = GetString(option, "category");
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                continue;
+            }
+
+            if (string.Equals(category, "model", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(id, "model", StringComparison.OrdinalIgnoreCase))
+            {
+                _configOptionIds["model"] = id;
+            }
+            else if (string.Equals(category, "thought_level", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(id, "effort", StringComparison.OrdinalIgnoreCase))
+            {
+                _configOptionIds["effort"] = id;
+            }
+        }
+    }
+
+    private void CaptureModes(JsonElement? modeState)
+    {
+        if (modeState is not { ValueKind: JsonValueKind.Object } modes)
+        {
+            return;
+        }
+
+        _currentModeId = GetString(modes, "currentModeId");
+        var availableModes = Traverse(modes, "availableModes");
+        if (availableModes is not { ValueKind: JsonValueKind.Array } values)
+        {
+            return;
+        }
+
+        using var modeEnumerator = values.EnumerateArray();
+        while (modeEnumerator.MoveNext())
+        {
+            var mode = modeEnumerator.Current;
+            var id = GetString(mode, "id") ?? GetString(mode, "modeId");
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                continue;
+            }
+
+            if (id.Contains("plan", StringComparison.OrdinalIgnoreCase))
+            {
+                _planModeId ??= id;
+            }
+            else
+            {
+                _defaultModeId ??= id;
+            }
+        }
     }
 
     private static AppServerControlQuickSettingsSummary? ApplyConfigOptions(AppServerControlQuickSettingsSummary current, JsonElement? configOptions)
@@ -1188,7 +1377,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             if (string.Equals(category, "model", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(id, "model", StringComparison.OrdinalIgnoreCase))
             {
-                next.Model = AppServerControlProviderRuntimeConfiguration.NormalizeGrokModel(currentValue);
+                next.Model = NormalizeOptional(currentValue);
                 next.ModelOptions = ReadConfigValueOptions(option);
             }
             else if (string.Equals(category, "thought_level", StringComparison.OrdinalIgnoreCase) ||
@@ -1264,13 +1453,13 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         return result;
     }
 
-    private static List<GrokPromptBlock> BuildPromptBlocks(AppServerControlTurnRequest request, string? planMode)
+    private static List<AcpPromptBlock> BuildPromptBlocks(AppServerControlTurnRequest request, string? planMode)
     {
-        var blocks = new List<GrokPromptBlock>();
+        var blocks = new List<AcpPromptBlock>();
         var prompt = AppServerControlQuickSettings.ApplyPlanModePrompt(request.Text, planMode);
         if (!string.IsNullOrWhiteSpace(prompt))
         {
-            blocks.Add(new GrokPromptBlock("text", prompt));
+            blocks.Add(new AcpPromptBlock("text", prompt));
         }
 
         if (request.Attachments.Count == 0)
@@ -1305,11 +1494,11 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             builder.AppendLine();
         }
 
-        blocks.Add(new GrokPromptBlock("text", builder.ToString().Trim()));
+        blocks.Add(new AcpPromptBlock("text", builder.ToString().Trim()));
         return blocks;
     }
 
-    private static void WritePromptBlocks(Utf8JsonWriter writer, IReadOnlyList<GrokPromptBlock> promptBlocks)
+    private static void WritePromptBlocks(Utf8JsonWriter writer, IReadOnlyList<AcpPromptBlock> promptBlocks)
     {
         writer.WriteStartArray();
         foreach (var block in promptBlocks)
@@ -1391,7 +1580,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         var appServerControlEvent = new AppServerControlProviderEvent
         {
             Sequence = Interlocked.Increment(ref _sequence),
-            EventId = $"evt-grok-{Guid.NewGuid():N}",
+            EventId = $"evt-{Provider}-{Guid.NewGuid():N}",
             SessionId = _sessionId ?? string.Empty,
             Provider = Provider,
             ThreadId = _providerThreadId ?? _sessionId ?? string.Empty,
@@ -1432,7 +1621,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
 
     private void EmitRuntimeMessage(string type, string message, string? detail)
     {
-        EmitRuntimeMessage(type, message, detail, "grok.acp", type, new { message, detail }, null);
+        EmitRuntimeMessage(type, message, detail, "acp", type, new { message, detail }, null);
     }
 
     private void EmitRuntimeMessage(
@@ -1459,28 +1648,14 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         }, rawLine));
     }
 
-    private static string BuildArguments(string permissionMode, string? model)
+    private string BuildArguments()
     {
-        var args = new List<string>
-        {
-            "agent"
-        };
+        return string.Join(" ", _executableArguments.Select(QuoteArgument));
+    }
 
-        var normalizedModel = AppServerControlProviderRuntimeConfiguration.NormalizeGrokModel(model);
-        if (!string.IsNullOrWhiteSpace(normalizedModel))
-        {
-            args.Add("-m");
-            args.Add(normalizedModel);
-        }
-
-        if (string.Equals(permissionMode, AppServerControlQuickSettings.PermissionModeAuto, StringComparison.Ordinal))
-        {
-            args.Add("--always-approve");
-        }
-
-        args.Add("stdio");
-
-        return string.Join(" ", args.Select(QuoteArgument));
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static ProcessStartInfo CreateProcessStartInfo(string binaryPath, string arguments, string workingDirectory)
@@ -1956,13 +2131,13 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         return current;
     }
 
-    private readonly record struct GrokPromptBlock(string Type, string Text);
+    private readonly record struct AcpPromptBlock(string Type, string Text);
 
     private readonly record struct PermissionOption(string OptionId, string? Name, string? Kind);
 
     private readonly record struct PendingPermissionRequest(JsonElement RpcId, string TurnId, IReadOnlyList<PermissionOption> Options);
 
-    private sealed class GrokToolState
+    private sealed class AcpToolState
     {
         public string ItemId { get; init; } = string.Empty;
         public string ItemType { get; init; } = "dynamic_tool_call";

@@ -503,6 +503,8 @@ public sealed class AppServerControlAttachRuntimeRequest
     public string? OwnerToken { get; set; }
     public SessionAgentAttachPoint? AttachPoint { get; set; }
     public string? ExecutablePath { get; set; }
+    public string? AgentName { get; set; }
+    public List<string> ExecutableArguments { get; set; } = [];
     public string? UserProfileDirectory { get; set; }
     public string? ResumeThreadId { get; set; }
 }
@@ -619,7 +621,6 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 public partial class AppServerControlHostJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

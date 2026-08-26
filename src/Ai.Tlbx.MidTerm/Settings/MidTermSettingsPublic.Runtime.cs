@@ -56,9 +56,6 @@ public sealed partial class MidTermSettingsPublic
             CodexYoloDefault = settings.CodexYoloDefault,
             CodexDefaultAppServerControlModel = settings.CodexDefaultAppServerControlModel,
             CodexEnvironmentVariables = settings.CodexEnvironmentVariables,
-            ClaudeDangerouslySkipPermissionsDefault = settings.ClaudeDangerouslySkipPermissionsDefault,
-            ClaudeDefaultAppServerControlModel = settings.ClaudeDefaultAppServerControlModel,
-            ClaudeEnvironmentVariables = settings.ClaudeEnvironmentVariables,
             AgentMessageFontFamily = NormalizeAgentMessageFontFamily(settings.AgentMessageFontFamily),
             ShowAgentMessageTimestamps = settings.ShowAgentMessageTimestamps,
             ShowUnknownAgentMessages = settings.ShowUnknownAgentMessages,
@@ -161,9 +158,6 @@ public sealed partial class MidTermSettingsPublic
         settings.CodexYoloDefault = CodexYoloDefault;
         settings.CodexDefaultAppServerControlModel = CodexDefaultAppServerControlModel?.Trim() ?? string.Empty;
         settings.CodexEnvironmentVariables = CodexEnvironmentVariables ?? string.Empty;
-        settings.ClaudeDangerouslySkipPermissionsDefault = ClaudeDangerouslySkipPermissionsDefault;
-        settings.ClaudeDefaultAppServerControlModel = ClaudeDefaultAppServerControlModel?.Trim() ?? string.Empty;
-        settings.ClaudeEnvironmentVariables = ClaudeEnvironmentVariables ?? string.Empty;
         settings.AgentMessageFontFamily = NormalizeAgentMessageFontFamily(
             AgentMessageFontFamily,
             DefaultAgentMessageFontFamily);

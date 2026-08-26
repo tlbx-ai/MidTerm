@@ -44,9 +44,6 @@ function createSettings(patch: Partial<MidTermSettingsPublic> = {}): MidTermSett
     codexYoloDefault: false,
     codexDefaultAppServerControlModel: '',
     codexEnvironmentVariables: '',
-    claudeDangerouslySkipPermissionsDefault: false,
-    claudeDefaultAppServerControlModel: '',
-    claudeEnvironmentVariables: '',
     ...patch,
   } as MidTermSettingsPublic;
 }
@@ -107,7 +104,7 @@ describe('appServerControl quick settings', () => {
     expect(getAppServerControlResolvedProviderModel('codex')).toBeNull();
   });
 
-  it('maps obsolete Grok Build sticky model aliases to the current Grok default', () => {
+  it('preserves ACP agent model ids without provider-specific alias rewriting', () => {
     globalThis.localStorage.setItem(
       'midterm:appServerControl-quick-settings:provider:grok',
       JSON.stringify({ model: 'grok-build' }),
@@ -119,9 +116,7 @@ describe('appServerControl quick settings', () => {
       } as never,
     });
 
-    expect(getAppServerControlQuickSettingsDraft('grok-stale').model).toBe(
-      'grok-4.20-0309-non-reasoning',
-    );
+    expect(getAppServerControlQuickSettingsDraft('grok-stale').model).toBe('grok-build');
   });
 
   it('persists the selected provider model into MidTerm settings', () => {

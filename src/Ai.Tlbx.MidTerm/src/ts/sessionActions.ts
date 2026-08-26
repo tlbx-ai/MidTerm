@@ -94,15 +94,9 @@ export interface SessionSelectionOptions {
 
 interface SessionActionsDeps {
   animateBookmarkSaveSuccess: (sessionId: string) => void;
-  buildAppServerControlHistoryDedupeKey: (
-    profile: 'codex' | 'claude' | 'grok',
-    workingDirectory: string,
-  ) => string;
+  buildAppServerControlHistoryDedupeKey: (profile: string, workingDirectory: string) => string;
   closeMobileActionsMenu: () => void;
-  getBookmarkSurfaceType: (
-    session: Session,
-    profile: 'codex' | 'claude' | 'grok' | null,
-  ) => 'trm' | 'cdx' | 'cld' | 'grk';
+  getBookmarkSurfaceType: (session: Session, profile: string | null) => 'trm' | 'cdx' | 'acp';
   isAppServerControlOnlySession: (session: Session | null | undefined) => boolean;
 }
 
@@ -116,7 +110,7 @@ interface ResolvedPinnedHistoryTarget {
   foregroundProcessIdentity: string | null;
   foregroundProcessName: string | null;
   historyMode: ReturnType<typeof resolveSessionHistoryMode>;
-  surfaceType: 'trm' | 'cdx' | 'cld' | 'grk';
+  surfaceType: 'trm' | 'cdx' | 'acp';
   workingDirectory: string;
 }
 

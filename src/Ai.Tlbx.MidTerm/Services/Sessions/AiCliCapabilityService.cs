@@ -44,9 +44,9 @@ public sealed class AiCliCapabilityService
         return profile switch
         {
             AiCliProfileService.CodexProfile => await BuildCodexSnapshotAsync(userProfileDirectory, appServerControlOnly, ct).ConfigureAwait(false),
-            AiCliProfileService.ClaudeProfile => await BuildClaudeSnapshotAsync(userProfileDirectory, appServerControlOnly, ct).ConfigureAwait(false),
+            AiCliProfileService.ClaudeProfile => BuildClaudeTerminalSnapshot(userProfileDirectory, appServerControlOnly),
             AiCliProfileService.GrokProfile => await BuildGrokSnapshotAsync(userProfileDirectory, appServerControlOnly, ct).ConfigureAwait(false),
-            AiCliProfileService.OpenCodeProfile => BuildOpenCodeSnapshot(),
+            AiCliProfileService.OpenCodeProfile => BuildOpenCodeSnapshot(userProfileDirectory, appServerControlOnly),
             AiCliProfileService.GenericAiProfile => BuildGenericSnapshot(),
             AiCliProfileService.ShellProfile => BuildShellSnapshot(),
             _ => BuildUnknownSnapshot(profile)
@@ -139,96 +139,34 @@ public sealed class AiCliCapabilityService
             ]);
     }
 
-    private static async Task<AiCliCapabilitySnapshot> BuildClaudeSnapshotAsync(string? userProfileDirectory, bool appServerControlOnly, CancellationToken ct)
+    private static AiCliCapabilitySnapshot BuildClaudeTerminalSnapshot(string? userProfileDirectory, bool appServerControlOnly)
     {
         var binaryPath = AiCliCommandLocator.FindExecutableInPath("claude", userProfileDirectory);
-        if (binaryPath is null)
-        {
-            if (appServerControlOnly)
-            {
-                return BuildSnapshot(
-                    "native-required",
-                    "attention",
-                    "App Server Controller runtime unavailable",
-                    "Explicit Claude App Server Controller sessions require the Claude CLI plus its structured runtime support on this machine.",
-                    [
-                        CreateCapability("cli", "Claude CLI", "missing", "Missing", "tlbx could not find `claude` on PATH."),
-                        CreateCapability("native", "Claude structured runtime", "missing", "Missing", "Without structured Claude runtime support, this explicit App Server Controller session cannot become live."),
-                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
-                    ]);
-            }
-
-            return BuildSnapshot(
-                "fallback-only",
-                "fallback",
-                "Fallback only",
-                "tlbx is rendering this Claude lane from supervisor state and terminal telemetry because the Claude CLI is not available on this machine.",
-                [
-                    CreateCapability("cli", "Claude CLI", "missing", "Missing", "tlbx could not find `claude` on PATH."),
-                    CreateCapability("native", "Claude SDK lane", "missing", "Missing", "Without the Claude CLI, there is no SDK-backed lane to attach."),
-                    CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "xterm stays fully available and remains the source of truth.")
-                ]);
-        }
-
-        var probe = await ProbeAsync(binaryPath, "--help", ct).ConfigureAwait(false);
-        var advertisesSdk = probe.Output.Contains("--sdk-mode", StringComparison.OrdinalIgnoreCase) ||
-                            probe.Output.Contains("sdk mode", StringComparison.OrdinalIgnoreCase);
-
-        if (probe.Success && advertisesSdk)
-        {
-            if (appServerControlOnly)
-            {
-                return BuildSnapshot(
-                    "native-ready",
-                    "positive",
-                    "App Server Controller runtime ready",
-                    "This explicit Claude App Server Controller session can attach through `mtagenthost` to Claude's structured runtime.",
-                    [
-                        CreateCapability("cli", "Claude CLI", "ready", "Ready", $"Using `{binaryPath}`."),
-                        CreateCapability("native", "Claude structured runtime", "ready", "Ready", "This machine advertises structured Claude runtime support."),
-                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
-                    ]);
-            }
-
-            return BuildSnapshot(
-                "fallback-ready",
-                "positive",
-                "Fallback now, native-ready",
-                "tlbx is still rendering this Claude lane from terminal signals, but the installed CLI advertises `--sdk-mode`, so a native event feed can be added later without changing the UI or replacing xterm.",
-                [
-                    CreateCapability("cli", "Claude CLI", "ready", "Ready", $"Using `{binaryPath}`."),
-                    CreateCapability("native", "Claude SDK lane", "ready", "Ready", "This machine advertises `--sdk-mode`."),
-                    CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "xterm remains available beside the Agent view.")
-                ]);
-        }
-
         if (appServerControlOnly)
         {
             return BuildSnapshot(
-                "native-gated",
-                "warning",
-                "App Server Controller runtime blocked",
-                "Claude CLI exists, but structured runtime support is not available cleanly enough for this explicit App Server Controller session yet.",
+                "unsupported",
+                "attention",
+                "Agent Controller runtime unsupported",
+                "tlbx does not expose Claude Code as an Agent Controller runtime because its previous stream-json adapter was not a supported ACP contract.",
                 [
-                    CreateCapability("cli", "Claude CLI", "ready", "Ready", $"Using `{binaryPath}`."),
-                    CreateCapability("native", "Claude structured runtime", "gated", "Gated", advertisesSdk
-                        ? "The CLI mentions structured runtime support, but the probe did not complete cleanly."
-                        : "This CLI build does not clearly advertise structured runtime support yet."),
-                    CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
+                    CreateCapability("cli", "Claude CLI", binaryPath is null ? "missing" : "ready", binaryPath is null ? "Missing" : "Ready", binaryPath is null ? "tlbx could not find `claude` on PATH." : $"Using `{binaryPath}`."),
+                    CreateCapability("native", "ACP runtime", "unsupported", "Unsupported", "No maintained standard ACP entry point is registered for Claude Code."),
+                    CreateCapability("terminal", "Terminal", "absent", "Absent", "Agent Controller sessions do not own an `mthost` terminal.")
                 ]);
         }
 
         return BuildSnapshot(
-            "fallback-gated",
-            "warning",
-            "Fallback with upgrade gap",
-            "tlbx is rendering this Claude lane from terminal signals. The Claude CLI exists, but a safe SDK lane is not advertised here yet, so native events stay gated for now.",
+            "terminal-only",
+            binaryPath is null ? "fallback" : "positive",
+            binaryPath is null ? "Terminal profile unavailable" : "Terminal profile ready",
+            binaryPath is null
+                ? "tlbx could not find the Claude CLI for this terminal-native profile."
+                : "Claude Code remains available as a terminal-native CLI; tlbx does not claim a structured Agent Controller contract for it.",
             [
-                CreateCapability("cli", "Claude CLI", "ready", "Ready", $"Using `{binaryPath}`."),
-                CreateCapability("native", "Claude SDK lane", "gated", "Gated", advertisesSdk
-                    ? "The CLI mentions SDK support, but the probe did not complete cleanly."
-                    : "This CLI build does not clearly advertise `--sdk-mode` yet."),
-                CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "The terminal lane remains active and unaffected.")
+                CreateCapability("cli", "Claude CLI", binaryPath is null ? "missing" : "ready", binaryPath is null ? "Missing" : "Ready", binaryPath is null ? "tlbx could not find `claude` on PATH." : $"Using `{binaryPath}`."),
+                CreateCapability("native", "Agent Controller", "unsupported", "Unsupported", "The unmaintained stream-json adapter is intentionally not exposed."),
+                CreateCapability("terminal", "Terminal", "ready", "Ready", "Claude Code runs in the regular PTY surface.")
             ]);
     }
 
@@ -320,17 +258,34 @@ public sealed class AiCliCapabilityService
             ]);
     }
 
-    private static AiCliCapabilitySnapshot BuildOpenCodeSnapshot()
+    private static AiCliCapabilitySnapshot BuildOpenCodeSnapshot(
+        string? userProfileDirectory,
+        bool appServerControlOnly)
     {
+        var binaryPath = AiCliCommandLocator.FindExecutableInPath("opencode", userProfileDirectory);
+        if (binaryPath is null)
+        {
+            return BuildSnapshot(
+                "missing",
+                "missing",
+                "Missing",
+                "tlbx could not find a local OpenCode installation with ACP support.",
+                [
+                    CreateCapability("cli", "OpenCode CLI", "missing", "Missing", "Install OpenCode and make sure `opencode` is on PATH."),
+                    CreateCapability("native", "OpenCode ACP", "missing", "Missing", "Without `opencode acp`, an Agent Controller Session cannot attach."),
+                    CreateCapability("terminal", "Terminal", appServerControlOnly ? "absent" : "ready", appServerControlOnly ? "Absent" : "Ready", appServerControlOnly ? "Agent Controller Sessions do not own an `mthost` terminal." : "xterm remains available.")
+                ]);
+        }
+
         return BuildSnapshot(
-            "fallback-only",
-            "fallback",
-            "Fallback only",
-            "tlbx can render OpenCode sessions from terminal telemetry, but there is no tlbx-native structured lane for this provider yet.",
+            "native",
+            "ready",
+            "Ready",
+            "OpenCode is available through the standard tlbx ACP runtime.",
             [
-                CreateCapability("runtime", "OpenCode runtime", "ready", "Ready", "The session can still be supervised through tlbx state and terminal output."),
-                CreateCapability("native", "Native events", "planned", "Planned", "tlbx does not ship an OpenCode-native event lane yet."),
-                CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "xterm remains the source of truth.")
+                CreateCapability("cli", "OpenCode CLI", "ready", "Ready", $"Using `{binaryPath}`."),
+                CreateCapability("native", "OpenCode ACP", "ready", "Ready", "`opencode acp` is available for Agent Controller Sessions."),
+                CreateCapability("terminal", "Terminal", appServerControlOnly ? "absent" : "ready", appServerControlOnly ? "Absent" : "Ready", appServerControlOnly ? "Agent Controller Sessions do not own an `mthost` terminal." : "xterm remains available.")
             ]);
     }
 

@@ -14,6 +14,7 @@ public static class HistorySurfaceTypes
     public const string Codex = "cdx";
     public const string Claude = "cld";
     public const string Grok = "grk";
+    public const string Acp = "acp";
 }
 
 public sealed class LaunchEntry

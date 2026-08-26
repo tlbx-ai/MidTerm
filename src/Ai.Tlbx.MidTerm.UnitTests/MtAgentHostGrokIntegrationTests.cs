@@ -8,19 +8,21 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 [Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class MtAgentHostGrokIntegrationTests
 {
-    [Fact]
-    public async Task MtAgentHost_CanDriveFakeGrokAcpTurn()
+    [Theory]
+    [InlineData("grok", "agent", "stdio")]
+    [InlineData("opencode", "acp")]
+    public async Task MtAgentHost_CanDriveStandardAcpAgent(string provider, params string[] expectedArguments)
     {
         using var fakeGrok = FakeGrokPathScope.Create();
         var hostDll = ResolveAgentHostDll();
-        var sessionId = "session-grok-" + Guid.NewGuid().ToString("N");
+        var sessionId = $"session-{provider}-" + Guid.NewGuid().ToString("N");
         using var process = StartAgentHost(hostDll);
         var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
 
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("grok", hello.Providers);
+            Assert.Contains(provider, hello.Providers);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -30,7 +32,7 @@ public sealed class MtAgentHostGrokIntegrationTests
                 AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
                     SessionId = sessionId,
-                    Provider = "grok",
+                    Provider = provider,
                     ExecutablePath = fakeGrok.ExecutablePath,
                     WorkingDirectory = fakeGrok.Root
                 }
@@ -53,13 +55,13 @@ public sealed class MtAgentHostGrokIntegrationTests
                 pendingPatches,
                 sessionId,
                 count: 32);
-            Assert.Equal("grok", attachWindow.Provider);
+            Assert.Equal(provider, attachWindow.Provider);
             Assert.Equal("grok-build-0.1", attachWindow.QuickSettings.Model);
             Assert.Contains(attachWindow.QuickSettings.ModelOptions, option => option.Value == "grok-4.3");
             var capture = await WaitForFakeGrokLaunchCaptureAsync(
                 fakeGrok.CapturePath,
                 static launch => launch.Arguments.Length > 0);
-            Assert.Equal(["agent", "-m", "grok-build-0.1", "stdio"], capture.Arguments);
+            Assert.Equal(expectedArguments, capture.Arguments);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -75,7 +77,7 @@ public sealed class MtAgentHostGrokIntegrationTests
 
             var turnResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn");
             Assert.Equal("accepted", turnResult.Status);
-            Assert.Equal("grok", turnResult.TurnStarted!.Provider);
+            Assert.Equal(provider, turnResult.TurnStarted!.Provider);
 
             _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
@@ -96,7 +98,7 @@ public sealed class MtAgentHostGrokIntegrationTests
             Assert.Contains(
                 turnWindow.Notices,
                 notice => notice.Type == "agent.state" &&
-                          notice.Message.Contains("Grok commands available: compact, always-approve.", StringComparison.Ordinal));
+                          notice.Message.Contains("commands available: compact, always-approve.", StringComparison.Ordinal));
             Assert.Contains(
                 turnWindow.Notices,
                 notice => notice.Type == "agent.state" &&

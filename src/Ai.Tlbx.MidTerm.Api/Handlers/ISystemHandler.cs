@@ -26,6 +26,7 @@ public interface ISystemHandler
     IResult GetSharePacket(HttpContext context);
     IResult GetNetworks();
     IResult GetShells();
+    IResult GetAgentControllerInstallations();
     IResult GetUsers();
     IResult GetSettings();
     IResult UpdateSettings(MidTermSettingsPublic settings);

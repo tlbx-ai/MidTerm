@@ -4,22 +4,19 @@ internal sealed class FakeGrokPathScope : IDisposable
 {
     private readonly string? _originalPath;
     private readonly string? _originalCapturePath;
-    private readonly string? _originalDefaultModel;
 
     private FakeGrokPathScope(
         string root,
         string fakeGrokBin,
         string capturePath,
         string? originalPath,
-        string? originalCapturePath,
-        string? originalDefaultModel)
+        string? originalCapturePath)
     {
         Root = root;
         FakeGrokBin = fakeGrokBin;
         CapturePath = capturePath;
         _originalPath = originalPath;
         _originalCapturePath = originalCapturePath;
-        _originalDefaultModel = originalDefaultModel;
     }
 
     public string Root { get; }
@@ -46,18 +43,15 @@ internal sealed class FakeGrokPathScope : IDisposable
         var originalPath = Environment.GetEnvironmentVariable("PATH");
         var capturePath = Path.Combine(root, "fake-grok-launch.json");
         var originalCapturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_CAPTURE_PATH");
-        var originalDefaultModel = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_GROK_DEFAULT_MODEL");
         Environment.SetEnvironmentVariable("PATH", fakeGrokBin + Path.PathSeparator + originalPath);
         Environment.SetEnvironmentVariable("MIDTERM_FAKE_GROK_CAPTURE_PATH", capturePath);
-        Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_GROK_DEFAULT_MODEL", "grok-build-0.1");
-        return new FakeGrokPathScope(root, fakeGrokBin, capturePath, originalPath, originalCapturePath, originalDefaultModel);
+        return new FakeGrokPathScope(root, fakeGrokBin, capturePath, originalPath, originalCapturePath);
     }
 
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("PATH", _originalPath);
         Environment.SetEnvironmentVariable("MIDTERM_FAKE_GROK_CAPTURE_PATH", _originalCapturePath);
-        Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_GROK_DEFAULT_MODEL", _originalDefaultModel);
         try
         {
             Directory.Delete(Root, recursive: true);

@@ -123,110 +123,6 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
         }
     }
 
-    [Fact]
-    [Trait("Category", "RealClaude")]
-    [Trait("Category", "ResumeProbe")]
-    public async Task MtAgentHost_CanResumeRealClaudeConversationFromLiveLocalHistory()
-    {
-        if (!IsRealClaudeResumeProbeEnabled())
-        {
-            return;
-        }
-
-        var workingDirectory = ResolveRepoRoot();
-        var candidate = TryFindClaudeCandidate(workingDirectory);
-        if (candidate is null)
-        {
-            return;
-        }
-
-        _output.WriteLine($"Claude resume candidate: {candidate.SessionId} ({candidate.SourcePath})");
-        _output.WriteLine($"Claude probe expects prior user message: {candidate.RecentUserMessage}");
-
-        var hostDll = ResolveAgentHostDll();
-        using var process = StartAgentHost(hostDll, configureClaudePermissions: true);
-        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
-
-        try
-        {
-            var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("claude", hello.Providers);
-
-            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
-            {
-                CommandId = "cmd-attach-real-claude-live-resume",
-                SessionId = "session-real-claude-live-resume",
-                Type = "runtime.attach",
-                AttachRuntime = new AppServerControlAttachRuntimeRequest
-                {
-                    SessionId = "session-real-claude-live-resume",
-                    Provider = "claude",
-                    WorkingDirectory = candidate.WorkingDirectory,
-                    ResumeThreadId = candidate.SessionId
-                }
-            });
-
-            var attachResult = await AppServerControlHostTestClient.ReadResultAsync(
-                process.StandardOutput,
-                pendingPatches,
-                "cmd-attach-real-claude-live-resume");
-            Assert.Equal("accepted", attachResult.Status);
-
-            var attachWindow = await WaitForReadyWindowAsync(
-                process.StandardOutput,
-                process.StandardInput,
-                pendingPatches,
-                "session-real-claude-live-resume");
-            LogWindow("claude attach", attachWindow);
-            Assert.Equal(candidate.SessionId, attachWindow.Thread.ThreadId);
-
-            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
-            {
-                CommandId = "cmd-turn-real-claude-live-resume",
-                SessionId = "session-real-claude-live-resume",
-                Type = "turn.start",
-                StartTurn = new AppServerControlTurnRequest
-                {
-                    Text =
-                        """
-                        Reply with exactly the most recent direct user message in this conversation before this turn.
-                        Collapse any internal whitespace to single spaces.
-                        Reply with that message only.
-                        """,
-                    Attachments = []
-                }
-            });
-
-            var turnResult = await AppServerControlHostTestClient.ReadResultAsync(
-                process.StandardOutput,
-                pendingPatches,
-                "cmd-turn-real-claude-live-resume");
-            Assert.Equal("accepted", turnResult.Status);
-
-            var turnWindow = await WaitForTurnStateWindowAsync(
-                process.StandardOutput,
-                process.StandardInput,
-                pendingPatches,
-                "session-real-claude-live-resume",
-                "completed");
-            LogWindow("claude turn", turnWindow);
-
-            var assistantText = AppServerControlHostTestClient.CollectAssistantText(turnWindow);
-            _output.WriteLine($"Claude resumed assistant text: {NormalizeMessage(assistantText)}");
-            AssertNormalizedMessageMatch(candidate.RecentUserMessage, assistantText);
-        }
-        finally
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-        }
-    }
-
     private static ResumeProbeCandidate? TryFindCodexCandidate(string workingDirectory)
     {
         var targetDirectory = NormalizePath(workingDirectory);
@@ -256,33 +152,6 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
             {
                 return new ResumeProbeCandidate(sessionId!, cwd, NormalizeMessage(recentUserMessage!), path);
             }
-        }
-
-        return null;
-    }
-
-    private static ResumeProbeCandidate? TryFindClaudeCandidate(string workingDirectory)
-    {
-        var targetDirectory = NormalizePath(workingDirectory);
-        var projectsRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "projects");
-        if (!Directory.Exists(projectsRoot))
-        {
-            return null;
-        }
-
-        foreach (var path in Directory.EnumerateFiles(projectsRoot, "*.jsonl", SearchOption.AllDirectories)
-                     .Where(static path => !path.Contains($"{Path.DirectorySeparatorChar}subagents{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
-                     .Select(static path => new FileInfo(path))
-                     .OrderByDescending(static file => file.LastWriteTimeUtc)
-                     .Take(200)
-                     .Select(static file => file.FullName))
-        {
-            if (!TryReadClaudeSessionProbeData(path, targetDirectory, out var sessionId, out var cwd, out var recentUserMessage))
-            {
-                continue;
-            }
-
-            return new ResumeProbeCandidate(sessionId!, cwd!, NormalizeMessage(recentUserMessage!), path);
         }
 
         return null;
@@ -390,113 +259,6 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
         }
 
         return lastDirectMessage;
-    }
-
-    private static bool TryReadClaudeSessionProbeData(
-        string path,
-        string targetDirectory,
-        out string? sessionId,
-        out string? cwd,
-        out string? recentUserMessage)
-    {
-        sessionId = null;
-        cwd = null;
-        recentUserMessage = null;
-        var matchesTargetDirectory = false;
-
-        using var reader = OpenSharedReaderOrNull(path);
-        if (reader is null)
-        {
-            return false;
-        }
-
-        while (reader.ReadLine() is { } line)
-        {
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                continue;
-            }
-
-            try
-            {
-                using var json = JsonDocument.Parse(line);
-                var root = json.RootElement;
-
-                if (TryGetString(root, "cwd", out var lineCwd))
-                {
-                    cwd = lineCwd;
-                    if (string.Equals(NormalizePath(lineCwd!), targetDirectory, StringComparison.OrdinalIgnoreCase))
-                    {
-                        matchesTargetDirectory = true;
-                    }
-                }
-
-                if (TryGetString(root, "sessionId", out var lineSessionId))
-                {
-                    sessionId = lineSessionId;
-                }
-
-                if (!matchesTargetDirectory ||
-                    !TryGetString(root, "type", out var rootType) ||
-                    !string.Equals(rootType, "user", StringComparison.Ordinal) ||
-                    !root.TryGetProperty("message", out var message) ||
-                    message.ValueKind != JsonValueKind.Object ||
-                    !TryGetString(message, "role", out var role) ||
-                    !string.Equals(role, "user", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                var text = TryReadClaudeDirectUserMessageText(message);
-                if (IsUsableResumeProbeMessage(text))
-                {
-                    recentUserMessage = text;
-                }
-            }
-            catch
-            {
-            }
-        }
-
-        return matchesTargetDirectory &&
-               !string.IsNullOrWhiteSpace(sessionId) &&
-               !string.IsNullOrWhiteSpace(cwd) &&
-               IsUsableResumeProbeMessage(recentUserMessage);
-    }
-
-    private static string? TryReadClaudeDirectUserMessageText(JsonElement message)
-    {
-        if (!message.TryGetProperty("content", out var content))
-        {
-            return null;
-        }
-
-        if (content.ValueKind == JsonValueKind.String)
-        {
-            return content.GetString();
-        }
-
-        if (content.ValueKind != JsonValueKind.Array)
-        {
-            return null;
-        }
-
-        var parts = new List<string>();
-        for (var index = 0; index < content.GetArrayLength(); index++)
-        {
-            var item = content[index];
-            if (item.ValueKind != JsonValueKind.Object ||
-                !TryGetString(item, "type", out var itemType) ||
-                !string.Equals(itemType, "text", StringComparison.Ordinal) ||
-                !TryGetString(item, "text", out var text))
-            {
-                continue;
-            }
-
-            parts.Add(text!);
-        }
-
-        return parts.Count == 0 ? null : string.Join(" ", parts);
     }
 
     private static bool IsUsableResumeProbeMessage(string? text)
@@ -636,11 +398,6 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
         return IsProbeEnabled() && ResolveCodexOnPath() is not null;
     }
 
-    private static bool IsRealClaudeResumeProbeEnabled()
-    {
-        return IsProbeEnabled() && ResolveClaudeOnPath() is not null;
-    }
-
     private static bool IsProbeEnabled()
     {
         return string.Equals(Environment.GetEnvironmentVariable(ResumeProbeEnvVar), "1", StringComparison.Ordinal);
@@ -678,39 +435,7 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
         return null;
     }
 
-    private static string? ResolveClaudeOnPath()
-    {
-        var path = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return null;
-        }
-
-        foreach (var entry in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var cmd = Path.Combine(entry, "claude.cmd");
-            if (File.Exists(cmd))
-            {
-                return cmd;
-            }
-
-            var exe = Path.Combine(entry, "claude.exe");
-            if (File.Exists(exe))
-            {
-                return exe;
-            }
-
-            var bare = Path.Combine(entry, "claude");
-            if (File.Exists(bare))
-            {
-                return bare;
-            }
-        }
-
-        return null;
-    }
-
-    private static Process StartAgentHost(string hostDll, bool configureClaudePermissions = false)
+    private static Process StartAgentHost(string hostDll)
     {
         var process = new Process
         {
@@ -725,11 +450,6 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
                 CreateNoWindow = true
             }
         };
-
-        if (configureClaudePermissions)
-        {
-            process.StartInfo.Environment["MIDTERM_APP_SERVER_CONTROL_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS"] = "true";
-        }
 
         process.Start();
         return process;

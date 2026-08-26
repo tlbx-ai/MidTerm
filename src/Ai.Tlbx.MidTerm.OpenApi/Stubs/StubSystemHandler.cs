@@ -51,6 +51,9 @@ public class StubSystemHandler : ISystemHandler
     public IResult GetShells() =>
         Results.Json(new List<ShellInfoDto>());
 
+    public IResult GetAgentControllerInstallations() =>
+        Results.Json(new List<AgentControllerInstallationDto>());
+
     public IResult GetUsers() =>
         Results.Json(new List<UserInfo>());
 

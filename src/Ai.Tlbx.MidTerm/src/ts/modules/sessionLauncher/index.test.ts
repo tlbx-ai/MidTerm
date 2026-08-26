@@ -59,25 +59,56 @@ describe('session launcher target selection', () => {
 
     expect(isProviderSupportedOnTarget('terminal', { id: 'local', kind: 'local' })).toBe(true);
     expect(isProviderSupportedOnTarget('codex', { id: 'local', kind: 'local' })).toBe(true);
-    expect(isProviderSupportedOnTarget('claude', { id: 'local', kind: 'local' })).toBe(true);
     expect(isProviderSupportedOnTarget('grok', { id: 'local', kind: 'local' })).toBe(true);
+    expect(isProviderSupportedOnTarget('opencode', { id: 'local', kind: 'local' })).toBe(true);
 
     expect(isProviderSupportedOnTarget('terminal', remoteTarget)).toBe(true);
     expect(isProviderSupportedOnTarget('codex', remoteTarget)).toBe(false);
-    expect(isProviderSupportedOnTarget('claude', remoteTarget)).toBe(false);
     expect(isProviderSupportedOnTarget('grok', remoteTarget)).toBe(false);
+    expect(isProviderSupportedOnTarget('opencode', remoteTarget)).toBe(false);
   });
 
-  it('offers Grok Build instead of obsolete Claude in the new-session provider list', async () => {
+  it('offers only locally discovered Agent Controller installations', async () => {
     const { getSessionLauncherProviderDefinitions } = await import('./index');
 
-    const providers = getSessionLauncherProviderDefinitions();
-    expect(providers.map((provider) => provider.provider)).toEqual(['terminal', 'codex', 'grok']);
+    const providers = getSessionLauncherProviderDefinitions([
+      {
+        profile: 'codex',
+        name: 'Codex',
+        protocol: 'Codex app-server',
+        command: 'codex',
+        supportsResume: true,
+      },
+      {
+        profile: 'grok',
+        name: 'Grok Build',
+        protocol: 'ACP v1',
+        command: 'grok agent stdio',
+        supportsResume: false,
+      },
+      {
+        profile: 'opencode',
+        name: 'OpenCode',
+        protocol: 'ACP v1',
+        command: 'opencode acp',
+        supportsResume: false,
+      },
+    ]);
+    expect(providers.map((provider) => provider.provider)).toEqual([
+      'terminal',
+      'codex',
+      'grok',
+      'opencode',
+    ]);
     expect(providers.some((provider) => provider.provider === 'claude')).toBe(false);
     expect(providers.find((provider) => provider.provider === 'grok')).toMatchObject({
       title: 'Grok Build',
-      launchLabel: 'Start Grok Build',
+      launchLabel: 'Grok Build',
       supportsResume: false,
+    });
+    expect(providers.find((provider) => provider.provider === 'opencode')).toMatchObject({
+      title: 'OpenCode',
+      description: 'ACP v1 · opencode acp',
     });
   });
 

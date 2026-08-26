@@ -1060,10 +1060,7 @@ async function resumeAppServerControlConversationFromCommandBay(args: {
     });
 }
 
-function buildAppServerControlHistoryDedupeKey(
-  profile: 'codex' | 'claude' | 'grok',
-  workingDirectory: string,
-): string {
+function buildAppServerControlHistoryDedupeKey(profile: string, workingDirectory: string): string {
   const normalizedPath = workingDirectory
     .replace(/\\/g, '/')
     .trim()

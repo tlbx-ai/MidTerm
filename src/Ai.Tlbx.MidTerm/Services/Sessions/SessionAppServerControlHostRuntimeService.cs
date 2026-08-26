@@ -74,12 +74,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
     public bool IsEnabledFor(string? profile)
     {
-        return (_mode, profile) switch
-        {
-            (SyntheticMode, AiCliProfileService.CodexProfile or AiCliProfileService.ClaudeProfile or AiCliProfileService.GrokProfile) => true,
-            (CodexMode, AiCliProfileService.CodexProfile or AiCliProfileService.ClaudeProfile or AiCliProfileService.GrokProfile) => true,
-            _ => false
-        };
+        return _mode is SyntheticMode or CodexMode &&
+               (string.Equals(profile, AiCliProfileService.CodexProfile, StringComparison.Ordinal) ||
+                AcpAgentDefinitions.TryGet(profile, out _));
     }
 
     internal bool TryResolveRecoverableProfile(string sessionId, [NotNullWhen(true)] out string? profile)
@@ -208,6 +205,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             await DisposeStateAsync(state, terminateHost: false).ConfigureAwait(false);
             var settings = _settingsService.Load();
             var userProfileDirectory = ResolveConfiguredUserProfileDirectory(settings);
+            AcpAgentDefinitions.TryGet(profile, out var acpAgent);
             var executablePath = attachPoint is null
                 ? AiCliCommandLocator.ResolveExecutablePath(profile, session, userProfileDirectory)
                 : null;
@@ -299,6 +297,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                         OwnerToken = _instanceIdentity.OwnerToken,
                         AttachPoint = attachPoint,
                         ExecutablePath = executablePath,
+                        AgentName = acpAgent?.Name,
+                        ExecutableArguments = acpAgent?.Arguments.ToList() ?? [],
                         UserProfileDirectory = preferredProfileDirectory,
                         ResumeThreadId = resumeThreadIdOverride ?? attachPoint?.PreferredThreadId
                     }
@@ -1734,13 +1734,6 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         environment["MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT"] = settings.CodexYoloDefault ? "true" : "false";
         environment["MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL"] = NormalizeOptionalValue(settings.CodexDefaultAppServerControlModel) ?? string.Empty;
         environment["MIDTERM_APP_SERVER_CONTROL_CODEX_ENVIRONMENT_VARIABLES"] = settings.CodexEnvironmentVariables ?? string.Empty;
-        environment["MIDTERM_APP_SERVER_CONTROL_CLAUDE_DEFAULT_MODEL"] = NormalizeOptionalValue(settings.ClaudeDefaultAppServerControlModel) ?? string.Empty;
-        environment["MIDTERM_APP_SERVER_CONTROL_CLAUDE_ENVIRONMENT_VARIABLES"] = settings.ClaudeEnvironmentVariables ?? string.Empty;
-        environment["MIDTERM_APP_SERVER_CONTROL_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS"] =
-            settings.ClaudeDangerouslySkipPermissionsDefault ? "true" : "false";
-        environment["MIDTERM_APP_SERVER_CONTROL_GROK_DEFAULT_MODEL"] = "grok-4.20-0309-non-reasoning";
-        environment["MIDTERM_APP_SERVER_CONTROL_GROK_ENVIRONMENT_VARIABLES"] = string.Empty;
-        environment["MIDTERM_APP_SERVER_CONTROL_GROK_ALWAYS_APPROVE_DEFAULT"] = "false";
     }
 
     private static string? NormalizeOptionalValue(string? value)

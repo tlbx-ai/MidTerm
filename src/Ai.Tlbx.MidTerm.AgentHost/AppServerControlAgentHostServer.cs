@@ -366,7 +366,9 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 HostKind = "mtagenthost",
                 HostVersion = "dev",
-                Providers = _syntheticProvider is null ? ["codex", "claude", "grok"] : [_syntheticProvider],
+                Providers = _syntheticProvider is null
+                    ? ["codex", .. AcpAgentDefinitions.All.Select(static agent => agent.Profile)]
+                    : [_syntheticProvider],
                 Capabilities =
                 [
                     "attach",
@@ -411,18 +413,31 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
 
         var provider = _syntheticProvider ?? command.AttachRuntime?.Provider?.Trim().ToLowerInvariant();
-        _runtime = provider switch
+        if (_syntheticProvider is not null)
         {
-            "codex" when _syntheticProvider is null => new CodexAppServerControlAgentRuntime(EmitRuntimeEvent),
-            "claude" when _syntheticProvider is null => new ClaudeAppServerControlAgentRuntime(EmitRuntimeEvent),
-            "grok" when _syntheticProvider is null => new GrokAcpAppServerControlAgentRuntime(EmitRuntimeEvent),
-            "codex" => new SyntheticAppServerControlAgentRuntime(provider, EmitRuntimeEvent),
-            "claude" when _syntheticProvider is not null => new SyntheticAppServerControlAgentRuntime(provider, EmitRuntimeEvent),
-            "grok" when _syntheticProvider is not null => new SyntheticAppServerControlAgentRuntime(provider, EmitRuntimeEvent),
-            _ => throw new InvalidOperationException($"mtagenthost does not support provider '{provider ?? "(null)"}'.")
-        };
+            _runtime = new SyntheticAppServerControlAgentRuntime(provider!, EmitRuntimeEvent);
+            return _runtime;
+        }
 
-        return _runtime;
+        if (string.Equals(provider, "codex", StringComparison.Ordinal))
+        {
+            _runtime = new CodexAppServerControlAgentRuntime(EmitRuntimeEvent);
+            return _runtime;
+        }
+
+        if (AcpAgentDefinitions.TryGet(provider, out var acpAgent))
+        {
+            var attach = command.AttachRuntime
+                         ?? throw new InvalidOperationException("runtime.attach payload is required.");
+            _runtime = new AcpAppServerControlAgentRuntime(
+                acpAgent.Profile,
+                attach.AgentName ?? acpAgent.Name,
+                attach.ExecutableArguments.Count > 0 ? attach.ExecutableArguments : acpAgent.Arguments,
+                EmitRuntimeEvent);
+            return _runtime;
+        }
+
+        throw new InvalidOperationException($"mtagenthost does not support provider '{provider ?? "(null)"}'.");
     }
 
     private static void ValidateCommand(AppServerControlHostCommandEnvelope command)
@@ -738,7 +753,6 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
     }
 }
-
 
 
 

@@ -21,6 +21,8 @@ internal static partial class AiCliCommandLocator
                                                ?? FindExecutableInPath("claude", userProfileDirectory),
             AiCliProfileService.GrokProfile => ResolveExecutablePathFromForegroundCommand(session.ForegroundCommandLine, "grok")
                                              ?? FindExecutableInPath("grok", userProfileDirectory),
+            AiCliProfileService.OpenCodeProfile => ResolveExecutablePathFromForegroundCommand(session.ForegroundCommandLine, "opencode")
+                                                  ?? FindExecutableInPath("opencode", userProfileDirectory),
             _ => null
         };
     }
