@@ -17,4 +17,11 @@ public sealed class CreateSessionRequest
     /// This keeps bookmark launches atomic and independent of browser WebSocket timing.
     /// </summary>
     public string? LaunchCommand { get; set; }
+
+    /// <summary>
+    /// Optional client-generated identifier that makes a session launch safe to
+    /// repeat after an HTTP timeout or reconnect. Reusing an identifier with a
+    /// different payload is rejected.
+    /// </summary>
+    public string? LaunchRequestId { get; set; }
 }

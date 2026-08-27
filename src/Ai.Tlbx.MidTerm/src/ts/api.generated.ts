@@ -4258,6 +4258,7 @@ export interface components {
       workspacePath?: null | string;
       surface?: null | string;
       launchCommand?: null | string;
+      launchRequestId?: null | string;
     };
     CreateShareLinkRequest: {
       sessionId: string;

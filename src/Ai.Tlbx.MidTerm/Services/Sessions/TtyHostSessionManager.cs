@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics;
 using System.Globalization;
 using Ai.Tlbx.MidTerm.Common.Logging;
@@ -455,6 +456,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             ct);
     }
 
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "The connected client is transferred to the session registry on success and every pre-registration failure path disposes it.")]
     internal async Task<SessionCreationResult> CreateSessionDetailedAsync(
         string? shellType,
         int cols,
@@ -505,113 +507,179 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var hostPid = spawnResult.ProcessId;
         var spawnElapsedMs = creationTimer.ElapsedMilliseconds;
         var connectPid = hostPid;
-        if (!OperatingSystem.IsWindows())
+        TtyHostClient? client = null;
+        var registered = false;
+        try
         {
-            // When using sudo -u on Unix, the returned PID is sudo's PID rather than mthost's.
-            // Probe briefly for the real endpoint before attempting IPC.
-            await Task.Delay(50, ct).ConfigureAwait(false);
-            int? actualPid = null;
-            for (var wait = 50; wait < 500; wait *= 2)
+            if (!OperatingSystem.IsWindows())
             {
-                if (SessionEndpointDiscovery.EndpointExists(_instanceIdentity.InstanceId, sessionId, hostPid))
+                // When using sudo -u on Unix, the returned PID is sudo's PID rather than mthost's.
+                // Probe briefly for the real endpoint before attempting IPC.
+                await Task.Delay(50, ct).ConfigureAwait(false);
+                int? actualPid = null;
+                for (var wait = 50; wait < 500; wait *= 2)
                 {
-                    actualPid = hostPid;
-                    break;
+                    if (SessionEndpointDiscovery.EndpointExists(_instanceIdentity.InstanceId, sessionId, hostPid))
+                    {
+                        actualPid = hostPid;
+                        break;
+                    }
+
+                    actualPid = SessionEndpointDiscovery.FindEndpointPid(_instanceIdentity.InstanceId, sessionId);
+                    if (actualPid is not null)
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(wait, ct).ConfigureAwait(false);
                 }
 
-                actualPid = SessionEndpointDiscovery.FindEndpointPid(_instanceIdentity.InstanceId, sessionId);
-                if (actualPid is not null)
-                {
-                    break;
-                }
-
-                await Task.Delay(wait, ct).ConfigureAwait(false);
+                connectPid = actualPid ?? hostPid;
             }
 
-            connectPid = actualPid ?? hostPid;
-        }
+            // Windows gets the real mthost PID from CreateProcess/CreateProcessAsUser, so there is
+            // no need for the endpoint probe loop above on the hot create-session path.
+            // Connect to the new session using sessionId + actual PID for endpoint.
+            client = new TtyHostClient(sessionId, connectPid, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken);
+            var connected = false;
+            var connectTimer = Stopwatch.StartNew();
+            var connectAttempts = OperatingSystem.IsWindows() ? 20 : 10;
+            var connectTimeoutMs = OperatingSystem.IsWindows() ? 150 : 1000;
+            var retryDelayMs = OperatingSystem.IsWindows() ? 50 : 200;
 
-        // Windows gets the real mthost PID from CreateProcess/CreateProcessAsUser, so there is
-        // no need for the endpoint probe loop above on the hot create-session path.
-        // Connect to the new session using sessionId + actual PID for endpoint.
-        var client = new TtyHostClient(sessionId, connectPid, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken);
-        var connected = false;
-        var connectTimer = Stopwatch.StartNew();
-        var connectAttempts = OperatingSystem.IsWindows() ? 20 : 10;
-        var connectTimeoutMs = OperatingSystem.IsWindows() ? 150 : 1000;
-        var retryDelayMs = OperatingSystem.IsWindows() ? 50 : 200;
-
-        for (var attempt = 0; attempt < connectAttempts && !connected; attempt++)
-        {
-            connected = await client.ConnectAsync(connectTimeoutMs, maxAttempts: 1, ct: ct).ConfigureAwait(false);
-            if (!connected && attempt + 1 < connectAttempts)
+            for (var attempt = 0; attempt < connectAttempts && !connected; attempt++)
             {
-                if (!IsProcessRunning(connectPid))
+                connected = await client.ConnectAsync(connectTimeoutMs, maxAttempts: 1, ct: ct).ConfigureAwait(false);
+                if (!connected && attempt + 1 < connectAttempts)
                 {
-                    break;
+                    if (!IsProcessRunning(connectPid))
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(retryDelayMs, ct).ConfigureAwait(false);
                 }
-
-                await Task.Delay(retryDelayMs, ct).ConfigureAwait(false);
             }
-        }
 
-        if (!connected)
+            if (!connected)
+            {
+                var failedConnectElapsedMs = connectTimer.ElapsedMilliseconds;
+                var processRunning = IsProcessRunning(connectPid);
+                var processDescription = DescribeSpawnedProcesses(hostPid, connectPid);
+                Log.Error(() =>
+                    string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Failed to connect to new session {sessionId}, killing orphan process(es) [{processDescription}] after {creationTimer.ElapsedMilliseconds} ms (spawn={spawnElapsedMs} ms, connect={failedConnectElapsedMs} ms)"));
+                await CleanupFailedSessionCreationAsync(sessionId, hostPid, connectPid).ConfigureAwait(false);
+                await client.DisposeAsync().ConfigureAwait(false);
+                client = null;
+                return SessionCreationResult.Failed(new SessionLaunchFailure(
+                    "connect",
+                    processRunning
+                        ? "The terminal host did not open its IPC channel in time."
+                        : "The terminal host exited before tlbx could attach to it.",
+                    string.Create(CultureInfo.InvariantCulture, $"tlbx launched mthost ({processDescription}) but could not complete IPC attach after {failedConnectElapsedMs} ms."),
+                    processRunning ? null : "ProcessExited"));
+            }
+
+            var connectElapsedMs = connectTimer.ElapsedMilliseconds;
+            var infoTimer = Stopwatch.StartNew();
+            using var infoTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            infoTimeout.CancelAfter(TimeSpan.FromSeconds(2));
+            var info = await client.GetInfoAsync(infoTimeout.Token).ConfigureAwait(false);
+            if (info is null)
+            {
+                var failedInfoElapsedMs = infoTimer.ElapsedMilliseconds;
+                var processDescription = DescribeSpawnedProcesses(hostPid, connectPid);
+                Log.Error(() =>
+                    string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Failed to get info for session {sessionId}, killing orphan process(es) [{processDescription}] after {creationTimer.ElapsedMilliseconds} ms (spawn={spawnElapsedMs} ms, connect={connectElapsedMs} ms, info={failedInfoElapsedMs} ms)"));
+                await CleanupFailedSessionCreationAsync(sessionId, hostPid, connectPid).ConfigureAwait(false);
+                await client.DisposeAsync().ConfigureAwait(false);
+                client = null;
+                return SessionCreationResult.Failed(new SessionLaunchFailure(
+                    "handshake",
+                    "The terminal host connected but never returned session metadata.",
+                    string.Create(CultureInfo.InvariantCulture, $"tlbx established IPC to mthost ({processDescription}) but GetInfo returned no data after {failedInfoElapsedMs} ms.")));
+            }
+
+            info.TerminalTitle = NormalizeTerminalTitle(info, info.TerminalTitle);
+            ApplyStartupWorkingDirectoryFallback(info, workingDirectory);
+
+            // Start read loop after handshake completes (avoids race condition with GetInfoAsync)
+            var registeredClient = client;
+            SubscribeToClient(registeredClient);
+            registeredClient.StartReadLoop();
+            _registry.Clients[sessionId] = registeredClient;
+            client = null;
+            _registry.SessionCache[sessionId] = info;
+            _transportState[sessionId] = new TerminalTransportRuntimeState();
+            _registry.SessionOrder[sessionId] = paneIndex;
+            _ownershipRegistry.Upsert(sessionId, connectPid, isLegacyEndpoint: false);
+            registered = true;
+
+            // Session registration is already authoritative. Persisting order to an
+            // older compatible host is best-effort and must not hold the launch HTTP
+            // response behind the generic five-second IPC request timeout.
+            _ = PersistInitialOrderAsync(registeredClient, sessionId, (byte)(paneIndex % 256));
+
+            var infoElapsedMs = infoTimer.ElapsedMilliseconds;
+            Log.Info(() =>
+                string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Created session {sessionId} (PID {connectPid}) in {creationTimer.ElapsedMilliseconds} ms [spawn={spawnElapsedMs} ms, connect={connectElapsedMs} ms, info={infoElapsedMs} ms]"));
+            OnSessionCreated?.Invoke(sessionId, paneIndex);
+            OnStateChanged?.Invoke(sessionId);
+            NotifyStateChange();
+
+            return SessionCreationResult.Success(info);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            var failedConnectElapsedMs = connectTimer.ElapsedMilliseconds;
-            var processRunning = IsProcessRunning(connectPid);
-            var processDescription = DescribeSpawnedProcesses(hostPid, connectPid);
-            Log.Error(() =>
-                string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Failed to connect to new session {sessionId}, killing orphan process(es) [{processDescription}] after {creationTimer.ElapsedMilliseconds} ms (spawn={spawnElapsedMs} ms, connect={failedConnectElapsedMs} ms)"));
-            await CleanupFailedSessionCreationAsync(sessionId, hostPid, connectPid).ConfigureAwait(false);
-            await client.DisposeAsync().ConfigureAwait(false);
+            if (registered)
+            {
+                await CloseSessionCoreAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
+            }
+            else
+            {
+                await CleanupFailedSessionCreationAsync(sessionId, hostPid, connectPid).ConfigureAwait(false);
+                if (client is not null)
+                {
+                    await client.DisposeAsync().ConfigureAwait(false);
+                }
+            }
             return SessionCreationResult.Failed(new SessionLaunchFailure(
-                "connect",
-                processRunning
-                    ? "The terminal host did not open its IPC channel in time."
-                    : "The terminal host exited before tlbx could attach to it.",
-                string.Create(CultureInfo.InvariantCulture, $"tlbx launched mthost ({processDescription}) but could not complete IPC attach after {failedConnectElapsedMs} ms."),
-                processRunning ? null : "ProcessExited"));
+                "timeout",
+                "The terminal host did not become ready before the startup deadline.",
+                string.Create(CultureInfo.InvariantCulture, $"Session startup was canceled after {creationTimer.ElapsedMilliseconds} ms; spawned process(es) were cleaned up.")));
         }
-
-        var connectElapsedMs = connectTimer.ElapsedMilliseconds;
-        var infoTimer = Stopwatch.StartNew();
-        var info = await client.GetInfoAsync(ct).ConfigureAwait(false);
-        if (info is null)
+        catch (Exception ex)
         {
-            var failedInfoElapsedMs = infoTimer.ElapsedMilliseconds;
-            var processDescription = DescribeSpawnedProcesses(hostPid, connectPid);
-            Log.Error(() =>
-                string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Failed to get info for session {sessionId}, killing orphan process(es) [{processDescription}] after {creationTimer.ElapsedMilliseconds} ms (spawn={spawnElapsedMs} ms, connect={connectElapsedMs} ms, info={failedInfoElapsedMs} ms)"));
-            await CleanupFailedSessionCreationAsync(sessionId, hostPid, connectPid).ConfigureAwait(false);
-            await client.DisposeAsync().ConfigureAwait(false);
+            if (registered)
+            {
+                await CloseSessionCoreAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
+            }
+            else
+            {
+                await CleanupFailedSessionCreationAsync(sessionId, hostPid, connectPid).ConfigureAwait(false);
+                if (client is not null)
+                {
+                    await client.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+            Log.Exception(ex, $"Create session {sessionId}");
             return SessionCreationResult.Failed(new SessionLaunchFailure(
-                "handshake",
-                "The terminal host connected but never returned session metadata.",
-                string.Create(CultureInfo.InvariantCulture, $"tlbx established IPC to mthost ({processDescription}) but GetInfo returned no data after {failedInfoElapsedMs} ms.")));
+                "unexpected",
+                "tlbx could not complete terminal startup and cleaned up the partial session.",
+                ex.Message,
+                ex.GetType().Name));
         }
+    }
 
-        info.TerminalTitle = NormalizeTerminalTitle(info, info.TerminalTitle);
-        ApplyStartupWorkingDirectoryFallback(info, workingDirectory);
-
-        // Start read loop after handshake completes (avoids race condition with GetInfoAsync)
-        SubscribeToClient(client);
-        client.StartReadLoop();
-        _registry.Clients[sessionId] = client;
-        _registry.SessionCache[sessionId] = info;
-        _transportState[sessionId] = new TerminalTransportRuntimeState();
-        _registry.SessionOrder[sessionId] = paneIndex;
-        _ownershipRegistry.Upsert(sessionId, connectPid, isLegacyEndpoint: false);
-
-        await client.SetOrderAsync((byte)(paneIndex % 256), ct).ConfigureAwait(false);
-
-        var infoElapsedMs = infoTimer.ElapsedMilliseconds;
-        Log.Info(() =>
-            string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Created session {sessionId} (PID {connectPid}) in {creationTimer.ElapsedMilliseconds} ms [spawn={spawnElapsedMs} ms, connect={connectElapsedMs} ms, info={infoElapsedMs} ms]"));
-        OnSessionCreated?.Invoke(sessionId, paneIndex);
-        OnStateChanged?.Invoke(sessionId);
-        NotifyStateChange();
-
-        return SessionCreationResult.Success(info);
+    private static async Task PersistInitialOrderAsync(
+        TtyHostClient client,
+        string sessionId,
+        byte order)
+    {
+        if (!await client.SetOrderAsync(order, requestTimeoutMs: 500).ConfigureAwait(false))
+        {
+            Log.Warn(() => $"Session {sessionId} started, but mthost did not acknowledge its initial order within 500 ms.");
+        }
     }
 
     public SessionInfo? GetSession(string sessionId)

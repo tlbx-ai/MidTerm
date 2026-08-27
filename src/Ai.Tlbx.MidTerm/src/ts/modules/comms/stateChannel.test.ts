@@ -221,6 +221,7 @@ async function loadHarness() {
   state.sessionTerminals.clear();
   state.hiddenSessionIds.clear();
   state.newlyCreatedSessions.clear();
+  state.pendingSessions.clear();
 
   setSelectSessionCallback(mocks.selectSession);
   connectStateWebSocket();
@@ -729,6 +730,36 @@ describe('stateChannel browser-ui handling', () => {
     handleStateUpdate([]);
 
     expect(hydrated).toHaveBeenCalledOnce();
+  });
+
+  it('preserves an optimistic session while unrelated server state arrives', async () => {
+    const { stores } = await loadHarness();
+    const pending = {
+      id: 'pending-launch',
+      cols: 120,
+      rows: 30,
+      shellType: 'Loading...',
+      currentDirectory: 'Q:/repos/Jpa',
+      appServerControlOnly: false,
+    } as any;
+    stores.setSession(pending);
+    state.pendingSessions.add(pending.id);
+
+    handleStateUpdate([
+      {
+        id: 'existing-session',
+        cols: 120,
+        rows: 30,
+        shellType: 'Pwsh',
+        currentDirectory: 'Q:/repos/tlbx',
+        appServerControlOnly: false,
+      } as any,
+    ]);
+
+    expect(stores.getSession('pending-launch')).toEqual(
+      expect.objectContaining({ currentDirectory: 'Q:/repos/Jpa' }),
+    );
+    expect(stores.getSession('existing-session')).toBeDefined();
   });
 
   it('applies server layout snapshots from state updates', async () => {

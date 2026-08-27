@@ -191,6 +191,7 @@ describe('api client appServerControl helpers', () => {
   });
 
   it('parses successful session launch responses via fetch fallback', async () => {
+    vi.stubGlobal('crypto', { randomUUID: () => 'launch-success' });
     const fetchMock = vi.fn(async () => ({
       ok: true,
       async text() {
@@ -229,6 +230,7 @@ describe('api client appServerControl helpers', () => {
       '/api/sessions',
       expect.objectContaining({
         method: 'POST',
+        body: expect.stringContaining('"launchRequestId":"launch-success"'),
       }),
     );
     expect(data?.id).toBe('session-1');
@@ -245,6 +247,35 @@ describe('api client appServerControl helpers', () => {
     await waitForApiReachability();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/version', { cache: 'no-store' });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/version',
+      expect.objectContaining({ cache: 'no-store', signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it('retries a disconnected session launch with the same idempotency key', async () => {
+    vi.stubGlobal('crypto', { randomUUID: () => 'launch-retry' });
+    const requestBodies: string[] = [];
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestBodies.push(String(init?.body));
+      if (requestBodies.length === 1) {
+        throw new TypeError('connection reset');
+      }
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({ id: 'session-reconciled' });
+        },
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { createSession } = await import('./client');
+    const result = await createSession({ cols: 120, rows: 30, shell: 'Pwsh' });
+
+    expect(result.data?.id).toBe('session-reconciled');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(requestBodies[0]).toBe(requestBodies[1]);
+    expect(requestBodies[0]).toContain('"launchRequestId":"launch-retry"');
   });
 });

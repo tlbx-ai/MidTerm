@@ -143,6 +143,7 @@ import {
   sessionTerminals,
   newlyCreatedSessions,
   hiddenSessionIds,
+  pendingSessions,
   setStateWs,
 } from '../../state';
 
@@ -535,7 +536,14 @@ export function handleStateUpdate(
   newSessions: Session[],
   layoutState?: LayoutStateMessage | null,
 ): void {
-  const validSessions = newSessions.filter((s): s is Session & { id: string } => !!s.id);
+  const serverSessionIds = new Set(newSessions.map((session) => session.id));
+  const optimisticSessions = [...pendingSessions]
+    .filter((sessionId) => !serverSessionIds.has(sessionId))
+    .map((sessionId) => getSession(sessionId))
+    .filter((session): session is Session => session !== undefined);
+  const validSessions = [...newSessions, ...optimisticSessions].filter(
+    (s): s is Session & { id: string } => !!s.id,
+  );
   removeClosedSessions(validSessions);
   validSessions.forEach(syncSessionTerminalState);
   const sessionsChanged = setSessions(validSessions);

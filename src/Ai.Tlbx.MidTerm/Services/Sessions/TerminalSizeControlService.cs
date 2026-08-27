@@ -11,7 +11,6 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 public sealed class TerminalSizeControlService
 {
     public static readonly TimeSpan OfflineTakeoverDelay = TimeSpan.FromSeconds(30);
-    public static readonly TimeSpan ConnectedIdleTakeoverDelay = TimeSpan.FromMinutes(5);
 
     private readonly Lock _lock = new();
     private readonly Dictionary<string, OwnershipRecord> _ownership = new(StringComparer.Ordinal);
@@ -293,15 +292,20 @@ public sealed class TerminalSizeControlService
         }
 
         var ownerOnline = IsBrowserOnlineLocked(owner.BrowserId);
+        if (ownerOnline)
+        {
+            // A connected browser never loses PTY geometry authority implicitly.
+            // Followers and automation observers must use an explicit claim.
+            return false;
+        }
+
         if (!ownerOnline && BrowserIdentity.AreSameBrowser(owner.BrowserId, requestingBrowserId))
         {
             return true;
         }
 
         var idleFor = now - owner.LastInteractionUtc;
-        return ownerOnline
-            ? idleFor >= ConnectedIdleTakeoverDelay
-            : idleFor >= OfflineTakeoverDelay;
+        return idleFor >= OfflineTakeoverDelay;
     }
 
     private bool IsBrowserOnlineLocked(string browserId)

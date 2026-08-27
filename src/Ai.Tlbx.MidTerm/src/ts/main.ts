@@ -180,7 +180,6 @@ import {
   dom,
   setFontsReadyPromise,
   newlyCreatedSessions,
-  pendingSessions,
   bellNotificationsSuppressed,
   activeNotifications,
 } from './state';
@@ -192,7 +191,6 @@ import {
   $currentSettings,
   $layout,
   setSession,
-  removeSession,
   getSession,
   setProcessState,
 } from './stores';
@@ -201,6 +199,7 @@ import { bindClick, getOrCreateClientId, initializeTabIdentity } from './utils';
 import { showAlert } from './utils/dialog';
 import { createSessionActionHandlers } from './sessionActions';
 import { getSessionLaunchErrorMessage, showSessionLaunchFailure } from './sessionLaunchErrors';
+import { clearPendingSession, createPendingSession } from './pendingSession';
 import {
   createSession as apiCreateSession,
   bootstrapWorker,
@@ -217,6 +216,7 @@ import {
 
 // Create logger for main module
 const log = createLogger('main');
+const bookmarkLaunchesInFlight = new Set<string>();
 
 function attachBookmarkToSession(
   sessionId: string,
@@ -708,63 +708,6 @@ async function resolveNewSessionDimensions(): Promise<{ cols: number; rows: numb
   return resolveLaunchDimensions($currentSettings.get(), 'launcher');
 }
 
-function createPendingSession(cols: number, rows: number): string {
-  const tempId = 'pending-' + crypto.randomUUID();
-  const tempSession: Session = {
-    id: tempId,
-    pid: 0,
-    createdAt: new Date().toISOString(),
-    isRunning: false,
-    exitCode: null,
-    name: '',
-    terminalTitle: '',
-    topic: null,
-    currentDirectory: '',
-    foregroundPid: null,
-    foregroundName: null,
-    foregroundCommandLine: null,
-    foregroundDisplayName: null,
-    foregroundProcessIdentity: null,
-    shellType: 'Loading...',
-    cols,
-    rows,
-    manuallyNamed: false,
-    supervisor: {
-      state: 'unknown',
-      profile: 'unknown',
-      needsAttention: false,
-      attentionReason: null,
-      attentionScore: 0,
-      lastInputAt: null,
-      lastOutputAt: null,
-      lastBellAt: null,
-      currentHeat: 0,
-    },
-    order: Date.now(),
-    parentSessionId: null,
-    bookmarkId: null,
-    spaceId: null,
-    workspacePath: null,
-    surface: null,
-    isAdHoc: true,
-    agentControlled: false,
-    appServerControlOnly: false,
-    profileHint: null,
-    appServerControlResumeThreadId: null,
-    hasAppServerControlHistory: false,
-    agentAttachPoint: null,
-  };
-
-  setSession(tempSession);
-  pendingSessions.add(tempId);
-  return tempId;
-}
-
-function clearPendingSession(tempId: string): void {
-  pendingSessions.delete(tempId);
-  removeSession(tempId);
-}
-
 function resolveLauncherShell(): ShellType | null {
   const settings = $currentSettings.get();
   if (settings?.defaultShell) {
@@ -923,89 +866,105 @@ async function createSession(): Promise<void> {
     });
 }
 
+// eslint-disable-next-line complexity -- bookmark launch owns local, remote, and Agent Controller reconciliation in one guarded lifecycle.
 async function spawnFromHistory(
   entry: LaunchEntry,
   machineId: string | null = null,
 ): Promise<void> {
-  const { cols, rows } = await resolveLaunchDimensions($currentSettings.get(), 'history');
-
-  closeSidebar();
-
-  if (machineId) {
-    if (isAppServerControlHistoryEntry(entry)) {
-      void showAlert(t('sessionLauncher.remoteTerminalOnly'), {
-        title: t('sessionLauncher.createFailed'),
-      });
-      return;
-    }
-
-    createRemoteSession(machineId, {
-      cols,
-      rows,
-      shell: entry.shellType || null,
-      workingDirectory: entry.workingDirectory || null,
-    })
-      .then(async (session) => {
-        await refreshHubState();
-        const compositeId = toHubCompositeId(machineId, session.id);
-        newlyCreatedSessions.add(compositeId);
-        selectSession(compositeId);
-        linkAndReplayRemoteBookmark(machineId, session.id, compositeId, entry);
-      })
-      .catch((e: unknown) => {
-        log.error(() => `Failed to spawn remote recent: ${String(e)}`);
-        void showAlert(getSessionLaunchErrorMessage(e), {
-          title: t('sessionLauncher.createFailed'),
-        });
-      });
+  const launchKey = `${machineId ?? 'local'}:${entry.id}:${entry.commandLine}`;
+  if (bookmarkLaunchesInFlight.has(launchKey)) {
     return;
   }
+  bookmarkLaunchesInFlight.add(launchKey);
 
-  if (isAppServerControlHistoryEntry(entry)) {
-    const profile = normalizeHistoryAppServerControlProfile(entry.profile);
-    if (profile) {
-      bootstrapWorker({
+  let pendingSessionId: string | null = null;
+
+  try {
+    const { cols, rows } = await resolveLaunchDimensions($currentSettings.get(), 'history');
+    const appServerControlBookmark = isAppServerControlHistoryEntry(entry);
+    pendingSessionId = createPendingSession(cols, rows, {
+      name: entry.label || entry.foregroundProcessDisplayName || entry.executable || 'Starting…',
+      currentDirectory: entry.workingDirectory,
+      shellType: entry.shellType,
+      bookmarkId: entry.id,
+      appServerControlOnly: appServerControlBookmark,
+      profileHint: entry.profile,
+    });
+    closeSidebar();
+    await waitForApiReachability();
+
+    if (machineId) {
+      if (appServerControlBookmark) {
+        void showAlert(t('sessionLauncher.remoteTerminalOnly'), {
+          title: t('sessionLauncher.createFailed'),
+        });
+        return;
+      }
+
+      const session = await createRemoteSession(machineId, {
         cols,
         rows,
-        shell: resolveLauncherShell(),
+        shell: entry.shellType || null,
         workingDirectory: entry.workingDirectory || null,
-        agentControlled: false,
-        injectGuidance: true,
-        profile,
-        appServerControlOnly: true,
-        launchDelayMs: 0,
-        slashCommands: [],
-        slashCommandDelayMs: 350,
-      })
-        .then(({ data }) => {
-          const session = data?.session;
-          if (!session) {
-            return;
-          }
-
-          activateNewAppServerControlSession(session);
-          attachBookmarkToSession(session.id, entry.id, entry.label ?? null, entry.notes ?? null);
-        })
-        .catch((e: unknown) => {
-          log.error(() => `Failed to spawn appServerControl bookmark: ${String(e)}`);
-          showSessionLaunchFailure(e);
-        });
+      });
+      await refreshHubState();
+      clearPendingSession(pendingSessionId);
+      pendingSessionId = null;
+      const compositeId = toHubCompositeId(machineId, session.id);
+      newlyCreatedSessions.add(compositeId);
+      selectSession(compositeId);
+      linkAndReplayRemoteBookmark(machineId, session.id, compositeId, entry);
       return;
     }
-  }
 
-  apiCreateSession(buildLocalBookmarkLaunchRequest(entry, cols, rows))
-    .then(({ data }) => {
-      if (!data) return;
-      setSession(data);
-      newlyCreatedSessions.add(data.id);
-      selectSession(data.id);
-      attachBookmarkToSession(data.id, entry.id, entry.label ?? null, entry.notes ?? null);
-    })
-    .catch((e: unknown) => {
-      log.error(() => `Failed to spawn from history: ${String(e)}`);
-      showSessionLaunchFailure(e);
-    });
+    if (appServerControlBookmark) {
+      const profile = normalizeHistoryAppServerControlProfile(entry.profile);
+      if (profile) {
+        const { data } = await bootstrapWorker({
+          cols,
+          rows,
+          shell: resolveLauncherShell(),
+          workingDirectory: entry.workingDirectory || null,
+          agentControlled: false,
+          injectGuidance: true,
+          profile,
+          appServerControlOnly: true,
+          launchDelayMs: 0,
+          slashCommands: [],
+          slashCommandDelayMs: 350,
+        });
+        const session = data?.session;
+        if (!session) {
+          throw new Error('The Agent Controller launch returned no session.');
+        }
+
+        clearPendingSession(pendingSessionId);
+        pendingSessionId = null;
+        activateNewAppServerControlSession(session);
+        attachBookmarkToSession(session.id, entry.id, entry.label ?? null, entry.notes ?? null);
+        return;
+      }
+    }
+
+    const { data } = await apiCreateSession(buildLocalBookmarkLaunchRequest(entry, cols, rows));
+    if (!data) {
+      throw new Error('The terminal launch returned no session.');
+    }
+    clearPendingSession(pendingSessionId);
+    pendingSessionId = null;
+    setSession(data);
+    newlyCreatedSessions.add(data.id);
+    selectSession(data.id);
+    attachBookmarkToSession(data.id, entry.id, entry.label ?? null, entry.notes ?? null);
+  } catch (e: unknown) {
+    log.error(() => `Failed to spawn bookmark session: ${String(e)}`);
+    showSessionLaunchFailure(e);
+  } finally {
+    if (pendingSessionId) {
+      clearPendingSession(pendingSessionId);
+    }
+    bookmarkLaunchesInFlight.delete(launchKey);
+  }
 }
 
 async function resumeAppServerControlConversationFromCommandBay(args: {

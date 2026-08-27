@@ -33,18 +33,18 @@ public sealed class TerminalSizeControlServiceTests
     }
 
     [Fact]
-    public async Task Interaction_TakesOverOnlineOwnerAfterGenuineWorkLeaseExpires()
+    public async Task Interaction_DoesNotAutomaticallyTakeOverOnlineOwnerAfterLongInactivity()
     {
         using var fixture = new Fixture();
         fixture.Service.RegisterBrowser("browser-a:tab-1", new object());
         await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true);
-        fixture.Time.Advance(TerminalSizeControlService.ConnectedIdleTakeoverDelay);
+        fixture.Time.Advance(TimeSpan.FromHours(12));
 
         var result = await fixture.Service.RequestControlAsync("session-1", "browser-b:tab-2", false);
 
-        Assert.True(result.OwnershipChanged);
-        Assert.True(result.Status.IsOwner);
-        Assert.Equal(2, result.Status.Epoch);
+        Assert.False(result.OwnershipChanged);
+        Assert.False(result.Status.IsOwner);
+        Assert.True(result.Status.OwnerOnline);
     }
 
     [Fact]
@@ -136,18 +136,16 @@ public sealed class TerminalSizeControlServiceTests
     }
 
     [Fact]
-    public async Task AutomaticHandoff_DoesNotImmediatelyPingPongBack()
+    public async Task ExplicitHandoff_DoesNotImmediatelyPingPongBack()
     {
         using var fixture = new Fixture();
         fixture.Service.RegisterBrowser("browser-a:tab-1", new object());
         fixture.Service.RegisterBrowser("browser-b:tab-2", new object());
         await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true);
-        fixture.Time.Advance(TerminalSizeControlService.ConnectedIdleTakeoverDelay);
-
         var handoff = await fixture.Service.RequestControlAsync(
             "session-1",
             "browser-b:tab-2",
-            false);
+            true);
         var oldOwnerInput = await fixture.Service.RequestControlAsync(
             "session-1",
             "browser-a:tab-1",

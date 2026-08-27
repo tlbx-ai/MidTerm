@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -161,6 +162,7 @@ public static class Program
                 config.Cols,
                 config.Rows,
                 config.ScrollbackBytes,
+                (byte)((config.PaneIndex ?? 0) % 256),
                 processMonitor);
             var endpoint = string.IsNullOrWhiteSpace(config.MtInstanceId)
                 ? IpcEndpoint.GetLegacySessionEndpoint(config.SessionId, Environment.ProcessId)
@@ -249,11 +251,15 @@ public static class Program
         ReadOnlyMemory<byte> deferredInitialInput,
         CancellationToken ct)
     {
+        var readinessTimer = Stopwatch.StartNew();
         try
         {
-            await session.WaitForInputReadyAsync(
+            var readiness = await session.WaitForInputReadyAsync(
                 TimeSpan.FromMilliseconds(750),
                 ct).ConfigureAwait(false);
+            Log.Info(() => string.Create(
+                CultureInfo.InvariantCulture,
+                $"Deferred initial input readiness={readiness} after {readinessTimer.ElapsedMilliseconds} ms for shell={session.ShellType}."));
             await session.SendInputAsync(deferredInitialInput, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -1402,17 +1408,32 @@ public static class Program
         string? TmuxBinDir = null);
 }
 
+internal enum TerminalInputReadiness
+{
+    BracketedPaste,
+    Prompt,
+    Timeout
+}
+
 internal sealed class TerminalInputReadinessDetector
 {
     private static readonly byte[] BracketedPasteEnabled = "\u001b[?2004h"u8.ToArray();
+    private const int MaxPromptTailLength = 1024;
+    private readonly ShellType _shellType;
+    private readonly StringBuilder _promptTail = new();
     private int _matchedBytes;
-    private bool _ready;
+    private TerminalInputReadiness? _readiness;
 
-    public bool Observe(ReadOnlySpan<byte> data)
+    public TerminalInputReadinessDetector(ShellType shellType)
     {
-        if (_ready)
+        _shellType = shellType;
+    }
+
+    public TerminalInputReadiness? Observe(ReadOnlySpan<byte> data)
+    {
+        if (_readiness is not null)
         {
-            return true;
+            return _readiness;
         }
 
         foreach (var value in data)
@@ -1422,8 +1443,8 @@ internal sealed class TerminalInputReadinessDetector
                 _matchedBytes++;
                 if (_matchedBytes == BracketedPasteEnabled.Length)
                 {
-                    _ready = true;
-                    return true;
+                    _readiness = TerminalInputReadiness.BracketedPaste;
+                    return _readiness;
                 }
                 continue;
             }
@@ -1431,7 +1452,35 @@ internal sealed class TerminalInputReadinessDetector
             _matchedBytes = value == BracketedPasteEnabled[0] ? 1 : 0;
         }
 
-        return false;
+        if (!data.IsEmpty)
+        {
+            _promptTail.Append(Encoding.UTF8.GetString(data));
+            if (_promptTail.Length > MaxPromptTailLength)
+            {
+                _promptTail.Remove(0, _promptTail.Length - MaxPromptTailLength);
+            }
+            if (HasRecognizablePrompt(_promptTail.ToString()))
+            {
+                _readiness = TerminalInputReadiness.Prompt;
+            }
+        }
+
+        return _readiness;
+    }
+
+    private bool HasRecognizablePrompt(string value)
+    {
+        var lastLineStart = Math.Max(value.LastIndexOf('\r'), value.LastIndexOf('\n')) + 1;
+        var lastLine = value[lastLineStart..].TrimEnd();
+        return _shellType switch
+        {
+            ShellType.PowerShell or ShellType.Pwsh =>
+                lastLine.StartsWith("PS ", StringComparison.Ordinal) &&
+                lastLine.EndsWith('>'),
+            ShellType.Bash => lastLine.EndsWith('$') || lastLine.EndsWith('#'),
+            ShellType.Zsh => lastLine.EndsWith('%') || lastLine.EndsWith('#'),
+            _ => false
+        };
     }
 }
 
@@ -1467,8 +1516,8 @@ internal sealed class TerminalSession : IDisposable
     private readonly SemaphoreSlim _ptyWriteLock = new(1, 1);
     private readonly KittyGraphicsCapabilityResponder _kittyGraphicsResponder = new();
     private readonly TerminalColorQueryGuard _terminalColorQueryGuard = new();
-    private readonly TaskCompletionSource _inputReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly TerminalInputReadinessDetector _inputReadinessDetector = new();
+    private readonly TaskCompletionSource<TerminalInputReadiness> _inputReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TerminalInputReadinessDetector _inputReadinessDetector;
     private readonly int _scrollbackBytes;
     private readonly Action<ForegroundProcessInfo>? _foregroundChangedHandler;
     private TtyHostTransportInfo _transportInfo;
@@ -1504,6 +1553,7 @@ internal sealed class TerminalSession : IDisposable
         int cols,
         int rows,
         int scrollbackBytes,
+        byte initialOrder,
         IProcessMonitor? processMonitor = null)
     {
         Id = id;
@@ -1514,7 +1564,9 @@ internal sealed class TerminalSession : IDisposable
         ShellType = shellType;
         Cols = cols;
         Rows = rows;
+        Order = initialOrder;
         _scrollbackBytes = scrollbackBytes;
+        _inputReadinessDetector = new TerminalInputReadinessDetector(shellType);
         _outputBuffer = new CircularByteBuffer(scrollbackBytes);
         _transportInfo = new TtyHostTransportInfo
         {
@@ -1614,9 +1666,9 @@ internal sealed class TerminalSession : IDisposable
                     _transportInfo.SourceSeq = sequenceEndExclusive;
                 }
 
-                if (_inputReadinessDetector.Observe(data.Span))
+                if (_inputReadinessDetector.Observe(data.Span) is { } readiness)
                 {
-                    _inputReady.TrySetResult();
+                    _inputReady.TrySetResult(readiness);
                 }
                 MarkInputTracePtyOutputRead(sequenceEndExclusive, ptyOutputReadAtMs);
                 OnOutput?.Invoke(sequenceStart, data);
@@ -1629,17 +1681,18 @@ internal sealed class TerminalSession : IDisposable
         }
     }
 
-    public async Task WaitForInputReadyAsync(TimeSpan timeout, CancellationToken ct)
+    public async Task<TerminalInputReadiness> WaitForInputReadyAsync(TimeSpan timeout, CancellationToken ct)
     {
         try
         {
-            await _inputReady.Task.WaitAsync(timeout, ct).ConfigureAwait(false);
+            return await _inputReady.Task.WaitAsync(timeout, ct).ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
             Log.Warn(() => string.Create(
                 CultureInfo.InvariantCulture,
-                $"Shell did not advertise bracketed-paste input readiness within {timeout.TotalMilliseconds} ms; sending initial input anyway."));
+                $"Shell did not emit a recognized input-readiness marker within {timeout.TotalMilliseconds} ms; sending initial input anyway."));
+            return TerminalInputReadiness.Timeout;
         }
     }
 

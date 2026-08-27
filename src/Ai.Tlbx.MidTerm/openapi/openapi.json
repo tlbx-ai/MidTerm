@@ -4592,6 +4592,12 @@
               "null",
               "string"
             ]
+          },
+          "launchRequestId": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
