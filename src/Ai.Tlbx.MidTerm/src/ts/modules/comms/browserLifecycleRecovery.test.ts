@@ -23,7 +23,10 @@ vi.mock('./muxChannel', () => ({
   suspendMuxForBrowserBackground: mocks.suspendMuxForBrowserBackground,
 }));
 
-import { setupBrowserLifecycleRecovery } from './browserLifecycleRecovery';
+import {
+  hasSuspendedForegroundEventLoop,
+  setupBrowserLifecycleRecovery,
+} from './browserLifecycleRecovery';
 
 describe('browserLifecycleRecovery', () => {
   let fakeDocument: EventTarget & { visibilityState: DocumentVisibilityState };
@@ -92,7 +95,7 @@ describe('browserLifecycleRecovery', () => {
     setVisibility('visible');
 
     emitDocument('visibilitychange');
-    vi.runAllTimers();
+    vi.advanceTimersByTime(0);
 
     expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
     expect(options.reconnectSettingsAfterLongResume).not.toHaveBeenCalled();
@@ -117,7 +120,7 @@ describe('browserLifecycleRecovery', () => {
     emitWindow('focus');
     emitWindow('pageshow');
     emitDocument('resume');
-    vi.runAllTimers();
+    vi.advanceTimersByTime(0);
 
     expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
     expect(options.reconnectSettingsAfterLongResume).toHaveBeenCalledTimes(1);
@@ -138,7 +141,7 @@ describe('browserLifecycleRecovery', () => {
     emitWindow('focus');
     emitWindow('pageshow');
     emitDocument('resume');
-    vi.runAllTimers();
+    vi.advanceTimersByTime(0);
 
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledTimes(1);
     expect(options.focusActiveTerminal).toHaveBeenCalledTimes(1);
@@ -158,8 +161,22 @@ describe('browserLifecycleRecovery', () => {
     setup();
 
     emitWindow('focus');
-    vi.runAllTimers();
+    vi.advanceTimersByTime(0);
 
     expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces transports when the event loop resumes without lifecycle events', () => {
+    expect(hasSuspendedForegroundEventLoop(1000, 7000)).toBe(true);
+    expect(hasSuspendedForegroundEventLoop(1000, 5999)).toBe(false);
+  });
+
+  it('does not recover transports for an on-time foreground heartbeat', () => {
+    setup();
+
+    vi.advanceTimersByTime(1000);
+
+    expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).not.toHaveBeenCalled();
   });
 });

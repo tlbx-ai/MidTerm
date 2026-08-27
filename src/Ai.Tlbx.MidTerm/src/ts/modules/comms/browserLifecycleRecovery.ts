@@ -16,12 +16,23 @@ interface BrowserLifecycleRecoveryOptions {
 
 const LONG_BACKGROUND_TRANSPORT_RESET_MS = 5000;
 const FOREGROUND_RECOVERY_COALESCE_MS = 250;
+const FOREGROUND_HEARTBEAT_INTERVAL_MS = 1000;
 
-export function setupBrowserLifecycleRecovery(options: BrowserLifecycleRecoveryOptions): void {
+export function hasSuspendedForegroundEventLoop(
+  lastHeartbeatAtMs: number,
+  heartbeatAtMs: number,
+): boolean {
+  return heartbeatAtMs - lastHeartbeatAtMs >= LONG_BACKGROUND_TRANSPORT_RESET_MS;
+}
+
+export function setupBrowserLifecycleRecovery(
+  options: BrowserLifecycleRecoveryOptions,
+): () => void {
   let hiddenAtMs: number | null = isDocumentHidden() ? Date.now() : null;
   let forceTransportReconnect = false;
   let recoveryTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   let lastRecoveryAtMs = Number.NEGATIVE_INFINITY;
+  let lastForegroundHeartbeatAtMs = Date.now();
 
   const recoverRealtimeAfterBrowserResume = (forceReconnect: boolean): void => {
     if (forceReconnect || !$stateWsConnected.get()) {
@@ -58,6 +69,7 @@ export function setupBrowserLifecycleRecovery(options: BrowserLifecycleRecoveryO
 
   const scheduleForegroundRecovery = (): void => {
     const now = Date.now();
+    lastForegroundHeartbeatAtMs = now;
     if (hiddenAtMs !== null) {
       forceTransportReconnect ||= now - hiddenAtMs >= LONG_BACKGROUND_TRANSPORT_RESET_MS;
       hiddenAtMs = null;
@@ -105,6 +117,7 @@ export function setupBrowserLifecycleRecovery(options: BrowserLifecycleRecoveryO
   });
 
   window.addEventListener('blur', () => {
+    rememberBackgroundStart();
     reportBrowserActivity(false);
   });
 
@@ -128,6 +141,32 @@ export function setupBrowserLifecycleRecovery(options: BrowserLifecycleRecoveryO
       suspendMuxForBrowserBackground();
     }
   });
+
+  // Android may freeze a standalone PWA without reliably delivering every
+  // visibility/focus event. A suspended event loop makes this lightweight
+  // heartbeat arrive late; treat that gap exactly like a long background
+  // interval instead of waiting for TCP/WebSocket timeouts.
+  const heartbeatTimer = globalThis.setInterval(() => {
+    const now = Date.now();
+    const previousHeartbeatAtMs = lastForegroundHeartbeatAtMs;
+    lastForegroundHeartbeatAtMs = now;
+
+    if (isDocumentHidden()) {
+      hiddenAtMs ??= now;
+      return;
+    }
+    if (!hasSuspendedForegroundEventLoop(previousHeartbeatAtMs, now)) {
+      return;
+    }
+
+    forceTransportReconnect = true;
+    scheduleForegroundRecovery();
+  }, FOREGROUND_HEARTBEAT_INTERVAL_MS);
+
+  return () => {
+    cancelScheduledRecovery();
+    globalThis.clearInterval(heartbeatTimer);
+  };
 }
 
 function isDocumentHidden(): boolean {

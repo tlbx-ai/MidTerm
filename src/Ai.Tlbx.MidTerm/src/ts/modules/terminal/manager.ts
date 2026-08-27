@@ -94,7 +94,8 @@ import {
 import { syncWebglTerminalCellBackgroundAlpha } from './webglCellBackgroundAlpha';
 import { shouldOwnWebglContext, shouldUseWebglRenderer } from './webglSupport';
 import { detachTerminalLigatureState, syncTerminalLigatureState } from './ligatures';
-import { refreshTerminalRenderer } from './presentationRefresh';
+import { isTerminalVisible, refreshTerminalRenderer } from './presentationRefresh';
+import { getTerminalStartupPaintAction, inspectTerminalStartupPaint } from './startupPaintHealth';
 import type { TerminalKeyLogEntryInput } from '../diagnostics/terminalKeyLog';
 import {
   captureTerminalInputData,
@@ -111,6 +112,86 @@ import {
 import { handleOsc7Cwd } from '../process';
 import { recordTerminalKeyLog } from '../diagnostics';
 import { getActiveTab } from '../sessionTabs';
+
+interface TerminalStartupPaintRecoveryState {
+  attempt: number;
+  consecutiveBlankChecks: number;
+  timerId: number | null;
+}
+
+const terminalStartupPaintRecoveries = new Map<string, TerminalStartupPaintRecoveryState>();
+const TERMINAL_STARTUP_PAINT_INITIAL_DELAY_MS = 700;
+const TERMINAL_STARTUP_PAINT_RETRY_DELAY_MS = 450;
+const TERMINAL_STARTUP_PAINT_RECHECK_DELAY_MS = 200;
+const TERMINAL_STARTUP_PAINT_MAX_ATTEMPTS = 8;
+
+function clearTerminalStartupPaintRecovery(sessionId: string): void {
+  const recovery = terminalStartupPaintRecoveries.get(sessionId);
+  if (recovery?.timerId !== null && recovery?.timerId !== undefined) {
+    window.clearTimeout(recovery.timerId);
+  }
+  terminalStartupPaintRecoveries.delete(sessionId);
+}
+
+function scheduleTerminalStartupPaintRecovery(
+  sessionId: string,
+  state: TerminalState,
+  delayMs = TERMINAL_STARTUP_PAINT_INITIAL_DELAY_MS,
+): void {
+  clearTerminalStartupPaintRecovery(sessionId);
+  const recovery: TerminalStartupPaintRecoveryState = {
+    attempt: 0,
+    consecutiveBlankChecks: 0,
+    timerId: null,
+  };
+  terminalStartupPaintRecoveries.set(sessionId, recovery);
+
+  const scheduleNext = (delay: number): void => {
+    recovery.timerId = window.setTimeout(() => {
+      recovery.timerId = null;
+      if (sessionTerminals.get(sessionId) !== state || !state.opened || !isTerminalVisible(state)) {
+        clearTerminalStartupPaintRecovery(sessionId);
+        return;
+      }
+
+      recovery.attempt += 1;
+      const health = inspectTerminalStartupPaint(state.terminal, state.container);
+      recovery.consecutiveBlankChecks =
+        health === 'blank' ? recovery.consecutiveBlankChecks + 1 : 0;
+      const action = getTerminalStartupPaintAction(
+        health,
+        recovery.consecutiveBlankChecks,
+        recovery.attempt,
+        TERMINAL_STARTUP_PAINT_MAX_ATTEMPTS,
+      );
+
+      if (action === 'complete') {
+        clearTerminalStartupPaintRecovery(sessionId);
+        return;
+      }
+      if (action === 'retry') {
+        scheduleNext(TERMINAL_STARTUP_PAINT_RETRY_DELAY_MS);
+        return;
+      }
+      if (action === 'refresh') {
+        log.warn(() => `Terminal ${sessionId} startup framebuffer appears blank; repainting`);
+        refreshTerminalRenderer(state, { preserveTextureAtlas: true });
+        scheduleNext(TERMINAL_STARTUP_PAINT_RECHECK_DELAY_MS);
+        return;
+      }
+
+      log.warn(
+        () =>
+          `Terminal ${sessionId} startup framebuffer remained blank; rebuilding renderer and replaying`,
+      );
+      recoverTerminalRendererAfterForeground(sessionId, state, { preferDomRenderer: true });
+      requestBufferRefresh(sessionId, 'fullReplay', 'startup_framebuffer_blank');
+      clearTerminalStartupPaintRecovery(sessionId);
+    }, delay);
+  };
+
+  scheduleNext(delayMs);
+}
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import {
   registerTerminalNotificationHandlers,
@@ -1356,6 +1437,7 @@ export function createTerminalForSession(
         log.warn(() => `Terminal ${sessionId} optional initialization failed: ${String(error)}`);
       },
     );
+    scheduleTerminalStartupPaintRecovery(sessionId, state);
 
     window.setTimeout(() => {
       const currentState = sessionTerminals.get(sessionId);
@@ -1622,6 +1704,8 @@ export function setupTerminalEvents(
 export function destroyTerminalForSession(sessionId: string): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
+
+  clearTerminalStartupPaintRecovery(sessionId);
 
   enterModifierLatches.delete(sessionId);
   enterOverrideSuppress.clearTerminalEnterOverrideHandled(sessionId);
