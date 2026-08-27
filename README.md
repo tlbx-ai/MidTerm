@@ -26,17 +26,21 @@
 
 # Persistent terminals and coding agents in any browser.
 
-tlbx is a self-hosted browser control station for remote AI coding agents. Run Codex, Claude Code, Gemini CLI, Grok Build, OpenCode, Copilot CLI, Antigravity CLI—or several together—on the machines that own your repos, credentials, and tools. Supervise them from any desktop, tablet, or phone browser.
+tlbx is a self-hosted browser control station for remote AI coding agents. Run terminal-native tools in persistent PTY sessions or connect ACP-capable agents through structured Agent Controller sessions—on the machines that own your repos, credentials, and tools. Supervise both from any desktop, tablet, or phone browser.
 
 > **tlbx is the new name of MidTerm.** Existing installs update in place. The `mt`, `mthost`, and `mtagenthost` executables, service identities, settings, session data, and release asset names remain compatible.
 
-The browser is the control surface, not the runtime: close it, change devices, or travel, and the agents, PTYs, tests, and servers keep running. It's a general terminal too—pwsh, bash, or zsh and any PTY app, not just agents.
+The browser is the control surface, not the runtime: close it, change devices, or travel, and the agents, PTYs, tests, and servers keep running. Terminal and Agent Controller sessions share one sidebar, repository context, files, browser tooling, and access boundary.
 
-Technical guides: **[remote coding agents](https://tlbx.ai/remote-coding-agents)** · **[coding-agent web terminal](https://tlbx.ai/coding-agent-web-terminal)** · **[features](https://tlbx.ai/features)** · **[architecture](https://tlbx.ai/architecture)** · **[install](https://tlbx.ai/install)**
+Technical guides: **[Agent Controller](https://tlbx.ai/agent-controller)** · **[remote coding agents](https://tlbx.ai/remote-coding-agents)** · **[coding-agent web terminal](https://tlbx.ai/coding-agent-web-terminal)** · **[features](https://tlbx.ai/features)** · **[architecture](https://tlbx.ai/architecture)** · **[install](https://tlbx.ai/install)**
 
 ## Product screenshots
 
-Codex, Claude Code, and OpenCode working the same project in adjacent tlbx sessions—each a real PTY, all steered from one browser tab.
+Structured Agent Controller history and normal terminal sessions stay adjacent in one tlbx workspace.
+
+<p align="center">
+  <img src="docs/marketing/readme/agent-controller.webp" alt="A tlbx Agent Controller session showing structured agent history, a read-only tool call and a concise assistant response beside normal terminal sessions" width="100%">
+</p>
 
 <p align="center">
   <img src="docs/marketing/readme/codex-session.webp" alt="A Codex session in tlbx showing a diff, a git-diff tool call, and its run summary while validating a POST route" width="100%">
@@ -49,6 +53,15 @@ Codex, Claude Code, and OpenCode working the same project in adjacent tlbx sessi
 <p align="center">
   <img src="docs/marketing/readme/console-and-app.webp" alt="A tlbx dev server session beside the docked Dev Browser showing the live app it serves" width="100%">
 </p>
+
+## Two session types, one workspace
+
+| Session type | Use it for | What tlbx renders |
+| ------------ | ---------- | ----------------- |
+| **Terminal Session** | Any shell, CLI, TUI, test watcher, server, or terminal-native agent | A real persistent PTY with server-side scrollback |
+| **Agent Controller Session** | ACP-capable agents | Canonical turns, tools, diffs, questions, approvals, reasoning, and provider controls |
+
+Terminal sessions remain universal. Agent Controller is a prominent second surface for compatible agents, not a replacement for the terminal and never a mode inferred from terminal output.
 
 ## Any shell, any terminal app
 
@@ -70,7 +83,7 @@ tlbx runs any terminal-native tool in a real PTY, but it is shaped around long-r
 - **Verify the result:** open the app beside the agent; inspect DOM, console/proxy logs, responsive layouts, and screenshots.
 - **Leave and return:** sessions survive browser disconnects, device changes, and travel.
 
-For agents that implement the open [Agent Client Protocol (ACP)](https://agentclientprotocol.com/), tlbx also provides a structured Agent Controller surface instead of interpreting terminal output. The new-session launcher detects locally installed ACP agents, currently including **Grok Build** (`grok agent stdio`) and **OpenCode** (`opencode acp`), alongside the native Codex app-server integration. Model and mode controls, streamed activity, permissions, cancellation, and bookmarks remain provider-neutral; exact capabilities depend on the selected agent. Claude Code remains available through its supported terminal-native CLI, not through a tlbx-specific stream adapter.
+For agents that implement the open [Agent Client Protocol (ACP)](https://agentclientprotocol.com/), tlbx provides a structured Agent Controller surface instead of interpreting terminal output. tlbx 10.9.0 includes built-in launch definitions for **Codex**, **Grok Build**, **OpenCode**, **Gemini CLI**, and **GitHub Copilot CLI**, plus validated local definitions through `acp-agents.json`. Codex, Grok Build, and Copilot CLI have completed end-to-end turns in current validation; Gemini still depends on valid local Google credentials, while OpenCode assistant output depends on its selected provider. Claude Code remains available through its terminal-native CLI and is not advertised as a verified ACP-v1 built-in.
 
 ## Not SSH in a browser
 
@@ -116,7 +129,7 @@ Cloudflare Tunnel, nginx/Caddy, LAN, and other private-network setups also work.
 | Part          | Behavior                                                                                   |
 | ------------- | ------------------------------------------------------------------------------------------ |
 | **Host**      | One independent tlbx instance exposes one machine                                       |
-| **Execution** | Real PTYs use that host's repos, credentials, tools, hardware, and network                 |
+| **Execution** | `mthost` owns real PTYs; `mtagenthost` owns provider-backed Agent Controller runtimes    |
 | **Client**    | Any authorized browser; several hosts can sit in adjacent tabs                             |
 | **Lifetime**  | Browser connections are transient; agents, shells, tests, and servers persist              |
 | **Context**   | Working directory, scrollback, Git, files, notes, logs, and previews stay with the session |
