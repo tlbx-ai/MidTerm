@@ -8,6 +8,34 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class BrowserUiBridgeTests
 {
     [Fact]
+    public void RequestClose_BroadcastsExactPreviewToEveryConnectedUi()
+    {
+        var bridge = new BrowserUiBridge(new MainBrowserService());
+        var closed = new List<string>();
+        bridge.RegisterListener(
+            "l1",
+            "browser-a",
+            (_, _) => { },
+            (_, _) => { },
+            (_, _, _, _) => { },
+            (_, _, _, _) => { },
+            close: (sessionId, previewName) => closed.Add($"a:{sessionId}/{previewName}"));
+        bridge.RegisterListener(
+            "l2",
+            "browser-b",
+            (_, _) => { },
+            (_, _) => { },
+            (_, _, _, _) => { },
+            (_, _, _, _) => { },
+            close: (sessionId, previewName) => closed.Add($"b:{sessionId}/{previewName}"));
+
+        var count = bridge.RequestClose("session-a", "dai-e2e");
+
+        Assert.Equal(2, count);
+        Assert.Equal(["a:session-a/dai-e2e", "b:session-a/dai-e2e"], closed);
+    }
+
+    [Fact]
     public async Task RequestOpenWhenAvailableAsync_WaitsForReconnectAndDispatchesExactlyOnce()
     {
         var mainBrowser = new MainBrowserService();

@@ -48,7 +48,7 @@ import {
   setSessionSelectedPreviewName,
   upsertSessionPreview,
 } from '../web/webSessionState';
-import { syncActiveWebPreview } from '../web';
+import { closePreviewFromServer, syncActiveWebPreview } from '../web';
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { isSharedSessionRoute } from '../share';
 import { checkVersionAndReload } from '../../utils/versionCheck';
@@ -751,6 +751,11 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
       break;
     case 'open':
       handleOpenBrowserUiCommand(msg);
+      break;
+    case 'close':
+      if (msg.sessionId) {
+        await closePreviewFromServer(msg.sessionId, msg.previewName);
+      }
       break;
     case 'mobile-device':
       if (msg.deviceAction) {

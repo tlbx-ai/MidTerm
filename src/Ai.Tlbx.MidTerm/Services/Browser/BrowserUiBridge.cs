@@ -37,7 +37,8 @@ public sealed class BrowserUiBridge
         Action<string?, string?, int, int> viewport,
         Action<string?, string?, string, bool> open,
         Action<string?, string?, string, string?>? mobileDevice = null,
-        Action<string, string, double, int>? agentWheel = null)
+        Action<string, string, double, int>? agentWheel = null,
+        Action<string?, string?>? close = null)
     {
         lock (_lock)
         {
@@ -49,6 +50,7 @@ public sealed class BrowserUiBridge
                 Dock = dock,
                 Viewport = viewport,
                 Open = open,
+                Close = close,
                 MobileDevice = mobileDevice,
                 AgentWheel = agentWheel,
                 ConnectedAtUtc = DateTimeOffset.UtcNow
@@ -225,6 +227,24 @@ public sealed class BrowserUiBridge
 
         target.Open(sessionId, previewName, url, activateSession);
         return true;
+    }
+
+    public int RequestClose(string sessionId, string? previewName)
+    {
+        ListenerRegistration[] targets;
+        lock (_lock)
+        {
+            targets = _listeners.Values
+                .Where(listener => listener.Close is not null)
+                .ToArray();
+        }
+
+        foreach (var target in targets)
+        {
+            target.Close!(sessionId, previewName);
+        }
+
+        return targets.Length;
     }
 
     public async Task<(bool Success, string Error)> RequestOpenWhenAvailableAsync(
@@ -502,6 +522,7 @@ public sealed class BrowserUiBridge
         public required Action<string?, string?> Dock { get; init; }
         public required Action<string?, string?, int, int> Viewport { get; init; }
         public required Action<string?, string?, string, bool> Open { get; init; }
+        public Action<string?, string?>? Close { get; init; }
         public Action<string?, string?, string, string?>? MobileDevice { get; init; }
         public Action<string, string, double, int>? AgentWheel { get; init; }
         public DateTimeOffset ConnectedAtUtc { get; init; }

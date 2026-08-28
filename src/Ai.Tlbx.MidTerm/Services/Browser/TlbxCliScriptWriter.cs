@@ -364,8 +364,33 @@ public static class TlbxCliScriptWriter
             return $code
           }
         }
-        # mt_close_preview  — close web preview panel
-        mt_close_preview() { _MREQUIRECTX "mt_close_preview" || return $?; _MC -X DELETE "$_MT/api/webpreview/target$(_MQ)"; }
+        # mt_close_preview  — close the current preview; named previews are removed entirely
+        mt_close_preview() {
+          _MREQUIRECTX "mt_close_preview" || return $?
+          _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\"}" "$_MT/api/browser/close"
+        }
+        # mt_with_preview NAME URL COMMAND [ARG...]  — run an ephemeral named preview scope with guaranteed cleanup
+        mt_with_preview() {
+          [ $# -ge 3 ] || { echo "usage: mt_with_preview NAME URL COMMAND [ARG...]" >&2; return 1; }
+          local preview_name="$1" preview_url="$2"
+          shift 2
+          (
+            export MT_PREVIEW_NAME="$preview_name"
+            _mt_preview_cleanup() {
+              local body_status=$?
+              local cleanup_status=0
+              trap - EXIT
+              mt_close_preview >/dev/null || cleanup_status=$?
+              if [ $body_status -ne 0 ]; then
+                exit $body_status
+              fi
+              exit $cleanup_status
+            }
+            trap _mt_preview_cleanup EXIT
+            mt_open "$preview_url" >/dev/null || return $?
+            "$@"
+          )
+        }
         mt_reload()     { _MREQUIRECTX "mt_reload" || return $?; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"soft\"}" "$_MT/api/webpreview/reload"; }
         # mt_forcereload  — force a fresh content reload with cache-busting
         mt_forcereload() { _MREQUIRECTX "mt_forcereload" || return $?; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"force\"}" "$_MT/api/webpreview/reload"; }
@@ -1529,8 +1554,49 @@ public static class TlbxCliScriptWriter
                 throw "mt_open failed: preview did not become controllable."
             }
         }
-        # Mt-ClosePreview  — close web preview panel
-        function Mt-ClosePreview { _MRequireSessionContext "mt_close_preview"; _MC -X DELETE "$script:_MT/api/webpreview/target$(_MQuery)" }
+        # Mt-ClosePreview  — close the current preview; named previews are removed entirely
+        function Mt-ClosePreview {
+            _MRequireSessionContext "mt_close_preview"
+            _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview)}) "$script:_MT/api/browser/close"
+        }
+        # Invoke-MtPreview -Name NAME -Url URL -ScriptBlock { ... }  — ephemeral named preview scope with guaranteed cleanup
+        function Invoke-MtPreview {
+            [CmdletBinding()]
+            param(
+                [Parameter(Mandatory=$true)][ValidateNotNullOrEmpty()][string]$Name,
+                [Parameter(Mandatory=$true)][ValidateNotNullOrEmpty()][string]$Url,
+                [Parameter(Mandatory=$true)][scriptblock]$ScriptBlock,
+                [object[]]$ArgumentList = @()
+            )
+
+            _MRequireSessionContext "mt_with_preview"
+            $hadPreviousPreview = Test-Path Env:MT_PREVIEW_NAME
+            $previousPreview = $env:MT_PREVIEW_NAME
+            $bodyFailed = $false
+            try {
+                $env:MT_PREVIEW_NAME = $Name
+                Mt-Open -Url $Url | Out-Null
+                & $ScriptBlock @ArgumentList
+            } catch {
+                $bodyFailed = $true
+                throw
+            } finally {
+                try {
+                    Mt-ClosePreview | Out-Null
+                } catch {
+                    if (-not $bodyFailed) {
+                        throw
+                    }
+                    Write-Warning "Could not close ephemeral preview '$Name': $($_.Exception.Message)"
+                } finally {
+                    if ($hadPreviousPreview) {
+                        $env:MT_PREVIEW_NAME = $previousPreview
+                    } else {
+                        Remove-Item Env:MT_PREVIEW_NAME -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+        }
         function Mt-Reload     { _MRequireSessionContext "mt_reload"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="soft"}) "$script:_MT/api/webpreview/reload" }
         # Mt-ForceReload  — force a fresh content reload with cache-busting
         function Mt-ForceReload { _MRequireSessionContext "mt_forcereload"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="force"}) "$script:_MT/api/webpreview/reload" }
@@ -2238,6 +2304,7 @@ public static class TlbxCliScriptWriter
         Set-Alias -Name mt_forms -Value Mt-Forms
         Set-Alias -Name mt_navigate -Value Mt-Navigate
         Set-Alias -Name mt_open -Value Mt-Open
+        Set-Alias -Name mt_with_preview -Value Invoke-MtPreview
         Set-Alias -Name mt_reload -Value Mt-Reload
         Set-Alias -Name mt_forcereload -Value Mt-ForceReload
         Set-Alias -Name mt_target -Value Mt-Target

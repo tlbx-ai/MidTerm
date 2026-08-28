@@ -103,6 +103,35 @@ public sealed class BrowserPreviewOwnerService
         return true;
     }
 
+    public bool Release(string? sessionId, string? previewName)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return false;
+        }
+
+        lock (_lock)
+        {
+            return _owners.Remove(PreviewKey.Create(sessionId, previewName));
+        }
+    }
+
+    public int ClearSession(string sessionId)
+    {
+        lock (_lock)
+        {
+            var keys = _owners.Keys
+                .Where(key => string.Equals(key.SessionId, sessionId, StringComparison.Ordinal))
+                .ToArray();
+            foreach (var key in keys)
+            {
+                _owners.Remove(key);
+            }
+
+            return keys.Length;
+        }
+    }
+
     private readonly record struct PreviewKey(string SessionId, string PreviewName)
     {
         public static PreviewKey Create(string sessionId, string? previewName)

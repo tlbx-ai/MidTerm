@@ -38,7 +38,7 @@ vi.mock('./webApi', () => ({
 }));
 
 import { $activeSessionId } from '../../stores';
-import { closeActivePreview, syncActiveWebPreview } from './index';
+import { closeActivePreview, closePreviewFromServer, syncActiveWebPreview } from './index';
 import { deleteWebPreviewSession, listWebPreviewSessions } from './webApi';
 import { closeDetachedPreview } from './webDetach';
 import { destroyPreviewFrame } from './webPanel';
@@ -139,5 +139,66 @@ describe('syncActiveWebPreview', () => {
     expect(mockedDestroyPreviewFrame).toHaveBeenCalledWith(sessionId, extraPreviewName);
     expect(getSessionPreview(sessionId, extraPreviewName)).toBeNull();
     expect(getSessionSelectedPreviewName(sessionId)).toBe(previewName);
+  });
+
+  it('prunes hidden frames whose server-side named previews no longer exist', async () => {
+    upsertSessionPreview({
+      sessionId,
+      previewName: extraPreviewName,
+      routeKey: 'stale-route',
+      url: 'https://stale.example/',
+      active: true,
+      targetRevision: 1,
+    });
+    mockedListWebPreviewSessions.mockResolvedValue([
+      {
+        sessionId,
+        previewName,
+        routeKey: 'route-1',
+        url: 'https://example.com/',
+        active: true,
+        targetRevision: 1,
+      },
+    ]);
+
+    await syncActiveWebPreview();
+
+    expect(mockedDestroyPreviewFrame).toHaveBeenCalledWith(sessionId, extraPreviewName);
+    expect(getSessionPreview(sessionId, extraPreviewName)).toBeNull();
+  });
+
+  it('applies server cleanup immediately without deleting another named preview', async () => {
+    upsertSessionPreview({
+      sessionId,
+      previewName: extraPreviewName,
+      routeKey: 'route-2',
+      url: 'https://example.org/docs',
+      active: true,
+      targetRevision: 1,
+    });
+    upsertSessionPreview({
+      sessionId,
+      previewName: 'parallel',
+      routeKey: 'route-3',
+      url: 'https://example.org/parallel',
+      active: true,
+      targetRevision: 1,
+    });
+    mockedListWebPreviewSessions.mockResolvedValue([
+      {
+        sessionId,
+        previewName: 'parallel',
+        routeKey: 'route-3',
+        url: 'https://example.org/parallel',
+        active: true,
+        targetRevision: 1,
+      },
+    ]);
+
+    await closePreviewFromServer(sessionId, extraPreviewName);
+
+    expect(mockedDestroyPreviewFrame).toHaveBeenCalledWith(sessionId, extraPreviewName);
+    expect(getSessionPreview(sessionId, extraPreviewName)).toBeNull();
+    expect(getSessionPreview(sessionId, 'parallel')).not.toBeNull();
   });
 });

@@ -97,6 +97,9 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("\"$_MT/api/browser/open\"", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("mt_navigate()   { _MREQUIRECTX \"mt_navigate\" || return $?; _MJ", shell, StringComparison.Ordinal);
         Assert.Contains("mt_open() {", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_with_preview() {", shell, StringComparison.Ordinal);
+        Assert.Contains("trap _mt_preview_cleanup EXIT", shell, StringComparison.Ordinal);
+        Assert.Contains("$_MT/api/browser/close", shell, StringComparison.Ordinal);
         Assert.Contains("mt_mobile() {", shell, StringComparison.Ordinal);
         Assert.Contains("/api/browser/mobile-device", shell, StringComparison.Ordinal);
         Assert.Contains("local claim=0 url=\"\" open_out status", shell, StringComparison.Ordinal);
@@ -134,6 +137,9 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("mt_navigate failed: preview did not become controllable.", powershell, StringComparison.Ordinal);
         Assert.DoesNotContain("-X PUT \"$script:_MT/api/webpreview/target\"", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Open {", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Invoke-MtPreview {", powershell, StringComparison.Ordinal);
+        Assert.Contains("finally {", powershell, StringComparison.Ordinal);
+        Assert.Contains("$script:_MT/api/browser/close", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Mobile {", powershell, StringComparison.Ordinal);
         Assert.Contains("param([string]$Url, [switch]$Claim)", powershell, StringComparison.Ordinal);
         Assert.Contains("Mt-ClaimPreview | Out-Null", powershell, StringComparison.Ordinal);
@@ -146,6 +152,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("Set-Alias -Name mt_context -Value Mt-Context", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_session -Value Mt-Session", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_preview -Value Mt-Preview", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_with_preview -Value Invoke-MtPreview", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_close_preview -Value Mt-ClosePreview", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_claim_preview -Value Mt-ClaimPreview", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_claim_main_browser -Value Mt-ClaimMainBrowser", powershell, StringComparison.Ordinal);

@@ -193,6 +193,7 @@ public class Program
         var browserPreviewOriginService = app.Services.GetRequiredService<BrowserPreviewOriginService>();
         var browserPreviewRegistry = app.Services.GetRequiredService<BrowserPreviewRegistry>();
         var browserPreviewOwnerService = app.Services.GetRequiredService<BrowserPreviewOwnerService>();
+        var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
         ServerSetup.ConfigureMiddleware(
             app,
             settingsService,
@@ -321,6 +322,9 @@ public class Program
             managerBarQueueService.RemoveSession(sessionId);
             workerSessionRegistry.Forget(sessionId);
             agentFeed.Forget(sessionId);
+            webPreviewService.ClearSession(sessionId);
+            browserPreviewRegistry.ClearSession(sessionId);
+            browserPreviewOwnerService.ClearSession(sessionId);
         };
 
         settingsService.AddSettingsListener(newSettings =>
@@ -369,7 +373,6 @@ public class Program
         AgentControllerInstallationEndpoints.MapAgentControllerInstallationEndpoints(app, agentControllerInstallations);
         ShareEndpoints.MapShareEndpoints(app, shareGrantService, sessionManager, settingsService);
         var clipboardService = app.Services.GetRequiredService<ClipboardService>();
-        var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
         var appServerControlRuntime = app.Services.GetRequiredService<SessionAppServerControlRuntimeService>();
         var codexHandoff = app.Services.GetRequiredService<SessionCodexHandoffService>();
         var providerResumeCatalog = app.Services.GetRequiredService<ProviderResumeCatalogService>();
@@ -434,7 +437,14 @@ public class Program
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
         HubEndpoints.MapHubEndpoints(app, app.Services.GetRequiredService<HubService>());
-        WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager, browserCommandService);
+        WebPreviewEndpoints.MapWebPreviewEndpoints(
+            app,
+            webPreviewService,
+            sessionManager,
+            browserCommandService,
+            browserPreviewRegistry,
+            browserPreviewOwnerService,
+            browserUiBridge);
         BrowserEndpoints.MapBrowserEndpoints(
             app,
             browserCommandService,

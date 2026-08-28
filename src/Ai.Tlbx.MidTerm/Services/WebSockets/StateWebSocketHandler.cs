@@ -436,6 +436,17 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
+        void OnBrowserClose(string? sessionId, string? previewName)
+        {
+            var instruction = new Models.Browser.BrowserUiInstruction
+            {
+                Command = "close",
+                SessionId = sessionId,
+                PreviewName = previewName
+            };
+            _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
+        }
+
         void OnMobileDevice(string? sessionId, string? previewName, string action, string? profile)
         {
             var instruction = new Models.Browser.BrowserUiInstruction
@@ -472,7 +483,8 @@ public sealed class StateWebSocketHandler
                 viewport: OnBrowserViewport,
                 open: OnBrowserOpen,
                 mobileDevice: OnMobileDevice,
-                agentWheel: OnAgentWheel);
+                agentWheel: OnAgentWheel,
+                close: OnBrowserClose);
         }
 
         try

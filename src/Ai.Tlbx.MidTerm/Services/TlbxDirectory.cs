@@ -308,7 +308,8 @@ public static class TlbxDirectory
         | `mt_navigate <url>` | Set the current named web preview target |
         | `mt_url` | Upstream page URL (not proxy URL) |
         | `mt_open <url>` | Open URL in the current named preview and dock panel |
-        | `mt_close_preview` | Close web preview panel |
+        | `mt_close_preview` | Close the current preview; named previews are removed entirely |
+        | `mt_with_preview` | Run an ephemeral named preview scope and always close it after the command/block |
         | `mt_reload` | Soft-reload preview |
         | `mt_forcereload` | Force a fresh content reload with cache busting |
         | `mt_hardreload` | Clear cookies + reload (fresh session) |
@@ -404,6 +405,11 @@ public static class TlbxDirectory
         `mt_session` prints the current tlbx terminal session ID.
         `mt_context --bash` / `mt_context --pwsh` print re-export commands for nested shells.
         `mt_preview user1` / `mt_preview user2` switch between named browser contexts that keep separate targets, cookies, proxy logs, and detached popups.
+
+        For retry-safe automation, reuse one stable name with `mt_open`, or use an ephemeral scope that closes even when the body fails:
+
+        - bash/zsh: `mt_with_preview dai-e2e http://localhost:3000 command arg...`
+        - PowerShell: `mt_with_preview -Name dai-e2e -Url http://localhost:3000 -ScriptBlock { ... }`
 
         ### Fresh session (clear cookies + reload)
 
