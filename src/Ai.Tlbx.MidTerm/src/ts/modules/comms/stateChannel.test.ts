@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   ),
   upsertSessionPreview: vi.fn(),
   syncActiveWebPreview: vi.fn().mockResolvedValue(undefined),
+  syncBackgroundWebPreview: vi.fn().mockResolvedValue(undefined),
   isSessionInLayout: vi.fn(() => false),
   restoreLayoutFromStorage: vi.fn(),
   applyServerLayoutState: vi.fn(),
@@ -118,6 +119,7 @@ vi.mock('../web/webSessionState', () => ({
 
 vi.mock('../web', () => ({
   syncActiveWebPreview: mocks.syncActiveWebPreview,
+  syncBackgroundWebPreview: mocks.syncBackgroundWebPreview,
 }));
 
 vi.mock('../web/webContext', () => ({
@@ -286,6 +288,7 @@ describe('stateChannel browser-ui handling', () => {
     expect(stores.$activeSessionId.get()).toBe('user1234');
     expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
     expect(mocks.syncActiveWebPreview).not.toHaveBeenCalled();
+    expect(mocks.syncBackgroundWebPreview).toHaveBeenCalledWith('agent5678', 'default');
     expect(mocks.setWebPreviewTarget).toHaveBeenCalledWith(
       'agent5678',
       'default',

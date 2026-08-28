@@ -17,6 +17,7 @@ vi.mock('./webDock', () => ({
 vi.mock('./webPanel', () => ({
   initWebPanel: vi.fn(),
   destroyPreviewFrame: vi.fn(),
+  loadBackgroundPreview: vi.fn().mockResolvedValue(undefined),
   loadPreview: vi.fn().mockResolvedValue(undefined),
   renderPreviewTabs: vi.fn(),
   restoreLastUrl: vi.fn(),
@@ -38,10 +39,15 @@ vi.mock('./webApi', () => ({
 }));
 
 import { $activeSessionId } from '../../stores';
-import { closeActivePreview, closePreviewFromServer, syncActiveWebPreview } from './index';
+import {
+  closeActivePreview,
+  closePreviewFromServer,
+  syncActiveWebPreview,
+  syncBackgroundWebPreview,
+} from './index';
 import { deleteWebPreviewSession, listWebPreviewSessions } from './webApi';
 import { closeDetachedPreview } from './webDetach';
-import { destroyPreviewFrame } from './webPanel';
+import { destroyPreviewFrame, loadBackgroundPreview } from './webPanel';
 import {
   getSessionDockedClient,
   getSessionPreview,
@@ -60,6 +66,7 @@ describe('syncActiveWebPreview', () => {
   const mockedDeleteWebPreviewSession = vi.mocked(deleteWebPreviewSession);
   const mockedCloseDetachedPreview = vi.mocked(closeDetachedPreview);
   const mockedDestroyPreviewFrame = vi.mocked(destroyPreviewFrame);
+  const mockedLoadBackgroundPreview = vi.mocked(loadBackgroundPreview);
 
   beforeEach(() => {
     removeSessionState(sessionId);
@@ -71,6 +78,7 @@ describe('syncActiveWebPreview', () => {
     mockedDeleteWebPreviewSession.mockReset();
     mockedCloseDetachedPreview.mockReset();
     mockedDestroyPreviewFrame.mockReset();
+    mockedLoadBackgroundPreview.mockReset();
     removeSessionState(sessionId);
     $activeSessionId.set(null);
   });
@@ -200,5 +208,28 @@ describe('syncActiveWebPreview', () => {
     expect(mockedDestroyPreviewFrame).toHaveBeenCalledWith(sessionId, extraPreviewName);
     expect(getSessionPreview(sessionId, extraPreviewName)).toBeNull();
     expect(getSessionPreview(sessionId, 'parallel')).not.toBeNull();
+  });
+
+  it('attaches a background preview without changing the active session', async () => {
+    const backgroundSessionId = 'session-background';
+    upsertSessionPreview({
+      sessionId: backgroundSessionId,
+      previewName,
+      routeKey: 'route-background',
+      url: 'https://background.example/',
+      active: true,
+      targetRevision: 4,
+    });
+
+    await syncBackgroundWebPreview(backgroundSessionId, previewName);
+
+    expect($activeSessionId.get()).toBe(sessionId);
+    expect(mockedLoadBackgroundPreview).toHaveBeenCalledWith(
+      backgroundSessionId,
+      previewName,
+      'https://background.example/',
+      4,
+    );
+    removeSessionState(backgroundSessionId);
   });
 });

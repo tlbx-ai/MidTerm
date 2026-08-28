@@ -223,7 +223,7 @@ public static class BrowserEndpoints
                 sessionId,
                 previewName,
                 requireClientConnectedAfterUtc: DateTimeOffset.UtcNow,
-                requireVisibleClient: true,
+                requireVisibleClient: activateSession,
                 connectedUiClientCountProvider: () => uiBridge.ConnectedBrowserCount,
                 cancellationToken: cancellationToken);
 
@@ -233,7 +233,8 @@ public static class BrowserEndpoints
                 previewName,
                 connectedUiClientCount: uiBridge.ConnectedBrowserCount);
 
-            var ready = status.Controllable && status.DefaultClient?.IsVisible == true;
+            var ready = status.Controllable
+                && (!activateSession || status.DefaultClient?.IsVisible == true);
             return ready
                 ? Results.Text(statusText)
                 : Results.Text(statusText, statusCode: 409);

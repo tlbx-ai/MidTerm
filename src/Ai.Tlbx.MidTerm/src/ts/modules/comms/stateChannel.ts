@@ -48,7 +48,7 @@ import {
   setSessionSelectedPreviewName,
   upsertSessionPreview,
 } from '../web/webSessionState';
-import { closePreviewFromServer, syncActiveWebPreview } from '../web';
+import { closePreviewFromServer, syncActiveWebPreview, syncBackgroundWebPreview } from '../web';
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { isSharedSessionRoute } from '../share';
 import { checkVersionAndReload } from '../../utils/versionCheck';
@@ -930,6 +930,7 @@ async function handleBrowserOpen(
     selectSession(sessionId, { closeSettingsPanel: false });
   }
   if ($activeSessionId.get() !== sessionId) {
+    await syncBackgroundWebPreview(sessionId, previewName);
     return;
   }
   $webPreviewUrl.set(url);

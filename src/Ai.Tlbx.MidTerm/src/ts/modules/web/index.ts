@@ -18,6 +18,7 @@ import {
 import {
   destroyPreviewFrame,
   initWebPanel,
+  loadBackgroundPreview,
   loadPreview,
   renderPreviewTabs,
   restoreLastUrl,
@@ -140,6 +141,23 @@ export async function syncActiveWebPreview(): Promise<void> {
   restoreLastUrl();
   renderPreviewTabs();
   await loadPreview();
+}
+
+/** Attach a background session preview without changing the active session or visible dock. */
+export async function syncBackgroundWebPreview(
+  sessionId: string,
+  previewName: string,
+): Promise<void> {
+  if ($activeSessionId.get() === sessionId) {
+    return;
+  }
+
+  const preview = getSessionPreview(sessionId, previewName);
+  if (!preview?.url) {
+    return;
+  }
+
+  await loadBackgroundPreview(sessionId, previewName, preview.url, preview.targetRevision);
 }
 
 /** Select a named preview for the active session and show it in the dock. */
