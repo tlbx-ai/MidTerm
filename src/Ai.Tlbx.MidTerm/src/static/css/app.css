@@ -4690,6 +4690,10 @@ body::before {
   cursor: wait;
 }
 
+.scaled-overlay.connection-status-offset {
+  bottom: 36px;
+}
+
 .scaled-overlay-copy,
 .scaled-overlay-action {
   display: flex;

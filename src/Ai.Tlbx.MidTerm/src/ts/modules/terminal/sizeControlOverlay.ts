@@ -90,8 +90,10 @@ export function positionScalingOverlay(
     : `${icon('resize')}<span class="scaled-overlay-copy"><strong>${followerTitle}</strong><span>${label}</span></span><span class="scaled-overlay-action"><strong>${t('terminal.continueHere')}</strong><span>${ownerTransferHint}</span></span>`;
 
   const connectionBadgeVisible = isConnectionBadgeVisible();
-  overlay.style.bottom = connectionBadgeVisible ? '36px' : '8px';
-  placeInAvailableGap(overlay, overlay.parentElement, connectionBadgeVisible);
+  overlay.classList.remove('connection-status-offset');
+  if (connectionBadgeVisible) {
+    overlay.classList.add('connection-status-offset');
+  }
 }
 
 function isConnectionBadgeVisible(): boolean {
@@ -108,34 +110,4 @@ function escapeOwnerLabel(label: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-}
-
-function placeInAvailableGap(
-  overlay: HTMLButtonElement,
-  container: HTMLElement | null,
-  connectionBadgeVisible: boolean,
-): void {
-  overlay.classList.remove('terminal-gap-right', 'terminal-gap-bottom');
-  overlay.style.top = '';
-  if (!container) return;
-
-  const rightGap = readGap(container, '--terminal-gap-right-width');
-  const bottomGap = readGap(container, '--terminal-gap-bottom-height');
-  const requiredWidth = (overlay.offsetWidth || 300) + 16;
-  const requiredHeight = (overlay.offsetHeight || 54) + 16 + (connectionBadgeVisible ? 28 : 0);
-
-  if (rightGap >= requiredWidth) {
-    overlay.classList.add('terminal-gap-right');
-    overlay.style.top = '8px';
-    overlay.style.bottom = '';
-  } else if (bottomGap >= requiredHeight) {
-    overlay.classList.add('terminal-gap-bottom');
-  }
-}
-
-function readGap(container: HTMLElement, name: string): number {
-  const style = container.style as CSSStyleDeclaration & Record<string, string>;
-  const value =
-    typeof style.getPropertyValue === 'function' ? style.getPropertyValue(name) : style[name];
-  return Number.parseFloat(value || '0') || 0;
 }

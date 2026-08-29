@@ -345,13 +345,15 @@ describe('terminal scaling badge thresholds', () => {
     expect(harness.getOverlay()?.innerHTML).not.toContain('<img src=x>');
   });
 
-  it('places the takeover action in a sufficiently wide empty terminal gap', () => {
+  it('keeps the takeover action docked to the tlbx viewport despite an empty terminal gap', () => {
     const harness = createTerminalHarness(40, 10);
     setSizeControl(false, false, 'iPad · Safari');
 
     applyTerminalScalingSync(harness.state as never);
 
-    expect(harness.getOverlay()?.classList.contains('terminal-gap-right')).toBe(true);
+    expect(harness.getOverlay()?.classList.contains('terminal-gap-right')).toBe(false);
+    expect(harness.getOverlay()?.classList.contains('terminal-gap-bottom')).toBe(false);
+    expect(harness.getOverlay()?.style.top ?? '').toBe('');
     expect(harness.xterm.style.transform ?? '').toBe('');
   });
 
