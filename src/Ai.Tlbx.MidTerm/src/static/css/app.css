@@ -4663,7 +4663,7 @@ body::before {
   max-width: min(620px, calc(100% - 16px));
   padding: 7px 8px;
   background-color: var(--bg-dropdown-opaque);
-  opacity: 0.96;
+  opacity: 0;
   color: var(--text-primary);
   font-size: var(--fs-xs);
   border-radius: 4px;
@@ -4675,9 +4675,21 @@ body::before {
   gap: 8px;
   text-align: left;
   box-shadow: 0 4px 14px var(--shadow-color);
-  transition:
-    background-color 0.15s ease,
-    opacity 0.15s ease;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.scaled-overlay.presentation-visible {
+  opacity: 0.96;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.scaled-overlay.presentation-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .scaled-overlay:hover {
@@ -4715,6 +4727,9 @@ body::before {
 .scaled-overlay-action {
   margin-left: 4px;
   padding: 4px 8px;
+  min-width: 190px;
+  min-height: 38px;
+  justify-content: center;
   border-radius: 3px;
   background: var(--accent-blue);
   color: var(--text-on-accent);
@@ -4729,30 +4744,48 @@ body::before {
   opacity: 0.65;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .scaled-overlay {
+    transition: none;
+  }
+}
+
 .scaled-overlay .icon {
   font-size: var(--fs-md);
 }
 
 @media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
-  .terminal-container.scaled .scaled-overlay {
-    inset: 50% 16px auto;
+  .terminal-container .scaled-overlay {
+    inset: auto 12px 12px;
     min-height: 64px;
     justify-content: center;
     padding: 12px 14px;
-    transform: translateY(-50%);
+    transform: none;
     background-color: var(--bg-dropdown-opaque);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     box-shadow: 0 8px 26px var(--shadow-color);
-    opacity: 0.98;
     text-align: center;
     white-space: normal;
     flex-wrap: wrap;
   }
 
-  .terminal-container.scaled .scaled-overlay-action {
+  .terminal-container .scaled-overlay.presentation-visible {
+    opacity: 0.98;
+  }
+
+  .terminal-container .scaled-overlay.presentation-hidden {
+    opacity: 0;
+  }
+
+  .terminal-container .scaled-overlay.connection-status-offset {
+    bottom: 40px;
+  }
+
+  .terminal-container .scaled-overlay-action {
     flex: 1 0 100%;
     margin-left: 0;
+    min-width: 0;
     text-align: center;
   }
 }

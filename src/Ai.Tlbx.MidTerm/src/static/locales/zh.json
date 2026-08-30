@@ -23,6 +23,7 @@
   "terminal.sizeControlledHere": "大小由此浏览器控制",
   "terminal.scaledViewExplanation": "此视图会缩放，以确保所有内容可见。",
   "terminal.continueHere": "在此继续工作",
+  "terminal.switchingHere": "正在切换到这里…",
   "terminal.continueHereHint": "大小将针对该浏览器进行优化",
   "terminal.takeControlFrom": "接管大小控制，当前设备：",
   "sidebar.rename": "重命名",

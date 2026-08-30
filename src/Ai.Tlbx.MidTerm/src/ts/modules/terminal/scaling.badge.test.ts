@@ -337,6 +337,38 @@ describe('terminal scaling badge thresholds', () => {
     expect(harness.getOverlay()?.innerHTML).not.toContain('terminal.continueHereHint');
   });
 
+  it('reveals only the newest ownership snapshot after a hidden transition', () => {
+    const harness = createTerminalHarness(81, 24);
+    harness.container.classList.add('hidden');
+
+    setSizeControl(false, false, 'Old browser', 2);
+    applyTerminalScalingSync(harness.state as never);
+    setSizeControl(false, false, 'Newest browser', 4);
+
+    expect(harness.getOverlay()).toBeNull();
+
+    harness.container.classList.remove('hidden');
+    applyTerminalScalingSync(harness.state as never);
+
+    expect(harness.getOverlay()?.innerHTML).toContain('Newest browser');
+    expect(harness.getOverlay()?.innerHTML).not.toContain('Old browser');
+  });
+
+  it('keeps one notice node while committing follower to owner presentation', () => {
+    const harness = createTerminalHarness(81, 24);
+    setSizeControl(false, false, 'iPad · Safari', 7);
+    applyTerminalScalingSync(harness.state as never);
+    const overlay = harness.getOverlay();
+
+    setSizeControl(true, true, undefined, 8);
+    applyTerminalScalingSync(harness.state as never);
+
+    expect(harness.getOverlay()).toBe(overlay);
+    expect(overlay?.classList.contains('presentation-hidden')).toBe(true);
+    expect(overlay?.classList.contains('presentation-visible')).toBe(false);
+    expect(harness.xterm.style.transform ?? '').toBe('');
+  });
+
   it('escapes the server-projected owner label before rendering it', () => {
     const harness = createTerminalHarness(81, 24);
     setSizeControl(false, false, '<img src=x>');
@@ -418,11 +450,21 @@ describe('terminal scaling badge thresholds', () => {
     sessionTerminals.set('s1', harness.state as never);
     applyTerminalScalingSync(harness.state as never);
     const overlay = harness.getOverlay();
+    const frames: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    }) as typeof requestAnimationFrame;
 
     overlay?.pointerClick?.();
 
     expect(commMocks.requestTerminalSizeControl).toHaveBeenCalledWith('s1', true, 1);
     expect(commMocks.requestTerminalSizeControl).toHaveBeenCalledTimes(1);
+    expect(overlay?.disabled).toBe(false);
+    expect(overlay?.classList.contains('claiming')).toBe(false);
+
+    frames.shift()?.(0);
+
     expect(overlay?.disabled).toBe(true);
     expect(overlay?.classList.contains('claiming')).toBe(true);
 
@@ -442,6 +484,8 @@ describe('terminal scaling badge thresholds', () => {
     });
     await Promise.resolve();
     await Promise.resolve();
+
+    while (frames.length > 0) frames.shift()?.(0);
 
     expect(harness.terminal.focus).toHaveBeenCalledTimes(1);
     expect(overlay?.disabled).toBe(false);

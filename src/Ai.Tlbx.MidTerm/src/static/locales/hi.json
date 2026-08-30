@@ -23,6 +23,7 @@
   "terminal.sizeControlledHere": "आकार इस ब्राउज़र द्वारा नियंत्रित है",
   "terminal.scaledViewExplanation": "सब कुछ दिखाई देने के लिए यह दृश्य स्केल किया गया है।",
   "terminal.continueHere": "यहाँ काम जारी रखें",
+  "terminal.switchingHere": "यहाँ स्विच किया जा रहा है…",
   "terminal.continueHereHint": "आकार इस ब्राउज़र के लिए अनुकूलित होगा",
   "terminal.takeControlFrom": "आकार नियंत्रण इससे लें",
   "sidebar.rename": "नाम बदलें",

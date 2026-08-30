@@ -2,7 +2,7 @@
 
 ## Status
 
-Review plan only. The ownership and ordering prerequisites are implemented separately; the visual transition work in this document is not yet implemented.
+Implemented and source-verified on 2026-08-30 for the next dev patch. Terminal ownership, passive scaling, notice state, gap fillers, and post-claim focus now derive from one immutable presentation snapshot and commit through one coalesced animation-frame renderer.
 
 ## Purpose
 
@@ -103,30 +103,30 @@ Motion is optional polish, never state transport.
 - a transition interrupted by a newer epoch commits the newer snapshot immediately;
 - background and hidden documents do not queue animations for later playback.
 
-## Implementation Sequence
+## Implemented Structure
 
-### Phase 1 — Presentation reducer
+### Presentation reducer
 
 - introduce the immutable snapshot and a pure reducer;
 - consolidate current overlay, scaling, gap-fill, and focus decisions behind it;
 - retain the existing server ownership contract and xterm lifecycle;
 - add table-driven tests for owner, follower, pending, stale response, reconnect, and hidden reveal.
 
-### Phase 2 — Atomic renderer
+### Atomic renderer
 
 - stage all DOM mutations and commit them in one `requestAnimationFrame` callback;
 - reserve overlay/action geometry;
 - cancel superseded frame work per terminal;
 - add mutation-observer tests that reject contradictory intermediate class combinations.
 
-### Phase 3 — Visual polish
+### Visual polish
 
 - add the restrained opacity transition;
 - normalize mobile and desktop notice placement without changing terminal dimensions;
 - ensure badges are docked to the tlbx viewport rather than xterm rows/columns;
 - validate reduced motion, browser zoom, OS scaling, and soft-keyboard appearance.
 
-### Phase 4 — Instrumented browser acceptance
+### Instrumented browser acceptance
 
 - run two independent browser profiles plus duplicated-tab cases;
 - capture frame screenshots around handoff and reconnect;
@@ -167,11 +167,17 @@ The implementation is ready only when these transitions are deterministic:
 - no decorative transition system or global animation framework;
 - no user-facing narration of epochs, leases, retries, or internal workflow history.
 
-## Review Decisions Requested
+## Implemented Decisions
 
-Before implementation, review only these choices:
+1. The terminal canvas remains the stable visual object.
+2. Ownership chrome uses a 120 ms opacity-only transition; geometry does not animate.
+3. An immutable `(sessionId, epoch)` snapshot is the single presentation boundary.
+4. Hidden panes defer rendering and reveal only their newest state.
+5. Session teardown cancels pending frame work and releases presentation state.
 
-1. approve the terminal-canvas-first visual thesis;
-2. approve opacity-only motion and the no-geometry-animation rule;
-3. approve the immutable snapshot plus single-frame commit boundary;
-4. approve the acceptance matrix and quantitative browser gates.
+## Verification Evidence
+
+- complete frontend suite: 142 test files, 965 passed, 20 skipped; Kitty graphics self-test passed;
+- desktop two-window handoff: `atomic-desktop-final-controlled`, 69 → 151 → 69 columns, zero contradictory frames, epoch regressions, blank terminal frames, ownership layout shift, or handoff-local long tasks above 50 ms;
+- real 390 px mobile handoff: `atomic-mobile-final`, 12 px dock margins, 120 ms opacity transition, and the same zero-regression ownership gates;
+- type checking, TypeScript/CSS lint, strict locale parity, and reduced-motion lifecycle tests pass.

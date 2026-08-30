@@ -26,6 +26,7 @@ import {
   hasTerminalSizeControl,
 } from '../../stores';
 import { applyTerminalScalingSync, fitSessionToScreen, fitTerminalToContainer } from './scaling';
+import { disposeTerminalPresentation } from './terminalPresentation';
 import { setupFileDrop, sanitizeCopyContent } from './fileDrop';
 import { createAlternateScreenReplayPrefix } from './replayState';
 import {
@@ -1771,6 +1772,7 @@ export function destroyTerminalForSession(sessionId: string): void {
   clearPathAllowlist(sessionId);
 
   state.inputProxy?.remove();
+  disposeTerminalPresentation(state);
   state.terminal.dispose();
   state.container.remove();
   sessionTerminals.delete(sessionId);
