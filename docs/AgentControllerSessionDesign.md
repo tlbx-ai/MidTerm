@@ -564,6 +564,7 @@ Any significant Agent Controller Session UI change should be checked against the
 
 Status in this branch/work item:
 
+- implemented: concurrent activation triggers for one Agent Controller Session share one in-flight activation, preventing duplicate runtime attach, history-stream, and intermediate activation-state races
 - implemented: stable history virtualization with a bounded render window instead of keeping the full long history in the DOM
 - implemented: deterministic history render planning plus keyed visible-row reconciliation instead of rebuilding the whole visible history subtree on every update
 - implemented: when a visible history row changes materially, Agent Controller Session now replaces that row node by stable key instead of mutating an older DOM node into a new future shape

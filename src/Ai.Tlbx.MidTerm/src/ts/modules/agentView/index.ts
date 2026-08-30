@@ -115,6 +115,7 @@ import { $activeSessionId } from '../../stores';
 
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionAppServerControlViewState>();
+const activationFlights = new Map<string, Promise<void>>();
 
 interface AgentHistoryWheelMetrics {
   scrollTop: number;
@@ -558,6 +559,7 @@ export function destroyAgentView(sessionId: string): void {
   }
 
   viewStates.delete(sessionId);
+  activationFlights.delete(sessionId);
   resetAppServerControlHistoryTrace(sessionId);
   clearAppServerControlTurnSessionState(sessionId);
   removeAppServerControlQuickSettingsSessionState(sessionId);
@@ -587,6 +589,7 @@ export function resetAgentViewRuntimeForTests(): void {
   }
 
   viewStates.clear();
+  activationFlights.clear();
   resetAppServerControlHistoryTrace();
   appServerControlTurnLifecycleBound = false;
   appServerControlActiveSessionBound = false;
@@ -654,6 +657,21 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
 }
 
 async function activateAgentView(sessionId: string): Promise<void> {
+  const existing = activationFlights.get(sessionId);
+  if (existing) {
+    return existing;
+  }
+
+  const flight = activateAgentViewCore(sessionId).finally(() => {
+    if (activationFlights.get(sessionId) === flight) {
+      activationFlights.delete(sessionId);
+    }
+  });
+  activationFlights.set(sessionId, flight);
+  return flight;
+}
+
+async function activateAgentViewCore(sessionId: string): Promise<void> {
   const state = viewStates.get(sessionId);
   if (!state) {
     return;

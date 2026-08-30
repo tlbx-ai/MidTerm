@@ -200,6 +200,7 @@ export type WsCommand =
       payload: {
         sessionId: string;
         force: boolean;
+        expectedEpoch?: number;
       };
     }
   | {
@@ -235,6 +236,7 @@ interface WsCommandPayloadMap {
   'terminal.requestSizeControl': {
     sessionId: string;
     force: boolean;
+    expectedEpoch?: number;
   };
   'terminal.resize': {
     sessionId: string;

@@ -11,6 +11,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 public sealed class TerminalSizeControlService
 {
     public static readonly TimeSpan OfflineTakeoverDelay = TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan ConnectedOwnerProtectionDelay = TimeSpan.FromMinutes(5);
 
     private readonly Lock _lock = new();
     private readonly Dictionary<string, OwnershipRecord> _ownership = new(StringComparer.Ordinal);
@@ -41,6 +42,7 @@ public sealed class TerminalSizeControlService
         }
 
         var changed = false;
+        var ownershipChanged = false;
         lock (_lock)
         {
             if (!_browserConnections.TryGetValue(browserId, out var connections))
@@ -50,9 +52,23 @@ public sealed class TerminalSizeControlService
             }
 
             changed = connections.Add(connectionToken) && connections.Count == 1;
+            if (changed)
+            {
+                foreach (var owner in _ownership.Values.Where(owner =>
+                             string.Equals(owner.BrowserId, browserId, StringComparison.Ordinal)))
+                {
+                    ownershipChanged |= owner.DisconnectedAtUtc is not null;
+                    owner.DisconnectedAtUtc = null;
+                }
+
+                if (ownershipChanged)
+                {
+                    PersistLocked();
+                }
+            }
         }
 
-        if (changed)
+        if (changed || ownershipChanged)
         {
             OnChanged?.Invoke();
         }
@@ -61,6 +77,7 @@ public sealed class TerminalSizeControlService
     public void UnregisterBrowser(string browserId, object connectionToken)
     {
         var changed = false;
+        var ownershipChanged = false;
         lock (_lock)
         {
             if (!_browserConnections.TryGetValue(browserId, out var connections))
@@ -73,10 +90,22 @@ public sealed class TerminalSizeControlService
             {
                 _browserConnections.Remove(browserId);
                 changed = true;
+                var disconnectedAt = _timeProvider.GetUtcNow();
+                foreach (var owner in _ownership.Values.Where(owner =>
+                             string.Equals(owner.BrowserId, browserId, StringComparison.Ordinal)))
+                {
+                    owner.DisconnectedAtUtc = disconnectedAt;
+                    ownershipChanged = true;
+                }
+
+                if (ownershipChanged)
+                {
+                    PersistLocked();
+                }
             }
         }
 
-        if (changed)
+        if (changed || ownershipChanged)
         {
             OnChanged?.Invoke();
         }
@@ -123,7 +152,10 @@ public sealed class TerminalSizeControlService
                 BrowserId = browserId,
                 BrowserLabel = browserLabel,
                 Epoch = nextEpoch,
-                LastInteractionUtc = _timeProvider.GetUtcNow()
+                LastInteractionUtc = _timeProvider.GetUtcNow(),
+                DisconnectedAtUtc = IsBrowserOnlineLocked(browserId)
+                    ? null
+                    : _timeProvider.GetUtcNow()
             };
             PersistLocked();
         }
@@ -136,6 +168,7 @@ public sealed class TerminalSizeControlService
         string browserId,
         bool force,
         string? browserLabel = null,
+        long? expectedEpoch = null,
         CancellationToken ct = default)
     {
         var gate = _sessionGates.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
@@ -151,20 +184,24 @@ public sealed class TerminalSizeControlService
                     string.Equals(current.BrowserId, browserId, StringComparison.Ordinal))
                 {
                     current.LastInteractionUtc = now;
+                    current.DisconnectedAtUtc = IsBrowserOnlineLocked(browserId) ? null : now;
                     if (!string.IsNullOrWhiteSpace(browserLabel))
                     {
                         current.BrowserLabel = browserLabel;
                     }
                     PersistLocked();
                 }
-                else if (force || CanTakeOverAutomaticallyLocked(current, browserId, now))
+                else if (
+                    (force && (expectedEpoch is null || expectedEpoch.Value == (current?.Epoch ?? 0))) ||
+                    (!force && CanTakeOverAutomaticallyLocked(current, browserId, now)))
                 {
                     _ownership[sessionId] = new OwnershipRecord
                     {
                         BrowserId = browserId,
                         BrowserLabel = browserLabel,
                         Epoch = (current?.Epoch ?? 0) + 1,
-                        LastInteractionUtc = now
+                        LastInteractionUtc = now,
+                        DisconnectedAtUtc = IsBrowserOnlineLocked(browserId) ? null : now
                     };
                     PersistLocked();
                     changed = true;
@@ -292,11 +329,14 @@ public sealed class TerminalSizeControlService
         }
 
         var ownerOnline = IsBrowserOnlineLocked(owner.BrowserId);
+        var idleFor = now - owner.LastInteractionUtc;
         if (ownerOnline)
         {
-            // A connected browser never loses PTY geometry authority implicitly.
-            // Followers and automation observers must use an explicit claim.
-            return false;
+            // A connected sibling tab in the same browser profile must never
+            // auto-steal. Another device may continue naturally only after the
+            // current owner has remained terminal-idle for the protection window.
+            return !BrowserIdentity.AreSameBrowser(owner.BrowserId, requestingBrowserId)
+                && idleFor >= ConnectedOwnerProtectionDelay;
         }
 
         if (!ownerOnline && BrowserIdentity.AreSameBrowser(owner.BrowserId, requestingBrowserId))
@@ -304,8 +344,9 @@ public sealed class TerminalSizeControlService
             return true;
         }
 
-        var idleFor = now - owner.LastInteractionUtc;
-        return idleFor >= OfflineTakeoverDelay;
+        var disconnectedAt = owner.DisconnectedAtUtc ?? now;
+        var offlineFor = now - disconnectedAt;
+        return offlineFor >= OfflineTakeoverDelay && idleFor >= OfflineTakeoverDelay;
     }
 
     private bool IsBrowserOnlineLocked(string browserId)
@@ -335,9 +376,15 @@ public sealed class TerminalSizeControlService
             {
                 if (!string.IsNullOrWhiteSpace(sessionId) && !string.IsNullOrWhiteSpace(record.BrowserId))
                 {
+                    // A null value means the owner was online when the previous
+                    // process stopped. Start a fresh offline grace window instead
+                    // of treating process restart as an immediate handoff.
+                    record.DisconnectedAtUtc ??= _timeProvider.GetUtcNow();
                     _ownership[sessionId] = record;
                 }
             }
+
+            PersistLocked();
         }
         catch (Exception ex)
         {
@@ -385,6 +432,7 @@ public sealed class TerminalSizeControlService
         public string? BrowserLabel { get; set; }
         public long Epoch { get; set; }
         public DateTimeOffset LastInteractionUtc { get; set; }
+        public DateTimeOffset? DisconnectedAtUtc { get; set; }
     }
 
     internal sealed class TerminalSizeControlPersistedState

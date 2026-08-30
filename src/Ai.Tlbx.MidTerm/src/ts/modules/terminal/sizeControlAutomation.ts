@@ -1,4 +1,4 @@
-import { $terminalSizeControls } from '../../stores';
+import { $activeSessionId, $focusedSessionId, $terminalSizeControls } from '../../stores';
 import { sessionTerminals } from '../../state';
 import { requestTerminalSizeControl } from '../comms';
 import { createLogger } from '../logging';
@@ -30,7 +30,10 @@ export function claimEligibleVisibleTerminalSizes(reconsiderCurrentView = false)
   if (!canTakeOverInCurrentBrowser()) return;
 
   const statuses = $terminalSizeControls.get();
+  const targetSessionId = $focusedSessionId.get() ?? $activeSessionId.get();
+  if (!targetSessionId) return;
   sessionTerminals.forEach((state, sessionId) => {
+    if (sessionId !== targetSessionId) return;
     if (!state.opened || !isTerminalVisible(state)) return;
     const status = statuses[sessionId];
     if (!status || status.isOwner) return;

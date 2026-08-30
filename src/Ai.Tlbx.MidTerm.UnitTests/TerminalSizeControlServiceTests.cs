@@ -33,18 +33,39 @@ public sealed class TerminalSizeControlServiceTests
     }
 
     [Fact]
-    public async Task Interaction_DoesNotAutomaticallyTakeOverOnlineOwnerAfterLongInactivity()
+    public async Task Interaction_TakesOverDifferentOnlineDeviceAfterProtectionWindow()
     {
         using var fixture = new Fixture();
         fixture.Service.RegisterBrowser("browser-a:tab-1", new object());
+        fixture.Service.RegisterBrowser("browser-b:tab-2", new object());
         await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true);
-        fixture.Time.Advance(TimeSpan.FromHours(12));
+        fixture.Time.Advance(TerminalSizeControlService.ConnectedOwnerProtectionDelay);
 
         var result = await fixture.Service.RequestControlAsync("session-1", "browser-b:tab-2", false);
+
+        Assert.True(result.OwnershipChanged);
+        Assert.True(result.Status.IsOwner);
+        Assert.True(result.Status.OwnerOnline);
+    }
+
+    [Fact]
+    public async Task ConnectedSiblingTab_NeverAutomaticallyStealsAfterProtectionWindow()
+    {
+        using var fixture = new Fixture();
+        fixture.Service.RegisterBrowser("browser-a:tab-1", new object());
+        fixture.Service.RegisterBrowser("browser-a:tab-2", new object());
+        await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true);
+        fixture.Time.Advance(TerminalSizeControlService.ConnectedOwnerProtectionDelay);
+
+        var result = await fixture.Service.RequestControlAsync(
+            "session-1",
+            "browser-a:tab-2",
+            false);
 
         Assert.False(result.OwnershipChanged);
         Assert.False(result.Status.IsOwner);
         Assert.True(result.Status.OwnerOnline);
+        Assert.True(result.Status.OwnerInSameBrowserProfile);
     }
 
     [Fact]
@@ -65,6 +86,54 @@ public sealed class TerminalSizeControlServiceTests
 
         Assert.True(eligible.OwnershipChanged);
         Assert.True(eligible.Status.IsOwner);
+    }
+
+    [Fact]
+    public async Task IdleOwnerStillGetsFullOfflineGracePeriodFromDisconnect()
+    {
+        using var fixture = new Fixture();
+        var ownerConnection = new object();
+        fixture.Service.RegisterBrowser("browser-a:tab-1", ownerConnection);
+        await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true);
+        fixture.Time.Advance(TimeSpan.FromHours(1));
+        fixture.Service.UnregisterBrowser("browser-a:tab-1", ownerConnection);
+
+        var immediate = await fixture.Service.RequestControlAsync(
+            "session-1",
+            "browser-b:tab-2",
+            false);
+        fixture.Time.Advance(TerminalSizeControlService.OfflineTakeoverDelay);
+        var afterGrace = await fixture.Service.RequestControlAsync(
+            "session-1",
+            "browser-b:tab-2",
+            false);
+
+        Assert.False(immediate.OwnershipChanged);
+        Assert.True(afterGrace.OwnershipChanged);
+        Assert.True(afterGrace.Status.IsOwner);
+    }
+
+    [Fact]
+    public async Task RestartedServiceGivesPersistedOwnerFreshOfflineGracePeriod()
+    {
+        using var fixture = new Fixture();
+        fixture.Service.RegisterBrowser("browser-a:tab-1", new object());
+        await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true);
+        fixture.Time.Advance(TimeSpan.FromHours(1));
+        fixture.RestartService();
+
+        var immediate = await fixture.Service.RequestControlAsync(
+            "session-1",
+            "browser-b:tab-2",
+            false);
+        fixture.Time.Advance(TerminalSizeControlService.OfflineTakeoverDelay);
+        var afterGrace = await fixture.Service.RequestControlAsync(
+            "session-1",
+            "browser-b:tab-2",
+            false);
+
+        Assert.False(immediate.OwnershipChanged);
+        Assert.True(afterGrace.OwnershipChanged);
     }
 
     [Fact]
@@ -133,6 +202,34 @@ public sealed class TerminalSizeControlServiceTests
 
         Assert.True(result.OwnershipChanged);
         Assert.True(result.Status.IsOwner);
+    }
+
+    [Fact]
+    public async Task ConcurrentExplicitClaimsWithOneObservedEpochHaveOneWinner()
+    {
+        using var fixture = new Fixture();
+        var owner = await fixture.Service.RequestControlAsync(
+            "session-1",
+            "browser-a:tab-1",
+            true);
+
+        var claims = await Task.WhenAll(
+            fixture.Service.RequestControlAsync(
+                "session-1",
+                "browser-b:tab-2",
+                true,
+                expectedEpoch: owner.Status.Epoch),
+            fixture.Service.RequestControlAsync(
+                "session-1",
+                "browser-c:tab-3",
+                true,
+                expectedEpoch: owner.Status.Epoch));
+
+        Assert.Single(claims, result => result.OwnershipChanged);
+        Assert.All(claims, result => Assert.Equal(owner.Status.Epoch + 1, result.Status.Epoch));
+        var browserB = fixture.Service.GetStatus("session-1", "browser-b:tab-2");
+        var browserC = fixture.Service.GetStatus("session-1", "browser-c:tab-3");
+        Assert.NotEqual(browserB.IsOwner, browserC.IsOwner);
     }
 
     [Fact]
@@ -254,7 +351,12 @@ public sealed class TerminalSizeControlServiceTests
         }
 
         public ManualTimeProvider Time { get; }
-        public TerminalSizeControlService Service { get; }
+        public TerminalSizeControlService Service { get; private set; }
+
+        public void RestartService()
+        {
+            Service = new TerminalSizeControlService(_directory, Time);
+        }
 
         public void Dispose()
         {

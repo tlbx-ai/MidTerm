@@ -126,6 +126,7 @@ import {
 } from './modules/layout';
 import {
   initSessionTabs,
+  onTabActivated,
   setSessionAppServerControlAvailability,
   switchTab,
 } from './modules/sessionTabs';
@@ -195,7 +196,12 @@ import {
   setProcessState,
 } from './stores';
 import type { Session } from './types';
-import { bindClick, getOrCreateClientId, initializeTabIdentity } from './utils';
+import {
+  bindClick,
+  getOrCreateClientId,
+  initializeTabIdentity,
+  TAB_ID_COLLISION_EVENT,
+} from './utils';
 import { showAlert } from './utils/dialog';
 import { createSessionActionHandlers } from './sessionActions';
 import { getSessionLaunchErrorMessage, showSessionLaunchFailure } from './sessionLaunchErrors';
@@ -415,9 +421,11 @@ async function init(): Promise<void> {
 
   registerCallbacks();
   initSessionTabs();
+  bindBrowserSurfaceActivityReporting();
   initAgentView();
   initFileBrowser();
   getOrCreateClientId(); // Ensure mt-client-id cookie exists before WS upgrade
+  bindTabIdentityCollisionRecovery();
   await initializeTabIdentity();
   bindTerminalVisibilitySync();
   connectInitialSessionTransports();
@@ -501,6 +509,7 @@ async function initShared(): Promise<void> {
   const fontPromise = preloadTerminalFont();
   setFontsReadyPromise(fontPromise);
   void fontPromise.then(() => initCalibrationTerminal());
+  bindTabIdentityCollisionRecovery();
   await initializeTabIdentity();
 
   setSelectSessionCallback(selectSession);
@@ -513,6 +522,7 @@ async function initShared(): Promise<void> {
   });
 
   initSessionTabs();
+  bindBrowserSurfaceActivityReporting();
   bindTerminalVisibilitySync();
   bindSearchEvents();
   setupGlobalFocusReclaim();
@@ -615,6 +625,28 @@ function bindTerminalVisibilitySync(): void {
     lastResumeMode = nextResumeMode;
     syncMuxTerminalVisibility();
   });
+}
+
+function bindBrowserSurfaceActivityReporting(): void {
+  const reportActiveSurface = (sessionId: string): void => {
+    if ($activeSessionId.get() === sessionId) {
+      reportBrowserActivity(undefined, true);
+    }
+  };
+
+  onTabActivated('terminal', reportActiveSurface);
+  onTabActivated('agent', reportActiveSurface);
+  onTabActivated('files', reportActiveSurface);
+}
+
+function bindTabIdentityCollisionRecovery(): void {
+  window.addEventListener(
+    TAB_ID_COLLISION_EVENT,
+    () => {
+      window.location.reload();
+    },
+    { once: true },
+  );
 }
 
 // =============================================================================

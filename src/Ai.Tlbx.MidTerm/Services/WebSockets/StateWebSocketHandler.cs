@@ -320,12 +320,7 @@ public sealed class StateWebSocketHandler
 
         async Task SendMainBrowserStatusAsync()
         {
-            var status = new MainBrowserStatusMessage
-            {
-                IsMain = _mainBrowserService.IsMain(browserId),
-                ShowButton = _mainBrowserService.ShouldShowButton(browserId),
-                Browsers = _mainBrowserService.GetBrowserStatuses()
-            };
+            var status = _mainBrowserService.GetStatus(browserId);
             await SendJsonAsync(status, AppJsonContext.Default.MainBrowserStatusMessage);
         }
 
@@ -815,6 +810,7 @@ public sealed class StateWebSocketHandler
             browserId,
             cmd.Payload?.Force == true,
             browserLabel,
+            cmd.Payload?.ExpectedEpoch,
             ct);
         await sendResponse(cmd.Id, true, result, null);
     }

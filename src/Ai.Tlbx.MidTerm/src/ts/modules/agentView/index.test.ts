@@ -480,6 +480,34 @@ describe('agentView dev errors', () => {
     expect(panel.classList.add).toHaveBeenCalledWith('agent-view-panel');
   });
 
+  it('coalesces concurrent activation requests for the same Agent session', async () => {
+    const panel = createPanel();
+    getAppServerControlHistoryWindow.mockResolvedValue(createSnapshot());
+    let finishAttach: (() => void) | undefined;
+    attachSessionAppServerControl.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishAttach = resolve;
+      }),
+    );
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+
+    activate?.('s1', panel);
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(attachSessionAppServerControl).toHaveBeenCalledTimes(1);
+    });
+    finishAttach?.();
+    await vi.waitFor(() => {
+      expect(openAppServerControlHistoryStream).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('can mount and render a debug scenario without requiring a pre-activated AppServerControl tab', async () => {
     const panel = createPanel();
     getTabPanel.mockReturnValue(panel);

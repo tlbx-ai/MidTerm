@@ -54,7 +54,8 @@ async function handleScalingOverlayClick(
   overlay.classList.add('claiming');
   overlay.disabled = true;
   try {
-    const result = await requestTerminalSizeControl(sessionId, true);
+    const expectedEpoch = getTerminalSizeControl(sessionId)?.epoch ?? 0;
+    const result = await requestTerminalSizeControl(sessionId, true, expectedEpoch);
     if (result.status.isOwner) fitOwnedTerminal(sessionId, container);
   } catch (error: unknown) {
     log.warn(() => `Failed to claim terminal size control: ${String(error)}`);

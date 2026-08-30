@@ -540,6 +540,32 @@ describe('stateChannel browser-ui handling', () => {
     ]);
   });
 
+  it('ignores an older main-browser projection after a newer revision', async () => {
+    const { stores, ws } = await loadHarness();
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'main-browser-status',
+        revision: 12,
+        isMain: true,
+        showButton: true,
+        browsers: [],
+      }),
+    } as MessageEvent<string>);
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'main-browser-status',
+        revision: 11,
+        isMain: false,
+        showButton: false,
+        browsers: [],
+      }),
+    } as MessageEvent<string>);
+
+    expect(stores.$isMainBrowser.get()).toBe(true);
+    expect(stores.$showMainBrowserButton.get()).toBe(true);
+  });
+
   it('activates the target session when browser open explicitly requests it', async () => {
     const { stores, ws } = await loadHarness();
     mocks.setWebPreviewTarget.mockResolvedValue({

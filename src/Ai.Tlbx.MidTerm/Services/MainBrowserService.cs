@@ -12,6 +12,8 @@ public sealed class MainBrowserService
     private readonly SettingsService? _settingsService;
     private string? _mainBrowserId;
     private bool _hasAssignedInitialMainBrowser;
+    private long _revision;
+    private long _activityOrder;
 
     public MainBrowserService(SettingsService settingsService)
         : this(settingsService, null)
@@ -59,7 +61,7 @@ public sealed class MainBrowserService
                 _browserConnections[browserId] = registration;
             }
 
-            registration.ConnectionTokens.Add(connectionToken);
+            var connectionAdded = registration.ConnectionTokens.Add(connectionToken);
 
             if (IsStickyMainBrowserReconnectLocked(browserId))
             {
@@ -86,6 +88,12 @@ public sealed class MainBrowserService
                 // Another browser connected — notify if this is the 2nd unique browser
                 notify = _browserConnections.Count == 2;
             }
+
+            notify |= connectionAdded;
+            if (notify)
+            {
+                _revision++;
+            }
         }
         if (notify) OnMainBrowserChanged?.Invoke();
     }
@@ -98,8 +106,9 @@ public sealed class MainBrowserService
             if (!_browserConnections.TryGetValue(browserId, out var registration))
                 return;
 
-            registration.ConnectionTokens.Remove(connectionToken);
-            registration.ActiveConnectionTokens.Remove(connectionToken);
+            var connectionRemoved = registration.ConnectionTokens.Remove(connectionToken);
+            registration.ActiveConnections.Remove(connectionToken);
+            registration.RefreshActivity();
 
             if (registration.ConnectionTokens.Count == 0)
             {
@@ -111,7 +120,11 @@ public sealed class MainBrowserService
             // Only Claim() from another browser can override it.
 
             // Notify if multi-client count changed (affects showButton for remaining clients)
-            changed = !_browserConnections.ContainsKey(browserId);
+            changed = connectionRemoved;
+            if (changed)
+            {
+                _revision++;
+            }
         }
         if (changed) OnMainBrowserChanged?.Invoke();
     }
@@ -131,41 +144,60 @@ public sealed class MainBrowserService
                 return;
             }
 
+            var previousIsActive = registration.IsActive;
+            var previousActiveSessionId = registration.ActiveSessionId;
+            var previousActiveSurface = registration.ActiveSurface;
+            var previousActiveConnectionCount = registration.ActiveConnections.Count;
+
             if (isActive)
             {
                 if (!registration.ConnectionTokens.Contains(connectionToken))
                 {
                     registration.ConnectionTokens.Add(connectionToken);
                 }
-                registration.ActiveConnectionTokens.Add(connectionToken);
+                registration.ActiveConnections[connectionToken] = new BrowserActivity(
+                    ++_activityOrder,
+                    string.IsNullOrWhiteSpace(activeSessionId) ? null : activeSessionId,
+                    string.IsNullOrWhiteSpace(activeSurface) ? null : activeSurface);
             }
             else
             {
-                registration.ActiveConnectionTokens.Remove(connectionToken);
+                registration.ActiveConnections.Remove(connectionToken);
             }
 
-            var normalizedSessionId = string.IsNullOrWhiteSpace(activeSessionId) ? null : activeSessionId;
-            var normalizedSurface = string.IsNullOrWhiteSpace(activeSurface) ? null : activeSurface;
-            var isActiveNow = registration.ActiveConnectionTokens.Count > 0;
-            changed = registration.IsActive != isActiveNow
-                || !string.Equals(registration.ActiveSessionId, normalizedSessionId, StringComparison.Ordinal)
-                || !string.Equals(registration.ActiveSurface, normalizedSurface, StringComparison.Ordinal);
-            registration.IsActive = isActiveNow;
-            registration.ActiveSessionId = normalizedSessionId;
-            registration.ActiveSurface = normalizedSurface;
+            registration.RefreshActivity();
+            changed = previousIsActive != registration.IsActive
+                || previousActiveConnectionCount != registration.ActiveConnections.Count
+                || !string.Equals(
+                    previousActiveSessionId,
+                    registration.ActiveSessionId,
+                    StringComparison.Ordinal)
+                || !string.Equals(previousActiveSurface, registration.ActiveSurface, StringComparison.Ordinal);
+            if (changed)
+            {
+                _revision++;
+            }
         }
         if (changed) OnMainBrowserChanged?.Invoke();
     }
 
     public void Claim(string browserId)
     {
+        var changed = false;
         lock (_lock)
         {
-            _mainBrowserId = browserId;
-            Log.Verbose(() => $"[MainBrowser] Claimed by {GetLogPrefix(browserId)}");
+            changed = !string.Equals(_mainBrowserId, browserId, StringComparison.Ordinal);
+            if (changed)
+            {
+                _mainBrowserId = browserId;
+                _revision++;
+                Log.Verbose(() => $"[MainBrowser] Claimed by {GetLogPrefix(browserId)}");
+            }
         }
+        // An explicit claim also establishes sticky ownership when the browser
+        // was already auto-promoted during this process lifetime.
         PersistStickyMainBrowserId(browserId);
-        OnMainBrowserChanged?.Invoke();
+        if (changed) OnMainBrowserChanged?.Invoke();
     }
 
     public void Release(string browserId)
@@ -174,7 +206,11 @@ public sealed class MainBrowserService
         lock (_lock)
         {
             changed = _mainBrowserId == browserId;
-            if (changed) _mainBrowserId = null;
+            if (changed)
+            {
+                _mainBrowserId = null;
+                _revision++;
+            }
         }
         if (changed) PersistStickyMainBrowserId(null);
         if (changed) OnMainBrowserChanged?.Invoke();
@@ -200,20 +236,21 @@ public sealed class MainBrowserService
     {
         lock (_lock)
         {
-            return _browserConnections
-                .OrderByDescending(pair => IsMainLocked(pair.Key))
-                .ThenBy(pair => pair.Key, StringComparer.Ordinal)
-                .Select(pair => new BrowserSessionStatus
-                {
-                    BrowserId = pair.Key,
-                    IsMain = IsMainLocked(pair.Key),
-                    IsActive = pair.Value.IsActive,
-                    ConnectionCount = pair.Value.ConnectionTokens.Count,
-                    ActiveConnectionCount = pair.Value.ActiveConnectionTokens.Count,
-                    ActiveSessionId = pair.Value.ActiveSessionId,
-                    ActiveSurface = pair.Value.ActiveSurface
-                })
-                .ToList();
+            return GetBrowserStatusesLocked();
+        }
+    }
+
+    public MainBrowserStatusMessage GetStatus(string browserId)
+    {
+        lock (_lock)
+        {
+            return new MainBrowserStatusMessage
+            {
+                Revision = _revision,
+                IsMain = IsMainLocked(browserId),
+                ShowButton = ShouldShowButtonLocked(browserId),
+                Browsers = GetBrowserStatusesLocked()
+            };
         }
     }
 
@@ -226,19 +263,54 @@ public sealed class MainBrowserService
     {
         lock (_lock)
         {
-            return _browserConnections.Count >= 2
-                || (_mainBrowserId is not null && _mainBrowserId != browserId);
+            return ShouldShowButtonLocked(browserId);
         }
+    }
+
+    private bool ShouldShowButtonLocked(string browserId)
+    {
+        return _browserConnections.Count >= 2
+            || (_mainBrowserId is not null && _mainBrowserId != browserId)
+            || (_mainBrowserId is null && _hasAssignedInitialMainBrowser);
+    }
+
+    private List<BrowserSessionStatus> GetBrowserStatusesLocked()
+    {
+        return _browserConnections
+            .OrderByDescending(pair => IsMainLocked(pair.Key))
+            .ThenBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => new BrowserSessionStatus
+            {
+                BrowserId = pair.Key,
+                IsMain = IsMainLocked(pair.Key),
+                IsActive = pair.Value.IsActive,
+                ConnectionCount = pair.Value.ConnectionTokens.Count,
+                ActiveConnectionCount = pair.Value.ActiveConnections.Count,
+                ActiveSessionId = pair.Value.ActiveSessionId,
+                ActiveSurface = pair.Value.ActiveSurface
+            })
+            .ToList();
     }
 
     private sealed class BrowserRegistration
     {
         public HashSet<object> ConnectionTokens { get; } = new(ReferenceEqualityComparer.Instance);
-        public HashSet<object> ActiveConnectionTokens { get; } = new(ReferenceEqualityComparer.Instance);
+        public Dictionary<object, BrowserActivity> ActiveConnections { get; } = new(
+            ReferenceEqualityComparer.Instance);
         public bool IsActive { get; set; }
         public string? ActiveSessionId { get; set; }
         public string? ActiveSurface { get; set; }
+
+        public void RefreshActivity()
+        {
+            var latest = ActiveConnections.Values.MaxBy(activity => activity.Order);
+            IsActive = latest is not null;
+            ActiveSessionId = latest?.ActiveSessionId;
+            ActiveSurface = latest?.ActiveSurface;
+        }
     }
+
+    private sealed record BrowserActivity(long Order, string? ActiveSessionId, string? ActiveSurface);
 
     private bool IsStickyMainBrowserReconnectLocked(string browserId)
     {

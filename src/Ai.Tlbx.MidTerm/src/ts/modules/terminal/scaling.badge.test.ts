@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { $isMainBrowser, $terminalSizeControls } from '../../stores';
+import { $activeSessionId, $isMainBrowser, $terminalSizeControls } from '../../stores';
 import { dom, sessionTerminals } from '../../state';
 import { applyTerminalScalingSync } from './scaling';
 import { claimEligibleVisibleTerminalSizes } from './sizeControlAutomation';
@@ -255,6 +255,7 @@ describe('terminal scaling badge thresholds', () => {
 
   beforeEach(() => {
     sessionTerminals.clear();
+    $activeSessionId.set(null);
     $isMainBrowser.set(false);
     setSizeControl(false);
     dom.terminalsArea = {
@@ -281,6 +282,7 @@ describe('terminal scaling badge thresholds', () => {
 
   afterEach(() => {
     sessionTerminals.clear();
+    $activeSessionId.set(null);
     $terminalSizeControls.set({});
     dom.terminalsArea = null;
     globalThis.document = originalDocument;
@@ -360,6 +362,7 @@ describe('terminal scaling badge thresholds', () => {
   it('automatically claims an already eligible visible terminal without forcing', async () => {
     const harness = createTerminalHarness(81, 24);
     sessionTerminals.set('s1', harness.state as never);
+    $activeSessionId.set('s1');
     setSizeControl(false, true, 'Work PC · Chrome');
     commMocks.requestTerminalSizeControl.mockResolvedValueOnce({
       status: {
@@ -381,6 +384,17 @@ describe('terminal scaling badge thresholds', () => {
 
     expect(commMocks.requestTerminalSizeControl).toHaveBeenCalledWith('s1', false);
     await Promise.resolve();
+  });
+
+  it('does not automatically claim an eligible background terminal', () => {
+    const harness = createTerminalHarness(81, 24);
+    sessionTerminals.set('s1', harness.state as never);
+    $activeSessionId.set('s2');
+    setSizeControl(false, true, 'Work PC · Chrome');
+
+    claimEligibleVisibleTerminalSizes();
+
+    expect(commMocks.requestTerminalSizeControl).not.toHaveBeenCalled();
   });
 
   it('does not automatically steal from an online sibling tab in the same browser', () => {
@@ -407,7 +421,7 @@ describe('terminal scaling badge thresholds', () => {
 
     overlay?.pointerClick?.();
 
-    expect(commMocks.requestTerminalSizeControl).toHaveBeenCalledWith('s1', true);
+    expect(commMocks.requestTerminalSizeControl).toHaveBeenCalledWith('s1', true, 1);
     expect(commMocks.requestTerminalSizeControl).toHaveBeenCalledTimes(1);
     expect(overlay?.disabled).toBe(true);
     expect(overlay?.classList.contains('claiming')).toBe(true);
