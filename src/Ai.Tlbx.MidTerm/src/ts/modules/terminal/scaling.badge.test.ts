@@ -301,7 +301,7 @@ describe('terminal scaling badge thresholds', () => {
     expect(harness.getOverlay()?.innerHTML).toContain('terminal.scaledViewExplanation');
     expect(harness.xterm.style.transform).toContain('scale(');
     expect(harness.xterm.style.transformOrigin).toBe('top left');
-    expect(harness.getGapFillers()).toHaveLength(3);
+    expect(harness.getGapFillers()).toHaveLength(1);
     expect(harness.container.style['--terminal-gap-content-width']).toBe('818px');
     expect(harness.container.style['--terminal-gap-bottom-height']).toBe('9.171px');
   });
@@ -500,15 +500,12 @@ describe('terminal scaling badge thresholds', () => {
 
     expect(harness.getOverlay()).toBeNull();
     expect(harness.xterm.style.transform ?? '').toBe('');
-    expect(harness.getGapFillers()).toHaveLength(3);
+    expect(harness.getGapFillers()).toHaveLength(1);
+    expect(fakeElementHasClass(harness.getGapFillers()[0], 'terminal-gap-fill-surface')).toBe(true);
     expect(harness.container.style['--terminal-gap-content-width']).toBe('810px');
     expect(harness.container.style['--terminal-gap-content-height']).toBe('480px');
     expect(harness.container.style['--terminal-gap-right-width']).toBe('8px');
     expect(harness.container.style['--terminal-gap-bottom-height']).toBe('8px');
-    expect(harness.container.style['--terminal-gap-fill-right-start']).toBe('809px');
-    expect(harness.container.style['--terminal-gap-fill-bottom-start']).toBe('479px');
-    expect(harness.container.style['--terminal-gap-fill-right-width']).toBe('9px');
-    expect(harness.container.style['--terminal-gap-fill-bottom-height']).toBe('9px');
   });
 
   it('keeps passive scaling free of resize side effects after the browser becomes main', () => {

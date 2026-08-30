@@ -100,10 +100,15 @@ try {
 
   const container = document.getElementById(`terminal-${sessionId}`);
   const xterm = container.querySelector(".xterm");
+  const gapFillers = [
+    ...container.querySelectorAll(":scope > .terminal-gap-fill"),
+  ];
+  const gapFiller = gapFillers[0] ?? null;
   const containerRect = rect(container);
   const overlayRect = rect(overlay);
   const xtermRect = rect(xterm);
   const style = getComputedStyle(container);
+  const gapFillerStyle = gapFiller ? getComputedStyle(gapFiller) : null;
   const rightOffset = containerRect.right - overlayRect.right;
   const bottomOffset = containerRect.bottom - overlayRect.bottom;
 
@@ -125,6 +130,11 @@ try {
     terminalGapBottomHeight: style
       .getPropertyValue("--terminal-gap-bottom-height")
       .trim(),
+    gapFillerCount: gapFillers.length,
+    gapFillerClasses: gapFiller ? [...gapFiller.classList] : [],
+    gapFillerRect: gapFiller ? rect(gapFiller) : null,
+    gapFillerBackground: gapFillerStyle?.backgroundImage ?? null,
+    gapFillerClipPath: gapFillerStyle?.clipPath ?? null,
     overlayClasses: [...overlay.classList],
     overlayParentId: overlay.parentElement?.id ?? null,
     rightOffset,
@@ -153,6 +163,36 @@ try {
   if (xtermRect.width >= containerRect.width - 100) {
     throw new Error(
       "The scenario did not produce a meaningful narrow-owner xterm gap.",
+    );
+  }
+  if (result.gapFillerCount !== 1) {
+    throw new Error(
+      `Expected one continuous terminal gap surface, found ${result.gapFillerCount}.`,
+    );
+  }
+  if (!result.gapFillerClasses.includes("terminal-gap-fill-surface")) {
+    throw new Error(
+      "The terminal gap is not painted by the continuous surface.",
+    );
+  }
+  if (
+    Math.abs(result.gapFillerRect.left - containerRect.left) > 0.25 ||
+    Math.abs(result.gapFillerRect.top - containerRect.top) > 0.25 ||
+    Math.abs(result.gapFillerRect.width - containerRect.width) > 0.25 ||
+    Math.abs(result.gapFillerRect.height - containerRect.height) > 0.25
+  ) {
+    throw new Error(
+      "The terminal gap surface does not cover the complete pane.",
+    );
+  }
+  if (!result.gapFillerClipPath?.startsWith("polygon(")) {
+    throw new Error(
+      "The terminal gap surface has no continuous L-shaped clip.",
+    );
+  }
+  if (!result.gapFillerBackground || result.gapFillerBackground === "none") {
+    throw new Error(
+      "The terminal gap surface did not receive the terminal background.",
     );
   }
 
