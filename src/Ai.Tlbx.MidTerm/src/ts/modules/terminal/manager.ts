@@ -1752,7 +1752,6 @@ export function destroyTerminalForSession(sessionId: string): void {
     clearTimeout(state.burstCursorRestoreTimer);
   }
   state.burstCursorRestoreDueAtMs = null;
-  state.reconnectFreezeOverlay?.remove();
 
   // Clean up pending title update timer
   const titleTimer = pendingTitleUpdates.get(sessionId);

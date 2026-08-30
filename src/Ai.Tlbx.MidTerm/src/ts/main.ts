@@ -133,6 +133,7 @@ import {
 import {
   initAgentView,
   getAppServerControlDebugScenarioNames,
+  recoverAppServerControlAfterBrowserResume,
   showAppServerControlDebugScenario,
 } from './modules/agentView';
 import {
@@ -695,7 +696,6 @@ function applyScrollbackProtection(): void {
   const activeId = $activeSessionId.get();
   const state = activeId ? sessionTerminals.get(activeId) : null;
   if (!state?.terminal) return;
-  if (state.reconnectFreezeOverlay) return;
   if (state.terminal.modes.synchronizedOutputMode) return;
 
   const bufferBefore = state.terminal.buffer.active;
@@ -708,7 +708,6 @@ function applyScrollbackProtection(): void {
   setTimeout(() => {
     if ($activeSessionId.get() !== activeId) return;
     if (!state.opened || state.container.classList.contains('hidden')) return;
-    if (state.reconnectFreezeOverlay) return;
     if (state.terminal.modes.synchronizedOutputMode) return;
 
     const scrollPosAfter = state.terminal.buffer.active.viewportY;
@@ -726,6 +725,9 @@ function setupVisibilityChangeHandler(includeSettingsChannel: boolean): void {
     focusActiveTerminal,
     applyScrollbackProtection,
     keepTerminalOutputActiveWhileHidden: isMobilePiPEnabled,
+    ...(includeSettingsChannel
+      ? { recoverAppServerControlAfterResume: recoverAppServerControlAfterBrowserResume }
+      : {}),
     ...(includeSettingsChannel
       ? { reconnectSettingsAfterLongResume: connectSettingsWebSocket }
       : {}),

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../utils', () => ({
   createWsUrl: () => 'ws://localhost/ws/app-server-control',
   ReconnectController: class {
+    cancel(): void {}
     reset(): void {}
     schedule(): void {}
   },
@@ -14,6 +15,7 @@ class FakeWebSocket {
   static readonly CLOSING = 2;
   static readonly CLOSED = 3;
   static instances: FakeWebSocket[] = [];
+  static autoOpen = true;
 
   readonly url: string;
   readyState = FakeWebSocket.CONNECTING;
@@ -26,10 +28,14 @@ class FakeWebSocket {
   constructor(url: string) {
     this.url = url;
     FakeWebSocket.instances.push(this);
-    queueMicrotask(() => {
-      this.readyState = FakeWebSocket.OPEN;
-      this.onopen?.(new Event('open'));
-    });
+    if (FakeWebSocket.autoOpen) {
+      queueMicrotask(() => this.open());
+    }
+  }
+
+  open(): void {
+    this.readyState = FakeWebSocket.OPEN;
+    this.onopen?.(new Event('open'));
   }
 
   send(data: string): void {
@@ -45,7 +51,9 @@ class FakeWebSocket {
 describe('appServerControlWebSocket', () => {
   afterEach(() => {
     FakeWebSocket.instances = [];
+    FakeWebSocket.autoOpen = true;
     vi.unstubAllGlobals();
+    vi.useRealTimers();
     vi.resetModules();
   });
 
@@ -190,5 +198,78 @@ describe('appServerControlWebSocket', () => {
     expect(onHistoryWindow).toHaveBeenCalledTimes(1);
     expect(onHistoryWindow.mock.calls[0]?.[0]?.historyWindowStart).toBe(5);
     expect(onHistoryWindow.mock.calls[0]?.[0]?.windowRevision).toBe('rev-current');
+  });
+
+  it('rejects a connection attempt that closes before opening and permits a clean retry', async () => {
+    FakeWebSocket.autoOpen = false;
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+
+    const { attachAppServerControlSession } = await import('./appServerControlWebSocket');
+    const firstAttempt = attachAppServerControlSession('session-1');
+    const firstSocket = FakeWebSocket.instances[0]!;
+    firstSocket.close();
+
+    await expect(firstAttempt).rejects.toThrow('disconnected');
+
+    const retry = attachAppServerControlSession('session-1');
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    const retrySocket = FakeWebSocket.instances[1]!;
+    retrySocket.open();
+    await vi.waitFor(() => expect(retrySocket.sent).toHaveLength(1));
+    const request = JSON.parse(retrySocket.sent[0] ?? '{}') as { id?: string };
+    retrySocket.onmessage?.(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'ack',
+          id: request.id,
+          action: 'attach',
+          sessionId: 'session-1',
+        }),
+      }),
+    );
+
+    await expect(retry).resolves.toBeUndefined();
+  });
+
+  it('bounds unanswered requests and clears their timeout after rejection', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+
+    const { getAppServerControlHistoryWindowWs } = await import('./appServerControlWebSocket');
+    const request = getAppServerControlHistoryWindowWs('session-1', 0, 40);
+    const rejection = expect(request).rejects.toThrow('timed out');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(5000);
+
+    await rejection;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('replaces a stale-open transport exactly once during foreground recovery', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+
+    const { openAppServerControlHistorySocket, recoverAppServerControlWebSocket } =
+      await import('./appServerControlWebSocket');
+    const onOpen = vi.fn();
+    const disconnect = openAppServerControlHistorySocket(
+      'session-1',
+      9,
+      0,
+      40,
+      'rev-9',
+      { onPatch: vi.fn(), onOpen },
+      390,
+    );
+    await vi.waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
+
+    await recoverAppServerControlWebSocket();
+
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(FakeWebSocket.instances[0]?.readyState).toBe(FakeWebSocket.CLOSED);
+    expect(onOpen).toHaveBeenCalledTimes(2);
+    expect(FakeWebSocket.instances[1]?.sent).toHaveLength(1);
+    disconnect();
   });
 });

@@ -135,7 +135,7 @@ public sealed class MuxWebSocketHandler
             client.SuspendFlush();
             await SendInitFrameAsync(client, clientId);
             var quickResumeEnabled = client.ShouldUseQuickResume();
-            if (initialPrioritySessionId is null || quickResumeEnabled)
+            if (initialPrioritySessionId is null)
             {
                 await SendInitialBuffersAsync(
                     client,
@@ -161,7 +161,7 @@ public sealed class MuxWebSocketHandler
             }
             await client.TrySendAsync(MuxProtocol.CreateSyncCompleteFrame());
             client.ResumeFlush();
-            if (initialPrioritySessionId is not null && !quickResumeEnabled)
+            if (initialPrioritySessionId is not null)
             {
                 deferredReplayTask = SendInitialBuffersAsync(
                     client,

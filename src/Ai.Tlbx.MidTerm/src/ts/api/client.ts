@@ -52,6 +52,7 @@ import {
   getAppServerControlHistoryWindowWs,
   interruptAppServerControlTurnWs,
   openAppServerControlHistorySocket,
+  recoverAppServerControlWebSocket,
   setAppServerControlGoalWs,
   updateAppServerControlHistorySocketWindow,
   resolveAppServerControlUserInputWs,
@@ -688,6 +689,10 @@ export async function getAppServerControlHistoryWindow(
   viewportWidth?: number,
 ): Promise<AppServerControlHistorySnapshot> {
   return getAppServerControlHistoryWindowWs(id, startIndex, count, windowRevision, viewportWidth);
+}
+
+export async function recoverAppServerControlConnection(): Promise<void> {
+  await recoverAppServerControlWebSocket();
 }
 
 export async function interruptAppServerControlTurn(

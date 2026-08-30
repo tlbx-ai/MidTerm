@@ -12,6 +12,7 @@ interface BrowserLifecycleRecoveryOptions {
   applyScrollbackProtection: () => void;
   keepTerminalOutputActiveWhileHidden: () => boolean;
   reconnectSettingsAfterLongResume?: () => void;
+  recoverAppServerControlAfterResume?: () => void;
 }
 
 const LONG_BACKGROUND_TRANSPORT_RESET_MS = 5000;
@@ -33,22 +34,28 @@ export function setupBrowserLifecycleRecovery(
   let recoveryTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   let lastRecoveryAtMs = Number.NEGATIVE_INFINITY;
   let lastForegroundHeartbeatAtMs = Date.now();
+  let resumeFromBackgroundPending = hiddenAtMs !== null;
 
-  const recoverRealtimeAfterBrowserResume = (forceReconnect: boolean): void => {
-    if (forceReconnect || !$stateWsConnected.get()) {
+  const recoverRealtimeAfterBrowserResume = (
+    forceReconnect: boolean,
+    resumedFromBackground: boolean,
+  ): void => {
+    const replaceBrowserTransports = forceReconnect || resumedFromBackground;
+    if (replaceBrowserTransports || !$stateWsConnected.get()) {
       connectStateWebSocket();
     } else {
       reportBrowserActivity(true);
     }
 
-    if (forceReconnect) {
+    if (replaceBrowserTransports) {
       options.reconnectSettingsAfterLongResume?.();
+      options.recoverAppServerControlAfterResume?.();
     }
 
     recoverVisibleTerminalsAfterBrowserResume(
       $activeSessionId.get(),
       options.getVisibleTerminalSessionIds(),
-      { forceReconnect },
+      { forceReconnect: replaceBrowserTransports },
     );
 
     options.syncMuxTerminalVisibility();
@@ -64,6 +71,7 @@ export function setupBrowserLifecycleRecovery(
 
   const rememberBackgroundStart = (): void => {
     hiddenAtMs ??= Date.now();
+    resumeFromBackgroundPending = true;
     cancelScheduledRecovery();
   };
 
@@ -92,13 +100,15 @@ export function setupBrowserLifecycleRecovery(
       }
 
       const shouldForceReconnect = forceTransportReconnect;
+      const resumedFromBackground = resumeFromBackgroundPending;
       forceTransportReconnect = false;
+      resumeFromBackgroundPending = false;
       lastRecoveryAtMs = Date.now();
-      recoverRealtimeAfterBrowserResume(shouldForceReconnect);
+      recoverRealtimeAfterBrowserResume(shouldForceReconnect, resumedFromBackground);
     }, 0);
   };
 
-  document.addEventListener('visibilitychange', () => {
+  const handleVisibilityChange = (): void => {
     reportBrowserActivity();
 
     if (isDocumentHidden()) {
@@ -110,37 +120,44 @@ export function setupBrowserLifecycleRecovery(
     }
 
     scheduleForegroundRecovery();
-  });
+  };
 
-  window.addEventListener('focus', () => {
+  const handleFocus = (): void => {
     scheduleForegroundRecovery();
-  });
+  };
 
-  window.addEventListener('blur', () => {
+  const handleBlur = (): void => {
+    reportBrowserActivity(false);
+  };
+
+  const handlePageHide = (): void => {
     rememberBackgroundStart();
     reportBrowserActivity(false);
-  });
+  };
 
-  window.addEventListener('pagehide', () => {
-    rememberBackgroundStart();
-    reportBrowserActivity(false);
-  });
-
-  window.addEventListener('pageshow', () => {
+  const handlePageShow = (): void => {
     scheduleForegroundRecovery();
-  });
+  };
 
-  document.addEventListener('resume', () => {
+  const handleResume = (): void => {
     scheduleForegroundRecovery();
-  });
+  };
 
-  document.addEventListener('freeze', () => {
+  const handleFreeze = (): void => {
     rememberBackgroundStart();
     reportBrowserActivity(false);
     if (!options.keepTerminalOutputActiveWhileHidden()) {
       suspendMuxForBrowserBackground();
     }
-  });
+  };
+
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  window.addEventListener('focus', handleFocus);
+  window.addEventListener('blur', handleBlur);
+  window.addEventListener('pagehide', handlePageHide);
+  window.addEventListener('pageshow', handlePageShow);
+  document.addEventListener('resume', handleResume);
+  document.addEventListener('freeze', handleFreeze);
 
   // Android may freeze a standalone PWA without reliably delivering every
   // visibility/focus event. A suspended event loop makes this lightweight
@@ -166,6 +183,13 @@ export function setupBrowserLifecycleRecovery(
   return () => {
     cancelScheduledRecovery();
     globalThis.clearInterval(heartbeatTimer);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    window.removeEventListener('focus', handleFocus);
+    window.removeEventListener('blur', handleBlur);
+    window.removeEventListener('pagehide', handlePageHide);
+    window.removeEventListener('pageshow', handlePageShow);
+    document.removeEventListener('resume', handleResume);
+    document.removeEventListener('freeze', handleFreeze);
   };
 }
 
