@@ -116,7 +116,16 @@ public sealed class HubMuxWebSocketHandler
                localSocket.State == WebSocketState.Open &&
                remoteSocket.State == WebSocketState.Open)
         {
-            var result = await remoteSocket.ReceiveAsync(buffer, ct);
+            var result = await MuxWebSocketHandler.ReceiveMuxMessageAsync(remoteSocket, buffer, ct);
+            if (result.TooLarge)
+            {
+                await remoteSocket.CloseOutputAsync(
+                    WebSocketCloseStatus.MessageTooBig,
+                    $"Mux frame exceeds {MuxProtocol.MaxFrameSize} bytes",
+                    ct);
+                break;
+            }
+
             if (result.MessageType == WebSocketMessageType.Close)
             {
                 break;
@@ -132,7 +141,7 @@ public sealed class HubMuxWebSocketHandler
                 await localSocket.SendAsync(
                     new ArraySegment<byte>(buffer, 0, result.Count),
                     WebSocketMessageType.Binary,
-                    result.EndOfMessage,
+                    endOfMessage: true,
                     ct);
             }
         }

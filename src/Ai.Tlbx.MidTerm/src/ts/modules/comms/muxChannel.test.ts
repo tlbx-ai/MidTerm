@@ -436,7 +436,7 @@ describe('muxChannel', () => {
     expect(terminal.writeMock).toHaveBeenCalledTimes(1);
   });
 
-  it('does not trim replay frames through terminal control sequences', async () => {
+  it('continues an overlapping replay at xterm\'s exact control-sequence cursor', async () => {
     const harness = await loadHarness([0, 0, 0, 0, 0]);
     const sessionId = 'sess1234';
     const terminal = attachFakeTerminal(harness.sessionTerminals, sessionId);
@@ -447,8 +447,8 @@ describe('muxChannel', () => {
         harness.constants.MUX_TYPE_OUTPUT,
         harness.constants.MUX_HEADER_SIZE,
         sessionId,
-        5n,
-        'abcde',
+        3n,
+        '\x1b[3',
       ),
     } as MessageEvent<ArrayBuffer>);
 
@@ -461,7 +461,7 @@ describe('muxChannel', () => {
         harness.constants.MUX_TYPE_OUTPUT,
         harness.constants.MUX_HEADER_SIZE,
         sessionId,
-        10n,
+        8n,
         '\x1b[31mXYZ',
       ),
     } as MessageEvent<ArrayBuffer>);
@@ -470,7 +470,7 @@ describe('muxChannel', () => {
 
     expect(terminal.writeMock).toHaveBeenCalledTimes(2);
     const replayData = terminal.writeMock.mock.calls[1]?.[0] as Uint8Array;
-    expect(new TextDecoder().decode(replayData)).toBe('\x1b[31mXYZ');
+    expect(new TextDecoder().decode(replayData)).toBe('1mXYZ');
   });
 
   it('does not send replay rows on full-replay mux reconnect', async () => {

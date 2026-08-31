@@ -543,10 +543,10 @@ public sealed class MuxWebSocketHandler
 
         while (ws.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
         {
-            WebSocketReceiveResult result;
+            MuxReceiveMessage result;
             try
             {
-                result = await ws.ReceiveAsync(receiveBuffer, shutdownToken);
+                result = await ReceiveMuxMessageAsync(ws, receiveBuffer, shutdownToken);
             }
             catch (OperationCanceledException)
             {
@@ -554,6 +554,21 @@ public sealed class MuxWebSocketHandler
             }
             catch (WebSocketException)
             {
+                break;
+            }
+
+            if (result.TooLarge)
+            {
+                try
+                {
+                    await ws.CloseOutputAsync(
+                        WebSocketCloseStatus.MessageTooBig,
+                        $"Mux frame exceeds {MuxProtocol.MaxFrameSize} bytes",
+                        shutdownToken);
+                }
+                catch (WebSocketException)
+                {
+                }
                 break;
             }
 
@@ -569,6 +584,46 @@ public sealed class MuxWebSocketHandler
 
         }
     }
+
+    internal static async ValueTask<MuxReceiveMessage> ReceiveMuxMessageAsync(
+        WebSocket ws,
+        byte[] receiveBuffer,
+        CancellationToken ct)
+    {
+        var totalBytes = 0;
+        WebSocketMessageType? messageType = null;
+
+        while (true)
+        {
+            if (totalBytes == receiveBuffer.Length)
+            {
+                return new MuxReceiveMessage(
+                    messageType ?? WebSocketMessageType.Binary,
+                    totalBytes,
+                    TooLarge: true);
+            }
+
+            var result = await ws.ReceiveAsync(
+                new ArraySegment<byte>(receiveBuffer, totalBytes, receiveBuffer.Length - totalBytes),
+                ct);
+            messageType ??= result.MessageType;
+            if (result.MessageType != messageType)
+            {
+                throw new WebSocketException(WebSocketError.HeaderError);
+            }
+
+            totalBytes += result.Count;
+            if (result.EndOfMessage || result.MessageType == WebSocketMessageType.Close)
+            {
+                return new MuxReceiveMessage(result.MessageType, totalBytes, TooLarge: false);
+            }
+        }
+    }
+
+    internal readonly record struct MuxReceiveMessage(
+        WebSocketMessageType MessageType,
+        int Count,
+        bool TooLarge);
 
     private async Task ProcessFrameAsync(
         ReadOnlyMemory<byte> data,
