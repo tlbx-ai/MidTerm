@@ -419,6 +419,53 @@ public sealed class MuxClientTests
     }
 
     [Fact]
+    public void AlternateScreenReplay_RequestsRedrawWhenFullRingLostInitialFrame()
+    {
+        var snapshot = new TtyHostBufferSnapshot
+        {
+            SequenceStart = 2_000_000,
+            TerminalState = new TerminalReplayState(1049),
+            Data = [1, 2, 3]
+        };
+
+        Assert.True(MuxWebSocketHandler.RequiresAlternateScreenRedraw(null, snapshot));
+    }
+
+    [Fact]
+    public void AlternateScreenReplay_RequestsRedrawWhenResumeCursorCannotBeReconciled()
+    {
+        var snapshot = new TtyHostBufferSnapshot
+        {
+            SequenceStart = 2_000_000,
+            TerminalState = new TerminalReplayState(1049),
+            Data = [1, 2, 3]
+        };
+
+        Assert.True(MuxWebSocketHandler.RequiresAlternateScreenRedraw(1_900_000, snapshot));
+        Assert.False(MuxWebSocketHandler.RequiresAlternateScreenRedraw(2_000_000, snapshot));
+    }
+
+    [Fact]
+    public void AlternateScreenReplay_DoesNotRedrawCompleteOrLineBasedSnapshots()
+    {
+        var completeAlternateScreen = new TtyHostBufferSnapshot
+        {
+            SequenceStart = 0,
+            TerminalState = new TerminalReplayState(1049),
+            Data = [1, 2, 3]
+        };
+        var lineBasedTail = new TtyHostBufferSnapshot
+        {
+            SequenceStart = 2_000_000,
+            TerminalState = TerminalReplayState.Default,
+            Data = [1, 2, 3]
+        };
+
+        Assert.False(MuxWebSocketHandler.RequiresAlternateScreenRedraw(null, completeAlternateScreen));
+        Assert.False(MuxWebSocketHandler.RequiresAlternateScreenRedraw(null, lineBasedTail));
+    }
+
+    [Fact]
     public async Task ActiveSessionOutput_CoalescesSmallAdjacentChunks()
     {
         using var socket = new RecordingWebSocket();
