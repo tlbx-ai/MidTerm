@@ -224,6 +224,85 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public void TryReadLocalUpdateInfo_WebOnlyStablePromotionOfSameDevPty_ReturnsWebOnly()
+    {
+        var localReleaseDir = Path.Combine(_tempDir, "localrelease");
+        Directory.CreateDirectory(localReleaseDir);
+        File.WriteAllText(
+            Path.Combine(localReleaseDir, "version.json"),
+            """
+            {
+              "web": "10.10.0",
+              "pty": "10.9.2",
+              "protocol": 1,
+              "minCompatiblePty": "2.0.0",
+              "webOnly": true
+            }
+            """);
+
+        var installed = new VersionManifest
+        {
+            Web = "10.9.9-dev",
+            Pty = "10.9.2-dev",
+            Protocol = 1,
+            MinCompatiblePty = "2.0.0",
+            WebOnly = true
+        };
+
+        var localUpdate = UpdateService.TryReadLocalUpdateInfo(localReleaseDir, installed, "10.9.9-dev");
+
+        Assert.NotNull(localUpdate);
+        Assert.Equal(UpdateType.WebOnly, localUpdate!.Type);
+    }
+
+    [Theory]
+    [InlineData("10.9.2-dev", "10.9.2", true)]
+    [InlineData("10.9.2", "10.9.2-dev.4", true)]
+    [InlineData("10.9.2-dev+build.1", "10.9.2+build.2", true)]
+    [InlineData("10.9.2-dev.1", "10.9.2-dev.2", false)]
+    [InlineData("10.9.2-beta", "10.9.2", false)]
+    [InlineData("10.9.2-dev", "10.9.3", false)]
+    public void IsStablePromotionEquivalentPtyVersion_OnlyAcceptsChannelOnlyTransitions(
+        string installed,
+        string release,
+        bool expected)
+    {
+        Assert.Equal(expected, UpdateService.IsStablePromotionEquivalentPtyVersion(installed, release));
+    }
+
+    [Fact]
+    public void TryReadLocalUpdateInfo_WebOnlyManifestWithSkippedPtyRelease_RemainsFull()
+    {
+        var localReleaseDir = Path.Combine(_tempDir, "localrelease");
+        Directory.CreateDirectory(localReleaseDir);
+        File.WriteAllText(
+            Path.Combine(localReleaseDir, "version.json"),
+            """
+            {
+              "web": "10.10.0",
+              "pty": "10.9.3",
+              "protocol": 1,
+              "minCompatiblePty": "2.0.0",
+              "webOnly": true
+            }
+            """);
+
+        var installed = new VersionManifest
+        {
+            Web = "10.9.9-dev",
+            Pty = "10.9.2-dev",
+            Protocol = 1,
+            MinCompatiblePty = "2.0.0",
+            WebOnly = true
+        };
+
+        var localUpdate = UpdateService.TryReadLocalUpdateInfo(localReleaseDir, installed, "10.9.9-dev");
+
+        Assert.NotNull(localUpdate);
+        Assert.Equal(UpdateType.Full, localUpdate!.Type);
+    }
+
+    [Fact]
     public void VersionManifest_DeserializesWebOnlyFlag()
     {
         var manifest = JsonSerializer.Deserialize(

@@ -127,8 +127,13 @@ public sealed partial class UpdateService : IDisposable
             return UpdateType.Full;
         }
 
-        // PTY version change = full update (host restarts, sessions lost)
-        if (!string.Equals(release.Pty, installed.Pty, StringComparison.OrdinalIgnoreCase))
+        // PTY version change = full update (host restarts, sessions lost).
+        // A web-only stable promotion removes the -dev suffix from every manifest
+        // version even though the PTY runtime itself did not advance. Treat that
+        // channel-only transition as equivalent so a pure web update cannot
+        // unnecessarily interrupt live sessions.
+        if (!string.Equals(release.Pty, installed.Pty, StringComparison.OrdinalIgnoreCase) &&
+            (!release.WebOnly || !IsStablePromotionEquivalentPtyVersion(installed.Pty, release.Pty)))
         {
             return UpdateType.Full;
         }
@@ -140,6 +145,47 @@ public sealed partial class UpdateService : IDisposable
         }
 
         return UpdateType.None;
+    }
+
+    internal static bool IsStablePromotionEquivalentPtyVersion(string installedPty, string releasePty)
+    {
+        if (string.IsNullOrWhiteSpace(installedPty) || string.IsNullOrWhiteSpace(releasePty))
+        {
+            return false;
+        }
+
+        var (installedBase, installedPrerelease) = ParseVersionWithPrerelease(
+            StripBuildMetadata(installedPty.Trim()));
+        var (releaseBase, releasePrerelease) = ParseVersionWithPrerelease(
+            StripBuildMetadata(releasePty.Trim()));
+
+        if (!string.Equals(installedBase, releaseBase, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return installedPrerelease is null && IsDevPrerelease(releasePrerelease) ||
+               releasePrerelease is null && IsDevPrerelease(installedPrerelease);
+    }
+
+    private static string StripBuildMetadata(string version)
+    {
+        var buildMetadataIndex = version.IndexOf('+', StringComparison.Ordinal);
+        return buildMetadataIndex < 0 ? version : version[..buildMetadataIndex];
+    }
+
+    private static bool IsDevPrerelease(string? prerelease)
+    {
+        if (string.Equals(prerelease, "dev", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        const string numberedDevPrefix = "dev.";
+        return prerelease is not null &&
+               prerelease.StartsWith(numberedDevPrefix, StringComparison.OrdinalIgnoreCase) &&
+               prerelease.Length > numberedDevPrefix.Length &&
+               prerelease[numberedDevPrefix.Length..].All(char.IsAsciiDigit);
     }
 
     public string AddUpdateListener(Action<UpdateInfo> callback)
