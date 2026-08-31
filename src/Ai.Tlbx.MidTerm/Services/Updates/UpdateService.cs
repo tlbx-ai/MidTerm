@@ -1002,23 +1002,18 @@ public sealed partial class UpdateService : IDisposable
         AppendUpdateLog(artifacts.LogPath, $"Downloaded update payload to {extractedDir}");
         AppendUpdateLog(artifacts.LogPath, $"Update type: {updateType}");
 
-        if (BeforeApplyUpdateAsync is not null)
+        var captureResult = await CaptureSessionUpdateStateBestEffortAsync(
+            BeforeApplyUpdateAsync,
+            updateType).ConfigureAwait(false);
+        if (captureResult.Attempted)
         {
-            try
+            if (captureResult.Captured)
             {
-                await BeforeApplyUpdateAsync(updateType, CancellationToken.None).ConfigureAwait(false);
                 AppendUpdateLog(artifacts.LogPath, "Captured session update state.");
             }
-            catch (Exception ex)
+            else
             {
-                if (updateType == UpdateType.Full)
-                {
-                    return FailUpdate(
-                        artifacts,
-                        $"Full update canceled because active sessions could not be recovered safely: {ex.Message}");
-                }
-
-                AppendUpdateLog(artifacts.LogPath, $"Failed to capture session update state: {ex.Message}", "WARN");
+                AppendUpdateLog(artifacts.LogPath, captureResult.Warning!, "WARN");
             }
         }
 
@@ -1166,6 +1161,29 @@ public sealed partial class UpdateService : IDisposable
         });
 
         return (true, "Update started. Server will restart shortly.");
+    }
+
+    internal static async Task<(bool Attempted, bool Captured, string? Warning)> CaptureSessionUpdateStateBestEffortAsync(
+        Func<UpdateType, CancellationToken, Task>? capture,
+        UpdateType updateType)
+    {
+        if (capture is null)
+        {
+            return (false, false, null);
+        }
+
+        try
+        {
+            await capture(updateType, CancellationToken.None).ConfigureAwait(false);
+            return (true, true, null);
+        }
+        catch (Exception ex)
+        {
+            var warning = updateType == UpdateType.Full
+                ? $"Failed to capture session update state: {ex.Message}. Continuing requested Full update; active terminals may close without automatic recovery."
+                : $"Failed to capture session update state: {ex.Message}. Continuing Web-only update.";
+            return (true, false, warning);
+        }
     }
 
     private static (bool Success, string Message) TryApplyLinuxServiceWebOnlyUpdate(

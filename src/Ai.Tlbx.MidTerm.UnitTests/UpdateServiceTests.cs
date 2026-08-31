@@ -58,6 +58,23 @@ public sealed class UpdateServiceTests : IDisposable
         Assert.Equal(expectedSign, actual);
     }
 
+    [Theory]
+    [InlineData(UpdateType.Full, "Continuing requested Full update")]
+    [InlineData(UpdateType.WebOnly, "Continuing Web-only update")]
+    public async Task CaptureSessionUpdateStateBestEffortAsync_DoesNotBlockRequestedUpdate(
+        UpdateType updateType,
+        string expectedWarning)
+    {
+        var result = await UpdateService.CaptureSessionUpdateStateBestEffortAsync(
+            (_, _) => throw new InvalidOperationException("upstream resume format changed"),
+            updateType);
+
+        Assert.True(result.Attempted);
+        Assert.False(result.Captured);
+        Assert.Contains(expectedWarning, result.Warning, StringComparison.Ordinal);
+        Assert.Contains("upstream resume format changed", result.Warning, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void SelectBestRelease_PicksNewestUsableUpgrade_WhenLatestTagMissingPlatformAsset()
     {
