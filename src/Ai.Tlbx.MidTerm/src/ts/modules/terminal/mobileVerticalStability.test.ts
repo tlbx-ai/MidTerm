@@ -53,6 +53,7 @@ describe('mobile terminal vertical stability', () => {
     vi.stubGlobal('document', {
       body: {
         classList: {
+          contains: vi.fn(() => false),
           toggle: vi.fn(),
         },
       },
@@ -102,6 +103,27 @@ describe('mobile terminal vertical stability', () => {
 
     expect(state.container.dataset.mobileCursorFollowing).toBe('true');
     expect(state.container.scrollTop).toBe(0);
+  });
+
+  it('does not jump to the top or run queued cursor reveals after stability ends', () => {
+    const callbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    const state = createState(72, 200, 100, 9);
+    sessionTerminals.set('s1', state as never);
+    setMobileVerticalStability(true);
+    while (callbacks.length > 0) {
+      callbacks.shift()?.(0);
+    }
+    state.container.scrollTop = 72;
+
+    revealMobileStableTerminalCursor(state as never, { force: true });
+    setMobileVerticalStability(false, { preserveScrollPosition: true });
+    callbacks.splice(0).forEach((callback) => callback(0));
+
+    expect(state.container.scrollTop).toBe(72);
   });
 
   it('classifies a one-pixel keyboard height change as vertical-only', () => {

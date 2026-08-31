@@ -285,7 +285,7 @@ describe('setupVisualViewport', () => {
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
   });
 
-  it('keeps terminal rows stable without blindly pinning the canvas bottom', () => {
+  it('resizes terminal rows immediately when the soft keyboard reduces the visual viewport', () => {
     const bodyClasses = new Set<string>();
     const resizeCallbacks: Array<() => void> = [];
     const visualViewport = {
@@ -328,15 +328,18 @@ describe('setupVisualViewport', () => {
     vi.mocked(sendResize).mockClear();
     const state = sessionTerminals.get('s1') as ReturnType<typeof createHarness>['state'];
     state.terminal.resize.mockClear();
+    dom.terminalsArea = {
+      getBoundingClientRect: () => ({ width: 818, height: visualViewport.height - 112 }),
+    } as HTMLElement;
 
     visualViewport.height = 430;
     resizeCallbacks.forEach((callback) => callback());
 
     expect(state.terminal.resize).not.toHaveBeenCalled();
-    expect(sendResize).not.toHaveBeenCalled();
+    expect(sendResize).toHaveBeenCalledWith('s1', 81, 15);
     expect(bodyClasses.has('keyboard-visible')).toBe(true);
-    expect(bodyClasses.has('mobile-terminal-vertical-stable')).toBe(true);
-    expect(state.container.classList.contains('mobile-terminal-vertical-stable')).toBe(true);
+    expect(bodyClasses.has('mobile-terminal-vertical-stable')).toBe(false);
+    expect(state.container.classList.contains('mobile-terminal-vertical-stable')).toBe(false);
     expect(state.container.scrollTop).toBe(0);
   });
 
