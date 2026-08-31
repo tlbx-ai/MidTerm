@@ -17,9 +17,6 @@ const CURSOR_BURST_WINDOW_MS = 180;
 const CURSOR_BURST_MIN_BYTES = 12;
 const CURSOR_IDLE_SHOW_MS = 650;
 const CURSOR_LOCAL_INPUT_GRACE_MS = 250;
-const SHOW_CURSOR_SEQ = '\x1b[?25h';
-const HIDE_CURSOR_SEQ = '\x1b[?25l';
-
 type CursorControlSettings = {
   preserveTerminalCursorControl?: boolean;
 };
@@ -196,12 +193,11 @@ export function hideBurstCursor(state: TerminalState): void {
     return;
   }
 
-  if (!state.burstCursorHidden) {
-    if (!state.syncOutputCursorHidden) {
-      state.terminal.write(HIDE_CURSOR_SEQ);
-    }
-    state.burstCursorHidden = true;
-  }
+  // Never inject a separate VT sequence into xterm's write stream. A native
+  // output batch may end midway through CSI/OSC/DCS and xterm deliberately
+  // carries that parser state into the next write. An out-of-band DECTCEM
+  // write here would then become part of the unfinished application sequence.
+  state.burstCursorHidden = true;
 
   clearBurstCursorRestoreSchedule(state);
 }
@@ -219,10 +215,7 @@ export function showBurstCursor(state: TerminalState): void {
 
   clearBurstCursorRestoreSchedule(state);
 
-  if (state.burstCursorHidden) {
-    state.burstCursorHidden = false;
-    state.terminal.write(SHOW_CURSOR_SEQ);
-  }
+  state.burstCursorHidden = false;
 }
 
 export function scheduleBurstCursorShow(state: TerminalState): void {
@@ -280,8 +273,10 @@ export function hideSynchronizedOutputCursor(state: TerminalState): void {
     return;
   }
 
+  // This is intentionally state-only. terminal.write() is not a safe side
+  // channel for synthetic controls because the app's preceding write can leave
+  // xterm inside an unfinished terminal sequence.
   state.syncOutputCursorHidden = true;
-  state.terminal.write(HIDE_CURSOR_SEQ);
 }
 
 export function showSynchronizedOutputCursor(state: TerminalState): void {
@@ -295,9 +290,6 @@ export function showSynchronizedOutputCursor(state: TerminalState): void {
   }
 
   state.syncOutputCursorHidden = false;
-  if (!state.burstCursorHidden && state.remoteCursorVisible !== false) {
-    state.terminal.write(SHOW_CURSOR_SEQ);
-  }
 }
 
 export function reconcileSynchronizedOutputCursorState(state: TerminalState): void {
