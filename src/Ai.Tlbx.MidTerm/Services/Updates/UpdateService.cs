@@ -127,13 +127,12 @@ public sealed partial class UpdateService : IDisposable
             return UpdateType.Full;
         }
 
-        // PTY version change = full update (host restarts, sessions lost).
-        // A web-only stable promotion removes the -dev suffix from every manifest
-        // version even though the PTY runtime itself did not advance. Treat that
-        // channel-only transition as equivalent so a pure web update cannot
-        // unnecessarily interrupt live sessions.
+        // PTY version change normally requires a full update. For a signed web-only
+        // release, however, the release's compatibility floor is authoritative:
+        // preserve any installed host that satisfies it even when upstream release
+        // metadata renamed or advanced the advertised PTY version accidentally.
         if (!string.Equals(release.Pty, installed.Pty, StringComparison.OrdinalIgnoreCase) &&
-            (!release.WebOnly || !IsStablePromotionEquivalentPtyVersion(installed.Pty, release.Pty)))
+            (!release.WebOnly || !IsInstalledPtyCompatibleWithWebOnlyRelease(installed.Pty, release.MinCompatiblePty)))
         {
             return UpdateType.Full;
         }
@@ -147,45 +146,14 @@ public sealed partial class UpdateService : IDisposable
         return UpdateType.None;
     }
 
-    internal static bool IsStablePromotionEquivalentPtyVersion(string installedPty, string releasePty)
+    internal static bool IsInstalledPtyCompatibleWithWebOnlyRelease(string installedPty, string minCompatiblePty)
     {
-        if (string.IsNullOrWhiteSpace(installedPty) || string.IsNullOrWhiteSpace(releasePty))
+        if (string.IsNullOrWhiteSpace(installedPty) || string.IsNullOrWhiteSpace(minCompatiblePty))
         {
             return false;
         }
 
-        var (installedBase, installedPrerelease) = ParseVersionWithPrerelease(
-            StripBuildMetadata(installedPty.Trim()));
-        var (releaseBase, releasePrerelease) = ParseVersionWithPrerelease(
-            StripBuildMetadata(releasePty.Trim()));
-
-        if (!string.Equals(installedBase, releaseBase, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return installedPrerelease is null && IsDevPrerelease(releasePrerelease) ||
-               releasePrerelease is null && IsDevPrerelease(installedPrerelease);
-    }
-
-    private static string StripBuildMetadata(string version)
-    {
-        var buildMetadataIndex = version.IndexOf('+', StringComparison.Ordinal);
-        return buildMetadataIndex < 0 ? version : version[..buildMetadataIndex];
-    }
-
-    private static bool IsDevPrerelease(string? prerelease)
-    {
-        if (string.Equals(prerelease, "dev", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        const string numberedDevPrefix = "dev.";
-        return prerelease is not null &&
-               prerelease.StartsWith(numberedDevPrefix, StringComparison.OrdinalIgnoreCase) &&
-               prerelease.Length > numberedDevPrefix.Length &&
-               prerelease[numberedDevPrefix.Length..].All(char.IsAsciiDigit);
+        return CompareVersions(installedPty.Trim(), minCompatiblePty.Trim()) >= 0;
     }
 
     public string AddUpdateListener(Action<UpdateInfo> callback)

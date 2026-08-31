@@ -256,22 +256,22 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Theory]
-    [InlineData("10.9.2-dev", "10.9.2", true)]
-    [InlineData("10.9.2", "10.9.2-dev.4", true)]
-    [InlineData("10.9.2-dev+build.1", "10.9.2+build.2", true)]
-    [InlineData("10.9.2-dev.1", "10.9.2-dev.2", false)]
-    [InlineData("10.9.2-beta", "10.9.2", false)]
-    [InlineData("10.9.2-dev", "10.9.3", false)]
-    public void IsStablePromotionEquivalentPtyVersion_OnlyAcceptsChannelOnlyTransitions(
+    [InlineData("10.9.2-dev", "2.0.0", true)]
+    [InlineData("10.9.2", "10.9.2", true)]
+    [InlineData("10.9.2-dev", "10.9.2", false)]
+    [InlineData("10.9.1", "10.9.2", false)]
+    [InlineData("", "2.0.0", false)]
+    [InlineData("10.9.2", "", false)]
+    public void IsInstalledPtyCompatibleWithWebOnlyRelease_UsesSignedCompatibilityFloor(
         string installed,
-        string release,
+        string minimum,
         bool expected)
     {
-        Assert.Equal(expected, UpdateService.IsStablePromotionEquivalentPtyVersion(installed, release));
+        Assert.Equal(expected, UpdateService.IsInstalledPtyCompatibleWithWebOnlyRelease(installed, minimum));
     }
 
     [Fact]
-    public void TryReadLocalUpdateInfo_WebOnlyManifestWithSkippedPtyRelease_RemainsFull()
+    public void TryReadLocalUpdateInfo_WebOnlyManifestWithDifferentPtyVersionPreservesCompatibleHost()
     {
         var localReleaseDir = Path.Combine(_tempDir, "localrelease");
         Directory.CreateDirectory(localReleaseDir);
@@ -291,6 +291,38 @@ public sealed class UpdateServiceTests : IDisposable
         {
             Web = "10.9.9-dev",
             Pty = "10.9.2-dev",
+            Protocol = 1,
+            MinCompatiblePty = "2.0.0",
+            WebOnly = true
+        };
+
+        var localUpdate = UpdateService.TryReadLocalUpdateInfo(localReleaseDir, installed, "10.9.9-dev");
+
+        Assert.NotNull(localUpdate);
+        Assert.Equal(UpdateType.WebOnly, localUpdate!.Type);
+    }
+
+    [Fact]
+    public void TryReadLocalUpdateInfo_WebOnlyManifestWithIncompatibleInstalledPtyRemainsFull()
+    {
+        var localReleaseDir = Path.Combine(_tempDir, "localrelease");
+        Directory.CreateDirectory(localReleaseDir);
+        File.WriteAllText(
+            Path.Combine(localReleaseDir, "version.json"),
+            """
+            {
+              "web": "10.10.0",
+              "pty": "10.9.3",
+              "protocol": 1,
+              "minCompatiblePty": "10.9.2",
+              "webOnly": true
+            }
+            """);
+
+        var installed = new VersionManifest
+        {
+            Web = "10.9.9-dev",
+            Pty = "10.9.1",
             Protocol = 1,
             MinCompatiblePty = "2.0.0",
             WebOnly = true
