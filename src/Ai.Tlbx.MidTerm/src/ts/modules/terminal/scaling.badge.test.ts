@@ -138,12 +138,16 @@ function createTerminalHarness(
     buffer: { active: { viewportY: 0, baseY: 0 } },
     options: {},
     focus: vi.fn(),
+    clearTextureAtlas: vi.fn(),
+    refresh: vi.fn(),
     resize: vi.fn((nextCols: number, nextRows: number) => {
       terminal.cols = nextCols;
       terminal.rows = nextRows;
     }),
     _core: {
       _renderService: {
+        clear: vi.fn(),
+        handleResize: vi.fn(),
         dimensions: {
           css: {
             cell: { width: 10, height: 20 },
@@ -352,6 +356,20 @@ describe('terminal scaling badge thresholds', () => {
 
     expect(harness.getOverlay()?.innerHTML).toContain('Newest browser');
     expect(harness.getOverlay()?.innerHTML).not.toContain('Old browser');
+  });
+
+  it('consumes a visual refresh that was requested before the terminal became visible', () => {
+    const harness = createTerminalHarness(81, 24);
+    applyTerminalScalingSync(harness.state as never);
+    harness.terminal.refresh.mockClear();
+    harness.state.pendingVisualRefresh = true;
+
+    // The presentation snapshot is unchanged. The deferred renderer refresh
+    // must still run once xterm is open and visible after initial selection.
+    applyTerminalScalingSync(harness.state as never);
+
+    expect(harness.state.pendingVisualRefresh).toBe(false);
+    expect(harness.terminal.refresh).toHaveBeenCalledWith(0, 23);
   });
 
   it('keeps one notice node while committing follower to owner presentation', () => {
