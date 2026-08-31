@@ -320,12 +320,7 @@ public sealed class StateWebSocketHandler
 
         async Task SendMainBrowserStatusAsync()
         {
-            var status = new MainBrowserStatusMessage
-            {
-                IsMain = _mainBrowserService.IsMain(browserId),
-                ShowButton = _mainBrowserService.ShouldShowButton(browserId),
-                Browsers = _mainBrowserService.GetBrowserStatuses()
-            };
+            var status = _mainBrowserService.GetStatus(browserId);
             await SendJsonAsync(status, AppJsonContext.Default.MainBrowserStatusMessage);
         }
 
@@ -436,6 +431,17 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
+        void OnBrowserClose(string? sessionId, string? previewName)
+        {
+            var instruction = new Models.Browser.BrowserUiInstruction
+            {
+                Command = "close",
+                SessionId = sessionId,
+                PreviewName = previewName
+            };
+            _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
+        }
+
         void OnMobileDevice(string? sessionId, string? previewName, string action, string? profile)
         {
             var instruction = new Models.Browser.BrowserUiInstruction
@@ -472,7 +478,8 @@ public sealed class StateWebSocketHandler
                 viewport: OnBrowserViewport,
                 open: OnBrowserOpen,
                 mobileDevice: OnMobileDevice,
-                agentWheel: OnAgentWheel);
+                agentWheel: OnAgentWheel,
+                close: OnBrowserClose);
         }
 
         try
@@ -803,6 +810,7 @@ public sealed class StateWebSocketHandler
             browserId,
             cmd.Payload?.Force == true,
             browserLabel,
+            cmd.Payload?.ExpectedEpoch,
             ct);
         await sendResponse(cmd.Id, true, result, null);
     }

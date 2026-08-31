@@ -94,8 +94,15 @@ type PendingAppServerControlServerMessage = Exclude<
 const reconnect = new ReconnectController();
 const subscriptions = new Map<string, AppServerControlSessionSubscription>();
 const pending = new Map<string, AppServerControlWsPending>();
+const pendingTimeouts = new Map<string, ReturnType<typeof globalThis.setTimeout>>();
+const APP_SERVER_CONTROL_CONNECT_TIMEOUT_MS = 4000;
+const APP_SERVER_CONTROL_HISTORY_REQUEST_TIMEOUT_MS = 5000;
+const APP_SERVER_CONTROL_COMMAND_REQUEST_TIMEOUT_MS = 30000;
 let ws: WebSocket | null = null;
 let connectPromise: Promise<void> | null = null;
+let connectReject: ((error: Error) => void) | null = null;
+let connectTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
+let connectionGeneration = 0;
 
 function createAppServerControlWsError(detail: string): Error {
   return new AppServerControlHttpError(400, detail);
@@ -155,11 +162,39 @@ function normalizeHistoryWindowResponse(
 }
 
 function rejectAllPending(error: Error): void {
-  for (const request of pending.values()) {
+  for (const [id, request] of pending) {
+    clearPendingTimeout(id);
     request.reject(error);
   }
 
   pending.clear();
+}
+
+function clearPendingTimeout(id: string): void {
+  const timeout = pendingTimeouts.get(id);
+  if (timeout === undefined) {
+    return;
+  }
+
+  globalThis.clearTimeout(timeout);
+  pendingTimeouts.delete(id);
+}
+
+function armPendingTimeout(id: string, timeoutMs: number): void {
+  clearPendingTimeout(id);
+  pendingTimeouts.set(
+    id,
+    globalThis.setTimeout(() => {
+      pendingTimeouts.delete(id);
+      const request = pending.get(id);
+      if (!request) {
+        return;
+      }
+
+      pending.delete(id);
+      request.reject(createAppServerControlWsError('AppServerControl request timed out.'));
+    }, timeoutMs),
+  );
 }
 
 function dispatchSubscriptionOpen(): void {
@@ -198,6 +233,7 @@ function resolvePendingRequest<TKind extends AppServerControlWsPending['kind']>(
     return null;
   }
 
+  clearPendingTimeout(id);
   pending.delete(id);
   return request as Extract<AppServerControlWsPending, { kind: TKind }>;
 }
@@ -261,6 +297,7 @@ function handleErrorMessage(
     return;
   }
 
+  clearPendingTimeout(message.id);
   pending.delete(message.id);
   request.reject(createAppServerControlWsError(message.message));
 }
@@ -319,6 +356,37 @@ function sendRaw(payload: unknown): void {
   }
 }
 
+function clearConnectTimeout(): void {
+  if (connectTimeout === null) {
+    return;
+  }
+
+  globalThis.clearTimeout(connectTimeout);
+  connectTimeout = null;
+}
+
+function rejectConnectAttempt(error: Error): void {
+  const reject = connectReject;
+  clearConnectTimeout();
+  connectPromise = null;
+  connectReject = null;
+  reject?.(error);
+}
+
+function closeSupersededSocket(socket: WebSocket | null): void {
+  if (!socket) {
+    return;
+  }
+
+  socket.onopen = null;
+  socket.onmessage = null;
+  socket.onerror = null;
+  socket.onclose = null;
+  if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) {
+    socket.close();
+  }
+}
+
 async function ensureConnected(): Promise<void> {
   if (ws?.readyState === WebSocket.OPEN) {
     return;
@@ -328,37 +396,76 @@ async function ensureConnected(): Promise<void> {
     return connectPromise;
   }
 
-  connectPromise = new Promise<void>((resolve) => {
+  reconnect.cancel();
+  const generation = ++connectionGeneration;
+  connectPromise = new Promise<void>((resolve, reject) => {
+    connectReject = reject;
     const socket = new WebSocket(createWsUrl('/ws/app-server-control'));
     ws = socket;
+    connectTimeout = globalThis.setTimeout(() => {
+      if (generation !== connectionGeneration || ws !== socket) {
+        return;
+      }
+
+      ws = null;
+      closeSupersededSocket(socket);
+      rejectConnectAttempt(
+        createAppServerControlWsError('AppServerControl WebSocket connection timed out.'),
+      );
+      if (subscriptions.size > 0) {
+        reconnect.schedule(() => {
+          void ensureConnected().catch(() => {});
+        });
+      }
+    }, APP_SERVER_CONTROL_CONNECT_TIMEOUT_MS);
 
     socket.onopen = () => {
+      if (generation !== connectionGeneration || ws !== socket) {
+        closeSupersededSocket(socket);
+        return;
+      }
+
       reconnect.reset();
+      clearConnectTimeout();
       connectPromise = null;
+      connectReject = null;
       dispatchSubscriptionOpen();
       resubscribeAll();
       resolve();
     };
 
     socket.onmessage = (event) => {
+      if (generation !== connectionGeneration || ws !== socket) {
+        return;
+      }
       handleServerMessage(JSON.parse(event.data as string) as AppServerControlServerMessage);
     };
 
     socket.onerror = (event) => {
+      if (generation !== connectionGeneration || ws !== socket) {
+        return;
+      }
       dispatchSubscriptionError(event);
     };
 
     socket.onclose = (event) => {
+      if (generation !== connectionGeneration || ws !== socket) {
+        return;
+      }
+
       const shouldReconnect = subscriptions.size > 0;
       ws = null;
-      connectPromise = null;
-      rejectAllPending(createAppServerControlWsError('AppServerControl WebSocket disconnected.'));
+      const disconnectError = createAppServerControlWsError(
+        'AppServerControl WebSocket disconnected.',
+      );
+      rejectConnectAttempt(disconnectError);
+      rejectAllPending(disconnectError);
       if (handleAuthenticatedWebSocketClose(event)) {
         return;
       }
       if (shouldReconnect) {
         reconnect.schedule(() => {
-          void ensureConnected();
+          void ensureConnected().catch(() => {});
         });
       }
     };
@@ -377,6 +484,7 @@ async function requestAck(
   const request = new Promise<void>((resolve, reject) => {
     pending.set(id, { resolve, reject, kind: 'ack' });
   });
+  armPendingTimeout(id, APP_SERVER_CONTROL_COMMAND_REQUEST_TIMEOUT_MS);
   sendRaw({ type: 'request', id, action, sessionId, ...extra });
   return request;
 }
@@ -393,6 +501,7 @@ async function requestHistoryWindow(
   const request = new Promise<AppServerControlHistorySnapshot>((resolve, reject) => {
     pending.set(id, { resolve, reject, kind: 'historyWindow' });
   });
+  armPendingTimeout(id, APP_SERVER_CONTROL_HISTORY_REQUEST_TIMEOUT_MS);
   sendRaw({
     type: 'request',
     id,
@@ -421,6 +530,7 @@ async function requestTurnStarted(
   const request = new Promise<AppServerControlTurnStartResponse>((resolve, reject) => {
     pending.set(id, { resolve, reject, kind: 'turnStarted' });
   });
+  armPendingTimeout(id, APP_SERVER_CONTROL_COMMAND_REQUEST_TIMEOUT_MS);
   sendRaw({
     type: 'request',
     id,
@@ -444,6 +554,7 @@ async function requestCommandAccepted(
   const request = new Promise<AppServerControlCommandAcceptedResponse>((resolve, reject) => {
     pending.set(id, { resolve, reject, kind: 'commandAccepted' });
   });
+  armPendingTimeout(id, APP_SERVER_CONTROL_COMMAND_REQUEST_TIMEOUT_MS);
   sendRaw({
     type: 'request',
     id,
@@ -460,6 +571,32 @@ export async function attachAppServerControlSession(sessionId: string): Promise<
 
 export async function detachAppServerControlSession(sessionId: string): Promise<void> {
   return requestAck('detach', sessionId);
+}
+
+/**
+ * Replace a browser-owned AppServerControl transport after a PWA resume.
+ * Browsers may retain OPEN for a socket whose network path was discarded while
+ * the page was frozen, so foreground recovery must not wait for TCP backoff.
+ */
+export async function recoverAppServerControlWebSocket(): Promise<void> {
+  const shouldReconnect = subscriptions.size > 0;
+  if (!shouldReconnect && pending.size === 0 && ws === null && connectPromise === null) {
+    return;
+  }
+
+  reconnect.cancel();
+  connectionGeneration += 1;
+  const supersededSocket = ws;
+  ws = null;
+  const recoveryError = createAppServerControlWsError(
+    'AppServerControl WebSocket replaced after browser resume.',
+  );
+  rejectConnectAttempt(recoveryError);
+  rejectAllPending(recoveryError);
+  closeSupersededSocket(supersededSocket);
+  if (shouldReconnect) {
+    await ensureConnected();
+  }
 }
 
 export async function getAppServerControlHistoryWindowWs(
@@ -613,21 +750,23 @@ export function updateAppServerControlHistorySocketWindow(
   }
 
   const shouldSendSubscribeImmediately = ws?.readyState === WebSocket.OPEN;
-  void ensureConnected().then(() => {
-    if (!shouldSendSubscribeImmediately) {
-      return;
-    }
+  void ensureConnected()
+    .then(() => {
+      if (!shouldSendSubscribeImmediately) {
+        return;
+      }
 
-    const current = subscriptions.get(sessionId);
-    if (!current) {
-      return;
-    }
+      const current = subscriptions.get(sessionId);
+      if (!current) {
+        return;
+      }
 
-    sendRaw({
-      type: 'subscribe',
-      sessionId,
-      afterSequence: current.afterSequence,
-      historyWindow: current.historyWindow,
-    });
-  });
+      sendRaw({
+        type: 'subscribe',
+        sessionId,
+        afterSequence: current.afterSequence,
+        historyWindow: current.historyWindow,
+      });
+    })
+    .catch(() => {});
 }

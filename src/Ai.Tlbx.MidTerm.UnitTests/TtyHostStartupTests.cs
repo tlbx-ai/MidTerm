@@ -33,10 +33,33 @@ public sealed class TtyHostStartupTests
     [Fact]
     public void InputReadinessDetector_RecognizesSplitBracketedPasteSequence()
     {
-        var detector = new TtyHost.TerminalInputReadinessDetector();
+        var detector = new TtyHost.TerminalInputReadinessDetector(ShellType.Pwsh);
 
-        Assert.False(detector.Observe("\u001b[?20"u8));
-        Assert.True(detector.Observe("04h"u8));
-        Assert.True(detector.Observe(ReadOnlySpan<byte>.Empty));
+        Assert.Null(detector.Observe("\u001b[?20"u8));
+        Assert.Equal(
+            TtyHost.TerminalInputReadiness.BracketedPaste,
+            detector.Observe("04h"u8));
+        Assert.Equal(
+            TtyHost.TerminalInputReadiness.BracketedPaste,
+            detector.Observe(ReadOnlySpan<byte>.Empty));
+    }
+
+    [Fact]
+    public void InputReadinessDetector_RecognizesDefaultPowerShellPromptWithoutBracketedPaste()
+    {
+        var detector = new TtyHost.TerminalInputReadinessDetector(ShellType.Pwsh);
+
+        Assert.Null(detector.Observe("PowerShell 7.6\r\nPS Q:\\repos\\"u8));
+        Assert.Equal(
+            TtyHost.TerminalInputReadiness.Prompt,
+            detector.Observe("Jpa> "u8));
+    }
+
+    [Fact]
+    public void InputReadinessDetector_DoesNotTreatPowerShellStartupTextAsPrompt()
+    {
+        var detector = new TtyHost.TerminalInputReadinessDetector(ShellType.Pwsh);
+
+        Assert.Null(detector.Observe("Loading profile >\r\nstill starting"u8));
     }
 }

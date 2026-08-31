@@ -52,6 +52,7 @@ import {
   getAppServerControlHistoryWindowWs,
   interruptAppServerControlTurnWs,
   openAppServerControlHistorySocket,
+  recoverAppServerControlWebSocket,
   setAppServerControlGoalWs,
   updateAppServerControlHistorySocketWindow,
   resolveAppServerControlUserInputWs,
@@ -61,6 +62,9 @@ import { getBrowserDeviceHeaderValue, getOrCreateTabId } from '../utils/cookies'
 
 const client = createClient<paths>({ baseUrl: '' });
 const API_RECONNECT_DELAYS_MS = [0, 150, 400, 900];
+const API_REACHABILITY_TIMEOUT_MS = 1000;
+const SESSION_LAUNCH_RETRY_DELAYS_MS = [0, 250, 750];
+const SESSION_LAUNCH_ATTEMPT_TIMEOUTS_MS = [9000, 1500, 1500];
 
 type ClientGetPath = PathsWithMethod<paths, 'get'>;
 type ClientPostPath = PathsWithMethod<paths, 'post'>;
@@ -212,20 +216,59 @@ async function throwApiProblem(response: Response, fallback: string): Promise<ne
   });
 }
 
+async function postJsonAttempt(path: string, body: unknown, timeoutMs?: number): Promise<Response> {
+  const timeoutController = timeoutMs === undefined ? null : new AbortController();
+  const timeout =
+    timeoutController === null
+      ? null
+      : globalThis.setTimeout(() => {
+          timeoutController.abort('request-timeout');
+        }, timeoutMs);
+  try {
+    return await fetch(path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-MidTerm-Tab-Id': getOrCreateTabId(),
+        'X-MidTerm-Device-Label': getBrowserDeviceHeaderValue(),
+      },
+      body: JSON.stringify(body ?? {}),
+      ...(timeoutController ? { signal: timeoutController.signal } : {}),
+    });
+  } finally {
+    if (timeout !== null) {
+      globalThis.clearTimeout(timeout);
+    }
+  }
+}
+
 async function postJsonWithProblem<TResponse>(
   path: string,
   body?: unknown,
   parse?: (text: string) => TResponse,
+  retryDelaysMs: readonly number[] = [0],
+  attemptTimeoutsMs?: readonly number[],
 ): Promise<{ data: TResponse | undefined; response: Response }> {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-MidTerm-Tab-Id': getOrCreateTabId(),
-      'X-MidTerm-Device-Label': getBrowserDeviceHeaderValue(),
-    },
-    body: JSON.stringify(body ?? {}),
-  });
+  let response: Response | null = null;
+  let lastError: unknown;
+  for (const [attemptIndex, delayMs] of retryDelaysMs.entries()) {
+    if (delayMs > 0) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
+    }
+
+    try {
+      response = await postJsonAttempt(path, body, attemptTimeoutsMs?.[attemptIndex]);
+      break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (response === null) {
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('The tlbx session launch request did not receive a response.');
+  }
 
   if (!response.ok) {
     await throwApiProblem(response, 'Request failed.');
@@ -239,8 +282,8 @@ async function postJsonWithProblem<TResponse>(
 }
 
 /**
- * Wait for the same-origin API before issuing a non-idempotent launch request.
- * The health probes are safe to retry; the actual session POST still runs once.
+ * Wait for the same-origin API before issuing an idempotent launch request.
+ * Health probes are safe to retry, and every POST retry carries the same launch ID.
  */
 export async function waitForApiReachability(): Promise<void> {
   for (const delayMs of API_RECONNECT_DELAYS_MS) {
@@ -248,11 +291,20 @@ export async function waitForApiReachability(): Promise<void> {
       await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
     }
 
+    const timeoutController = new AbortController();
+    const timeout = globalThis.setTimeout(() => {
+      timeoutController.abort('api-reachability-timeout');
+    }, API_REACHABILITY_TIMEOUT_MS);
     try {
-      await fetch('/api/version', { cache: 'no-store' });
+      await fetch('/api/version', {
+        cache: 'no-store',
+        signal: timeoutController.signal,
+      });
       return;
     } catch {
       // A later health probe may succeed after a brief service or network interruption.
+    } finally {
+      globalThis.clearTimeout(timeout);
     }
   }
 
@@ -357,10 +409,16 @@ export async function getSessions(): ClientGetResult<'/api/sessions'> {
 export async function createSession(
   request?: CreateSessionRequest,
 ): Promise<{ data: SessionInfoDto | undefined; response: Response }> {
+  const launchRequest = {
+    ...(request ?? { cols: 120, rows: 30 }),
+    launchRequestId: request?.launchRequestId?.trim() || crypto.randomUUID(),
+  } satisfies CreateSessionRequest;
   return postJsonWithProblem(
     '/api/sessions',
-    request,
+    launchRequest,
     (text) => JSON.parse(text) as SessionInfoDto,
+    SESSION_LAUNCH_RETRY_DELAYS_MS,
+    SESSION_LAUNCH_ATTEMPT_TIMEOUTS_MS,
   );
 }
 
@@ -631,6 +689,10 @@ export async function getAppServerControlHistoryWindow(
   viewportWidth?: number,
 ): Promise<AppServerControlHistorySnapshot> {
   return getAppServerControlHistoryWindowWs(id, startIndex, count, windowRevision, viewportWidth);
+}
+
+export async function recoverAppServerControlConnection(): Promise<void> {
+  await recoverAppServerControlWebSocket();
 }
 
 export async function interruptAppServerControlTurn(

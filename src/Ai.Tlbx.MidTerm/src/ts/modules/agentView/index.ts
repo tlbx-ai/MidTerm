@@ -107,6 +107,7 @@ import {
   type AppServerControlHistoryDelta,
   getAppServerControlHistoryWindow,
   openAppServerControlHistoryStream,
+  recoverAppServerControlConnection,
   updateAppServerControlHistoryStreamWindow,
   type AppServerControlHistorySnapshot,
 } from '../../api/client';
@@ -115,6 +116,7 @@ import { $activeSessionId } from '../../stores';
 
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionAppServerControlViewState>();
+const activationFlights = new Map<string, Promise<void>>();
 
 interface AgentHistoryWheelMetrics {
   scrollTop: number;
@@ -270,11 +272,10 @@ const HISTORY_NAVIGATOR_HYDRATE_IDLE_MS = 120;
 let appServerControlTurnLifecycleBound = false;
 let appServerControlActiveSessionBound = false;
 let appServerControlSelectionGuardBound = false;
-let appServerControlForegroundRecoveryBound = false;
 let appServerControlVisualViewportRecoveryBound = false;
+let appServerControlVisualViewportRecoveryHandle: number | null = null;
 let appServerControlSettingsRenderBound = false;
 let appServerControlExistingPanelRecoveryBound = false;
-let appServerControlForegroundRecoveryPending = false;
 
 function createHistoryWindowRevision(sessionId: string): string {
   return `${sessionId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
@@ -432,7 +433,6 @@ export function initAgentView(): void {
   bindActiveAppServerControlSessionRendering();
   bindAppServerControlSelectionGuard();
   bindAppServerControlSettingsRendering();
-  bindAppServerControlForegroundRecovery();
   bindAppServerControlVisualViewportRecovery();
 
   const activateAgentPanel = (sessionId: string, panel: HTMLDivElement): void => {
@@ -558,6 +558,7 @@ export function destroyAgentView(sessionId: string): void {
   }
 
   viewStates.delete(sessionId);
+  activationFlights.delete(sessionId);
   resetAppServerControlHistoryTrace(sessionId);
   clearAppServerControlTurnSessionState(sessionId);
   removeAppServerControlQuickSettingsSessionState(sessionId);
@@ -587,15 +588,18 @@ export function resetAgentViewRuntimeForTests(): void {
   }
 
   viewStates.clear();
+  activationFlights.clear();
   resetAppServerControlHistoryTrace();
   appServerControlTurnLifecycleBound = false;
   appServerControlActiveSessionBound = false;
   appServerControlSelectionGuardBound = false;
-  appServerControlForegroundRecoveryBound = false;
   appServerControlVisualViewportRecoveryBound = false;
+  if (appServerControlVisualViewportRecoveryHandle !== null) {
+    window.cancelAnimationFrame(appServerControlVisualViewportRecoveryHandle);
+    appServerControlVisualViewportRecoveryHandle = null;
+  }
   appServerControlSettingsRenderBound = false;
   appServerControlExistingPanelRecoveryBound = false;
-  appServerControlForegroundRecoveryPending = false;
 }
 
 /**
@@ -654,6 +658,21 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
 }
 
 async function activateAgentView(sessionId: string): Promise<void> {
+  const existing = activationFlights.get(sessionId);
+  if (existing) {
+    return existing;
+  }
+
+  const flight = activateAgentViewCore(sessionId).finally(() => {
+    if (activationFlights.get(sessionId) === flight) {
+      activationFlights.delete(sessionId);
+    }
+  });
+  activationFlights.set(sessionId, flight);
+  return flight;
+}
+
+async function activateAgentViewCore(sessionId: string): Promise<void> {
   const state = viewStates.get(sessionId);
   if (!state) {
     return;
@@ -1764,60 +1783,24 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
   }
 }
 
-function bindAppServerControlForegroundRecovery(): void {
-  if (
-    appServerControlForegroundRecoveryBound ||
-    typeof document === 'undefined' ||
-    typeof document.addEventListener !== 'function' ||
-    typeof window === 'undefined' ||
-    typeof window.addEventListener !== 'function'
-  ) {
-    return;
-  }
-
-  const recoverForegroundAppServerControlState = () => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-      return;
-    }
-
-    if (!appServerControlForegroundRecoveryPending) {
-      return;
-    }
-
-    appServerControlForegroundRecoveryPending = false;
-    const sessionId = $activeSessionId.get();
-    if (!sessionId || getActiveTab(sessionId) !== 'agent') {
-      return;
-    }
-
-    const state = viewStates.get(sessionId);
-    if (!state) {
-      return;
-    }
-
+export function recoverAppServerControlAfterBrowserResume(): void {
+  const sessionId = $activeSessionId.get();
+  const state = sessionId && getActiveTab(sessionId) === 'agent' ? viewStates.get(sessionId) : null;
+  if (state && sessionId) {
+    state.streamConnected = false;
     prepareAppServerControlForForeground(state);
     renderCurrentAgentView(sessionId, { immediate: true });
-    if (state.snapshot) {
-      void refreshAppServerControlSnapshot(sessionId, {
-        latestWindow: state.historyAutoScrollPinned,
-      });
-    }
-  };
+  }
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      appServerControlForegroundRecoveryPending = true;
+  void recoverAppServerControlConnection().catch((error: unknown) => {
+    log.warn(() => `Failed to recover AppServerControl after browser resume: ${String(error)}`);
+    if (!state || !sessionId || viewStates.get(sessionId) !== state) {
       return;
     }
 
-    recoverForegroundAppServerControlState();
+    state.streamConnected = false;
+    renderCurrentAgentView(sessionId);
   });
-  window.addEventListener('blur', () => {
-    appServerControlForegroundRecoveryPending = true;
-  });
-  window.addEventListener('focus', recoverForegroundAppServerControlState);
-  window.addEventListener('pageshow', recoverForegroundAppServerControlState);
-  appServerControlForegroundRecoveryBound = true;
 }
 
 function bindAppServerControlVisualViewportRecovery(): void {
@@ -1830,6 +1813,17 @@ function bindAppServerControlVisualViewportRecovery(): void {
   }
 
   const recoverActiveAppServerControlViewport = () => {
+    if (appServerControlVisualViewportRecoveryHandle !== null) {
+      return;
+    }
+
+    appServerControlVisualViewportRecoveryHandle = window.requestAnimationFrame(() => {
+      appServerControlVisualViewportRecoveryHandle = null;
+      applyActiveAppServerControlViewportRecovery();
+    });
+  };
+
+  const applyActiveAppServerControlViewportRecovery = () => {
     const sessionId = $activeSessionId.get();
     if (!sessionId || getActiveTab(sessionId) !== 'agent') {
       return;
@@ -2164,6 +2158,12 @@ async function refreshAppServerControlSnapshot(
     log.warn(
       () => `Failed to refresh AppServerControl history window for ${sessionId}: ${String(error)}`,
     );
+    if (state.snapshot) {
+      state.streamConnected = false;
+      renderCurrentAgentView(sessionId);
+      return;
+    }
+
     state.activationError = describeError(error);
     setActivationState(
       state,

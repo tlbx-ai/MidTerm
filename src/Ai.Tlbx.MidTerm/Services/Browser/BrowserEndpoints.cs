@@ -26,7 +26,13 @@ public static class BrowserEndpoints
 
         if (uiBridge is not null)
         {
-            MapUiEndpoints(app, commandService, uiBridge, webPreviewService);
+            MapUiEndpoints(
+                app,
+                commandService,
+                uiBridge,
+                webPreviewService,
+                previewRegistry,
+                previewOwnerService);
         }
     }
 
@@ -109,7 +115,9 @@ public static class BrowserEndpoints
         WebApplication app,
         BrowserCommandService commandService,
         BrowserUiBridge uiBridge,
-        WebPreviewService webPreviewService)
+        WebPreviewService webPreviewService,
+        BrowserPreviewRegistry previewRegistry,
+        BrowserPreviewOwnerService previewOwnerService)
     {
         app.MapPost("/api/browser/agent-wheel", async (
             Models.Browser.AgentHistoryWheelRequest request,
@@ -215,7 +223,7 @@ public static class BrowserEndpoints
                 sessionId,
                 previewName,
                 requireClientConnectedAfterUtc: DateTimeOffset.UtcNow,
-                requireVisibleClient: true,
+                requireVisibleClient: activateSession,
                 connectedUiClientCountProvider: () => uiBridge.ConnectedBrowserCount,
                 cancellationToken: cancellationToken);
 
@@ -225,10 +233,36 @@ public static class BrowserEndpoints
                 previewName,
                 connectedUiClientCount: uiBridge.ConnectedBrowserCount);
 
-            var ready = status.Controllable && status.DefaultClient?.IsVisible == true;
+            var ready = status.Controllable
+                && (!activateSession || status.DefaultClient?.IsVisible == true);
             return ready
                 ? Results.Text(statusText)
                 : Results.Text(statusText, statusCode: 409);
+        });
+
+        app.MapPost("/api/browser/close", (Models.WebPreview.WebPreviewSessionRequest request) =>
+        {
+            var sessionId = NormalizeOptional(request.SessionId);
+            var previewName = WebPreviewService.NormalizePreviewName(request.PreviewName);
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                return Results.BadRequest("sessionId required");
+            }
+
+            if (string.Equals(previewName, WebPreviewService.DefaultPreviewName, StringComparison.OrdinalIgnoreCase))
+            {
+                webPreviewService.ClearTarget(sessionId, previewName);
+            }
+            else
+            {
+                // Close is deliberately idempotent so automation cleanup can safely run from finally.
+                webPreviewService.DeletePreviewSession(sessionId, previewName);
+                previewOwnerService.Release(sessionId, previewName);
+            }
+
+            previewRegistry.Remove(sessionId, previewName);
+            uiBridge.RequestClose(sessionId, previewName);
+            return Results.Ok();
         });
     }
 

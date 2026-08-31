@@ -3,14 +3,24 @@ import { getTerminalSizeControl, hasTerminalSizeControl } from '../../stores';
 import { requestTerminalSizeControl } from '../comms';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
+import type { TerminalPresentationActionState } from './terminalPresentation';
 
 const log = createLogger('terminalSizeControl');
 type FitOwnedTerminal = (sessionId: string, container: HTMLElement) => void;
+type SetActionState = (actionState: TerminalPresentationActionState) => void;
+
+export interface ScalingOverlayPresentation {
+  ownsSize: boolean;
+  hasOwner: boolean;
+  ownerLabel: string | null;
+  label: string;
+  actionState: TerminalPresentationActionState;
+}
 
 export function createScalingOverlay(
   container: HTMLElement,
-  ownsSize: boolean,
   fitOwnedTerminal: FitOwnedTerminal,
+  setActionState: SetActionState,
 ): HTMLButtonElement {
   const overlay = document.createElement('button');
   overlay.className = 'scaled-overlay';
@@ -22,7 +32,7 @@ export function createScalingOverlay(
     // The ensuing pointer-generated click is ignored below to avoid a second claim.
     event.preventDefault();
     event.stopPropagation();
-    void handleScalingOverlayClick(overlay, container, fitOwnedTerminal);
+    void handleScalingOverlayClick(container, fitOwnedTerminal, setActionState);
   });
   overlay.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -32,17 +42,16 @@ export function createScalingOverlay(
     }
 
     // Keyboard activation and HTMLElement.click() do not emit pointerdown.
-    void handleScalingOverlayClick(overlay, container, fitOwnedTerminal);
+    void handleScalingOverlayClick(container, fitOwnedTerminal, setActionState);
   });
   container.appendChild(overlay);
-  positionScalingOverlay(overlay, ownsSize, overlay.innerText);
   return overlay;
 }
 
 async function handleScalingOverlayClick(
-  overlay: HTMLButtonElement,
   container: HTMLElement,
   fitOwnedTerminal: FitOwnedTerminal,
+  setActionState: SetActionState,
 ): Promise<void> {
   const sessionId = getTerminalSessionId(container);
   if (!sessionId) return;
@@ -51,16 +60,15 @@ async function handleScalingOverlayClick(
     return;
   }
 
-  overlay.classList.add('claiming');
-  overlay.disabled = true;
+  setActionState('claiming');
   try {
-    const result = await requestTerminalSizeControl(sessionId, true);
+    const expectedEpoch = getTerminalSizeControl(sessionId)?.epoch ?? 0;
+    const result = await requestTerminalSizeControl(sessionId, true, expectedEpoch);
     if (result.status.isOwner) fitOwnedTerminal(sessionId, container);
   } catch (error: unknown) {
     log.warn(() => `Failed to claim terminal size control: ${String(error)}`);
   } finally {
-    overlay.classList.remove('claiming');
-    overlay.disabled = false;
+    setActionState('idle');
   }
 }
 
@@ -71,27 +79,35 @@ function getTerminalSessionId(container: HTMLElement): string | null {
 
 export function positionScalingOverlay(
   overlay: HTMLButtonElement,
-  ownsSize: boolean,
-  label: string,
+  presentation: ScalingOverlayPresentation,
 ): void {
+  const { ownsSize, hasOwner, ownerLabel, label, actionState } = presentation;
   const title = ownsSize ? t('terminal.resizeToThisViewport') : t('terminal.continueHere');
-  const sessionId = overlay.parentElement ? getTerminalSessionId(overlay.parentElement) : null;
-  const ownership = sessionId ? getTerminalSizeControl(sessionId) : undefined;
-  const followerTitle = ownership?.hasOwner
+  const followerTitle = hasOwner
     ? t('terminal.sizeControlledElsewhere')
     : t('terminal.sizeControlUnassigned');
-  const ownerTransferHint = ownership?.ownerLabel
-    ? `${t('terminal.takeControlFrom')} ${escapeOwnerLabel(ownership.ownerLabel)}`
+  const ownerTransferHint = ownerLabel
+    ? `${t('terminal.takeControlFrom')} ${escapeOwnerLabel(ownerLabel)}`
     : t('terminal.continueHereHint');
   overlay.title = title;
   overlay.setAttribute('aria-label', title);
+  overlay.setAttribute('aria-hidden', ownsSize ? 'true' : 'false');
+  overlay.setAttribute('aria-busy', actionState === 'claiming' ? 'true' : 'false');
+  overlay.disabled = ownsSize || actionState === 'claiming';
+  overlay.classList.remove('claiming');
+  overlay.classList.remove('presentation-visible');
+  overlay.classList.add(ownsSize ? 'presentation-hidden' : 'presentation-visible');
+  if (!ownsSize) overlay.classList.remove('presentation-hidden');
+  if (actionState === 'claiming') overlay.classList.add('claiming');
   overlay.innerHTML = ownsSize
     ? `${icon('resize')} <span>${label}</span>`
-    : `${icon('resize')}<span class="scaled-overlay-copy"><strong>${followerTitle}</strong><span>${label}</span></span><span class="scaled-overlay-action"><strong>${t('terminal.continueHere')}</strong><span>${ownerTransferHint}</span></span>`;
+    : `${icon('resize')}<span class="scaled-overlay-copy"><strong>${followerTitle}</strong><span>${label}</span></span><span class="scaled-overlay-action"><strong>${actionState === 'claiming' ? t('terminal.switchingHere') : t('terminal.continueHere')}</strong><span>${ownerTransferHint}</span></span>`;
 
   const connectionBadgeVisible = isConnectionBadgeVisible();
-  overlay.style.bottom = connectionBadgeVisible ? '36px' : '8px';
-  placeInAvailableGap(overlay, overlay.parentElement, connectionBadgeVisible);
+  overlay.classList.remove('connection-status-offset');
+  if (connectionBadgeVisible) {
+    overlay.classList.add('connection-status-offset');
+  }
 }
 
 function isConnectionBadgeVisible(): boolean {
@@ -108,34 +124,4 @@ function escapeOwnerLabel(label: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-}
-
-function placeInAvailableGap(
-  overlay: HTMLButtonElement,
-  container: HTMLElement | null,
-  connectionBadgeVisible: boolean,
-): void {
-  overlay.classList.remove('terminal-gap-right', 'terminal-gap-bottom');
-  overlay.style.top = '';
-  if (!container) return;
-
-  const rightGap = readGap(container, '--terminal-gap-right-width');
-  const bottomGap = readGap(container, '--terminal-gap-bottom-height');
-  const requiredWidth = (overlay.offsetWidth || 300) + 16;
-  const requiredHeight = (overlay.offsetHeight || 54) + 16 + (connectionBadgeVisible ? 28 : 0);
-
-  if (rightGap >= requiredWidth) {
-    overlay.classList.add('terminal-gap-right');
-    overlay.style.top = '8px';
-    overlay.style.bottom = '';
-  } else if (bottomGap >= requiredHeight) {
-    overlay.classList.add('terminal-gap-bottom');
-  }
-}
-
-function readGap(container: HTMLElement, name: string): number {
-  const style = container.style as CSSStyleDeclaration & Record<string, string>;
-  const value =
-    typeof style.getPropertyValue === 'function' ? style.getPropertyValue(name) : style[name];
-  return Number.parseFloat(value || '0') || 0;
 }

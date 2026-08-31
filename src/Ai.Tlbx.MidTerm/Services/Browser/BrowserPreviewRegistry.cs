@@ -70,6 +70,35 @@ public sealed class BrowserPreviewRegistry
         return true;
     }
 
+    public int Remove(string sessionId, string? previewName = null)
+    {
+        var normalizedPreviewName = string.IsNullOrWhiteSpace(previewName)
+            ? WebPreview.WebPreviewService.DefaultPreviewName
+            : previewName;
+        return RemoveMatching(entry =>
+            string.Equals(entry.SessionId, sessionId, StringComparison.Ordinal)
+            && string.Equals(entry.PreviewName, normalizedPreviewName, StringComparison.Ordinal));
+    }
+
+    public int ClearSession(string sessionId)
+    {
+        return RemoveMatching(entry => string.Equals(entry.SessionId, sessionId, StringComparison.Ordinal));
+    }
+
+    private int RemoveMatching(Func<RegisteredPreview, bool> predicate)
+    {
+        var removed = 0;
+        foreach (var entry in _previews)
+        {
+            if (predicate(entry.Value) && _previews.TryRemove(entry.Key, out _))
+            {
+                removed++;
+            }
+        }
+
+        return removed;
+    }
+
     private void CleanupExpired()
     {
         var now = DateTimeOffset.UtcNow;

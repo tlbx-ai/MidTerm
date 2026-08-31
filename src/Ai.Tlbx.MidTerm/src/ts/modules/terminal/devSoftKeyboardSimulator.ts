@@ -222,11 +222,7 @@ export function showDevSoftKeyboard(height = calculateKeyboardHeight()): void {
   document.documentElement.style.maxHeight = `${viewportHeight}px`;
   document.body.style.height = `${viewportHeight}px`;
   document.body.style.maxHeight = `${viewportHeight}px`;
-  document.body.classList.add(
-    'keyboard-visible',
-    'mobile-terminal-vertical-stable',
-    'dev-soft-keyboard-active',
-  );
+  document.body.classList.add('keyboard-visible', 'dev-soft-keyboard-active');
 
   if (appEl) {
     appEl.style.top = '0px';
@@ -242,7 +238,7 @@ export function showDevSoftKeyboard(height = calculateKeyboardHeight()): void {
     button.setAttribute('aria-pressed', 'true');
   }
 
-  setMobileVerticalStability(true);
+  setMobileVerticalStability(false, { preserveScrollPosition: true });
   dispatchViewportSimulationChange();
 }
 
@@ -287,7 +283,7 @@ export function hideDevSoftKeyboard(): void {
     button.setAttribute('aria-pressed', 'false');
   }
 
-  setMobileVerticalStability(false);
+  setMobileVerticalStability(false, { preserveScrollPosition: true });
   dispatchViewportSimulationChange();
 }
 

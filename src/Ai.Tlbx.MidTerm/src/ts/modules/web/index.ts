@@ -18,6 +18,7 @@ import {
 import {
   destroyPreviewFrame,
   initWebPanel,
+  loadBackgroundPreview,
   loadPreview,
   renderPreviewTabs,
   restoreLastUrl,
@@ -36,6 +37,7 @@ import {
   DEFAULT_PREVIEW_NAME,
   getSessionPreview,
   getSessionSelectedPreviewName,
+  listSessionPreviews,
   removeSessionPreview,
   removeSessionState,
   setSessionMode,
@@ -73,6 +75,7 @@ export function initWebPreview(): void {
     for (const oldId of knownSessionIds) {
       if (!ids.has(oldId)) {
         closeDetachedIfOwnedBy(oldId);
+        destroyMissingPreviewFrames(oldId, []);
         removeSessionState(oldId);
       }
     }
@@ -102,6 +105,10 @@ export async function syncActiveWebPreview(): Promise<void> {
     return;
   }
 
+  destroyMissingPreviewFrames(
+    sessionId,
+    previews.map((preview) => preview.previewName),
+  );
   syncSessionPreviews(sessionId, previews);
   renderPreviewTabs();
 
@@ -136,6 +143,23 @@ export async function syncActiveWebPreview(): Promise<void> {
   await loadPreview();
 }
 
+/** Attach a background session preview without changing the active session or visible dock. */
+export async function syncBackgroundWebPreview(
+  sessionId: string,
+  previewName: string,
+): Promise<void> {
+  if ($activeSessionId.get() === sessionId) {
+    return;
+  }
+
+  const preview = getSessionPreview(sessionId, previewName);
+  if (!preview?.url) {
+    return;
+  }
+
+  await loadBackgroundPreview(sessionId, previewName, preview.url, preview.targetRevision);
+}
+
 /** Select a named preview for the active session and show it in the dock. */
 export async function selectActivePreview(previewName: string): Promise<void> {
   const sessionId = $activeSessionId.get();
@@ -162,12 +186,8 @@ export async function closeActivePreview(previewName: string): Promise<void> {
 
   const normalized = previewName.trim() || DEFAULT_PREVIEW_NAME;
   if (normalized === DEFAULT_PREVIEW_NAME) {
-    closeDetachedPreview(sessionId, normalized);
-    destroyPreviewFrame(sessionId, normalized);
     await clearWebPreviewTarget(sessionId, normalized);
-    removeSessionPreview(sessionId, normalized);
-    renderPreviewTabs();
-    await syncActiveWebPreview();
+    await removePreviewFromUi(sessionId, normalized);
     return;
   }
 
@@ -176,11 +196,40 @@ export async function closeActivePreview(previewName: string): Promise<void> {
     return;
   }
 
-  closeDetachedPreview(sessionId, normalized);
-  destroyPreviewFrame(sessionId, normalized);
-  removeSessionPreview(sessionId, normalized);
+  await removePreviewFromUi(sessionId, normalized);
+}
+
+export async function closePreviewFromServer(
+  sessionId: string,
+  previewName?: string | null,
+): Promise<void> {
+  const normalized = previewName?.trim() || DEFAULT_PREVIEW_NAME;
+  await removePreviewFromUi(sessionId, normalized);
+}
+
+async function removePreviewFromUi(sessionId: string, previewName: string): Promise<void> {
+  closeDetachedPreview(sessionId, previewName);
+  destroyPreviewFrame(sessionId, previewName);
+  removeSessionPreview(sessionId, previewName);
+
+  if ($activeSessionId.get() !== sessionId) {
+    return;
+  }
+
   renderPreviewTabs();
   await syncActiveWebPreview();
+}
+
+function destroyMissingPreviewFrames(
+  sessionId: string,
+  retainedPreviewNames: readonly string[],
+): void {
+  const retained = new Set(retainedPreviewNames);
+  for (const preview of listSessionPreviews(sessionId)) {
+    if (!retained.has(preview.previewName)) {
+      destroyPreviewFrame(sessionId, preview.previewName);
+    }
+  }
 }
 
 export { closeWebPreviewDock } from './webDock';

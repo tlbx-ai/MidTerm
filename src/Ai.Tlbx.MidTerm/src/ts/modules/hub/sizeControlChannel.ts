@@ -246,8 +246,12 @@ async function sendCommand(
 export function requestHubTerminalSizeControl(
   sessionId: string,
   force: boolean,
+  expectedEpoch?: number,
 ): Promise<TerminalSizeControlCommandResult> {
-  return sendCommand(sessionId, 'terminal.requestSizeControl', { force });
+  return sendCommand(sessionId, 'terminal.requestSizeControl', {
+    force,
+    ...(expectedEpoch === undefined ? {} : { expectedEpoch }),
+  });
 }
 
 export function resizeHubTerminalWithControl(

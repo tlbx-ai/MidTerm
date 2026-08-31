@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   ),
   upsertSessionPreview: vi.fn(),
   syncActiveWebPreview: vi.fn().mockResolvedValue(undefined),
+  syncBackgroundWebPreview: vi.fn().mockResolvedValue(undefined),
   isSessionInLayout: vi.fn(() => false),
   restoreLayoutFromStorage: vi.fn(),
   applyServerLayoutState: vi.fn(),
@@ -118,6 +119,7 @@ vi.mock('../web/webSessionState', () => ({
 
 vi.mock('../web', () => ({
   syncActiveWebPreview: mocks.syncActiveWebPreview,
+  syncBackgroundWebPreview: mocks.syncBackgroundWebPreview,
 }));
 
 vi.mock('../web/webContext', () => ({
@@ -221,6 +223,7 @@ async function loadHarness() {
   state.sessionTerminals.clear();
   state.hiddenSessionIds.clear();
   state.newlyCreatedSessions.clear();
+  state.pendingSessions.clear();
 
   setSelectSessionCallback(mocks.selectSession);
   connectStateWebSocket();
@@ -285,6 +288,7 @@ describe('stateChannel browser-ui handling', () => {
     expect(stores.$activeSessionId.get()).toBe('user1234');
     expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
     expect(mocks.syncActiveWebPreview).not.toHaveBeenCalled();
+    expect(mocks.syncBackgroundWebPreview).toHaveBeenCalledWith('agent5678', 'default');
     expect(mocks.setWebPreviewTarget).toHaveBeenCalledWith(
       'agent5678',
       'default',
@@ -536,6 +540,32 @@ describe('stateChannel browser-ui handling', () => {
     ]);
   });
 
+  it('ignores an older main-browser projection after a newer revision', async () => {
+    const { stores, ws } = await loadHarness();
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'main-browser-status',
+        revision: 12,
+        isMain: true,
+        showButton: true,
+        browsers: [],
+      }),
+    } as MessageEvent<string>);
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'main-browser-status',
+        revision: 11,
+        isMain: false,
+        showButton: false,
+        browsers: [],
+      }),
+    } as MessageEvent<string>);
+
+    expect(stores.$isMainBrowser.get()).toBe(true);
+    expect(stores.$showMainBrowserButton.get()).toBe(true);
+  });
+
   it('activates the target session when browser open explicitly requests it', async () => {
     const { stores, ws } = await loadHarness();
     mocks.setWebPreviewTarget.mockResolvedValue({
@@ -729,6 +759,36 @@ describe('stateChannel browser-ui handling', () => {
     handleStateUpdate([]);
 
     expect(hydrated).toHaveBeenCalledOnce();
+  });
+
+  it('preserves an optimistic session while unrelated server state arrives', async () => {
+    const { stores } = await loadHarness();
+    const pending = {
+      id: 'pending-launch',
+      cols: 120,
+      rows: 30,
+      shellType: 'Loading...',
+      currentDirectory: 'Q:/repos/Jpa',
+      appServerControlOnly: false,
+    } as any;
+    stores.setSession(pending);
+    state.pendingSessions.add(pending.id);
+
+    handleStateUpdate([
+      {
+        id: 'existing-session',
+        cols: 120,
+        rows: 30,
+        shellType: 'Pwsh',
+        currentDirectory: 'Q:/repos/tlbx',
+        appServerControlOnly: false,
+      } as any,
+    ]);
+
+    expect(stores.getSession('pending-launch')).toEqual(
+      expect.objectContaining({ currentDirectory: 'Q:/repos/Jpa' }),
+    );
+    expect(stores.getSession('existing-session')).toBeDefined();
   });
 
   it('applies server layout snapshots from state updates', async () => {

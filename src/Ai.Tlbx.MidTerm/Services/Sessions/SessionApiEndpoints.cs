@@ -76,6 +76,8 @@ public static partial class SessionApiEndpoints
         InputHistoryService inputHistory,
         TerminalSizeControlService terminalSizeControlService)
     {
+        var sessionLaunchCoordinator = app.Services.GetRequiredService<SessionLaunchCoordinator>();
+
         void RecordPromptHistory(string sessionId, AppServerControlTurnRequest turn, string source, string? surface = null)
         {
             var session = sessionManager.GetSession(sessionId);
@@ -247,18 +249,67 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest($"launchCommand must not exceed {maxLaunchCommandLength} characters.");
             }
 
+            var launchRequestId = request?.LaunchRequestId?.Trim();
+            if (!IsValidLaunchRequestId(launchRequestId))
+            {
+                return Results.BadRequest("launchRequestId must contain 1-128 ASCII letters, digits, dots, underscores, or hyphens.");
+            }
+            launchRequestId ??= Guid.NewGuid().ToString("N");
+
             ShellType? shellType = null;
             if (!string.IsNullOrEmpty(request?.Shell) && Enum.TryParse<ShellType>(request.Shell, true, out var parsed))
             {
                 shellType = parsed;
             }
 
-            var creation = await sessionManager.CreateSessionDetailedAsync(
-                shellType?.ToString(),
+            var browserId = BrowserIdentity.TryBuildFromBrowserRequest(httpRequest);
+            var browserLabel = BrowserIdentity.GetDeviceLabel(httpRequest);
+            var requestFingerprint = BuildSessionLaunchFingerprint(
                 cols,
                 rows,
+                shellType?.ToString(),
                 request?.WorkingDirectory,
-                string.IsNullOrWhiteSpace(launchCommand) ? null : launchCommand,
+                request?.SpaceId,
+                request?.WorkspacePath,
+                request?.Surface,
+                launchCommand);
+            var creation = await sessionLaunchCoordinator.RunAsync(
+                launchRequestId,
+                requestFingerprint,
+                async launchCancellation =>
+                {
+                    var result = await sessionManager.CreateSessionDetailedAsync(
+                        shellType?.ToString(),
+                        cols,
+                        rows,
+                        request?.WorkingDirectory,
+                        string.IsNullOrWhiteSpace(launchCommand) ? null : launchCommand,
+                        launchCancellation).ConfigureAwait(false);
+                    if (!result.Succeeded)
+                    {
+                        return result;
+                    }
+
+                    var launchedSession = result.Session!;
+                    ApplySessionSpaceMetadata(
+                        sessionManager,
+                        launchedSession.Id,
+                        request?.SpaceId,
+                        request?.WorkspacePath,
+                        request?.Surface,
+                        string.IsNullOrWhiteSpace(request?.SpaceId)
+                            ? SessionLaunchOrigins.AdHoc
+                            : SessionLaunchOrigins.Space);
+                    if (browserId is not null)
+                    {
+                        terminalSizeControlService.AssignNewSession(
+                            launchedSession.Id,
+                            browserId,
+                            browserLabel);
+                    }
+
+                    return result;
+                },
                 ct);
 
             if (!creation.Succeeded)
@@ -267,23 +318,6 @@ public static partial class SessionApiEndpoints
             }
 
             var sessionInfo = creation.Session!;
-            ApplySessionSpaceMetadata(
-                sessionManager,
-                sessionInfo.Id,
-                request?.SpaceId,
-                request?.WorkspacePath,
-                request?.Surface,
-                string.IsNullOrWhiteSpace(request?.SpaceId)
-                    ? SessionLaunchOrigins.AdHoc
-                    : SessionLaunchOrigins.Space);
-            var browserId = BrowserIdentity.TryBuildFromBrowserRequest(httpRequest);
-            if (browserId is not null)
-            {
-                terminalSizeControlService.AssignNewSession(
-                    sessionInfo.Id,
-                    browserId,
-                    BrowserIdentity.GetDeviceLabel(httpRequest));
-            }
             return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
         });
 
@@ -1829,7 +1863,7 @@ public static partial class SessionApiEndpoints
         SessionLaunchFailure? failure,
         string title = "Session launch failed")
     {
-        var statusCode = failure?.Stage == "limits"
+        var statusCode = failure?.Stage is "limits" or "idempotency"
             ? StatusCodes.Status409Conflict
             : StatusCodes.Status500InternalServerError;
         var problem = new ProblemDetails
@@ -1857,5 +1891,42 @@ public static partial class SessionApiEndpoints
         }
 
         return Results.Problem(problem);
+    }
+
+    private static bool IsValidLaunchRequestId(string? value)
+    {
+        if (value is null)
+        {
+            return true;
+        }
+
+        return value.Length is > 0 and <= 128 &&
+               value.All(static character =>
+                   character is >= 'a' and <= 'z' or
+                       >= 'A' and <= 'Z' or
+                       >= '0' and <= '9' or
+                       '.' or '_' or '-');
+    }
+
+    private static string BuildSessionLaunchFingerprint(
+        int cols,
+        int rows,
+        string? shell,
+        string? workingDirectory,
+        string? spaceId,
+        string? workspacePath,
+        string? surface,
+        string? launchCommand)
+    {
+        return string.Join(
+            '\u001f',
+            cols.ToString(CultureInfo.InvariantCulture),
+            rows.ToString(CultureInfo.InvariantCulture),
+            shell ?? string.Empty,
+            workingDirectory ?? string.Empty,
+            spaceId ?? string.Empty,
+            workspacePath ?? string.Empty,
+            surface ?? string.Empty,
+            launchCommand ?? string.Empty);
     }
 }

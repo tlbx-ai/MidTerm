@@ -524,6 +524,7 @@ The canonical history contract must satisfy the following:
 - The browser should request history as explicit index windows and should not receive arbitrary unseen history by default.
 - Multiple browsers attached to one Agent Controller Session should share the same canonical history while independently fetching only the windows each browser currently needs.
 - Re-entry and reconnect should prefer a latest anchored window plus live follow mode by default; older-history windows should be fetched only after explicit user navigation.
+- Returning from a real browser/PWA background state must replace the browser-owned Agent Controller websocket immediately instead of waiting for TCP or exponential-backoff detection. The last valid history window stays visible while the replacement connects, and all connect/history/command requests must have bounded lifetimes with timer cleanup on every completion path.
 - If the user is browsing an older window and off-window history mutations arrive, Agent Controller Session should refresh that canonical window rather than pretending unseen history can be corrected from partial browser knowledge alone.
 - The frontend should retain only the visible window plus a modest nearby margin. Once items move far enough out of view, they should be discarded from browser memory and certainly from the live DOM.
 
@@ -564,12 +565,14 @@ Any significant Agent Controller Session UI change should be checked against the
 
 Status in this branch/work item:
 
+- implemented: concurrent activation triggers for one Agent Controller Session share one in-flight activation, preventing duplicate runtime attach, history-stream, and intermediate activation-state races
 - implemented: stable history virtualization with a bounded render window instead of keeping the full long history in the DOM
 - implemented: deterministic history render planning plus keyed visible-row reconciliation instead of rebuilding the whole visible history subtree on every update
 - implemented: when a visible history row changes materially, Agent Controller Session now replaces that row node by stable key instead of mutating an older DOM node into a new future shape
 - implemented: scroll-follow suppression while the user is away from the live edge, plus an explicit return-to-bottom control
 - implemented: non-user layout growth and sizing changes no longer clear live-edge follow state by themselves; only explicit user scrolling moves Agent Controller Session out of follow mode
 - implemented: when a hidden Agent Controller Session surface is shown again, whether by tlbx tab reactivation or browser foreground return, it restores a fresh latest-history window and re-enters live-edge follow mode by default instead of preserving a stale mid-history scroll offset
+- implemented: one centralized browser lifecycle owner now replaces stale Agent Controller, state, settings, and terminal transports immediately after a real PWA foreground return; Agent Controller retains its last valid history window during recovery, superseded sockets cannot win a late callback race, and every pending connection or request timeout is cleared on success, disconnect, replacement, and teardown
 - implemented: terminal-font monospace rendering for machine-oriented Agent Controller Session content
 - implemented: provider-stream-driven assistant rendering so partial assistant text can appear before the final provider message lands
 - implemented: responsive Agent Controller Session styling for mobile-sized layouts

@@ -23,6 +23,7 @@
   "terminal.sizeControlledHere": "Größe wird von diesem Browser gesteuert",
   "terminal.scaledViewExplanation": "Diese Ansicht wird skaliert, damit alles sichtbar bleibt.",
   "terminal.continueHere": "Jetzt hier weiterarbeiten",
+  "terminal.switchingHere": "Wechsel hierher …",
   "terminal.continueHereHint": "Größe wird für diesen Browser optimiert",
   "terminal.takeControlFrom": "Größensteuerung übernehmen von",
   "sidebar.rename": "Umbenennen",

@@ -123,7 +123,6 @@ export interface TerminalState {
   serverCols: number;
   serverRows: number;
   opened: boolean;
-  reconnectFreezeOverlay?: HTMLDivElement | null;
   contextMenuHandler?: (e: MouseEvent) => void;
   pasteHandler?: (e: ClipboardEvent) => void;
   enterOverrideHandler?: (e: KeyboardEvent) => void;
@@ -200,6 +199,7 @@ export type WsCommand =
       payload: {
         sessionId: string;
         force: boolean;
+        expectedEpoch?: number;
       };
     }
   | {
@@ -235,6 +235,7 @@ interface WsCommandPayloadMap {
   'terminal.requestSizeControl': {
     sessionId: string;
     force: boolean;
+    expectedEpoch?: number;
   };
   'terminal.resize': {
     sessionId: string;

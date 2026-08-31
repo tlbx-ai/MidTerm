@@ -3,6 +3,7 @@ namespace Ai.Tlbx.MidTerm.Models;
 public sealed class MainBrowserStatusMessage
 {
     public string Type { get; set; } = "main-browser-status";
+    public long Revision { get; set; }
     public bool IsMain { get; set; }
     public bool ShowButton { get; set; }
     public List<BrowserSessionStatus> Browsers { get; set; } = [];

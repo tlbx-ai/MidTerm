@@ -56,13 +56,23 @@ export function observeMobileVerticalViewportChange(): boolean {
   return true;
 }
 
-export function setMobileVerticalStability(active: boolean): void {
+export function setMobileVerticalStability(
+  active: boolean,
+  options: { preserveScrollPosition?: boolean } = {},
+): void {
+  if (mobileVerticalStabilityActive === active) {
+    document.body.classList.toggle('mobile-terminal-vertical-stable', active);
+    return;
+  }
+
   mobileVerticalStabilityActive = active;
   document.body.classList.toggle('mobile-terminal-vertical-stable', active);
-  syncMobileVerticalStableTerminals();
+  syncMobileVerticalStableTerminals(options);
 }
 
-export function syncMobileVerticalStableTerminals(): void {
+export function syncMobileVerticalStableTerminals(
+  options: { preserveScrollPosition?: boolean } = {},
+): void {
   const active = mobileVerticalStabilityActive && isMobileTerminalViewport();
   sessionTerminals.forEach((state) => {
     const container = state.container;
@@ -79,7 +89,9 @@ export function syncMobileVerticalStableTerminals(): void {
     }
 
     if (!active) {
-      container.scrollTop = 0;
+      if (!options.preserveScrollPosition) {
+        container.scrollTop = 0;
+      }
       if (dataset) {
         delete dataset.mobileVerticalScrollable;
         delete dataset.mobileCursorFollowing;
@@ -129,9 +141,21 @@ export function revealMobileStableTerminalCursor(
   }
   pendingCursorRevealContainers.add(container);
   requestAnimationFrame(() => {
+    if (
+      !mobileVerticalStabilityActive ||
+      !container.classList.contains('mobile-terminal-vertical-stable')
+    ) {
+      pendingCursorRevealContainers.delete(container);
+      return;
+    }
     scrollMobileStableTerminalCursorIntoView(state);
     requestAnimationFrame(() => {
-      scrollMobileStableTerminalCursorIntoView(state);
+      if (
+        mobileVerticalStabilityActive &&
+        container.classList.contains('mobile-terminal-vertical-stable')
+      ) {
+        scrollMobileStableTerminalCursorIntoView(state);
+      }
       pendingCursorRevealContainers.delete(container);
     });
   });
@@ -194,6 +218,7 @@ export function shouldPreserveMobileTerminalRows(
   return (
     mobileVerticalStabilityActive &&
     isMobileTerminalViewport() &&
+    !document.body.classList.contains('keyboard-visible') &&
     state.terminal.cols === optimalCols &&
     state.terminal.rows > 0
   );

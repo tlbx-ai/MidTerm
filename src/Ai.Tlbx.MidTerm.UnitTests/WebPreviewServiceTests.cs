@@ -288,6 +288,24 @@ public class WebPreviewServiceTests
     }
 
     [Fact]
+    public void NamedPreview_ReusesIdentityUntilExplicitlyDeleted()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+
+        Assert.True(service.SetTarget("session-1", "dai-e2e", "https://example.com/first"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", "dai-e2e", out var firstRouteKey));
+        Assert.True(service.SetTarget("session-1", "dai-e2e", "https://example.com/retry"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", "dai-e2e", out var retryRouteKey));
+
+        Assert.Equal(firstRouteKey, retryRouteKey);
+        Assert.Single(service.ListPreviewSessions("session-1").Previews);
+
+        Assert.True(service.DeletePreviewSession("session-1", "dai-e2e"));
+        Assert.Empty(service.ListPreviewSessions("session-1").Previews);
+        Assert.False(service.TryGetPreviewRouteKey("session-1", "dai-e2e", out _));
+    }
+
+    [Fact]
     public void RememberLeakedPathRoute_TracksRouteKeyForLaterResolution()
     {
         var service = new WebPreviewService(serverPort: 2000);

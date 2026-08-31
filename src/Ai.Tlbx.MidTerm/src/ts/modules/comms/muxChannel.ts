@@ -220,56 +220,6 @@ function beginReplayHeatSuppression(sessionId: string, maxDurationMs = BUFFER_RE
   });
 }
 
-function removeReconnectFreeze(state: TerminalState): void {
-  state.reconnectFreezeOverlay?.remove();
-  state.reconnectFreezeOverlay = null;
-}
-
-function freezeTerminalDuringReconnect(state: TerminalState): void {
-  removeReconnectFreeze(state);
-
-  if (!state.opened || state.container.classList.contains('hidden')) {
-    return;
-  }
-
-  const containerRect = state.container.getBoundingClientRect();
-  if (containerRect.width < 2 || containerRect.height < 2) {
-    return;
-  }
-
-  const overlay = document.createElement('div');
-  overlay.className = 'terminal-reconnect-freeze';
-  overlay.setAttribute('aria-hidden', 'true');
-  overlay.style.position = 'absolute';
-  overlay.style.inset = '0';
-  overlay.style.zIndex = '40';
-  overlay.style.pointerEvents = 'none';
-  overlay.style.overflow = 'hidden';
-
-  const viewport =
-    state.container.querySelector<HTMLElement>('.xterm-viewport') ??
-    state.container.querySelector<HTMLElement>('.xterm');
-  const backgroundColor =
-    viewport !== null
-      ? getComputedStyle(viewport).backgroundColor
-      : getComputedStyle(state.container).backgroundColor;
-  overlay.style.background = backgroundColor;
-  state.container.appendChild(overlay);
-  state.reconnectFreezeOverlay = overlay;
-}
-
-function freezeVisibleTerminalsDuringReconnect(): void {
-  forEachLocalTerminal((state) => {
-    freezeTerminalDuringReconnect(state);
-  });
-}
-
-function thawReconnectFreeze(): void {
-  forEachLocalTerminal((state) => {
-    removeReconnectFreeze(state);
-  });
-}
-
 function shouldRecordHeat(sessionId: string, bytes: number): boolean {
   if (bytes <= 0) return false;
 
@@ -954,17 +904,6 @@ function writeTerminalData(
   });
 }
 
-function updateReconnectFreezeForOutput(
-  state: TerminalState,
-  data: Uint8Array,
-  cols: number,
-  rows: number,
-): void {
-  if (state.reconnectFreezeOverlay && (data.length > 0 || (cols > 0 && rows > 0))) {
-    removeReconnectFreeze(state);
-  }
-}
-
 function processTerminalOutputCursorState(
   state: TerminalState,
   sessionId: string,
@@ -1052,7 +991,6 @@ function writeToTerminal(
   data: Uint8Array,
   generation: number,
 ): void {
-  updateReconnectFreezeForOutput(state, data, cols, rows);
   const cursorVisibility = processTerminalOutputCursorState(state, sessionId, data);
   applyTerminalResizeIfNeeded(sessionId, state, cols, rows);
   writeOutputDataWithPathScan(sessionId, state, sequenceEnd, cursorVisibility.data, generation);
@@ -1117,7 +1055,6 @@ function finishInitialSyncWhenRecoveriesAreParsed(): void {
     clearTimeout(syncCompleteTimeout);
     syncCompleteTimeout = null;
   }
-  thawReconnectFreeze();
   _suppressHeatCallback?.(0);
   setBellNotificationsSuppressed(false);
 }
@@ -1479,7 +1416,6 @@ export function connectMuxWebSocket(): void {
     if (syncCompleteTimeout !== null) clearTimeout(syncCompleteTimeout);
     syncCompleteTimeout = window.setTimeout(() => {
       syncCompletePending = false;
-      thawReconnectFreeze();
       _suppressHeatCallback?.(0);
       setBellNotificationsSuppressed(false);
       syncCompleteTimeout = null;
@@ -1496,7 +1432,6 @@ export function connectMuxWebSocket(): void {
     if (isReconnect) {
       void checkVersionAndReload();
       log.info(() => `Reconnected - refreshing ${localTerminalCount} terminals`);
-      freezeVisibleTerminalsDuringReconnect();
       pendingOutputFrames.clear();
       sessionsNeedingResync.clear();
       replaySuppressedSessions.clear();
@@ -1583,7 +1518,6 @@ export function connectMuxWebSocket(): void {
     recoveryRequestsInFlight.clear();
     recoveryFollowupCauses.clear();
     clearInputLatencyTraceInFlight();
-    thawReconnectFreeze();
 
     // Log close reason
     if (event.code === WS_CLOSE_SERVER_SHUTDOWN) {

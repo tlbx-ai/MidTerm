@@ -55,53 +55,24 @@ import { buildBrowserPreviewStatusIndicatorState } from './webPreviewStatus';
 import { decodeScreenshotDataUrl, normalizeUrl } from './webPanelUtils';
 import { captureMobileDeviceScreenshot } from './mobileDeviceController';
 import { initMobileDeviceUi, refreshMobileDeviceUi } from './mobileDeviceUi';
-
-interface UploadResponse {
-  path?: string;
-}
-
-interface PreviewBridgeMessage {
-  previewId?: string;
-  previewToken?: string;
-  sessionId?: string;
-  previewName?: string;
-}
-
-interface PreviewNavigationMessage extends PreviewBridgeMessage {
-  type: 'mt-navigation';
-  url: string;
-  targetOrigin?: string;
-  upstreamUrl?: string;
-}
-
-interface PreviewCookieRequestMessage extends PreviewBridgeMessage {
-  type: 'mt-cookie-request';
-  requestId: string;
-  action: 'get' | 'set';
-  raw?: string;
-  upstreamUrl?: string;
-}
-
-interface PreviewCookieResponseMessage extends PreviewBridgeMessage {
-  type: 'mt-cookie-response';
-  requestId: string;
-  header?: string;
-  error?: string;
-}
-
-const SANDBOX_BASE_FLAGS = [
-  'allow-scripts',
-  'allow-forms',
-  'allow-popups',
-  'allow-popups-to-escape-sandbox',
-  'allow-top-navigation-by-user-activation',
-  'allow-modals',
-  'allow-downloads',
-  'allow-storage-access-by-user-activation',
-];
+import type {
+  PreviewBridgeMessage,
+  PreviewCookieRequestMessage,
+  PreviewCookieResponseMessage,
+  PreviewLoadContext,
+  PreviewNavigationMessage,
+  UploadResponse,
+} from './webPanelTypes';
+import {
+  FRAME_ALLOW_ATTR,
+  PREVIEW_CONTEXT_COOKIE_NAME,
+  PREVIEW_TAB_CHANGED_EVENT,
+  PREVIEW_VISIBILITY_REFRESH_DELAYS_MS,
+  SANDBOX_BASE_FLAGS,
+  STATUS_REFRESH_INTERVAL_MS,
+} from './webPanelConfig';
 
 const log = createLogger('webPanel');
-const PREVIEW_CONTEXT_COOKIE_NAME = 'mt-preview-ctx';
 let urlInput: HTMLInputElement | null = null;
 let iframeHost: HTMLElement | null = null;
 let previewTabs: HTMLElement | null = null;
@@ -115,23 +86,9 @@ let previewTabCloseHandler: ((previewName: string) => void) | null = null;
 let activeFrameKey: string | null = null;
 const previewFrames = new Map<string, HTMLIFrameElement>();
 const responsiveFrameByFrame = new Map<string, boolean>();
-const STATUS_REFRESH_INTERVAL_MS = 4000;
-const PREVIEW_VISIBILITY_REFRESH_DELAYS_MS = [0, 50, 200, 500] as const;
-const PREVIEW_TAB_CHANGED_EVENT = 'midterm:web-preview-active-tab-changed';
 let statusRefreshTimer: number | null = null;
 let screenshotInFlight = false;
 type PreviewReloadMode = 'soft' | 'force' | 'hard';
-
-const FRAME_ALLOW_ATTR = `
-  camera *;
-  microphone *;
-  geolocation *;
-  fullscreen *;
-  autoplay *;
-  clipboard-read *;
-  clipboard-write *;
-  display-capture *;
-`;
 
 /** Get the URL currently loaded in the iframe. */
 export function getLoadedUrl(): string | null {
@@ -860,14 +817,7 @@ function isStillActivePreviewSession(sessionId: string, previewName: string): bo
   return $activeSessionId.get() === sessionId && getActivePreviewName() === previewName;
 }
 
-async function resolvePreviewLoadContext(): Promise<{
-  sessionId: string;
-  previewName: string;
-  currentUrl: string;
-  currentTargetRevision: number;
-  frameKey: string;
-  previewClient: BrowserPreviewClientResponse;
-} | null> {
+async function resolvePreviewLoadContext(): Promise<PreviewLoadContext | null> {
   const sessionId = $activeSessionId.get();
   const previewName = getActivePreviewName();
   const currentPreview = getActivePreview();
@@ -927,6 +877,14 @@ export async function loadPreview(reloadToken?: string): Promise<void> {
     return;
   }
 
+  await renderPreviewFrame(context, true, reloadToken);
+}
+
+async function renderPreviewFrame(
+  context: PreviewLoadContext,
+  visible: boolean,
+  reloadToken?: string,
+): Promise<void> {
   const { sessionId, previewName, currentUrl, currentTargetRevision, frameKey, previewClient } =
     context;
   const initialFrame = ensurePreviewLoadFrame(sessionId, previewName);
@@ -947,7 +905,7 @@ export async function loadPreview(reloadToken?: string): Promise<void> {
     ) {
       const replacementFrame = replacePreviewIframe(frameKey);
       if (!replacementFrame) {
-        log.warn(() => `Failed to recreate dock iframe for ${sessionId}/${previewName}`);
+        log.warn(() => `Failed to recreate preview iframe for ${sessionId}/${previewName}`);
         return;
       }
       frame = replacementFrame;
@@ -973,13 +931,55 @@ export async function loadPreview(reloadToken?: string): Promise<void> {
       currentUrl,
       currentTargetRevision,
     );
-    setVisiblePreviewFrame(frameKey);
-    loadedUrl = currentUrl;
-    await refreshBrowserPreviewStatus();
+    if (visible) {
+      setVisiblePreviewFrame(frameKey);
+      loadedUrl = currentUrl;
+      await refreshBrowserPreviewStatus();
+    } else {
+      frame.classList.add('hidden');
+      frame.setAttribute('aria-hidden', 'true');
+      frame.tabIndex = -1;
+      refreshPreviewBridgeVisibility(frame, false);
+    }
   } catch {
     resetBrokenPreviewFrame(frame);
-    await refreshBrowserPreviewStatus();
+    if (visible) {
+      await refreshBrowserPreviewStatus();
+    }
   }
+}
+
+/**
+ * Attach a preview owned by a background terminal without changing the visible
+ * tlbx session or dock. This keeps CLI automation controllable while preserving
+ * the user's current working context.
+ */
+export async function loadBackgroundPreview(
+  sessionId: string,
+  previewName: string,
+  currentUrl: string,
+  currentTargetRevision: number,
+): Promise<void> {
+  if (!iframeHost || $activeSessionId.get() === sessionId) {
+    return;
+  }
+
+  const previewClient = await ensureDockedPreviewClient(sessionId, previewName);
+  if (!previewClient || $activeSessionId.get() === sessionId) {
+    return;
+  }
+
+  await renderPreviewFrame(
+    {
+      sessionId,
+      previewName,
+      currentUrl,
+      currentTargetRevision,
+      frameKey: getPreviewFrameKey(sessionId, previewName),
+      previewClient,
+    },
+    false,
+  );
 }
 
 async function handleRefresh(mode: PreviewReloadMode = 'force'): Promise<void> {

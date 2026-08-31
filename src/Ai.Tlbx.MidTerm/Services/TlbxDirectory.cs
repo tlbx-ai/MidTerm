@@ -307,8 +307,9 @@ public static class TlbxDirectory
         | `mt_claim_main_browser [browserId]` | Make the selected browser the leading browser for terminal sizing |
         | `mt_navigate <url>` | Set the current named web preview target |
         | `mt_url` | Upstream page URL (not proxy URL) |
-        | `mt_open <url>` | Open URL in the current named preview and dock panel |
-        | `mt_close_preview` | Close web preview panel |
+        | `mt_open <url>` | Attach or navigate the current named preview without changing the user's active tlbx session (`--activate` opts in) |
+        | `mt_close_preview` | Close the current preview; named previews are removed entirely |
+        | `mt_with_preview` | Run an ephemeral named preview scope and always close it after the command/block |
         | `mt_reload` | Soft-reload preview |
         | `mt_forcereload` | Force a fresh content reload with cache busting |
         | `mt_hardreload` | Clear cookies + reload (fresh session) |
@@ -394,7 +395,7 @@ public static class TlbxDirectory
 
         mt_open "http://localhost:3000" → mt_status → mt_outline → mt_query ".error" --text
 
-        `mt_open` both sets the target and asks tlbx to open/dock the preview panel, then waits until that preview is actually controllable.
+        `mt_open` sets the target and waits until that preview is controllable. If its terminal is already active, tlbx opens the dock; a background terminal gets a hidden automation frame and does not steal focus. Use `mt_open --activate <url>` only when a visible session switch is intentional.
         Use `mt_navigate` only when the panel is already open and you just want to change the target URL.
 
         ### Multi-role browser sessions
@@ -404,6 +405,11 @@ public static class TlbxDirectory
         `mt_session` prints the current tlbx terminal session ID.
         `mt_context --bash` / `mt_context --pwsh` print re-export commands for nested shells.
         `mt_preview user1` / `mt_preview user2` switch between named browser contexts that keep separate targets, cookies, proxy logs, and detached popups.
+
+        For retry-safe automation, reuse one stable name with `mt_open`, or use an ephemeral scope that closes even when the body fails:
+
+        - bash/zsh: `mt_with_preview dai-e2e http://localhost:3000 command arg...`
+        - PowerShell: `mt_with_preview -Name dai-e2e -Url http://localhost:3000 -ScriptBlock { ... }`
 
         ### Fresh session (clear cookies + reload)
 
@@ -527,7 +533,7 @@ public static class TlbxDirectory
 
         - mt_outline is 10x smaller than mt_query — always start there
         - mt_text is shorter than mt_query SEL --text — use it for page text
-        - mt_open is the CLI command that opens/docks the preview and now fails loudly if the preview never becomes controllable
+        - mt_open attaches the preview without changing the active tlbx session; --activate is the explicit opt-in for a visible switch, and the command fails loudly if the preview never becomes controllable
         - direct execution of the generated helpers accepts both bare command names and documented `mt_*` names, so `status` and `mt_status` both resolve when you run `.tlbx/tlbx_cli.sh` or `.tlbx/tlbx_cli.ps1` directly
         - mt_status reports `state: ready`, `state: waiting`, or `state: ambiguous` so you can tell whether the browser bridge is actually usable
         - Every C# change in the local source loop restarts the source `mt`; wait for the source URL to answer again before trusting browser results from that iteration

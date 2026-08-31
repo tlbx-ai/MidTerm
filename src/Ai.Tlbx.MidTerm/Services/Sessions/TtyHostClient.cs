@@ -34,6 +34,7 @@ public sealed class TtyHostClient : IAsyncDisposable
     private readonly string? _instanceId;
     private readonly string? _ownerToken;
     private readonly bool _useLegacyEndpoint;
+    private readonly int _initialHandshakeTimeoutMs;
     private readonly object _streamLock = new();
     private readonly object _responseLock = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
@@ -73,6 +74,7 @@ public sealed class TtyHostClient : IAsyncDisposable
     private const int MaxReconnectDelayMs = 30000; // Cap at 30s between attempts
     private const int HeartbeatIntervalMs = 5000; // Check connection every 5 seconds
     private const int ReadTimeoutMs = 10000; // 10 seconds - shorter now that we have heartbeat
+    private const int DefaultInitialHandshakeTimeoutMs = 2000;
 
     public string SessionId => _sessionId;
     public int HostPid => _hostPid;
@@ -96,12 +98,19 @@ public sealed class TtyHostClient : IAsyncDisposable
     public event Action<string, TtyHostDataLossPayload>? OnDataLoss;
     public event Action<string, TtyHostInputTraceReport>? OnInputTrace;
 
-    public TtyHostClient(string sessionId, int hostPid, string? instanceId = null, string? ownerToken = null, bool useLegacyEndpoint = false)
+    public TtyHostClient(
+        string sessionId,
+        int hostPid,
+        string? instanceId = null,
+        string? ownerToken = null,
+        bool useLegacyEndpoint = false,
+        int initialHandshakeTimeoutMs = DefaultInitialHandshakeTimeoutMs)
     {
         _sessionId = sessionId;
         _hostPid = hostPid;
         _instanceId = instanceId;
         _ownerToken = ownerToken;
+        _initialHandshakeTimeoutMs = Math.Max(1, initialHandshakeTimeoutMs);
         _useLegacyEndpoint = useLegacyEndpoint || string.IsNullOrWhiteSpace(instanceId) || string.IsNullOrWhiteSpace(ownerToken);
         _endpoint = _useLegacyEndpoint
             ? IpcEndpoint.GetLegacySessionEndpoint(sessionId, hostPid)
@@ -414,14 +423,21 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
     }
 
-    public async Task<bool> SetOrderAsync(byte order, CancellationToken ct = default)
+    public async Task<bool> SetOrderAsync(
+        byte order,
+        int requestTimeoutMs = 5000,
+        CancellationToken ct = default)
     {
         if (!IsConnected) return false;
 
         try
         {
             var msg = TtyHostProtocol.CreateSetOrder(order);
-            var response = await SendRequestAsync(msg, TtyHostMessageType.SetOrderAck, ct).ConfigureAwait(false);
+            var response = await SendRequestAsync(
+                msg,
+                TtyHostMessageType.SetOrderAck,
+                ct,
+                requestTimeoutMs).ConfigureAwait(false);
             return response is not null;
         }
         catch
@@ -532,7 +548,11 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
     }
 
-    private async Task<byte[]?> SendRequestAsync(byte[] request, TtyHostMessageType expectedType, CancellationToken ct)
+    private async Task<byte[]?> SendRequestAsync(
+        byte[] request,
+        TtyHostMessageType expectedType,
+        CancellationToken ct,
+        int requestTimeoutMs = 5000)
     {
         await _requestLock.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -548,7 +568,8 @@ public sealed class TtyHostClient : IAsyncDisposable
             {
                 await WriteWithLockAsync(request, ct).ConfigureAwait(false);
 
-                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                using var timeoutCts = new CancellationTokenSource(
+                    TimeSpan.FromMilliseconds(Math.Max(1, requestTimeoutMs)));
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
                 (TtyHostMessageType type, byte[] payload) response;
@@ -613,8 +634,12 @@ public sealed class TtyHostClient : IAsyncDisposable
             return parsed?.Accepted == true;
         }
 
-        await WriteWithLockAsync(request, ct).ConfigureAwait(false);
-        var directResponse = await ReadMessageAsync(ct).ConfigureAwait(false);
+        using var handshakeTimeout = new CancellationTokenSource(_initialHandshakeTimeoutMs);
+        using var handshakeCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            ct,
+            handshakeTimeout.Token);
+        await WriteWithLockAsync(request, handshakeCancellation.Token).ConfigureAwait(false);
+        var directResponse = await ReadMessageAsync(handshakeCancellation.Token).ConfigureAwait(false);
         if (directResponse is null || directResponse.Value.type != TtyHostMessageType.AttachAck)
         {
             return false;

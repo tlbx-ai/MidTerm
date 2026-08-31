@@ -505,6 +505,10 @@ export function setTerminalSizeControl(status: TerminalSizeControlStatus): void 
   if (!status.sessionId) return;
   const hubMatch = /^hub:([^:]+):/.exec(status.sessionId);
   const source = hubMatch ? `hub:${hubMatch[1]}` : 'local';
+  const existing = terminalSizeControlSources.get(source)?.[status.sessionId];
+  if (existing && status.epoch < existing.epoch) {
+    return;
+  }
   terminalSizeControlSources.set(source, {
     ...(terminalSizeControlSources.get(source) ?? {}),
     [status.sessionId]: status,

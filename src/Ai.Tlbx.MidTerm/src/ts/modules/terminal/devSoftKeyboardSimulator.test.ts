@@ -73,12 +73,14 @@ describe('dev soft keyboard simulator', () => {
     );
     expect(document.getElementById('dev-soft-keyboard')?.hidden).toBe(false);
     expect(document.body.classList.contains('keyboard-visible')).toBe(true);
-    expect(document.body.classList.contains('mobile-terminal-vertical-stable')).toBe(true);
+    expect(document.body.classList.contains('mobile-terminal-vertical-stable')).toBe(false);
     expect(document.documentElement.style.getPropertyValue('--midterm-soft-keyboard-height')).toBe(
       '300px',
     );
     expect(document.querySelector<HTMLElement>('.terminal-page')?.style.height).toBe('500px');
-    expect(setMobileVerticalStability).toHaveBeenCalledWith(true);
+    expect(setMobileVerticalStability).toHaveBeenCalledWith(false, {
+      preserveScrollPosition: true,
+    });
     expect(autoResizeAllTerminalsImmediate).toHaveBeenCalled();
   });
 
@@ -95,7 +97,9 @@ describe('dev soft keyboard simulator', () => {
     expect(document.getElementById('dev-soft-keyboard')?.hidden).toBe(true);
     expect(document.body.classList.contains('keyboard-visible')).toBe(false);
     expect(document.querySelector<HTMLElement>('.terminal-page')?.style.height).toBe('');
-    expect(setMobileVerticalStability).toHaveBeenLastCalledWith(false);
+    expect(setMobileVerticalStability).toHaveBeenLastCalledWith(false, {
+      preserveScrollPosition: true,
+    });
   });
 
   it('routes the parent toolbar button to the active preview tab keyboard only', async () => {

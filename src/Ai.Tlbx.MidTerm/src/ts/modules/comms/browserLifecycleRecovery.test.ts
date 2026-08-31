@@ -23,7 +23,10 @@ vi.mock('./muxChannel', () => ({
   suspendMuxForBrowserBackground: mocks.suspendMuxForBrowserBackground,
 }));
 
-import { setupBrowserLifecycleRecovery } from './browserLifecycleRecovery';
+import {
+  hasSuspendedForegroundEventLoop,
+  setupBrowserLifecycleRecovery,
+} from './browserLifecycleRecovery';
 
 describe('browserLifecycleRecovery', () => {
   let fakeDocument: EventTarget & { visibilityState: DocumentVisibilityState };
@@ -62,9 +65,10 @@ describe('browserLifecycleRecovery', () => {
       applyScrollbackProtection: vi.fn(),
       keepTerminalOutputActiveWhileHidden: vi.fn(() => keepTerminalOutputActiveWhileHidden),
       reconnectSettingsAfterLongResume: vi.fn(),
+      recoverAppServerControlAfterResume: vi.fn(),
     };
-    setupBrowserLifecycleRecovery(options);
-    return options;
+    const dispose = setupBrowserLifecycleRecovery(options);
+    return { ...options, dispose };
   }
 
   function emitDocument(type: string): void {
@@ -92,10 +96,11 @@ describe('browserLifecycleRecovery', () => {
     setVisibility('visible');
 
     emitDocument('visibilitychange');
-    vi.runAllTimers();
+    vi.advanceTimersByTime(0);
 
     expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
     expect(options.reconnectSettingsAfterLongResume).not.toHaveBeenCalled();
+    expect(options.recoverAppServerControlAfterResume).not.toHaveBeenCalled();
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
       'sess1234',
       ['sess1234'],
@@ -117,10 +122,11 @@ describe('browserLifecycleRecovery', () => {
     emitWindow('focus');
     emitWindow('pageshow');
     emitDocument('resume');
-    vi.runAllTimers();
+    vi.advanceTimersByTime(0);
 
     expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
     expect(options.reconnectSettingsAfterLongResume).toHaveBeenCalledTimes(1);
+    expect(options.recoverAppServerControlAfterResume).toHaveBeenCalledTimes(1);
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledTimes(1);
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
       'sess1234',
@@ -132,16 +138,69 @@ describe('browserLifecycleRecovery', () => {
     expect(options.applyScrollbackProtection).toHaveBeenCalledTimes(1);
   });
 
+  it('replaces browser-owned transports immediately after a short real background interval', () => {
+    const options = setup();
+    setVisibility('hidden');
+    emitDocument('visibilitychange');
+    vi.advanceTimersByTime(250);
+
+    setVisibility('visible');
+    emitDocument('visibilitychange');
+    emitWindow('focus');
+    vi.advanceTimersByTime(0);
+
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    expect(options.reconnectSettingsAfterLongResume).toHaveBeenCalledTimes(1);
+    expect(options.recoverAppServerControlAfterResume).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
+      'sess1234',
+      ['sess1234'],
+      { forceReconnect: true },
+    );
+  });
+
   it('coalesces duplicate foreground events without hiding the document first', () => {
     const options = setup();
 
     emitWindow('focus');
     emitWindow('pageshow');
     emitDocument('resume');
-    vi.runAllTimers();
+    vi.advanceTimersByTime(0);
 
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledTimes(1);
     expect(options.focusActiveTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not classify a visible window blur as a browser suspension', () => {
+    const options = setup();
+
+    emitWindow('blur');
+    vi.advanceTimersByTime(6000);
+    emitWindow('focus');
+    vi.advanceTimersByTime(0);
+
+    expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
+    expect(options.reconnectSettingsAfterLongResume).not.toHaveBeenCalled();
+    expect(options.recoverAppServerControlAfterResume).not.toHaveBeenCalled();
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
+      'sess1234',
+      ['sess1234'],
+      { forceReconnect: false },
+    );
+  });
+
+  it('removes lifecycle listeners and timers when disposed', () => {
+    const options = setup();
+    options.dispose();
+
+    setVisibility('hidden');
+    emitDocument('visibilitychange');
+    emitWindow('focus');
+    vi.advanceTimersByTime(10000);
+
+    expect(mocks.suspendMuxForBrowserBackground).not.toHaveBeenCalled();
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('keeps hidden terminal output active for mobile PiP', () => {
@@ -158,8 +217,22 @@ describe('browserLifecycleRecovery', () => {
     setup();
 
     emitWindow('focus');
-    vi.runAllTimers();
+    vi.advanceTimersByTime(0);
 
     expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces transports when the event loop resumes without lifecycle events', () => {
+    expect(hasSuspendedForegroundEventLoop(1000, 7000)).toBe(true);
+    expect(hasSuspendedForegroundEventLoop(1000, 5999)).toBe(false);
+  });
+
+  it('does not recover transports for an on-time foreground heartbeat', () => {
+    setup();
+
+    vi.advanceTimersByTime(1000);
+
+    expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).not.toHaveBeenCalled();
   });
 });

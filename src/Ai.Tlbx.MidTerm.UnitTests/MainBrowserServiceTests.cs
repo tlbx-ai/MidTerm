@@ -112,6 +112,90 @@ public sealed class MainBrowserServiceTests
     }
 
     [Fact]
+    public void ReleasedMainRoleRemainsClaimableWithOneConnectedBrowser()
+    {
+        var service = new MainBrowserService();
+        var firstConnection = new object();
+        var secondConnection = new object();
+        service.Register("browser-a:tab-1", firstConnection);
+        service.Register("browser-b:tab-2", secondConnection);
+        service.Release("browser-a:tab-1");
+        service.Unregister("browser-a:tab-1", firstConnection);
+
+        Assert.Null(service.GetMainBrowserId());
+        Assert.True(service.ShouldShowButton("browser-b:tab-2"));
+
+        service.Claim("browser-b:tab-2");
+
+        Assert.True(service.IsMain("browser-b:tab-2"));
+    }
+
+    [Fact]
+    public void StatusSnapshotRevisionAdvancesWithVisibleBrowserState()
+    {
+        var service = new MainBrowserService();
+        var connection = new object();
+        service.Register("browser-a:tab-1", connection);
+        var registered = service.GetStatus("browser-a:tab-1");
+
+        service.UpdateActivity(
+            "browser-a:tab-1",
+            connection,
+            true,
+            "session-1",
+            "agent:codex");
+        var active = service.GetStatus("browser-a:tab-1");
+
+        Assert.True(active.Revision > registered.Revision);
+        Assert.True(active.IsMain);
+        Assert.Single(active.Browsers);
+        Assert.Equal("agent:codex", active.Browsers[0].ActiveSurface);
+
+        service.UpdateActivity(
+            "browser-a:tab-1",
+            connection,
+            false,
+            "session-1",
+            "agent:codex");
+        var inactive = service.GetStatus("browser-a:tab-1");
+
+        Assert.True(inactive.Revision > active.Revision);
+        Assert.False(inactive.Browsers[0].IsActive);
+        Assert.Null(inactive.Browsers[0].ActiveSessionId);
+        Assert.Null(inactive.Browsers[0].ActiveSurface);
+    }
+
+    [Fact]
+    public void OlderConnectionCannotClearNewerActiveSurface()
+    {
+        var service = new MainBrowserService();
+        var oldConnection = new object();
+        var newConnection = new object();
+        service.Register("browser-a:tab-1", oldConnection);
+        service.Register("browser-a:tab-1", newConnection);
+        service.UpdateActivity(
+            "browser-a:tab-1",
+            oldConnection,
+            true,
+            "session-1",
+            "terminal");
+        service.UpdateActivity(
+            "browser-a:tab-1",
+            newConnection,
+            true,
+            "session-2",
+            "agent:codex");
+
+        service.UpdateActivity("browser-a:tab-1", oldConnection, false);
+        var status = service.GetStatus("browser-a:tab-1");
+
+        Assert.True(status.Browsers[0].IsActive);
+        Assert.Equal(1, status.Browsers[0].ActiveConnectionCount);
+        Assert.Equal("session-2", status.Browsers[0].ActiveSessionId);
+        Assert.Equal("agent:codex", status.Browsers[0].ActiveSurface);
+    }
+
+    [Fact]
     public void Register_RestoresStickyMainBrowserAfterRuntimeRestart()
     {
         var settingsDirectory = CreateTempDirectory();

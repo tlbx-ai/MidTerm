@@ -1,6 +1,4 @@
-type TerminalGapFillerPlacement = 'right' | 'bottom' | 'corner';
-
-const TERMINAL_GAP_FILLERS: TerminalGapFillerPlacement[] = ['right', 'bottom', 'corner'];
+const TERMINAL_GAP_FILLER_CLASS = 'terminal-gap-fill-surface';
 const gapFillerState = new WeakMap<
   HTMLElement,
   {
@@ -9,10 +7,6 @@ const gapFillerState = new WeakMap<
     contentHeight: string;
     rightWidth: string;
     bottomHeight: string;
-    rightStart: string;
-    bottomStart: string;
-    rightFillWidth: string;
-    bottomFillHeight: string;
   }
 >();
 
@@ -30,7 +24,6 @@ export function updateTerminalGapFillers(
   const contentHeight = Math.min(containerHeight, measuredContentHeight);
   const rightWidth = Math.max(0, containerWidth - contentWidth);
   const bottomHeight = Math.max(0, containerHeight - contentHeight);
-  const seamOverlap = 1;
   const previousState = gapFillerState.get(container);
   const nextState = {
     background: resolveTerminalGapBackground(container, xterm),
@@ -38,14 +31,6 @@ export function updateTerminalGapFillers(
     contentHeight: formatCssPixelValue(contentHeight),
     rightWidth: formatCssPixelValue(rightWidth),
     bottomHeight: formatCssPixelValue(bottomHeight),
-    rightStart: formatCssPixelValue(
-      rightWidth > 0 ? Math.max(0, contentWidth - seamOverlap) : contentWidth,
-    ),
-    bottomStart: formatCssPixelValue(
-      bottomHeight > 0 ? Math.max(0, contentHeight - seamOverlap) : contentHeight,
-    ),
-    rightFillWidth: formatCssPixelValue(rightWidth > 0 ? rightWidth + seamOverlap : 0),
-    bottomFillHeight: formatCssPixelValue(bottomHeight > 0 ? bottomHeight + seamOverlap : 0),
   };
 
   if (previousState?.background !== nextState.background && nextState.background) {
@@ -56,18 +41,10 @@ export function updateTerminalGapFillers(
   setTerminalGapVariable(container, '--terminal-gap-content-height', nextState.contentHeight);
   setTerminalGapVariable(container, '--terminal-gap-right-width', nextState.rightWidth);
   setTerminalGapVariable(container, '--terminal-gap-bottom-height', nextState.bottomHeight);
-  setTerminalGapVariable(container, '--terminal-gap-fill-right-start', nextState.rightStart);
-  setTerminalGapVariable(container, '--terminal-gap-fill-bottom-start', nextState.bottomStart);
-  setTerminalGapVariable(container, '--terminal-gap-fill-right-width', nextState.rightFillWidth);
-  setTerminalGapVariable(
-    container,
-    '--terminal-gap-fill-bottom-height',
-    nextState.bottomFillHeight,
-  );
   gapFillerState.set(container, nextState);
 
   if (rightWidth > 0 || bottomHeight > 0) {
-    ensureTerminalGapFillers(container);
+    ensureTerminalGapFiller(container);
   }
 }
 
@@ -119,20 +96,11 @@ export function clearTerminalGapFillers(container: HTMLElement): void {
   setTerminalGapVariable(container, '--terminal-gap-content-height', '0px');
   setTerminalGapVariable(container, '--terminal-gap-right-width', '0px');
   setTerminalGapVariable(container, '--terminal-gap-bottom-height', '0px');
-  setTerminalGapVariable(container, '--terminal-gap-fill-right-start', '0px');
-  setTerminalGapVariable(container, '--terminal-gap-fill-bottom-start', '0px');
-  setTerminalGapVariable(container, '--terminal-gap-fill-right-width', '0px');
-  setTerminalGapVariable(container, '--terminal-gap-fill-bottom-height', '0px');
 }
 
 function resolveTerminalGapBackground(container: HTMLElement, xterm: HTMLElement): string | null {
   if (typeof getComputedStyle !== 'function') {
     return null;
-  }
-
-  const terminalCanvasStack = getTerminalCanvasBackgroundStack(container);
-  if (terminalCanvasStack) {
-    return terminalCanvasStack;
   }
 
   const xtermBackground = getElementBackgroundColor(xterm);
@@ -149,11 +117,11 @@ function resolveTerminalGapBackground(container: HTMLElement, xterm: HTMLElement
     xtermBackground,
   ].filter(isPaintedBackground);
 
-  if (layers.length === 0) {
-    return null;
+  if (layers.length > 0) {
+    return buildTerminalGapBackground(layers);
   }
 
-  return buildTerminalGapBackground(layers);
+  return getTerminalCanvasBackgroundStack(container);
 }
 
 function getTerminalCanvasBackgroundStack(container: HTMLElement): string | null {
@@ -229,7 +197,7 @@ function setTerminalGapBackgroundValue(container: HTMLElement, background: strin
     background;
 }
 
-function ensureTerminalGapFillers(container: HTMLElement): void {
+function ensureTerminalGapFiller(container: HTMLElement): void {
   if (
     typeof document === 'undefined' ||
     !('createElement' in document) ||
@@ -238,17 +206,14 @@ function ensureTerminalGapFillers(container: HTMLElement): void {
     return;
   }
 
-  for (const placement of TERMINAL_GAP_FILLERS) {
-    const selector = `.terminal-gap-fill-${placement}`;
-    if (container.querySelector(selector)) {
-      continue;
-    }
-
-    const filler = document.createElement('div');
-    filler.className = `terminal-gap-fill terminal-gap-fill-${placement}`;
-    filler.setAttribute('aria-hidden', 'true');
-    container.appendChild(filler);
+  if (container.querySelector(`.${TERMINAL_GAP_FILLER_CLASS}`)) {
+    return;
   }
+
+  const filler = document.createElement('div');
+  filler.className = `terminal-gap-fill ${TERMINAL_GAP_FILLER_CLASS}`;
+  filler.setAttribute('aria-hidden', 'true');
+  container.appendChild(filler);
 }
 
 function setTerminalGapVariable(container: HTMLElement, name: string, px: string): void {

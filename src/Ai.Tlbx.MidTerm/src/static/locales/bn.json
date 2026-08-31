@@ -23,6 +23,7 @@
   "terminal.sizeControlledHere": "আকার এই ব্রাউজার দ্বারা নিয়ন্ত্রিত",
   "terminal.scaledViewExplanation": "সবকিছু দৃশ্যমান রাখতে এই ভিউটি স্কেল করা হয়েছে।",
   "terminal.continueHere": "এখানে কাজ চালিয়ে যান",
+  "terminal.switchingHere": "এখানে স্থানান্তর করা হচ্ছে…",
   "terminal.continueHereHint": "আকার এই ব্রাউজারের জন্য মানানসই করা হবে",
   "terminal.takeControlFrom": "আকারের নিয়ন্ত্রণ নিন",
   "sidebar.rename": "নাম পরিবর্তন",

@@ -2,6 +2,8 @@ import { autoResizeAllTerminalsImmediate } from './scaling';
 import {
   isMobileTerminalViewport,
   observeMobileVerticalViewportChange,
+  rememberCurrentMobileViewportSnapshot,
+  setMobileVerticalStability,
   syncMobileVerticalStableTerminals,
 } from './mobileVerticalStability';
 import { isMobilePresentationContext } from '../theming/backgroundVisibility';
@@ -111,6 +113,17 @@ function isSoftKeyboardVisible(viewportHeight: number, baselineHeight: number): 
   );
 }
 
+function isConstrainedSoftKeyboardVisible(
+  constrainShell: boolean,
+  viewportHeight: number,
+  baselineHeight: number,
+): boolean {
+  if (!constrainShell) {
+    return false;
+  }
+  return isSoftKeyboardVisible(viewportHeight, baselineHeight);
+}
+
 function getSoftKeyboardBottomGuard(viewportHeight: number, baselineHeight: number): number {
   if (!isSoftKeyboardVisible(viewportHeight, baselineHeight)) {
     return 0;
@@ -137,6 +150,23 @@ function syncSoftKeyboardState(viewportHeight: number, baselineHeight: number): 
   return kbVisible;
 }
 
+function resizeTerminalsForKeyboardViewport(
+  keyboardVisible: boolean,
+  keyboardVisibilityChanged: boolean,
+): boolean {
+  if (!keyboardVisible && !keyboardVisibilityChanged) {
+    return false;
+  }
+
+  // The size-controlling mobile browser must publish the rows that really
+  // fit above the OSK. Keep tiny focused-input viewport jitter suppressed,
+  // but treat every stable keyboard open/close boundary as authoritative.
+  rememberCurrentMobileViewportSnapshot();
+  setMobileVerticalStability(false, { preserveScrollPosition: true });
+  autoResizeAllTerminalsImmediate();
+  return true;
+}
+
 /**
  * Set up visual viewport handling for mobile keyboard appearance.
  * Constrains the .terminal-page height to the visual viewport so the entire
@@ -151,6 +181,7 @@ export function setupVisualViewport(): void {
   let lastTop = -1;
   let lastWidth = 0;
   let baselineHeight = Math.max(window.innerHeight, vv.height);
+  let lastKeyboardVisible = false;
   const appEl = document.querySelector<HTMLElement>('.terminal-page');
 
   const update = () => {
@@ -165,7 +196,12 @@ export function setupVisualViewport(): void {
     const vh = Math.max(1, rawViewportHeight - bottomGuard);
     const viewportTop = getVisualViewportShellTop(vv);
     const viewportWidth = Math.max(1, vv.width || window.innerWidth);
-    const keyboardVisible = isSoftKeyboardVisible(rawViewportHeight, baselineHeight);
+    const keyboardVisible = isConstrainedSoftKeyboardVisible(
+      constrainShell,
+      rawViewportHeight,
+      baselineHeight,
+    );
+    const keyboardVisibilityChanged = keyboardVisible !== lastKeyboardVisible;
     const keyboardGeometryStable =
       Math.abs(vh - lastHeight) <= KEYBOARD_VIEWPORT_JITTER_TOLERANCE_PX &&
       Math.abs(viewportWidth - lastWidth) < 1;
@@ -185,6 +221,7 @@ export function setupVisualViewport(): void {
     lastHeight = vh;
     lastTop = viewportTop;
     lastWidth = viewportWidth;
+    lastKeyboardVisible = keyboardVisible;
 
     if (constrainShell) {
       applyVisualViewportShellGeometry(vv, vh, appEl);
@@ -199,6 +236,10 @@ export function setupVisualViewport(): void {
 
     if (typeof Reflect.get(window, 'dispatchEvent') === 'function')
       window.dispatchEvent(new Event('midterm:visual-viewport-changed'));
+
+    if (resizeTerminalsForKeyboardViewport(keyboardVisible, keyboardVisibilityChanged)) {
+      return;
+    }
 
     const mobileVerticalOnlyChange = observeMobileVerticalViewportChange();
     if (mobileVerticalOnlyChange) {

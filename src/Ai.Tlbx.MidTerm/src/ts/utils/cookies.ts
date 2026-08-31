@@ -37,9 +37,11 @@ export function getOrCreateClientId(): string {
 const TAB_ID_STORAGE_KEY = 'mt-tab-id';
 const TAB_ID_CHANNEL_NAME = 'tlbx-tab-identity-v1';
 const TAB_ID_PROBE_DELAY_MS = 60;
+export const TAB_ID_COLLISION_EVENT = 'midterm:tab-identity-collision';
 let volatileTabId: string | null = null;
 const tabIdentityChannels = new Set<BroadcastChannel>();
 let tabIdentityInitialization: Promise<string> | null = null;
+let releaseTabIdentityLock: (() => void) | null = null;
 
 /**
  * Get or create a tab-local ID for distinguishing multiple tabs in one browser session.
@@ -75,55 +77,116 @@ interface TabIdentityMessage {
 export function initializeTabIdentity(): Promise<string> {
   if (tabIdentityInitialization) return tabIdentityInitialization;
 
-  tabIdentityInitialization = new Promise<string>((resolve) => {
-    let tabId = getOrCreateTabId();
-    if (typeof BroadcastChannel === 'undefined') {
-      resolve(tabId);
-      return;
-    }
-
-    const runtimeId = crypto.randomUUID();
-    let channel: BroadcastChannel;
-    try {
-      channel = new BroadcastChannel(TAB_ID_CHANNEL_NAME);
-    } catch {
-      resolve(tabId);
-      return;
-    }
-    tabIdentityChannels.add(channel);
-    let occupied = false;
-
-    channel.onmessage = (event: MessageEvent<TabIdentityMessage>) => {
-      const message = event.data;
-      if (message.runtimeId === runtimeId || message.tabId !== tabId) return;
-
-      if (message.type === 'probe') {
-        channel.postMessage({
-          type: 'occupied',
-          tabId,
-          runtimeId,
-          targetRuntimeId: message.runtimeId,
-        } satisfies TabIdentityMessage);
-      } else if (message.targetRuntimeId === runtimeId) {
-        occupied = true;
-      }
-    };
-
-    channel.postMessage({ type: 'probe', tabId, runtimeId } satisfies TabIdentityMessage);
-    globalThis.setTimeout(() => {
-      if (occupied) {
-        tabId = crypto.randomUUID();
-        try {
-          sessionStorage.setItem(TAB_ID_STORAGE_KEY, tabId);
-        } catch {
-          volatileTabId = tabId;
-        }
-      }
-      resolve(tabId);
-    }, TAB_ID_PROBE_DELAY_MS);
-  });
-
+  tabIdentityInitialization = initializeTabIdentityCore();
   return tabIdentityInitialization;
+}
+
+function persistTabId(tabId: string): void {
+  try {
+    sessionStorage.setItem(TAB_ID_STORAGE_KEY, tabId);
+  } catch {
+    volatileTabId = tabId;
+  }
+}
+
+function createReplacementTabId(): string {
+  const tabId = crypto.randomUUID();
+  persistTabId(tabId);
+  return tabId;
+}
+
+async function acquireTabIdentityLock(tabId: string): Promise<boolean | null> {
+  const lockManager = typeof navigator === 'undefined' ? undefined : navigator.locks;
+  if (!lockManager) return null;
+
+  return new Promise<boolean | null>((resolve) => {
+    let settled = false;
+    void lockManager
+      .request(`tlbx-tab-identity:${tabId}`, { ifAvailable: true }, async (lock) => {
+        if (!lock) {
+          settled = true;
+          resolve(false);
+          return;
+        }
+
+        let release!: () => void;
+        const held = new Promise<void>((heldResolve) => {
+          release = heldResolve;
+        });
+        releaseTabIdentityLock = release;
+        settled = true;
+        resolve(true);
+        await held;
+      })
+      .catch(() => {
+        if (!settled) resolve(null);
+      });
+  });
+}
+
+async function lockUniqueTabIdentity(tabId: string): Promise<string> {
+  let candidate = tabId;
+  for (;;) {
+    const acquired = await acquireTabIdentityLock(candidate);
+    if (acquired !== false) return candidate;
+    candidate = createReplacementTabId();
+  }
+}
+
+async function initializeTabIdentityCore(): Promise<string> {
+  let tabId = getOrCreateTabId();
+  if (typeof BroadcastChannel === 'undefined') {
+    return lockUniqueTabIdentity(tabId);
+  }
+
+  const runtimeId = crypto.randomUUID();
+  let channel: BroadcastChannel;
+  try {
+    channel = new BroadcastChannel(TAB_ID_CHANNEL_NAME);
+  } catch {
+    return lockUniqueTabIdentity(tabId);
+  }
+  tabIdentityChannels.add(channel);
+  const probeState = { occupied: false };
+  let initialized = false;
+
+  channel.onmessage = (event: MessageEvent<TabIdentityMessage>) => {
+    const message = event.data;
+    if (message.runtimeId === runtimeId || message.tabId !== tabId) return;
+
+    if (message.type === 'probe') {
+      channel.postMessage({
+        type: 'occupied',
+        tabId,
+        runtimeId,
+        targetRuntimeId: message.runtimeId,
+      } satisfies TabIdentityMessage);
+    } else if (message.targetRuntimeId === runtimeId) {
+      if (!initialized) {
+        probeState.occupied = true;
+        return;
+      }
+
+      // A delayed response means the fixed probe window was not sufficient.
+      // Rekey before reloading so two live pages cannot continue resizing with
+      // one server identity merely because a background event loop was late.
+      releaseTabIdentityLock?.();
+      releaseTabIdentityLock = null;
+      tabId = createReplacementTabId();
+      globalThis.dispatchEvent(new Event(TAB_ID_COLLISION_EVENT));
+    }
+  };
+
+  channel.postMessage({ type: 'probe', tabId, runtimeId } satisfies TabIdentityMessage);
+  await new Promise<void>((resolve) => {
+    globalThis.setTimeout(resolve, TAB_ID_PROBE_DELAY_MS);
+  });
+  if (probeState.occupied) {
+    tabId = createReplacementTabId();
+  }
+  tabId = await lockUniqueTabIdentity(tabId);
+  initialized = true;
+  return tabId;
 }
 
 export function getBrowserDeviceLabel(): string {

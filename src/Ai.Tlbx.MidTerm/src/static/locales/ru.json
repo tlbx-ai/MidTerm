@@ -23,6 +23,7 @@
   "terminal.sizeControlledHere": "Размером управляет этот браузер",
   "terminal.scaledViewExplanation": "Этот вид масштабируется, чтобы всё оставалось видимым.",
   "terminal.continueHere": "Продолжить работу здесь",
+  "terminal.switchingHere": "Переключение сюда…",
   "terminal.continueHereHint": "Размер будет оптимизирован для этого браузера",
   "terminal.takeControlFrom": "Перехватить управление размером у",
   "sidebar.rename": "Переименовать",

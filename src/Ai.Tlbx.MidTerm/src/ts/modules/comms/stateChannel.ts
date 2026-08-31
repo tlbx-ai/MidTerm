@@ -25,7 +25,7 @@ import { handleAuthenticatedWebSocketClose } from '../auth/sessionLifetime';
 import { createLogger } from '../logging';
 import { initializeFromSession } from '../process';
 import { destroyTerminalForSession, createTerminalForSession } from '../terminal/manager';
-import { destroySessionWrapper } from '../sessionTabs';
+import { destroySessionWrapper, getActiveTab } from '../sessionTabs';
 import { applyTerminalScaling } from '../terminal/scaling';
 import { handleSessionClosed } from '../layout';
 import { updateEmptyState, updateMobileTitle } from '../sidebar/sessionList';
@@ -48,7 +48,7 @@ import {
   setSessionSelectedPreviewName,
   upsertSessionPreview,
 } from '../web/webSessionState';
-import { syncActiveWebPreview } from '../web';
+import { closePreviewFromServer, syncActiveWebPreview, syncBackgroundWebPreview } from '../web';
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { isSharedSessionRoute } from '../share';
 import { checkVersionAndReload } from '../../utils/versionCheck';
@@ -75,6 +75,7 @@ interface TmuxSwapMessage {
 
 interface MainBrowserStatusMessage {
   type: 'main-browser-status';
+  revision?: number;
   isMain: boolean;
   showButton: boolean;
   browsers?: BrowserSessionStatus[];
@@ -143,10 +144,12 @@ import {
   sessionTerminals,
   newlyCreatedSessions,
   hiddenSessionIds,
+  pendingSessions,
   setStateWs,
 } from '../../state';
 
 const COMMAND_TIMEOUT_MS = 30000;
+let lastMainBrowserRevision = -1;
 const pendingCommands = new Map<
   string,
   {
@@ -312,6 +315,18 @@ function handleDirectStateMessage(data: StateWsMessage): data is DirectStateMess
   return false;
 }
 
+function handleMainBrowserStatus(data: MainBrowserStatusMessage): void {
+  if (data.revision !== undefined && data.revision < lastMainBrowserRevision) {
+    return;
+  }
+  if (data.revision !== undefined) {
+    lastMainBrowserRevision = data.revision;
+  }
+  $isMainBrowser.set(data.isMain);
+  $showMainBrowserButton.set(data.showButton);
+  $browserSessions.set(data.browsers ?? []);
+}
+
 function handleStateSocketMessage(data: StateWsMessage): void {
   if (data.type === 'response') {
     handleCommandResponse(data);
@@ -335,9 +350,7 @@ function handleStateSocketMessage(data: StateWsMessage): void {
   }
 
   if (data.type === 'main-browser-status') {
-    $isMainBrowser.set(data.isMain);
-    $showMainBrowserButton.set(data.showButton);
-    $browserSessions.set(data.browsers ?? []);
+    handleMainBrowserStatus(data);
     return;
   }
 
@@ -365,6 +378,7 @@ export function connectStateWebSocket(): void {
   rejectPendingCommands('Connection replaced');
   closeWebSocket(stateWs, setStateWs);
   $stateWsConnected.set(false);
+  lastMainBrowserRevision = -1;
 
   const wsPath = isSharedSessionRoute() ? '/ws/share/state' : '/ws/state';
   const ws = new WebSocket(createWsUrl(wsPath));
@@ -535,7 +549,14 @@ export function handleStateUpdate(
   newSessions: Session[],
   layoutState?: LayoutStateMessage | null,
 ): void {
-  const validSessions = newSessions.filter((s): s is Session & { id: string } => !!s.id);
+  const serverSessionIds = new Set(newSessions.map((session) => session.id));
+  const optimisticSessions = [...pendingSessions]
+    .filter((sessionId) => !serverSessionIds.has(sessionId))
+    .map((sessionId) => getSession(sessionId))
+    .filter((session): session is Session => session !== undefined);
+  const validSessions = [...newSessions, ...optimisticSessions].filter(
+    (s): s is Session & { id: string } => !!s.id,
+  );
   removeClosedSessions(validSessions);
   validSessions.forEach(syncSessionTerminalState);
   const sessionsChanged = setSessions(validSessions);
@@ -744,6 +765,11 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
     case 'open':
       handleOpenBrowserUiCommand(msg);
       break;
+    case 'close':
+      if (msg.sessionId) {
+        await closePreviewFromServer(msg.sessionId, msg.previewName);
+      }
+      break;
     case 'mobile-device':
       if (msg.deviceAction) {
         void import('../web/mobileDeviceController')
@@ -917,6 +943,7 @@ async function handleBrowserOpen(
     selectSession(sessionId, { closeSettingsPanel: false });
   }
   if ($activeSessionId.get() !== sessionId) {
+    await syncBackgroundWebPreview(sessionId, previewName);
     return;
   }
   $webPreviewUrl.set(url);
@@ -965,14 +992,15 @@ function applyTerminalSizeControlResult(result: TerminalSizeControlCommandResult
 export async function requestTerminalSizeControl(
   sessionId: string,
   force: boolean,
+  expectedEpoch?: number,
 ): Promise<TerminalSizeControlCommandResult> {
   if (isHubSessionId(sessionId)) {
-    return requestHubTerminalSizeControl(sessionId, force);
+    return requestHubTerminalSizeControl(sessionId, force, expectedEpoch);
   }
 
   const result = await sendCommand<TerminalSizeControlCommandResult>(
     'terminal.requestSizeControl',
-    { sessionId, force },
+    { sessionId, force, ...(expectedEpoch === undefined ? {} : { expectedEpoch }) },
   );
   applyTerminalSizeControlResult(result);
   return result;
@@ -1044,7 +1072,17 @@ function getCurrentActiveSurface(): string | null {
     return null;
   }
 
-  if (session.appServerControlOnly || session.surface === 'codex' || session.surface === 'claude') {
+  const activeTab = getActiveTab(sessionId);
+  if (activeTab === 'files') {
+    return 'files';
+  }
+
+  if (
+    activeTab === 'agent' ||
+    session.appServerControlOnly ||
+    session.surface === 'codex' ||
+    session.surface === 'claude'
+  ) {
     return session.profileHint ? `agent:${session.profileHint}` : 'agent';
   }
 
@@ -1055,6 +1093,8 @@ let lastReportedBrowserActivity:
   | {
       isActive: boolean;
       isVisible: boolean;
+      activeSessionId: string | null;
+      activeSurface: string | null;
     }
   | undefined;
 
@@ -1066,11 +1106,15 @@ export function reportBrowserActivity(
   const report = {
     isActive,
     isVisible: getCurrentBrowserVisibility(),
+    activeSessionId: $activeSessionId.get(),
+    activeSurface: getCurrentActiveSurface(),
   };
   if (
     !force &&
     lastReportedBrowserActivity?.isActive === report.isActive &&
-    lastReportedBrowserActivity.isVisible === report.isVisible
+    lastReportedBrowserActivity.isVisible === report.isVisible &&
+    lastReportedBrowserActivity.activeSessionId === report.activeSessionId &&
+    lastReportedBrowserActivity.activeSurface === report.activeSurface
   ) {
     return;
   }
@@ -1080,8 +1124,8 @@ export function reportBrowserActivity(
 
   sendCommand('browser.setActivity', {
     ...report,
-    activeSessionId: $activeSessionId.get(),
-    activeSurface: getCurrentActiveSurface(),
+    activeSessionId: report.activeSessionId,
+    activeSurface: report.activeSurface,
   }).catch((e: unknown) => {
     if (lastReportedBrowserActivity === report) {
       lastReportedBrowserActivity = previousReport;
@@ -1109,6 +1153,7 @@ export function resetStateChannelRuntimeForTests(): void {
   pendingDocks.length = 0;
   layoutHydrated = false;
   stateWsHasConnected = false;
+  lastMainBrowserRevision = -1;
   lastUpdateInfoSignature = '';
   initialStateHydrated = false;
   handleInitialStateHydrated = null;

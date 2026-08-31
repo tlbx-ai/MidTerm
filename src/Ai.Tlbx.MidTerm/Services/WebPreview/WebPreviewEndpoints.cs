@@ -13,16 +13,29 @@ public static partial class WebPreviewEndpoints
         WebApplication app,
         WebPreviewService webPreviewService,
         TtyHostSessionManager sessionManager,
-        BrowserCommandService browserCommandService)
+        BrowserCommandService browserCommandService,
+        BrowserPreviewRegistry previewRegistry,
+        BrowserPreviewOwnerService previewOwnerService,
+        BrowserUiBridge browserUiBridge)
     {
-        MapPreviewSessionEndpoints(app, webPreviewService);
+        MapPreviewSessionEndpoints(
+            app,
+            webPreviewService,
+            previewRegistry,
+            previewOwnerService,
+            browserUiBridge);
         MapTargetEndpoints(app, webPreviewService, sessionManager);
         MapCookieEndpoints(app, webPreviewService);
         MapActionEndpoints(app, webPreviewService, sessionManager, browserCommandService);
         MapProxyLogEndpoints(app, webPreviewService);
     }
 
-    private static void MapPreviewSessionEndpoints(WebApplication app, WebPreviewService service)
+    private static void MapPreviewSessionEndpoints(
+        WebApplication app,
+        WebPreviewService service,
+        BrowserPreviewRegistry previewRegistry,
+        BrowserPreviewOwnerService previewOwnerService,
+        BrowserUiBridge browserUiBridge)
     {
         app.MapGet("/api/webpreview/previews", (string sessionId) =>
         {
@@ -44,9 +57,15 @@ public static partial class WebPreviewEndpoints
 
         app.MapDelete("/api/webpreview/previews", (string sessionId, string? previewName) =>
         {
-            return service.DeletePreviewSession(sessionId, previewName)
-                ? Results.Ok()
-                : Results.BadRequest("Failed to delete preview.");
+            if (!service.DeletePreviewSession(sessionId, previewName))
+            {
+                return Results.BadRequest("Failed to delete preview.");
+            }
+
+            previewRegistry.Remove(sessionId, previewName);
+            previewOwnerService.Release(sessionId, previewName);
+            browserUiBridge.RequestClose(sessionId, previewName);
+            return Results.Ok();
         });
     }
 

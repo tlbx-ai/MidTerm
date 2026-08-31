@@ -21,6 +21,7 @@ import {
   $terminalSizeControls,
   $sessions,
   hasTerminalSizeControl,
+  getTerminalSizeControl,
   getSession,
 } from '../../stores';
 import { throttle } from '../../utils';
@@ -46,12 +47,20 @@ import {
 import { sendResize } from '../comms';
 import { t } from '../i18n';
 import { getTabBarHeight } from '../sessionTabs';
-import { clearTerminalGapFillers, updateTerminalGapFillers } from './terminalGapFillers';
 import {
   claimEligibleVisibleTerminalSizes,
   configureTerminalSizeControlAutomation,
 } from './sizeControlAutomation';
-import { createScalingOverlay, positionScalingOverlay } from './sizeControlOverlay';
+import {
+  commitTerminalPresentation,
+  createTerminalPresentationSnapshot,
+  getCommittedTerminalPresentation,
+  getTerminalPresentationActionState,
+  reduceTerminalPresentationSnapshot,
+  scheduleTerminalPresentationFrame,
+  setTerminalPresentationActionState,
+} from './terminalPresentation';
+import { commitTerminalPresentationDom } from './terminalPresentationCommit';
 import {
   isMobileTerminalViewport,
   observeMobileVerticalViewportChange,
@@ -548,19 +557,6 @@ function calculateOptimalDimensionsForViewportWithMeasurementRecovery(
   return calculateOptimalDimensionsForViewport(state, container, isLayoutPane);
 }
 
-function clearTerminalScaling(state: Pick<TerminalState, 'container'>): void {
-  const xterm = state.container.querySelector<HTMLElement>('.xterm');
-  if (!xterm) {
-    clearTerminalGapFillers(state.container);
-    return;
-  }
-
-  xterm.style.transform = '';
-  xterm.style.transformOrigin = '';
-  state.container.classList.remove('scaled');
-  clearTerminalGapFillers(state.container);
-}
-
 function calculateViewportFit(
   state: Pick<TerminalState, 'terminal' | 'container'>,
   container: HTMLElement,
@@ -612,11 +608,6 @@ function scheduleFitRetry(sessionId: string, retriesRemaining: number): void {
       fitSessionToScreenInternal(sessionId, retriesRemaining - 1);
     }
   });
-}
-
-function removeScalingOverlay(container: HTMLElement): void {
-  const overlay = container.querySelector<HTMLElement>('.scaled-overlay');
-  if (overlay) overlay.remove();
 }
 
 function buildScaledOverlayLabel(container: HTMLElement, scale: number): string {
@@ -690,9 +681,6 @@ function fitSessionToScreenInternal(sessionId: string, retriesRemaining: number)
     return;
   }
 
-  // Clear any existing scaling first
-  clearTerminalScaling(state);
-
   if (!dom.terminalsArea) {
     return;
   }
@@ -765,13 +753,7 @@ function fitTerminalToContainerInternal(
     sendResize(sessionId, cols, rowsToApply);
   }
 
-  if (isMobileDenseTerminalModeEnabled()) {
-    applyTerminalScalingSync(state);
-  } else {
-    // Clear any scaling since we just resized to fit
-    clearTerminalScaling(state);
-    state.container.querySelector<HTMLElement>('.scaled-overlay')?.remove();
-  }
+  applyTerminalScalingSync(state);
   syncMobileVerticalStableTerminals();
 }
 
@@ -780,64 +762,33 @@ function fitTerminalToContainerInternal(
  * Use this when already inside a requestAnimationFrame callback.
  */
 export function applyTerminalScalingSync(state: TerminalState): void {
+  if (!state.opened || !isTerminalVisible(state)) {
+    state.pendingVisualRefresh = true;
+    return;
+  }
+
   const context = createTerminalScalingContext(state);
   if (!context) return;
-  const { container, xterm, ownsSize, scale, hasOptimalSizeMismatch } = context;
-
-  let overlay = container.querySelector<HTMLButtonElement>('.scaled-overlay');
-  const ensureOverlay = (): HTMLButtonElement => {
-    if (overlay) return overlay;
-    overlay = createScalingOverlay(container, ownsSize, fitOwnedTerminalToCurrentContainer);
-    return overlay;
-  };
-  const resetScaleState = (): void => {
-    resetTerminalScaleState(container, xterm);
-  };
-  const showOverlay = (label: string): void => {
-    const el = ensureOverlay();
-    positionScalingOverlay(el, ownsSize, label);
-  };
-
-  if (scale < 1) {
-    applyScaledDownTerminalState({
-      container,
-      xterm,
-      scale,
-      ownsSize,
-      hasOptimalSizeMismatch,
-      showOverlay,
-      resetScaleState,
-    });
-    return;
-  }
-
-  if (context.shouldApplyUndersizedState) {
-    applyUndersizedTerminalState({
-      container,
-      xterm,
-      ownsSize,
-      viewportMismatchTooSmall: context.viewportMismatchTooSmall,
-      showOverlay,
-      resetScaleState,
-      overlay,
-      clearOverlay: () => {
-        overlay?.remove();
-        overlay = null;
-      },
-    });
-    return;
-  }
-
-  applyNaturalFitTerminalState({
-    ownsSize,
-    showOverlay,
-    resetScaleState,
-    clearOverlay: () => {
-      overlay?.remove();
-      overlay = null;
+  const prepared = prepareTerminalPresentation(state, context);
+  const previousSnapshot = getCommittedTerminalPresentation(state);
+  const snapshot = reduceTerminalPresentationSnapshot(previousSnapshot, prepared.snapshot);
+  if (snapshot === previousSnapshot) return;
+  commitTerminalPresentationDom({
+    container: context.container,
+    xterm: context.xterm,
+    snapshot,
+    hasOwner: prepared.hasOwner,
+    label: prepared.label,
+    mode: prepared.mode,
+    scaleOwner: prepared.scaleOwner,
+    fitOwnedTerminal: fitOwnedTerminalToCurrentContainer,
+    setActionState: (actionState) => {
+      setTerminalPresentationActionState(state, actionState);
+      applyTerminalScaling(snapshot.sessionId, state);
     },
   });
-  if (ownsSize) updateTerminalGapFillers(container, xterm, 1);
+  commitTerminalPresentation(state, snapshot);
+  state.pendingVisualRefresh = false;
 }
 
 interface TerminalScalingContext {
@@ -846,9 +797,40 @@ interface TerminalScalingContext {
   state: TerminalState;
   scale: number;
   ownsSize: boolean;
-  hasOptimalSizeMismatch: boolean;
-  viewportMismatchTooSmall: boolean;
   shouldApplyUndersizedState: boolean;
+}
+
+function prepareTerminalPresentation(state: TerminalState, context: TerminalScalingContext) {
+  const { container, ownsSize, scale } = context;
+  const sessionId = getTerminalSessionId(container) ?? '';
+  const ownership = getTerminalSizeControl(sessionId);
+  const snapshot = createTerminalPresentationSnapshot({
+    sessionId,
+    epoch: ownership?.epoch ?? 0,
+    role: ownsSize ? 'owner' : 'follower',
+    ownerOnline: ownership?.ownerOnline ?? false,
+    ownerLabel: ownership?.ownerLabel ?? null,
+    canonicalCols: canonicalTerminalDimension(state.serverCols, state.terminal.cols),
+    canonicalRows: canonicalTerminalDimension(state.serverRows, state.terminal.rows),
+    viewportWidth: container.clientWidth,
+    viewportHeight: container.clientHeight,
+    passiveScale: scale,
+    actionState: getTerminalPresentationActionState(state),
+  });
+  const mode =
+    scale < 1 ? 'scaled-down' : context.shouldApplyUndersizedState ? 'undersized' : 'natural';
+  return {
+    snapshot,
+    hasOwner: ownership?.hasOwner ?? false,
+    label:
+      scale < 1 ? buildScaledOverlayLabel(container, scale) : t('terminal.scaledViewExplanation'),
+    mode,
+    scaleOwner: ownsSize && isMobileDenseTerminalModeEnabled(),
+  } as const;
+}
+
+function canonicalTerminalDimension(serverValue: number, terminalValue: number): number {
+  return serverValue > 0 ? serverValue : terminalValue;
 }
 
 function createTerminalScalingContext(state: TerminalState): TerminalScalingContext | null {
@@ -878,8 +860,6 @@ function createTerminalScalingContext(state: TerminalState): TerminalScalingCont
       hasOptimalSizeMismatch,
     ),
     ownsSize: sessionId ? hasTerminalSizeControl(sessionId) : false,
-    hasOptimalSizeMismatch,
-    viewportMismatchTooSmall: Boolean(viewportMismatch?.isTooSmall),
     shouldApplyUndersizedState: shouldApplyUndersizedTerminalState(
       viewportMismatch,
       measurements.termWidth,
@@ -945,111 +925,23 @@ function shouldApplyUndersizedTerminalState(
   );
 }
 
-function applyScaledDownTerminalState(args: {
-  container: HTMLElement;
-  xterm: HTMLElement;
-  scale: number;
-  ownsSize: boolean;
-  hasOptimalSizeMismatch: boolean;
-  showOverlay: (label: string) => void;
-  resetScaleState: () => void;
-}): void {
-  const { container, xterm, scale, ownsSize, showOverlay, resetScaleState } = args;
-  const scaleOwner = ownsSize && isMobileDenseTerminalModeEnabled();
-  if (ownsSize && !scaleOwner) {
-    resetScaleState();
-    removeScalingOverlay(container);
-    return;
-  }
-
-  xterm.style.transform = `scale(${scale})`;
-  xterm.style.transformOrigin = 'top left';
-  container.classList.add('scaled');
-  updateTerminalGapFillers(container, xterm, scale);
-  if (!scaleOwner) {
-    showOverlay(buildScaledOverlayLabel(container, scale));
-  } else {
-    removeScalingOverlay(container);
-  }
-}
-
-function applyUndersizedTerminalState(args: {
-  container: HTMLElement;
-  xterm: HTMLElement;
-  ownsSize: boolean;
-  viewportMismatchTooSmall: boolean;
-  showOverlay: (label: string) => void;
-  resetScaleState: () => void;
-  overlay: HTMLButtonElement | null;
-  clearOverlay: () => void;
-}): void {
-  const {
-    container,
-    xterm,
-    ownsSize,
-    viewportMismatchTooSmall,
-    showOverlay,
-    resetScaleState,
-    overlay,
-    clearOverlay,
-  } = args;
-  resetScaleState();
-  updateTerminalGapFillers(container, xterm, 1);
-
-  if (viewportMismatchTooSmall) {
-    if (ownsSize) {
-      removeScalingOverlay(container);
-      return;
-    }
-    showOverlay(t('terminal.scaledViewExplanation'));
-    return;
-  }
-
-  if (!ownsSize) {
-    showOverlay(t('terminal.scaledViewExplanation'));
-  } else if (overlay) {
-    clearOverlay();
-  }
-}
-
-function applyNaturalFitTerminalState(args: {
-  ownsSize: boolean;
-  showOverlay: (label: string) => void;
-  resetScaleState: () => void;
-  clearOverlay: () => void;
-}): void {
-  const { ownsSize, showOverlay, resetScaleState, clearOverlay } = args;
-  resetScaleState();
-
-  if (!ownsSize) {
-    showOverlay(t('terminal.scaledViewExplanation'));
-    return;
-  }
-
-  clearOverlay();
-}
-
 function getTerminalSessionId(container: HTMLElement): string | null {
   const prefix = 'terminal-';
   return container.id.startsWith(prefix) ? container.id.slice(prefix.length) || null : null;
 }
 
 function fitOwnedTerminalToCurrentContainer(sessionId: string, container: HTMLElement): void {
-  const layoutPane = container.closest<HTMLElement>('.layout-leaf');
-  if (layoutPane) {
-    fitTerminalToContainer(sessionId, layoutPane);
-  } else {
-    fitSessionToScreen(sessionId);
-  }
-
-  requestAnimationFrame(() => sessionTerminals.get(sessionId)?.terminal.focus());
-}
-
-function resetTerminalScaleState(container: HTMLElement, xterm: HTMLElement): void {
-  xterm.style.transform = '';
-  xterm.style.transformOrigin = '';
-  container.classList.remove('scaled');
-  clearTerminalGapFillers(container);
+  requestAnimationFrame(() => {
+    const currentState = sessionTerminals.get(sessionId);
+    if (!currentState?.opened) return;
+    const layoutPane = container.closest<HTMLElement>('.layout-leaf');
+    if (layoutPane) {
+      fitTerminalToContainer(sessionId, layoutPane);
+    } else {
+      fitSessionToScreen(sessionId);
+    }
+    currentState.terminal.focus();
+  });
 }
 
 /**
@@ -1057,13 +949,7 @@ function resetTerminalScaleState(container: HTMLElement, xterm: HTMLElement): vo
  * Scales down terminals that are larger than the available space.
  */
 export function applyTerminalScaling(_sessionId: string, state: TerminalState): void {
-  if (pendingTerminalScaleStates.has(state)) {
-    return;
-  }
-
-  pendingTerminalScaleStates.add(state);
-  requestAnimationFrame(() => {
-    pendingTerminalScaleStates.delete(state);
+  scheduleTerminalPresentationFrame(state, () => {
     if (!state.opened) {
       return;
     }
@@ -1129,7 +1015,6 @@ let autoResizeTimer: number | undefined;
 let terminalContainerResizeObserver: ResizeObserver | null = null;
 let observedTerminalContainer: HTMLElement | null = null;
 let footerReserveResizeQueued = false;
-const pendingTerminalScaleStates = new WeakSet<TerminalState>();
 
 /**
  * Auto-resize all terminals (debounced 300ms, for window resize events).
