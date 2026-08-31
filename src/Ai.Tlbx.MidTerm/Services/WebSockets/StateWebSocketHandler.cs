@@ -25,6 +25,7 @@ namespace Ai.Tlbx.MidTerm.Services.WebSockets;
 public sealed class StateWebSocketHandler
 {
     private readonly TtyHostSessionManager _sessionManager;
+    private readonly SessionCloseCleanupService _sessionCloseCleanup;
     private readonly SessionSupervisorService _sessionSupervisor;
     private readonly SessionAppServerControlRuntimeService _appServerControlRuntime;
     private readonly UpdateService _updateService;
@@ -42,6 +43,7 @@ public sealed class StateWebSocketHandler
 
     public StateWebSocketHandler(
         TtyHostSessionManager sessionManager,
+        SessionCloseCleanupService sessionCloseCleanup,
         SessionSupervisorService sessionSupervisor,
         SessionAppServerControlRuntimeService appServerControlRuntime,
         UpdateService updateService,
@@ -58,6 +60,7 @@ public sealed class StateWebSocketHandler
         BrowserUiBridge? browserUiBridge = null)
     {
         _sessionManager = sessionManager;
+        _sessionCloseCleanup = sessionCloseCleanup;
         _sessionSupervisor = sessionSupervisor;
         _appServerControlRuntime = appServerControlRuntime;
         _updateService = updateService;
@@ -867,6 +870,10 @@ public sealed class StateWebSocketHandler
         }
 
         var closed = await _sessionManager.CloseSessionAsync(sessionId, ct);
+        if (closed)
+        {
+            await _sessionCloseCleanup.ReclaimAfterUserTriggeredCloseAsync(sessionId);
+        }
         await sendResponse(cmd.Id, closed, null, closed ? null : "Session not found");
     }
 

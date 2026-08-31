@@ -200,6 +200,10 @@ public sealed class InputHistoryService : IDisposable
         {
             removed = _history.Entries.RemoveAll(candidate =>
                 string.Equals(candidate.SessionId, normalizedSessionId, StringComparison.Ordinal));
+            if (removed > 0)
+            {
+                _history.Entries.TrimExcess();
+            }
         }
 
         if (removed > 0)

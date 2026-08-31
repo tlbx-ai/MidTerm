@@ -221,6 +221,8 @@ public class Program
         var spaceService = app.Services.GetRequiredService<SpaceService>();
         var sessionPathAllowlistService = app.Services.GetRequiredService<SessionPathAllowlistService>();
         var gitWatcher = app.Services.GetRequiredService<GitWatcherService>();
+        gitWatcher.ConfigureSessionValidator(sessionId => sessionManager.GetSession(sessionId) is not null);
+        var sessionCloseCleanup = app.Services.GetRequiredService<SessionCloseCleanupService>();
         var sessionUpdateStateService = app.Services.GetRequiredService<SessionUpdateStateService>();
         GitCommandRunner.Configure(settings.RunAsUser, settingsService.IsRunningAsService);
         var commandService = app.Services.GetRequiredService<CommandService>();
@@ -314,9 +316,7 @@ public class Program
 
         sessionManager.OnSessionClosed += sessionId =>
         {
-            inputHistoryService.ClearSession(sessionId);
-            sessionPathAllowlistService.ClearSession(sessionId);
-            gitWatcher.UnregisterSession(sessionId);
+            sessionCloseCleanup.ClearSessionState(sessionId);
             shareGrantService.RevokeBySession(sessionId);
             sessionTelemetry.ClearSession(sessionId);
             managerBarQueueService.RemoveSession(sessionId);

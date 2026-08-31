@@ -77,6 +77,7 @@ public static partial class SessionApiEndpoints
         TerminalSizeControlService terminalSizeControlService)
     {
         var sessionLaunchCoordinator = app.Services.GetRequiredService<SessionLaunchCoordinator>();
+        var sessionCloseCleanup = app.Services.GetRequiredService<SessionCloseCleanupService>();
 
         void RecordPromptHistory(string sessionId, AppServerControlTurnRequest turn, string source, string? surface = null)
         {
@@ -489,7 +490,11 @@ public static partial class SessionApiEndpoints
         {
             workerSessionRegistry.Forget(id);
             agentFeed.Forget(id);
-            await sessionManager.CloseSessionAsync(id, ct);
+            var closed = await sessionManager.CloseSessionAsync(id, ct);
+            if (closed)
+            {
+                await sessionCloseCleanup.ReclaimAfterUserTriggeredCloseAsync(id);
+            }
             return Results.Ok();
         });
 

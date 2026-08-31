@@ -141,7 +141,7 @@ public sealed class MuxClientTests
         Assert.Equal(1, telemetry.Completed);
         Assert.Equal(0, telemetry.Failed);
 
-        client.RemoveSession(sessionId);
+        await client.RemoveSessionAsync(sessionId);
         await WaitForAsync(() => client.GetRecoveryTelemetry(sessionId).Requested == 0);
     }
 
@@ -198,6 +198,37 @@ public sealed class MuxClientTests
     }
 
     [Fact]
+    public async Task RemoveSession_CancelsAndAwaitsActiveRecovery()
+    {
+        var sessionActive = true;
+        using var socket = new RecordingWebSocket();
+        await using var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.FullReplay,
+            sessionExists: _ => sessionActive);
+        const string sessionId = "closing1";
+        var recoveryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var recovery = client.ExecuteRecoveryAsync(
+            sessionId,
+            async (_, ct) =>
+            {
+                recoveryStarted.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return new MuxClient.RecoveryResult(true, 0, 0, false);
+            },
+            CancellationToken.None);
+        await recoveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        sessionActive = false;
+        await client.RemoveSessionAsync(sessionId).WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.False(await recovery);
+        Assert.False(client.TryGetPausedSession(sessionId, out _));
+    }
+
+    [Fact]
     public async Task ShareClient_DeliversOnlyAllowedSession()
     {
         using var socket = new FakeWebSocket();
@@ -244,6 +275,32 @@ public sealed class MuxClientTests
         Assert.NotNull(rejected);
         Assert.True(rejected.IsReleased);
         socket.ReleaseSends();
+    }
+
+    [Fact]
+    public async Task RemoveSession_PurgesBufferAndRejectsLateOutput()
+    {
+        var sessionActive = true;
+        using var socket = new RecordingWebSocket();
+        await using var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.FullReplay,
+            sessionExists: _ => sessionActive);
+        const string sessionId = "closing1";
+        client.SetActiveSession(sessionId);
+
+        Assert.True(client.QueueOutput(sessionId, 4, 120, 30, RentOutput("data")));
+        await WaitForAsync(() => socket.SentFrames.Count == 1);
+        Assert.True(client.HasSessionBufferForTests(sessionId));
+
+        sessionActive = false;
+        await client.RemoveSessionAsync(sessionId).WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.False(client.HasSessionBufferForTests(sessionId));
+
+        var late = RentOutput("late");
+        Assert.False(client.QueueOutput(sessionId, 8, 120, 30, late));
+        Assert.True(late.IsReleased);
     }
 
     [Fact]
