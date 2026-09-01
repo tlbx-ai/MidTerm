@@ -72,6 +72,27 @@ public sealed class PrioritizedWebSocketWriterTests
         Assert.All(await Task.WhenAll(accepted), Assert.False);
     }
 
+    [Fact]
+    public async Task TryQueueCopy_TransfersPayloadOwnershipWithoutWaitingForPhysicalSend()
+    {
+        using var socket = new GateWebSocket();
+        await using var writer = new PrioritizedWebSocketWriter(socket, static (_, _) => { });
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var payload = new byte[] { 7, 8, 9 };
+
+        Assert.True(writer.TryQueueCopy(
+            payload,
+            MuxWritePriority.ActiveLive,
+            succeeded => completion.TrySetResult(succeeded)));
+        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.False(completion.Task.IsCompleted);
+
+        payload[0] = 99;
+        socket.ReleaseFirstSend();
+        Assert.True(await completion.Task.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.Equal(new byte[] { 7 }, socket.CompletedFrames);
+    }
+
     private sealed class GateWebSocket : WebSocket
     {
         private readonly TaskCompletionSource _firstSendStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);

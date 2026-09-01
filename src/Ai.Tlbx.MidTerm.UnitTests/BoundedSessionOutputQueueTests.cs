@@ -103,6 +103,26 @@ public sealed class BoundedSessionOutputQueueTests
     }
 
     [Fact]
+    public async Task TryEnqueueOrMerge_CoalescesSameSessionBeyondItemCapacityWithoutBreakingByteLimit()
+    {
+        using var queue = new BoundedSessionOutputQueue<string>(
+            capacity: 1,
+            activeBurstLimit: 1,
+            byteCapacity: 5,
+            measureBytes: static item => item.Length);
+
+        Assert.True(queue.TryEnqueue("session", "a"));
+        Assert.True(queue.TryEnqueueOrMerge("session", "bc", Concatenate));
+        Assert.Equal(1, queue.Count);
+        Assert.Equal(3, queue.QueuedBytes);
+        Assert.False(queue.TryEnqueueOrMerge("session", "def", Concatenate));
+        Assert.False(queue.TryEnqueueOrMerge("other", "d", Concatenate));
+
+        Assert.Equal("abc", await ReadAsync(queue, new HashSet<string>(StringComparer.Ordinal)));
+        Assert.Equal(0, queue.QueuedBytes);
+    }
+
+    [Fact]
     public async Task RemoveSession_PurgesOnlyOwnedItemsAndKeepsQueueUsable()
     {
         using var queue = new BoundedSessionOutputQueue<string>(
@@ -193,4 +213,10 @@ public sealed class BoundedSessionOutputQueueTests
     }
 
     private readonly record struct SequenceItem(string SessionId, int Sequence);
+
+    private static bool Concatenate(string existing, string incoming, out string merged)
+    {
+        merged = existing + incoming;
+        return true;
+    }
 }

@@ -247,7 +247,7 @@ public sealed class MuxClientTests
     }
 
     [Fact]
-    public async Task QueueOutput_WhenInputQueueIsFull_ReturnsFalseAndReleasesBuffer()
+    public async Task QueueOutput_ThousandsOfTinyContiguousFrames_DoNotTripItemCountOverflow()
     {
         using var socket = new BlockingWebSocket();
         await using var client = new MuxClient(
@@ -261,19 +261,20 @@ public sealed class MuxClientTests
         Assert.True(client.QueueOutput("session-1", 32 * 1024, 120, 30, first));
         await socket.SendStarted.WaitAsync(TimeSpan.FromSeconds(2));
 
-        SharedOutputBuffer? rejected = null;
+        var accepted = 0;
         for (var i = 0; i < 2_000; i++)
         {
             var buffer = SharedOutputBuffer.Rent(128);
-            if (!client.QueueOutput("session-1", (ulong)(32 * 1024 + ((i + 1) * 128)), 120, 30, buffer))
-            {
-                rejected = buffer;
-                break;
-            }
+            Assert.True(client.QueueOutput(
+                "session-1",
+                (ulong)(32 * 1024 + ((i + 1) * 128)),
+                120,
+                30,
+                buffer));
+            accepted++;
         }
 
-        Assert.NotNull(rejected);
-        Assert.True(rejected.IsReleased);
+        Assert.Equal(2_000, accepted);
         socket.ReleaseSends();
     }
 
@@ -346,9 +347,10 @@ public sealed class MuxClientTests
             socket.ReleaseFirstActiveFrame();
             await socket.SecondActiveFrameStarted.WaitAsync(TimeSpan.FromSeconds(2));
 
-            // The second active frame was reached after one 64-item drain pass;
-            // later background buffers must still be waiting in the bounded input queue.
-            Assert.False(lateBackgroundBuffer.IsReleased);
+            // The live pump may drain and transfer background buffers to the
+            // owned writer queue while the first physical send is blocked. The
+            // writer must still select the second active frame ahead of them.
+            Assert.True(lateBackgroundBuffer.IsReleased);
             socket.ReleaseSecondActiveFrame();
         }
         finally

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.WebSockets;
@@ -26,13 +27,39 @@ internal sealed class PrioritizedWebSocketWriter : IAsyncDisposable
 
     private sealed class PendingWrite
     {
-        public PendingWrite(ReadOnlyMemory<byte> data)
+        private byte[]? _ownedBuffer;
+        private readonly Action<bool>? _completed;
+
+        public PendingWrite(ReadOnlyMemory<byte> data, byte[]? ownedBuffer = null, Action<bool>? completed = null)
         {
             Data = data;
+            _ownedBuffer = ownedBuffer;
+            _completed = completed;
         }
 
         public ReadOnlyMemory<byte> Data { get; }
         public TaskCompletionSource<bool> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Complete(bool succeeded)
+        {
+            Completion.TrySetResult(succeeded);
+            try
+            {
+                _completed?.Invoke(succeeded);
+            }
+            catch
+            {
+                // Completion telemetry must never stop the socket writer.
+            }
+            finally
+            {
+                var ownedBuffer = Interlocked.Exchange(ref _ownedBuffer, null);
+                if (ownedBuffer is not null)
+                {
+                    ArrayPool<byte>.Shared.Return(ownedBuffer);
+                }
+            }
+        }
     }
 
     private readonly WebSocket _webSocket;
@@ -77,6 +104,29 @@ internal sealed class PrioritizedWebSocketWriter : IAsyncDisposable
         }
     }
 
+    public bool TryQueueCopy(ReadOnlySpan<byte> data, MuxWritePriority priority, Action<bool>? completed = null)
+    {
+        lock (_gate)
+        {
+            if (_disposed
+                || _cts.IsCancellationRequested
+                || _webSocket.State != WebSocketState.Open
+                || _queue.Count >= MaxQueuedFrames
+                || _queuedBytes + data.Length > MaxQueuedBytes)
+            {
+                return false;
+            }
+
+            var ownedBuffer = ArrayPool<byte>.Shared.Rent(data.Length);
+            data.CopyTo(ownedBuffer);
+            var pending = new PendingWrite(ownedBuffer.AsMemory(0, data.Length), ownedBuffer, completed);
+            _queue.Enqueue(pending, ((int)priority, _nextOrder++));
+            _queuedBytes += data.Length;
+            _available.Release();
+            return true;
+        }
+    }
+
     private async Task ProcessAsync()
     {
         try
@@ -101,12 +151,12 @@ internal sealed class PrioritizedWebSocketWriter : IAsyncDisposable
 
                 if (!await SendCoreAsync(pending.Data).ConfigureAwait(false))
                 {
-                    pending.Completion.TrySetResult(false);
+                    pending.Complete(false);
                     FailPendingWrites();
                     return;
                 }
 
-                pending.Completion.TrySetResult(true);
+                pending.Complete(true);
             }
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)
@@ -157,13 +207,19 @@ internal sealed class PrioritizedWebSocketWriter : IAsyncDisposable
 
     private void FailPendingWrites()
     {
+        List<PendingWrite> failed = [];
         lock (_gate)
         {
             while (_queue.TryDequeue(out var pending, out _))
             {
-                pending.Completion.TrySetResult(false);
+                failed.Add(pending);
             }
             _queuedBytes = 0;
+        }
+
+        foreach (var pending in failed)
+        {
+            pending.Complete(false);
         }
     }
 

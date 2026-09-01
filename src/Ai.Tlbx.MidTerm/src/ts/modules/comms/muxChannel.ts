@@ -413,9 +413,12 @@ interface SessionOutputQueue {
 const MAX_QUEUED_FRAMES_PER_SESSION = 2000;
 const MAX_QUEUED_BYTES_PER_SESSION = 4 * 1024 * 1024;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
+const MAX_COALESCED_BROWSER_OUTPUT_BYTES = 64 * 1024;
 const QUEUE_COMPACT_THRESHOLD = 1000;
 const OUTPUT_DRAIN_BUDGET_MS = 8;
 const MAX_TERMINAL_WRITE_BATCH_BYTES = 64 * 1024;
+const MAX_XTERM_UNPARSED_BYTES = 512 * 1024;
+const XTERM_PARSE_BARRIER_TIMEOUT_MS = 5000;
 const MAX_PRINTABLE_INPUT_COALESCING_MS = 200;
 
 const sessionOutputQueues = new Map<string, SessionOutputQueue>();
@@ -565,7 +568,11 @@ function clearQueuedOutput(sessionId?: string): void {
 
 function noteQueueOverflow(sessionId: string): void {
   log.warn(() => `Output queue full for ${sessionId}, dropping oldest queued frame`);
-  $dataLossDetected.set({ sessionId, timestamp: Date.now() });
+  $dataLossDetected.set({
+    sessionId,
+    timestamp: Date.now(),
+    reason: 'browser_pending_overflow',
+  });
   const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
   snapshot.dataLossCount += 1;
   snapshot.lastDataLossReason = 'browser_pending_overflow';
@@ -606,6 +613,21 @@ function dequeueOutputFrame(sessionId: string): OutputFrameItem | null {
 
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
   const queue = getOrCreateSessionQueue(sessionId);
+  const lastItem = queue.items[queue.items.length - 1];
+  if (!compressed && lastItem && !lastItem.compressed) {
+    const mergedPayload = tryMergeOutputPayloads(lastItem.payload, payload);
+    if (
+      mergedPayload &&
+      queue.bytes - lastItem.payload.byteLength + mergedPayload.byteLength <=
+        MAX_QUEUED_BYTES_PER_SESSION
+    ) {
+      queue.bytes += mergedPayload.byteLength - lastItem.payload.byteLength;
+      lastItem.payload = mergedPayload;
+      scheduleSessionOutputQueue(sessionId, getOutputGeneration(sessionId));
+      return;
+    }
+  }
+
   const pendingCount = getPendingFrameCount(queue);
   if (
     pendingCount >= MAX_QUEUED_FRAMES_PER_SESSION ||
@@ -626,6 +648,37 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
   scheduleSessionOutputQueue(sessionId, getOutputGeneration(sessionId));
 }
 
+function tryMergeOutputPayloads(
+  previousPayload: Uint8Array,
+  incomingPayload: Uint8Array,
+): Uint8Array | null {
+  const previous = parseOutputFrame(previousPayload);
+  const incoming = parseOutputFrame(incomingPayload);
+  const incomingLength = BigInt(incoming.data.byteLength);
+  if (
+    !previous.valid ||
+    !incoming.valid ||
+    previous.cols !== incoming.cols ||
+    previous.rows !== incoming.rows ||
+    incoming.sequenceEnd < incomingLength ||
+    previous.sequenceEnd !== incoming.sequenceEnd - incomingLength ||
+    previous.data.byteLength + incoming.data.byteLength > MAX_COALESCED_BROWSER_OUTPUT_BYTES
+  ) {
+    return null;
+  }
+
+  const merged = new Uint8Array(12 + previous.data.byteLength + incoming.data.byteLength);
+  const view = new DataView(merged.buffer);
+  view.setBigUint64(0, incoming.sequenceEnd, true);
+  merged[8] = incoming.cols & 0xff;
+  merged[9] = (incoming.cols >> 8) & 0xff;
+  merged[10] = incoming.rows & 0xff;
+  merged[11] = (incoming.rows >> 8) & 0xff;
+  merged.set(previous.data, 12);
+  merged.set(incoming.data, 12 + previous.data.byteLength);
+  return merged;
+}
+
 function scheduleSessionOutputQueue(sessionId: string, generation: number): void {
   if (scheduledOutputQueues.has(sessionId)) {
     return;
@@ -641,6 +694,7 @@ function scheduleSessionOutputQueue(sessionId: string, generation: number): void
   });
 }
 
+// eslint-disable-next-line complexity -- one ordered worker coordinates decompression, batching, main-thread yields, and bounded xterm parse backpressure.
 async function processSessionOutputQueue(sessionId: string, generation: number): Promise<void> {
   const queue = sessionOutputQueues.get(sessionId);
   if (!queue || queue.processing) {
@@ -649,13 +703,25 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
 
   queue.processing = true;
   let writeBatch: TerminalWriteBatch | null = null;
-  const flushWriteBatch = (): void => {
+  let unparsedTerminalBytes = 0;
+  const flushWriteBatch = (): Promise<void> | null => {
     if (!writeBatch) {
-      return;
+      return null;
     }
 
-    deliverTerminalWriteBatch(writeBatch, generation);
+    unparsedTerminalBytes += writeBatch.bytes;
+    const shouldWaitForXterm = unparsedTerminalBytes >= MAX_XTERM_UNPARSED_BYTES;
+    const latestParseBarrier = deliverTerminalWriteBatch(
+      writeBatch,
+      generation,
+      shouldWaitForXterm,
+    );
     writeBatch = null;
+    if (shouldWaitForXterm) {
+      unparsedTerminalBytes = 0;
+      return latestParseBarrier;
+    }
+    return null;
   };
 
   try {
@@ -671,11 +737,17 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
       const delivery = processedFrame instanceof Promise ? await processedFrame : processedFrame;
       if (delivery) {
         if (!canAppendTerminalWriteBatch(writeBatch, delivery)) {
-          flushWriteBatch();
+          const parseBarrier = flushWriteBatch();
+          if (parseBarrier) {
+            await parseBarrier;
+          }
         }
         writeBatch = appendTerminalWriteBatch(writeBatch, delivery);
         if (writeBatch.bytes >= MAX_TERMINAL_WRITE_BATCH_BYTES) {
-          flushWriteBatch();
+          const parseBarrier = flushWriteBatch();
+          if (parseBarrier) {
+            await parseBarrier;
+          }
         }
       }
 
@@ -686,13 +758,19 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
       // Heavy output must periodically yield so keyboard interrupts like Ctrl+C
       // can be processed promptly instead of waiting behind a long browser-side drain.
       if (performance.now() - sliceStartMs >= OUTPUT_DRAIN_BUDGET_MS) {
-        flushWriteBatch();
+        const parseBarrier = flushWriteBatch();
+        if (parseBarrier) {
+          await parseBarrier;
+        }
         await yieldToMain();
         sliceStartMs = performance.now();
       }
     }
   } finally {
-    flushWriteBatch();
+    const parseBarrier = flushWriteBatch();
+    if (parseBarrier) {
+      await parseBarrier;
+    }
     queue.processing = false;
 
     // If new frames landed after the current drain finished, restart the same
@@ -706,16 +784,50 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
   }
 }
 
-function deliverTerminalWriteBatch(batch: TerminalWriteBatch, generation: number): void {
-  writeToTerminal(
-    batch.sessionId,
-    batch.state,
-    batch.sequenceEnd,
-    batch.cols,
-    batch.rows,
-    combineTerminalWriteChunks(batch.chunks, batch.bytes),
-    generation,
-  );
+function deliverTerminalWriteBatch(
+  batch: TerminalWriteBatch,
+  generation: number,
+  waitForParsed: boolean,
+): Promise<void> | null {
+  const data = combineTerminalWriteChunks(batch.chunks, batch.bytes);
+  if (!waitForParsed) {
+    writeToTerminal(
+      batch.sessionId,
+      batch.state,
+      batch.sequenceEnd,
+      batch.cols,
+      batch.rows,
+      data,
+      generation,
+    );
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    let completed = false;
+    const finish = (): void => {
+      if (completed) return;
+      completed = true;
+      window.clearTimeout(timeout);
+      resolve();
+    };
+    const timeout = window.setTimeout(() => {
+      log.warn(
+        () => `xterm parse barrier timed out for ${batch.sessionId}; releasing output worker`,
+      );
+      finish();
+    }, XTERM_PARSE_BARRIER_TIMEOUT_MS);
+    writeToTerminal(
+      batch.sessionId,
+      batch.state,
+      batch.sequenceEnd,
+      batch.cols,
+      batch.rows,
+      data,
+      generation,
+      finish,
+    );
+  });
 }
 
 /**
@@ -745,6 +857,14 @@ function bufferPendingFrame(
   if (!frames) {
     frames = [];
     pendingOutputFrames.set(sessionId, frames);
+  }
+  const lastFrame = frames[frames.length - 1];
+  if (lastFrame) {
+    const mergedPayload = tryMergeOutputPayloads(lastFrame, bufferedPayload);
+    if (mergedPayload) {
+      frames[frames.length - 1] = mergedPayload;
+      return;
+    }
   }
   if (frames.length >= MAX_PENDING_FRAMES_PER_SESSION) {
     log.warn(() => `Pending frames overflow for ${sessionId}, requesting buffer refresh`);
@@ -815,7 +935,11 @@ function processParsedOutputFrame(
       snapshot.dataLossCount += 1;
       snapshot.recoveryGapCount += 1;
       snapshot.lastDataLossReason = 'browser_forward_sequence_gap';
-      $dataLossDetected.set({ sessionId: item.sessionId, timestamp: Date.now() });
+      $dataLossDetected.set({
+        sessionId: item.sessionId,
+        timestamp: Date.now(),
+        reason: 'browser_forward_sequence_gap',
+      });
       sessionsNeedingResync.add(item.sessionId);
       pendingOutputFrames.delete(item.sessionId);
       clearQueuedOutput(item.sessionId);
@@ -893,6 +1017,7 @@ function writeTerminalData(
   // "parsed and visible" notifications only, not as a per-frame flow-control gate.
   state.terminal.write(data, () => {
     if (!isOutputGenerationCurrent(sessionId, generation)) {
+      onParsed?.();
       return;
     }
 
@@ -963,12 +1088,15 @@ function writeOutputDataWithPathScan(
   sequenceEnd: bigint,
   data: Uint8Array,
   generation: number,
+  onParsed?: () => void,
 ): void {
   if (data.length === 0) {
+    onParsed?.();
     return;
   }
 
   writeTerminalData(sessionId, state, sequenceEnd, data, generation, () => {
+    onParsed?.();
     if (sessionId === $activeSessionId.get()) {
       void yieldToMain().then(() => {
         if (
@@ -990,10 +1118,18 @@ function writeToTerminal(
   rows: number,
   data: Uint8Array,
   generation: number,
+  onParsed?: () => void,
 ): void {
   const cursorVisibility = processTerminalOutputCursorState(state, sessionId, data);
   applyTerminalResizeIfNeeded(sessionId, state, cols, rows);
-  writeOutputDataWithPathScan(sessionId, state, sequenceEnd, cursorVisibility.data, generation);
+  writeOutputDataWithPathScan(
+    sessionId,
+    state,
+    sequenceEnd,
+    cursorVisibility.data,
+    generation,
+    onParsed,
+  );
 }
 
 export function applyOutputFrameToTerminal(

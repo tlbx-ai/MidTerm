@@ -77,6 +77,7 @@ public sealed class MuxClient : IAsyncDisposable
     private const int InitialBufferBytesPerSession = 8 * 1024;
     private const int MaxQueuedItems = 1000;
     private const int MaxQueuedBytes = 4 * 1024 * 1024;
+    private const int MaxCoalescedInputBytes = 32 * 1024;
     private const int InputDrainMaxItemsPerPass = 64;
     private const int MaxFrameChunkBytes = 32 * 1024;
     private const int ActiveFlushMaxChunksPerPass = 8;
@@ -409,7 +410,8 @@ public sealed class MuxClient : IAsyncDisposable
             return false;
         }
 
-        if (!_inputQueue.TryEnqueue(sessionId, new OutputItem(sessionId, sequenceEndExclusive, cols, rows, buffer)))
+        var outputItem = new OutputItem(sessionId, sequenceEndExclusive, cols, rows, buffer);
+        if (!_inputQueue.TryEnqueueOrMerge(sessionId, outputItem, TryMergeOutputItems))
         {
             var bufferLength = (ulong)buffer.Length;
             var sequenceStart = sequenceEndExclusive >= bufferLength
@@ -427,6 +429,41 @@ public sealed class MuxClient : IAsyncDisposable
             return false;
         }
 
+        return true;
+    }
+
+    private static bool TryMergeOutputItems(OutputItem existing, OutputItem incoming, out OutputItem merged)
+    {
+        merged = default;
+        if (existing.Buffer is null || incoming.Buffer is null)
+        {
+            return false;
+        }
+
+        var incomingLength = incoming.Buffer.Length;
+        var incomingSequenceStart = incoming.SequenceEndExclusive >= (ulong)incomingLength
+            ? incoming.SequenceEndExclusive - (ulong)incomingLength
+            : 0;
+        var combinedLength = existing.Buffer.Length + incomingLength;
+        if (existing.Cols != incoming.Cols
+            || existing.Rows != incoming.Rows
+            || existing.SequenceEndExclusive != incomingSequenceStart
+            || combinedLength > MaxCoalescedInputBytes)
+        {
+            return false;
+        }
+
+        var combined = SharedOutputBuffer.Rent(combinedLength);
+        existing.Buffer.Span.CopyTo(combined.WriteSpan);
+        incoming.Buffer.Span.CopyTo(combined.WriteSpan[existing.Buffer.Length..]);
+        merged = new OutputItem(
+            incoming.SessionId,
+            incoming.SequenceEndExclusive,
+            incoming.Cols,
+            incoming.Rows,
+            combined);
+        existing.Buffer.Release();
+        incoming.Buffer.Release();
         return true;
     }
 
@@ -1118,14 +1155,28 @@ public sealed class MuxClient : IAsyncDisposable
                         chunk.Span,
                         frameBuffer);
 
-                // Send first, reset after - prevents data loss on send failure.
-                if (!await SendFrameAsync(
-                        frameBuffer.AsMemory(0, frameLength),
-                        GetLiveWritePriority(sessionId)).ConfigureAwait(false))
+                // Transfer an owned copy to the socket writer. Waiting for the
+                // physical WebSocket send here used to stop this same loop from
+                // draining raw PTY frames, so a brief client stall could overflow
+                // a queue containing only a few kilobytes of tiny reads.
+                Action<bool>? sent = _outputFrameSent is null
+                    ? null
+                    : succeeded =>
+                    {
+                        if (succeeded)
+                        {
+                            _outputFrameSent(Id, sessionId, sequenceEndExclusive, Environment.TickCount64);
+                        }
+                    };
+                if (!_writer.TryQueueCopy(
+                        frameBuffer.AsSpan(0, frameLength),
+                        GetLiveWritePriority(sessionId),
+                        sent))
                 {
+                    MarkTransportDegraded("websocket writer queue full");
+                    await Task.Delay(ActiveFlushInterval, _cts.Token).ConfigureAwait(false);
                     return;
                 }
-                _outputFrameSent?.Invoke(Id, sessionId, sequenceEndExclusive, Environment.TickCount64);
                 RecordDeliveredSequence(sessionId, sequenceEndExclusive);
             }
             finally

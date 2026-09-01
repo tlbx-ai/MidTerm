@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Threading.Channels;
 using Xunit;
 using TtyHostProgram = Ai.Tlbx.MidTerm.TtyHost.Program;
@@ -7,9 +8,68 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class TtyHostRuntimeHygieneTests
 {
     [Fact]
-    public void ClientWriteChannel_UsesBackpressureInsteadOfSuccessfulDrop()
+    public async Task ClientWriteChannel_WaitsForCapacityInsteadOfDroppingOutput()
     {
         Assert.Equal(BoundedChannelFullMode.Wait, TtyHostProgram.ClientWriteChannelFullMode);
+
+        var channel = Channel.CreateBounded<TtyHostProgram.PooledFrame>(new BoundedChannelOptions(1)
+        {
+            FullMode = TtyHostProgram.ClientWriteChannelFullMode,
+            SingleReader = true,
+            SingleWriter = false
+        });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Assert.True(TtyHostProgram.EnqueueFrame(channel.Writer, "first"u8, cts.Token));
+
+        var blockedWrite = Task.Run(() =>
+            TtyHostProgram.EnqueueFrame(channel.Writer, "second"u8, cts.Token));
+        var earlyCompletion = await Task.WhenAny(blockedWrite, Task.Delay(100, cts.Token));
+        Assert.NotSame(blockedWrite, earlyCompletion);
+
+        Assert.True(channel.Reader.TryRead(out var first));
+        try
+        {
+            Assert.Equal("first"u8.ToArray(), first.Buffer.AsSpan(0, first.Length).ToArray());
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(first.Buffer);
+        }
+
+        Assert.True(await blockedWrite.WaitAsync(cts.Token));
+        Assert.True(channel.Reader.TryRead(out var second));
+        try
+        {
+            Assert.Equal("second"u8.ToArray(), second.Buffer.AsSpan(0, second.Length).ToArray());
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(second.Buffer);
+        }
+    }
+
+    [Fact]
+    public async Task ClientWriteChannel_CancellationReleasesBlockedProducerWithoutDeadlock()
+    {
+        var channel = Channel.CreateBounded<TtyHostProgram.PooledFrame>(new BoundedChannelOptions(1)
+        {
+            FullMode = TtyHostProgram.ClientWriteChannelFullMode,
+            SingleReader = true,
+            SingleWriter = false
+        });
+        using var cts = new CancellationTokenSource();
+        Assert.True(TtyHostProgram.EnqueueFrame(channel.Writer, "held"u8, CancellationToken.None));
+
+        var blockedWrite = Task.Run(() =>
+            TtyHostProgram.EnqueueFrame(channel.Writer, "cancelled"u8, cts.Token));
+        await Task.Delay(50, cts.Token);
+        Assert.False(blockedWrite.IsCompleted);
+        cts.Cancel();
+        Assert.False(await blockedWrite.WaitAsync(TimeSpan.FromSeconds(2), CancellationToken.None));
+
+        Assert.True(channel.Reader.TryRead(out var held));
+        ArrayPool<byte>.Shared.Return(held.Buffer);
+        Assert.False(channel.Reader.TryRead(out _));
     }
 
     [Fact]

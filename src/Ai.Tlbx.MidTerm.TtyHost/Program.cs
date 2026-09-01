@@ -482,7 +482,7 @@ public static class Program
         }
     }
 
-    private readonly record struct PooledFrame(
+    internal readonly record struct PooledFrame(
         byte[] Buffer,
         int Length,
         int TerminalBytes,
@@ -496,28 +496,51 @@ public static class Program
         long EnqueuedAtMs,
         long IpcWriteDoneAtMs);
 
-    private static bool EnqueueFrame(
+    internal static bool EnqueueFrame(
         ChannelWriter<PooledFrame> writer,
         ReadOnlySpan<byte> frame,
+        CancellationToken cancellationToken,
         int terminalBytes = 0,
         ulong sequenceEndExclusive = 0,
         uint inputTraceId = 0)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(frame.Length);
         frame.CopyTo(buffer);
-        if (!writer.TryWrite(new PooledFrame(
+        var pooledFrame = new PooledFrame(
             buffer,
             frame.Length,
             terminalBytes,
             sequenceEndExclusive,
             Environment.TickCount64,
-            inputTraceId)))
+            inputTraceId);
+        if (writer.TryWrite(pooledFrame))
+        {
+            return true;
+        }
+
+        try
+        {
+            // The channel is explicitly configured for Wait. Honor that contract
+            // when a short pipe stall fills the frame slots instead of reporting
+            // false data loss and reconnecting an otherwise healthy session.
+            writer.WriteAsync(pooledFrame, cancellationToken).AsTask().GetAwaiter().GetResult();
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             ArrayPool<byte>.Shared.Return(buffer);
             return false;
         }
-
-        return true;
+        catch (ChannelClosedException)
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+            return false;
+        }
+        catch
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+            throw;
+        }
     }
 
     private static async Task DrainWriteChannelAsync(
@@ -681,14 +704,13 @@ public static class Program
                         var inputTraceId = session.GetInputTraceIdForOutput(sequenceEndExclusive);
                         TtyHostProtocol.WriteOutputMessage(sequenceStart, session.Cols, session.Rows, data.Span, frame =>
                         {
-                            if (EnqueueFrame(channelWriter, frame, data.Length, sequenceEndExclusive, inputTraceId))
+                            if (EnqueueFrame(channelWriter, frame, clientCts.Token, data.Length, sequenceEndExclusive, inputTraceId))
                             {
                                 session.RecordIpcEnqueued(sequenceEndExclusive, data.Length);
                                 return;
                             }
 
-                            session.RecordDataLoss(TerminalReplayReason.MthostIpcOverflow, data.Length);
-                            Log.Warn(() => $"IPC client backlog overflow for session {session.Id}, forcing reconnect");
+                            Log.Verbose(() => $"IPC client output closed while forwarding session {session.Id}");
                             clientCts.Cancel();
                         });
                     }
@@ -711,7 +733,7 @@ public static class Program
                     if (client.IsConnected)
                     {
                         var msg = TtyHostProtocol.CreateStateChange(session.IsRunning, session.ExitCode);
-                        if (!EnqueueFrame(channelWriter, msg))
+                        if (!EnqueueFrame(channelWriter, msg, clientCts.Token))
                         {
                             clientCts.Cancel();
                         }
@@ -735,7 +757,7 @@ public static class Program
                             AgentAttachPoint = SessionAgentAttachPointDetector.Detect(info.Name, info.CommandLine)
                         };
                         var msg = TtyHostProtocol.CreateForegroundChange(payload);
-                        if (!EnqueueFrame(channelWriter, msg))
+                        if (!EnqueueFrame(channelWriter, msg, clientCts.Token))
                         {
                             clientCts.Cancel();
                         }
@@ -784,13 +806,12 @@ public static class Program
                     var sequenceEndExclusive = sequenceStart + (ulong)bufferedSegment.Length;
                     TtyHostProtocol.WriteOutputMessage(sequenceStart, session.Cols, session.Rows, bufferedSegment.Span, frame =>
                     {
-                        if (EnqueueFrame(channelWriter, frame, bufferedSegment.Length, sequenceEndExclusive))
+                        if (EnqueueFrame(channelWriter, frame, clientCts.Token, bufferedSegment.Length, sequenceEndExclusive))
                         {
                             session.RecordIpcEnqueued(sequenceEndExclusive, bufferedSegment.Length);
                             return;
                         }
 
-                        session.RecordDataLoss(TerminalReplayReason.MthostIpcOverflow, bufferedSegment.Length);
                         clientCts.Cancel();
                     });
                 });
@@ -808,7 +829,7 @@ public static class Program
                         MissingSequenceStart = handshakeCursor,
                         MissingSequenceEndExclusive = availableStart
                     });
-                    EnqueueFrame(channelWriter, loss);
+                    EnqueueFrame(channelWriter, loss, clientCts.Token);
                     session.RecordDataLoss(TerminalReplayReason.IpcSequenceGap, missingBytes);
                     Log.Warn(() => "IPC reconnect cursor fell outside retained terminal output; client must reconcile from a buffer snapshot");
                 }
@@ -1032,7 +1053,7 @@ public static class Program
                         !string.Equals(attachRequest.OwnerToken, session.OwnerToken, StringComparison.Ordinal))
                     {
                         var reject = TtyHostProtocol.CreateAttachAck(false, "mthost ownership mismatch");
-                        EnqueueFrame(channelWriter, reject);
+                        EnqueueFrame(channelWriter, reject, ct);
                         Log.Warn(() => $"Rejected client for session {session.Id}: ownership mismatch");
                         break;
                     }
@@ -1046,7 +1067,7 @@ public static class Program
 
                     attached = true;
                     var accept = TtyHostProtocol.CreateAttachAck(true);
-                    EnqueueFrame(channelWriter, accept);
+                    EnqueueFrame(channelWriter, accept, ct);
                     onAttached?.Invoke();
                     continue;
                 }
@@ -1056,7 +1077,7 @@ public static class Program
                     case TtyHostMessageType.GetInfo:
                         var info = session.GetInfo();
                         var infoMsg = TtyHostProtocol.CreateInfoResponse(info);
-                        EnqueueFrame(channelWriter, infoMsg);
+                        EnqueueFrame(channelWriter, infoMsg, ct);
                         onHandshakeComplete?.Invoke();
                         break;
 
@@ -1084,7 +1105,7 @@ public static class Program
                                 pendingInputTraceMarkerReceivedAtMs,
                                 inputReceivedAtMs,
                                 ptyWriteDoneAtMs));
-                            EnqueueFrame(channelWriter, report);
+                            EnqueueFrame(channelWriter, report, ct);
                             pendingInputTraceId = null;
                             pendingInputTraceMarkerReceivedAtMs = 0;
                         }
@@ -1102,7 +1123,7 @@ public static class Program
                         var (cols, rows) = TtyHostProtocol.ParseResize(payload);
                         session.Resize(cols, rows);
                         var resizeAck = TtyHostProtocol.CreateResizeAck();
-                        EnqueueFrame(channelWriter, resizeAck);
+                        EnqueueFrame(channelWriter, resizeAck, ct);
                         break;
 
                     case TtyHostMessageType.GetBuffer:
@@ -1126,14 +1147,14 @@ public static class Program
                                         emptySequenceStart,
                                         terminalState,
                                         ReadOnlySpan<byte>.Empty,
-                                        frame => EnqueueFrame(channelWriter, frame));
+                                        frame => EnqueueFrame(channelWriter, frame, ct));
                                 }
                                 else
                                 {
                                     TtyHostProtocol.WriteBufferResponse(
                                         emptySequenceStart,
                                         ReadOnlySpan<byte>.Empty,
-                                        frame => EnqueueFrame(channelWriter, frame));
+                                        frame => EnqueueFrame(channelWriter, frame, ct));
                                 }
                                 break;
                             }
@@ -1157,14 +1178,14 @@ public static class Program
                                             sequenceStart,
                                             terminalState,
                                             payloadSlice,
-                                            frame => EnqueueFrame(channelWriter, frame));
+                                            frame => EnqueueFrame(channelWriter, frame, ct));
                                     }
                                     else
                                     {
                                         TtyHostProtocol.WriteBufferResponse(
                                             sequenceStart,
                                             payloadSlice,
-                                            frame => EnqueueFrame(channelWriter, frame));
+                                            frame => EnqueueFrame(channelWriter, frame, ct));
                                     }
                                     break;
                                 }
@@ -1187,14 +1208,14 @@ public static class Program
                         var name = TtyHostProtocol.ParseSetName(payload);
                         session.SetName(string.IsNullOrEmpty(name) ? null : name);
                         var nameAck = TtyHostProtocol.CreateSetNameAck();
-                        EnqueueFrame(channelWriter, nameAck);
+                        EnqueueFrame(channelWriter, nameAck, ct);
                         break;
 
                     case TtyHostMessageType.SetOrder:
                         var order = TtyHostProtocol.ParseSetOrder(payload);
                         session.SetOrder(order);
                         var orderAck = TtyHostProtocol.CreateSetOrderAck();
-                        EnqueueFrame(channelWriter, orderAck);
+                        EnqueueFrame(channelWriter, orderAck, ct);
                         Log.Verbose(() => $"Order set to {order}");
                         break;
 
@@ -1202,7 +1223,7 @@ public static class Program
                         var metadata = TtyHostProtocol.ParseSetMetadata(payload) ?? new TtyHostSessionMetadata();
                         session.SetMetadata(metadata);
                         var metadataAck = TtyHostProtocol.CreateSetMetadataAck();
-                        EnqueueFrame(channelWriter, metadataAck);
+                        EnqueueFrame(channelWriter, metadataAck, ct);
                         break;
 
                     case TtyHostMessageType.SetClipboardImage:
@@ -1210,7 +1231,7 @@ public static class Program
                         if (clipboardRequest is null || string.IsNullOrWhiteSpace(clipboardRequest.FilePath))
                         {
                             var invalidAck = TtyHostProtocol.CreateSetClipboardImageAck(false, "Invalid clipboard image request");
-                            EnqueueFrame(channelWriter, invalidAck);
+                            EnqueueFrame(channelWriter, invalidAck, ct);
                             break;
                         }
 
@@ -1220,7 +1241,7 @@ public static class Program
                         var clipboardAck = TtyHostProtocol.CreateSetClipboardImageAck(
                             clipboardResult.Success,
                             clipboardResult.Error);
-                        EnqueueFrame(channelWriter, clipboardAck);
+                        EnqueueFrame(channelWriter, clipboardAck, ct);
                         break;
 
                     case TtyHostMessageType.ShowNotification:
@@ -1229,18 +1250,18 @@ public static class Program
                             ? new TtyHostNotificationResponse { Error = "Invalid notification request." }
                             : NativeNotificationService.Show(notificationRequest);
                         var notificationAck = TtyHostProtocol.CreateShowNotificationAck(notificationResult);
-                        EnqueueFrame(channelWriter, notificationAck);
+                        EnqueueFrame(channelWriter, notificationAck, ct);
                         break;
 
                     case TtyHostMessageType.Ping:
                         var pongMsg = TtyHostProtocol.CreatePong(payload);
-                        EnqueueFrame(channelWriter, pongMsg);
+                        EnqueueFrame(channelWriter, pongMsg, ct);
                         break;
 
                     case TtyHostMessageType.Close:
                         Log.Info(() => "Received close request, shutting down");
                         var closeAck = TtyHostProtocol.CreateCloseAck();
-                        EnqueueFrame(channelWriter, closeAck);
+                        EnqueueFrame(channelWriter, closeAck, ct);
                         session.Kill();
                         // Signal graceful shutdown - let finally blocks run
                         _shutdownCts?.Cancel();

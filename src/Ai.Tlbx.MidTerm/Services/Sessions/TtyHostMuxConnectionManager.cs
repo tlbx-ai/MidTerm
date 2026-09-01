@@ -76,6 +76,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
     private const long InputLatencyTraceTimeoutMs = 10_000;
     private const int MaxQueuedOutputs = 1000;
     private const int MaxQueuedOutputBytes = 8 * 1024 * 1024;
+    private const int MaxCoalescedOutputBytes = 32 * 1024;
     private const int OutputQueueDrainMaxItemsPerPass = 64;
     private const int ActiveOutputBurstLimit = 32;
     private readonly BoundedSessionOutputQueue<PooledOutputItem> _outputQueue =
@@ -181,7 +182,12 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
 
             var sequenceEndExclusive = sequenceStart + (ulong)data.Length;
             var trace = MarkInputTraceOutputObserved(sessionId, sequenceEndExclusive);
-            if (!_outputQueue.TryEnqueue(sessionId, new PooledOutputItem(sessionId, sequenceEndExclusive, cols, rows, shared)))
+            var outputItem = new PooledOutputItem(sessionId, sequenceEndExclusive, cols, rows, shared);
+            if (!_outputQueue.TryEnqueueOrMerge(
+                    sessionId,
+                    outputItem,
+                    (PooledOutputItem existing, PooledOutputItem incoming, out PooledOutputItem merged) =>
+                        TryMergeOutputItems(outputPool, existing, incoming, out merged)))
             {
                 if (trace is not null)
                 {
@@ -216,6 +222,40 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         {
             _outputLifecycleGate.ExitReadLock();
         }
+    }
+
+    private static bool TryMergeOutputItems(
+        ArrayPool<byte> outputPool,
+        PooledOutputItem existing,
+        PooledOutputItem incoming,
+        out PooledOutputItem merged)
+    {
+        merged = default;
+        var incomingLength = incoming.Buffer.Length;
+        var incomingSequenceStart = incoming.SequenceEndExclusive >= (ulong)incomingLength
+            ? incoming.SequenceEndExclusive - (ulong)incomingLength
+            : 0;
+        var combinedLength = existing.Buffer.Length + incomingLength;
+        if (existing.Cols != incoming.Cols
+            || existing.Rows != incoming.Rows
+            || existing.SequenceEndExclusive != incomingSequenceStart
+            || combinedLength > MaxCoalescedOutputBytes)
+        {
+            return false;
+        }
+
+        var combined = SharedOutputBuffer.Rent(outputPool, combinedLength);
+        existing.Buffer.Span.CopyTo(combined.WriteSpan);
+        incoming.Buffer.Span.CopyTo(combined.WriteSpan[existing.Buffer.Length..]);
+        merged = new PooledOutputItem(
+            incoming.SessionId,
+            incoming.SequenceEndExclusive,
+            incoming.Cols,
+            incoming.Rows,
+            combined);
+        existing.Buffer.Release();
+        incoming.Buffer.Release();
+        return true;
     }
 
     private void HandleDataLoss(string sessionId, TtyHostDataLossPayload payload)

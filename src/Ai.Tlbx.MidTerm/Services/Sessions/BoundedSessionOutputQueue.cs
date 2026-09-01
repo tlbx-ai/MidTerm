@@ -13,7 +13,7 @@ internal sealed class BoundedSessionOutputQueue<T> : IDisposable
             Node = node;
         }
 
-        public Queue<T> Items { get; } = new();
+        public LinkedList<T> Items { get; } = new();
         public LinkedListNode<string> Node { get; }
     }
 
@@ -75,6 +75,14 @@ internal sealed class BoundedSessionOutputQueue<T> : IDisposable
 
     public bool TryEnqueue(string sessionId, T item)
     {
+        return TryEnqueueOrMerge(sessionId, item, null);
+    }
+
+    public bool TryEnqueueOrMerge(
+        string sessionId,
+        T item,
+        TryMergeQueuedItems<T>? tryMerge)
+    {
         ArgumentException.ThrowIfNullOrEmpty(sessionId);
 
         lock (_gate)
@@ -82,8 +90,22 @@ internal sealed class BoundedSessionOutputQueue<T> : IDisposable
             var itemBytes = MeasureBytes(item);
             if (_disposed
                 || _completed
-                || _count >= _capacity
                 || itemBytes > _byteCapacity - _queuedBytes)
+            {
+                return false;
+            }
+
+            if (tryMerge is not null
+                && _sessions.TryGetValue(sessionId, out var mergeSession)
+                && mergeSession.Items.Last is { } last
+                && tryMerge(last.Value, item, out var merged))
+            {
+                last.Value = merged;
+                _queuedBytes += itemBytes;
+                return true;
+            }
+
+            if (_count >= _capacity)
             {
                 return false;
             }
@@ -95,7 +117,7 @@ internal sealed class BoundedSessionOutputQueue<T> : IDisposable
                 _sessions.Add(sessionId, session);
             }
 
-            session.Items.Enqueue(item);
+            session.Items.AddLast(item);
             _count++;
             _queuedBytes += itemBytes;
 
@@ -146,7 +168,8 @@ internal sealed class BoundedSessionOutputQueue<T> : IDisposable
 
             var selected = SelectSession(activeSessionIds);
             var session = _sessions[selected.Value];
-            item = session.Items.Dequeue();
+            item = session.Items.First!.Value;
+            session.Items.RemoveFirst();
             _count--;
             _queuedBytes -= MeasureBytes(item);
 
@@ -194,9 +217,10 @@ internal sealed class BoundedSessionOutputQueue<T> : IDisposable
             var drained = new List<T>(_count);
             foreach (var session in _sessions.Values)
             {
-                while (session.Items.TryDequeue(out var item))
+                while (session.Items.First is { } first)
                 {
-                    drained.Add(item);
+                    drained.Add(first.Value);
+                    session.Items.RemoveFirst();
                 }
             }
 
@@ -223,10 +247,11 @@ internal sealed class BoundedSessionOutputQueue<T> : IDisposable
 
             _roundRobinSessions.Remove(session.Node);
             removed = new List<T>(session.Items.Count);
-            while (session.Items.TryDequeue(out var item))
+            while (session.Items.First is { } first)
             {
-                removed.Add(item);
-                _queuedBytes -= MeasureBytes(item);
+                removed.Add(first.Value);
+                _queuedBytes -= MeasureBytes(first.Value);
+                session.Items.RemoveFirst();
             }
 
             _count -= removed.Count;
@@ -298,3 +323,5 @@ internal sealed class BoundedSessionOutputQueue<T> : IDisposable
         _availableItems.Dispose();
     }
 }
+
+internal delegate bool TryMergeQueuedItems<T>(T existing, T incoming, out T merged);
