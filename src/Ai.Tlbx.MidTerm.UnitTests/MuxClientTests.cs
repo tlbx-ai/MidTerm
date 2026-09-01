@@ -146,6 +146,32 @@ public sealed class MuxClientTests
     }
 
     [Fact]
+    public async Task StartupSuspension_HoldsLiveOutputUntilInitialReplayReleasesIt()
+    {
+        using var socket = new RecordingWebSocket();
+        await using var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.FullReplay,
+            startFlushSuspended: true);
+        const string sessionId = "session1";
+        client.SetActiveSession(sessionId);
+
+        Assert.True(client.QueueOutput(sessionId, 4, 120, 30, RentOutput("live")));
+        await Task.Delay(30);
+        Assert.Empty(socket.SentFrames);
+
+        client.ResumeFlush();
+        await WaitForAsync(() => socket.SentFrames.Count == 1);
+
+        var frame = Assert.Single(socket.SentFrames);
+        Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out var sentSessionId, out var payload));
+        Assert.Equal(MuxProtocol.TypeTerminalOutput, type);
+        Assert.Equal(sessionId, sentSessionId);
+        Assert.Equal("live", Encoding.UTF8.GetString(MuxProtocol.GetOutputData(payload)));
+    }
+
+    [Fact]
     public async Task Recovery_DefersNewDataLossUntilAfterTransactionEnd()
     {
         using var socket = new RecordingWebSocket();

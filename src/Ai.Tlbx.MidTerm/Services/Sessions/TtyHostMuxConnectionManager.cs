@@ -373,7 +373,11 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
             GetResumeMode,
             allowedSessionId,
             HandleClientOutputFrameSent,
-            sessionId => _sessionManager.GetSession(sessionId) is not null);
+            sessionId => _sessionManager.GetSession(sessionId) is not null,
+            startFlushSuspended: true);
+        // The client becomes visible to the global PTY broadcaster below. Keep
+        // live output buffered from its first observable instant so no frame can
+        // overtake the initial replay transaction and create a false sequence gap.
         _clients[clientId] = client;
         return client;
     }

@@ -351,7 +351,8 @@ public sealed class MuxClient : IAsyncDisposable
         Func<TerminalResumeModeSetting> getResumeMode,
         string? allowedSessionId = null,
         Action<string, string, ulong, long>? outputFrameSent = null,
-        Func<string, bool>? sessionExists = null)
+        Func<string, bool>? sessionExists = null,
+        bool startFlushSuspended = false)
     {
         Id = id;
         WebSocket = webSocket;
@@ -365,6 +366,7 @@ public sealed class MuxClient : IAsyncDisposable
             InputDrainMaxItemsPerPass,
             MaxQueuedBytes,
             static item => item.Buffer?.Length ?? 0);
+        _flushSuspended = startFlushSuspended;
         _processor = ProcessLoopAsync(_cts.Token);
     }
 
