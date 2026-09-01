@@ -34,6 +34,7 @@ import {
   forgetMuxSession,
   reconcileSynchronizedOutputCursor,
   requestBufferRefresh,
+  restartStalledSessionRecovery,
   sendCommand,
   sendInput,
   getBrowserTransportSnapshot,
@@ -117,10 +118,13 @@ import { getActiveTab } from '../sessionTabs';
 interface TerminalStartupPaintRecoveryState {
   attempt: number;
   consecutiveBlankChecks: number;
+  fallbackWhenIndeterminate: boolean;
   timerId: number | null;
 }
 
 const terminalStartupPaintRecoveries = new Map<string, TerminalStartupPaintRecoveryState>();
+const strictTerminalStartupPaintObligations = new WeakSet<TerminalState>();
+const terminalStartupPaintRecreations = new Set<string>();
 const TERMINAL_STARTUP_PAINT_INITIAL_DELAY_MS = 700;
 const TERMINAL_STARTUP_PAINT_RETRY_DELAY_MS = 450;
 const TERMINAL_STARTUP_PAINT_RECHECK_DELAY_MS = 200;
@@ -138,11 +142,13 @@ function scheduleTerminalStartupPaintRecovery(
   sessionId: string,
   state: TerminalState,
   delayMs = TERMINAL_STARTUP_PAINT_INITIAL_DELAY_MS,
+  fallbackWhenIndeterminate = strictTerminalStartupPaintObligations.has(state),
 ): void {
   clearTerminalStartupPaintRecovery(sessionId);
   const recovery: TerminalStartupPaintRecoveryState = {
     attempt: 0,
     consecutiveBlankChecks: 0,
+    fallbackWhenIndeterminate,
     timerId: null,
   };
   terminalStartupPaintRecoveries.set(sessionId, recovery);
@@ -150,7 +156,11 @@ function scheduleTerminalStartupPaintRecovery(
   const scheduleNext = (delay: number): void => {
     recovery.timerId = window.setTimeout(() => {
       recovery.timerId = null;
-      if (sessionTerminals.get(sessionId) !== state || !state.opened || !isTerminalVisible(state)) {
+      if (sessionTerminals.get(sessionId) !== state || !state.opened) {
+        clearTerminalStartupPaintRecovery(sessionId);
+        return;
+      }
+      if (!isTerminalVisible(state) && !recovery.fallbackWhenIndeterminate) {
         clearTerminalStartupPaintRecovery(sessionId);
         return;
       }
@@ -164,9 +174,18 @@ function scheduleTerminalStartupPaintRecovery(
         recovery.consecutiveBlankChecks,
         recovery.attempt,
         TERMINAL_STARTUP_PAINT_MAX_ATTEMPTS,
+        recovery.fallbackWhenIndeterminate,
       );
 
       if (action === 'complete') {
+        if (
+          recovery.fallbackWhenIndeterminate &&
+          recovery.attempt < TERMINAL_STARTUP_PAINT_MAX_ATTEMPTS
+        ) {
+          scheduleNext(TERMINAL_STARTUP_PAINT_RETRY_DELAY_MS);
+          return;
+        }
+        strictTerminalStartupPaintObligations.delete(state);
         clearTerminalStartupPaintRecovery(sessionId);
         return;
       }
@@ -181,17 +200,87 @@ function scheduleTerminalStartupPaintRecovery(
         return;
       }
 
+      if (!terminalStartupPaintRecreations.has(sessionId)) {
+        log.warn(
+          () =>
+            `Terminal ${sessionId} startup framebuffer remained blank; recreating terminal and replaying`,
+        );
+        terminalStartupPaintRecreations.add(sessionId);
+        recreateTerminalForStartupRecovery(sessionId, state);
+        return;
+      }
+
+      // Keep recovery bounded if even the replacement renderer fails. Reusing
+      // the normal transport restart still releases every browser-owned queue,
+      // but avoids an unbounded create/destroy loop for a permanently bad GPU.
       log.warn(
         () =>
-          `Terminal ${sessionId} startup framebuffer remained blank; rebuilding renderer and replaying`,
+          `Terminal ${sessionId} replacement framebuffer remained blank; rebuilding renderer and replaying`,
       );
+      state.terminal.reset();
       recoverTerminalRendererAfterForeground(sessionId, state, { preferDomRenderer: true });
-      requestBufferRefresh(sessionId, 'fullReplay', 'startup_framebuffer_blank');
+      restartStalledSessionRecovery(sessionId, 'startup_framebuffer_blank');
+      strictTerminalStartupPaintObligations.delete(state);
       clearTerminalStartupPaintRecovery(sessionId);
     }, delay);
   };
 
   scheduleNext(delayMs);
+}
+
+/**
+ * Keeps the startup paint obligation alive when a terminal was opened while
+ * hidden and only became visible after its first watchdog check.
+ */
+export function ensureTerminalStartupPaintRecovery(sessionId: string, state: TerminalState): void {
+  strictTerminalStartupPaintObligations.add(state);
+  const existing = terminalStartupPaintRecoveries.get(sessionId);
+  if (existing) {
+    existing.fallbackWhenIndeterminate = true;
+    return;
+  }
+
+  scheduleTerminalStartupPaintRecovery(
+    sessionId,
+    state,
+    TERMINAL_STARTUP_PAINT_RECHECK_DELAY_MS,
+    true,
+  );
+}
+
+/**
+ * Replaces only the browser-side xterm instance while preserving the server
+ * session and its position in the current standalone/layout wrapper. This is
+ * the session-local equivalent of the F5 recovery that users previously needed
+ * when xterm's empty-write replay barrier stopped invoking callbacks.
+ */
+function recreateTerminalForStartupRecovery(sessionId: string, state: TerminalState): void {
+  if (sessionTerminals.get(sessionId) !== state) return;
+
+  const parent = state.container.parentElement;
+  const nextSibling = state.container.nextSibling;
+  const wasHidden = state.container.classList.contains('hidden');
+  const sessionInfo = $sessions.get()[sessionId];
+
+  destroyTerminalForSession(sessionId);
+  // destroyTerminalForSession clears session-scoped recovery bookkeeping. Keep
+  // this launch marked so a second failed renderer cannot recreate forever.
+  terminalStartupPaintRecreations.add(sessionId);
+
+  const replacement = createTerminalForSession(sessionId, sessionInfo);
+  if (parent) {
+    parent.insertBefore(
+      replacement.container,
+      nextSibling?.parentNode === parent ? nextSibling : null,
+    );
+  }
+  replacement.container.classList.toggle('hidden', wasHidden);
+  ensureTerminalStartupPaintRecovery(sessionId, replacement);
+
+  // The explicit bypass is safe only for this fresh parser/renderer. It keeps
+  // the replay from entering the stale empty-write barrier again if the server
+  // responds just after terminal.open().
+  restartStalledSessionRecovery(sessionId, 'startup_terminal_recreated', true);
 }
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import {
@@ -1707,6 +1796,7 @@ export function destroyTerminalForSession(sessionId: string): void {
   if (!state) return;
 
   clearTerminalStartupPaintRecovery(sessionId);
+  terminalStartupPaintRecreations.delete(sessionId);
 
   enterModifierLatches.delete(sessionId);
   enterOverrideSuppress.clearTerminalEnterOverrideHandled(sessionId);

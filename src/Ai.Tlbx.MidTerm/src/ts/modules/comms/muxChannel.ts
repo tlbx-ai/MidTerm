@@ -187,6 +187,7 @@ const pendingBufferRefreshes = new Map<
 >();
 const browserTransportSnapshots = new Map<string, BrowserTransportSnapshot>();
 const activeSessionRecoveries = new Map<string, ActiveSessionRecovery>();
+const recoveryPreparationBarrierBypasses = new Set<string>();
 const recoveryRequestsInFlight = new Set<string>();
 const recoveryFollowupCauses = new Map<string, string>();
 
@@ -512,6 +513,7 @@ export function forgetMuxSession(sessionId: string): void {
   discardSessionRecovery(sessionId);
   recoveryRequestsInFlight.delete(sessionId);
   recoveryFollowupCauses.delete(sessionId);
+  recoveryPreparationBarrierBypasses.delete(sessionId);
   pendingBufferRefreshes.delete(sessionId);
   bracketedPasteState.delete(sessionId);
   clearBracketedPasteScanState(sessionId);
@@ -1284,7 +1286,8 @@ function handleMuxRecoveryBeginFrame(
   };
 
   const state = sessionTerminals.get(sessionId);
-  if (state?.opened) {
+  const bypassPreparationBarrier = recoveryPreparationBarrierBypasses.delete(sessionId);
+  if (state?.opened && !bypassPreparationBarrier) {
     // xterm owns writes once terminal.write returns. This empty write waits for
     // that internal queue before reset/replay without serializing normal output.
     try {
@@ -1875,6 +1878,38 @@ export function requestBufferRefresh(
   sendFrame(frame);
 }
 
+/**
+ * Aborts a browser-local recovery whose xterm preparation callback never
+ * completed, then starts one clean full replay for the affected session.
+ */
+export function restartStalledSessionRecovery(
+  sessionId: string,
+  recoveryCause: string,
+  bypassPreparationBarrier = false,
+): void {
+  clearQueuedOutput(sessionId);
+  pendingOutputFrames.delete(sessionId);
+  pendingTerminalReplayModes.delete(sessionId);
+  sessionsNeedingResync.delete(sessionId);
+  discardSessionRecovery(sessionId);
+  recoveryRequestsInFlight.delete(sessionId);
+  recoveryFollowupCauses.delete(sessionId);
+  clearBracketedPasteScanState(sessionId);
+  bracketedPasteState.delete(sessionId);
+  recoveryPreparationBarrierBypasses.delete(sessionId);
+  if (bypassPreparationBarrier) {
+    // A freshly created xterm has no preceding writes or parser state to drain.
+    // Skipping its empty-write callback avoids re-entering the exact barrier
+    // whose failure caused the browser-local terminal recreation.
+    recoveryPreparationBarrierBypasses.add(sessionId);
+  }
+
+  const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
+  snapshot.receivedSeq = 0n;
+  snapshot.renderedSeq = 0n;
+  requestBufferRefresh(sessionId, 'fullReplay', recoveryCause);
+}
+
 function queueBufferRefreshUntilMuxOpens(
   sessionId: string,
   mode: 'fullReplay' | 'quickResume',
@@ -2095,6 +2130,7 @@ export function resetMuxChannelRuntimeForTests(): void {
   discardAllSessionRecoveries();
   recoveryRequestsInFlight.clear();
   recoveryFollowupCauses.clear();
+  recoveryPreparationBarrierBypasses.clear();
   bracketedPasteState.clear();
   clearBracketedPasteScanState();
   outputRttListeners.clear();

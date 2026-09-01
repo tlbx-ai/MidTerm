@@ -34,6 +34,7 @@ declare global {
       readonly terminals: Map<string, TerminalState>;
       readonly activeId: string | null;
       readonly settings: MidTermSettingsPublic | null;
+      readonly transport: (sessionId: string) => unknown;
       readonly perf: PerfDebugApi;
       readonly layout: {
         dock: (

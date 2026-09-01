@@ -10,6 +10,7 @@ import {
   refreshTerminalPresentation,
   scrollToBottom,
   applyTerminalScalingSync,
+  ensureTerminalStartupPaintRecovery,
 } from './modules/terminal';
 import { getInjectGuidancePromptKey } from './modules/midtermGuidance';
 import { buildProcessCwdTuple } from './modules/sidebar/processDisplay';
@@ -126,6 +127,15 @@ function closeOverlayViews(): void {
   closeActionGraphsView();
 }
 
+function revealStandaloneTerminal(
+  sessionId: string,
+  state: ReturnType<typeof createTerminalForSession>,
+  isNewlyCreated: boolean,
+): void {
+  state.container.classList.remove('hidden');
+  if (isNewlyCreated) ensureTerminalStartupPaintRecovery(sessionId, state);
+}
+
 export function createSessionActionHandlers({
   animateBookmarkSaveSuccess,
   buildAppServerControlHistoryDedupeKey,
@@ -232,7 +242,7 @@ export function createSessionActionHandlers({
 
     syncStandaloneSessionWrapper(sessionId);
     if (state) {
-      state.container.classList.remove('hidden');
+      revealStandaloneTerminal(sessionId, state, isNewlyCreated);
     }
     if (isLayoutActive()) {
       getLayoutRoot()?.classList.add('hidden');

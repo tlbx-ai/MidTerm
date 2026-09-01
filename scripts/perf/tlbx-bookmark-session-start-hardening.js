@@ -111,7 +111,7 @@ try {
 
   await waitFor(() => {
     const text = readTerminalText(terminalState);
-    return /OpenAI Codex|codex|for shortcuts|What can I help/i.test(text) ? text : null;
+    return /OpenAI Codex|for shortcuts|What can I help/i.test(text) ? text : null;
   }, 'rendered Codex interface', 30000);
   perf.scenario.codexReadyMs = elapsed();
 
