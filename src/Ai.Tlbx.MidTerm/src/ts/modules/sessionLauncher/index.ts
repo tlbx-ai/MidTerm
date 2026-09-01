@@ -12,6 +12,32 @@ export type LauncherProvider = string;
 export type LauncherLaunchMode = 'new' | 'resume';
 
 const LOCAL_TARGET_ID = 'local';
+const LAST_PROVIDER_STORAGE_KEY = 'tlbx.sessionLauncher.lastProvider';
+
+export function getRememberedSessionLauncherProvider(): LauncherProvider | null {
+  if (typeof localStorage === 'undefined') {
+    return null;
+  }
+
+  try {
+    return localStorage.getItem(LAST_PROVIDER_STORAGE_KEY)?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export function rememberSessionLauncherProvider(provider: LauncherProvider): void {
+  const normalizedProvider = provider.trim();
+  if (!normalizedProvider || typeof localStorage === 'undefined') {
+    return;
+  }
+
+  try {
+    localStorage.setItem(LAST_PROVIDER_STORAGE_KEY, normalizedProvider);
+  } catch {
+    // The launcher remains usable when browser storage is unavailable.
+  }
+}
 
 export interface LocalSessionLauncherTarget {
   id: typeof LOCAL_TARGET_ID;
@@ -81,7 +107,17 @@ interface LauncherState {
   requestToken: number;
   targets: SessionLauncherTarget[];
   selectedTargetId: string;
+  selectedProvider: LauncherProvider;
   agentControllerInstallations: AgentControllerInstallation[];
+}
+
+interface SessionLauncherProviderDefinition {
+  provider: LauncherProvider;
+  title: string;
+  description: string;
+  launchLabel: string;
+  beta?: boolean;
+  supportsResume?: boolean;
 }
 
 interface LauncherLocalActionContext {
@@ -120,6 +156,84 @@ export function isProviderSupportedOnTarget(
   target: SessionLauncherTarget,
 ): boolean {
   return target.kind === 'local' || provider === 'terminal';
+}
+
+function buildSessionLauncherProviderControlHtml(
+  definitions: ReadonlyArray<SessionLauncherProviderDefinition>,
+  target: SessionLauncherTarget,
+  preferredProvider: LauncherProvider,
+  disabled: boolean,
+): string {
+  const selectedDefinition =
+    definitions.find(
+      (definition) =>
+        definition.provider === preferredProvider &&
+        isProviderSupportedOnTarget(definition.provider, target),
+    ) ?? definitions[0];
+  if (!selectedDefinition) {
+    return '';
+  }
+  const badge = selectedDefinition.beta
+    ? `<span class="feature-beta-badge">${escapeHtml(t('common.beta'))}</span>`
+    : '';
+  const primaryLabel =
+    selectedDefinition.provider === 'terminal'
+      ? selectedDefinition.launchLabel
+      : 'New Conversation';
+  const resumeAction =
+    selectedDefinition.provider !== 'terminal' && selectedDefinition.supportsResume !== false
+      ? `
+        <button
+          type="button"
+          class="btn-secondary session-launcher-provider-action"
+          data-provider="${escapeHtml(selectedDefinition.provider)}"
+          data-launch-mode="resume"
+          ${disabled ? 'disabled' : ''}
+        >
+          Resume Conversation
+        </button>
+      `
+      : '';
+
+  return `
+    <div class="session-launcher-provider-control">
+      <label class="session-launcher-launch-label" for="session-launcher-provider-select">
+        ${escapeHtml(t('sessionLauncher.chooseProvider'))}
+      </label>
+      <select
+        id="session-launcher-provider-select"
+        class="session-launcher-provider-select"
+        data-role="provider-select"
+      >
+        ${definitions
+          .map((definition) => {
+            const supported = isProviderSupportedOnTarget(definition.provider, target);
+            const selected = definition.provider === selectedDefinition.provider;
+            return `<option value="${escapeHtml(definition.provider)}"${selected ? ' selected' : ''}${supported ? '' : ' disabled'}>${escapeHtml(definition.title)}</option>`;
+          })
+          .join('')}
+      </select>
+      <div class="session-launcher-provider-meta">
+        <span class="session-launcher-provider-heading">
+          <span class="session-launcher-provider-title">${escapeHtml(selectedDefinition.title)}</span>
+          ${badge}
+        </span>
+        <span class="session-launcher-provider-description">${escapeHtml(selectedDefinition.description)}</span>
+      </div>
+      <div class="session-launcher-provider-actions">
+        <button
+          type="button"
+          class="btn-primary session-launcher-provider-action"
+          data-provider="${escapeHtml(selectedDefinition.provider)}"
+          data-launch-mode="new"
+          ${disabled ? 'disabled' : ''}
+        >
+          ${escapeHtml(primaryLabel)}
+        </button>
+        ${resumeAction}
+      </div>
+    </div>
+  `;
 }
 
 async function fetchAgentControllerInstallations(): Promise<AgentControllerInstallation[]> {
@@ -541,7 +655,6 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
               <div class="session-launcher-list" data-role="list"></div>
             </div>
             <div class="session-launcher-launch">
-              <div class="session-launcher-launch-label">${escapeHtml(t('sessionLauncher.chooseProvider'))}</div>
               <div class="session-launcher-providers" data-role="providers"></div>
               <div class="session-launcher-provider-hint" data-role="provider-hint" hidden></div>
             </div>
@@ -568,6 +681,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       requestToken: 0,
       targets: buildSessionLauncherTargets(getLaunchableHubMachines()),
       selectedTargetId: LOCAL_TARGET_ID,
+      selectedProvider: getRememberedSessionLauncherProvider() ?? 'terminal',
       agentControllerInstallations: [],
     };
 
@@ -676,64 +790,13 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
     function renderProviders(): void {
       const target = getSelectedTarget();
-      safeProvidersEl.innerHTML = getSessionLauncherProviderDefinitions(
-        state.agentControllerInstallations,
-      )
-        .map((definition) => {
-          const supported = isProviderSupportedOnTarget(definition.provider, target);
-          const badge = definition.beta
-            ? `<span class="feature-beta-badge">${escapeHtml(t('common.beta'))}</span>`
-            : '';
-          const disabled = !supported || state.loading || !state.currentPath;
-          const actions =
-            definition.provider === 'terminal' || definition.supportsResume === false
-              ? `
-                <button
-                  type="button"
-                  class="btn-secondary session-launcher-provider-action"
-                  data-provider="${definition.provider}"
-                  data-launch-mode="new"
-                  ${disabled ? 'disabled' : ''}
-                  >
-                    ${escapeHtml(definition.provider === 'terminal' ? definition.launchLabel : 'New Conversation')}
-                  </button>
-                `
-              : `
-                <div class="session-launcher-provider-actions">
-                  <button
-                    type="button"
-                    class="btn-secondary session-launcher-provider-action"
-                    data-provider="${definition.provider}"
-                    data-launch-mode="new"
-                    ${disabled ? 'disabled' : ''}
-                  >
-                    New Conversation
-                  </button>
-                  <button
-                    type="button"
-                    class="btn-secondary session-launcher-provider-action"
-                    data-provider="${definition.provider}"
-                    data-launch-mode="resume"
-                    ${disabled ? 'disabled' : ''}
-                  >
-                    Resume Conversation
-                  </button>
-                </div>
-              `;
-          return `
-            <div
-              class="session-launcher-provider"
-            >
-              <span class="session-launcher-provider-heading">
-                <span class="session-launcher-provider-title">${escapeHtml(definition.title)}</span>
-                ${badge}
-              </span>
-              <span class="session-launcher-provider-description">${escapeHtml(definition.description)}</span>
-              ${actions}
-            </div>
-          `;
-        })
-        .join('');
+      const definitions = getSessionLauncherProviderDefinitions(state.agentControllerInstallations);
+      safeProvidersEl.innerHTML = buildSessionLauncherProviderControlHtml(
+        definitions,
+        target,
+        state.selectedProvider,
+        state.loading || !state.currentPath,
+      );
 
       const targetWarning = getLauncherTargetWarning(target);
       safeProviderHintEl.hidden = !targetWarning;
@@ -928,10 +991,18 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     void fetchAgentControllerInstallations()
       .then((installations) => {
         state.agentControllerInstallations = installations;
+        const providerExists = getSessionLauncherProviderDefinitions(installations).some(
+          (definition) => definition.provider === state.selectedProvider,
+        );
+        if (!providerExists) {
+          state.selectedProvider = 'terminal';
+          rememberSessionLauncherProvider(state.selectedProvider);
+        }
         renderProviders();
       })
       .catch(() => {
         state.agentControllerInstallations = [];
+        state.selectedProvider = 'terminal';
         renderProviders();
       });
 
@@ -948,6 +1019,8 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       if (state.loading || !state.currentPath) {
         return;
       }
+
+      rememberSessionLauncherProvider(provider);
 
       close({
         provider,
@@ -990,6 +1063,20 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
         launch(provider, 'resume', resumeEntry.sessionId);
       })();
+    });
+
+    safeProvidersEl.addEventListener('change', (event) => {
+      const providerSelect = (event.target as HTMLElement | null)?.closest<HTMLSelectElement>(
+        '[data-role="provider-select"]',
+      );
+      if (!providerSelect) {
+        return;
+      }
+
+      state.selectedProvider = providerSelect.value;
+      rememberSessionLauncherProvider(state.selectedProvider);
+      renderProviders();
+      safeProvidersEl.querySelector<HTMLSelectElement>('[data-role="provider-select"]')?.focus();
     });
 
     safeTargetsEl.addEventListener('click', (event) => {
@@ -1132,14 +1219,7 @@ async function fetchHomePath(target: SessionLauncherTarget): Promise<LauncherPat
 
 export function getSessionLauncherProviderDefinitions(
   installations: ReadonlyArray<AgentControllerInstallation> = [],
-): ReadonlyArray<{
-  provider: LauncherProvider;
-  title: string;
-  description: string;
-  launchLabel: string;
-  beta?: boolean;
-  supportsResume?: boolean;
-}> {
+): ReadonlyArray<SessionLauncherProviderDefinition> {
   return [
     {
       provider: 'terminal',

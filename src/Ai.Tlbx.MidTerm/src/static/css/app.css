@@ -7409,9 +7409,7 @@ body::before {
 }
 
 .session-launcher-providers {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  min-width: 0;
 }
 
 .session-launcher-targets {
@@ -7460,35 +7458,14 @@ body::before {
   word-break: break-word;
 }
 
-.session-launcher-provider {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-start;
-  min-height: 0;
-  padding: 14px 16px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--bg-dialog-muted) 92%, var(--bg-dialog));
-  color: var(--text-primary);
-  text-align: left;
-  cursor: pointer;
-  transition:
-    transform 0.16s ease,
-    border-color 0.16s ease,
-    background-color 0.16s ease,
-    box-shadow 0.16s ease;
-}
-
-.session-launcher-provider:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent-blue) 42%, var(--border-color));
-}
-
-.session-launcher-provider:disabled {
-  cursor: wait;
-  opacity: 0.6;
-  transform: none;
+.session-launcher-provider-control {
+  display: grid;
+  grid-template:
+    'label meta actions' auto
+    'select meta actions' auto /
+    minmax(180px, 0.75fr) minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  align-items: center;
 }
 
 .session-launcher-provider-heading {
@@ -7499,19 +7476,51 @@ body::before {
 }
 
 .session-launcher-provider-title {
-  font-size: var(--fs-xl);
+  font-size: var(--fs-base);
   font-weight: 700;
+}
+
+.session-launcher-provider-select {
+  grid-area: select;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 38px 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-dialog-muted) 82%, var(--bg-dialog));
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.session-launcher-provider-select:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent-blue) 52%, var(--border-color));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 22%, transparent);
+}
+
+.session-launcher-provider-meta {
+  grid-area: meta;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
 }
 
 .session-launcher-provider-description {
   color: var(--text-secondary);
+  font-size: var(--fs-sm);
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-launcher-provider-actions {
+  grid-area: actions;
   display: flex;
   gap: 10px;
-  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .session-launcher-provider-action {
@@ -7549,6 +7558,11 @@ body::before {
   flex-direction: column;
   gap: 10px;
   flex-shrink: 0;
+}
+
+.session-launcher-browser + .session-launcher-launch {
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
 }
 
 .session-launcher-launch-label {
@@ -7902,32 +7916,33 @@ body::before {
   }
 
   .session-launcher-providers {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
+    min-width: 0;
   }
 
   .session-launcher-targets {
     grid-template-columns: 1fr;
   }
 
-  .session-launcher-provider {
-    align-items: center;
-    justify-content: center;
+  .session-launcher-provider-control {
+    grid-template:
+      'label' auto
+      'select' auto
+      'meta' auto
+      'actions' auto /
+      minmax(0, 1fr);
     gap: 6px;
-    min-height: 52px;
-    padding: 10px 8px;
   }
 
-  .session-launcher-provider-heading {
-    justify-content: center;
+  .session-launcher-provider-meta {
+    min-height: 38px;
   }
 
-  .session-launcher-provider-title {
-    font-size: var(--fs-base);
+  .session-launcher-provider-actions {
+    justify-content: stretch;
   }
 
-  .session-launcher-provider-description {
-    display: none;
+  .session-launcher-provider-action {
+    flex: 1;
   }
 
   .space-dialog-modal {
