@@ -460,9 +460,10 @@ public static partial class SessionApiEndpoints
             CancellationToken ct) =>
         {
             var normalizedProvider = aiCliProfileService.NormalizeProfile(provider);
-            if (normalizedProvider is not AiCliProfileService.CodexProfile)
+            if (normalizedProvider is not AiCliProfileService.CodexProfile and
+                not AiCliProfileService.ClaudeProfile)
             {
-                return Results.BadRequest("Only the Codex resume catalog is supported.");
+                return Results.BadRequest("Only Codex and Claude resume catalogs are supported.");
             }
 
             var includeAllDirectories = string.Equals(scope, "all", StringComparison.OrdinalIgnoreCase);

@@ -85,6 +85,43 @@ public sealed class ProviderResumeCatalogServiceTests : IDisposable
         Assert.Equal(2, all.Count);
     }
 
+    [Fact]
+    public void GetCandidates_ReadsClaudeSessionsAndIgnoresSubagentLogs()
+    {
+        var workingDirectory = Path.Combine(_root, "repos", "ClaudeWorkspace");
+        Directory.CreateDirectory(workingDirectory);
+        var projectDirectory = Path.Combine(_root, ".claude", "projects", "test-project");
+        Directory.CreateDirectory(projectDirectory);
+        var sessionPath = Path.Combine(projectDirectory, "claude-session-1.jsonl");
+        File.WriteAllText(
+            sessionPath,
+            string.Join(
+                Environment.NewLine,
+                """
+                {"type":"mode","mode":"normal","sessionId":"claude-session-1"}
+                {"type":"user","message":{"role":"user","content":"Continue the Claude SDK integration"},"cwd":"__CWD__","sessionId":"claude-session-1","timestamp":"2026-08-30T12:00:00Z"}
+                """.Replace("__CWD__", EscapeJson(workingDirectory), StringComparison.Ordinal)),
+            Encoding.UTF8);
+        File.SetLastWriteTimeUtc(sessionPath, new DateTime(2026, 8, 30, 12, 5, 0, DateTimeKind.Utc));
+
+        var subagentDirectory = Path.Combine(projectDirectory, "claude-session-1", "subagents");
+        Directory.CreateDirectory(subagentDirectory);
+        File.WriteAllText(
+            Path.Combine(subagentDirectory, "agent-1.jsonl"),
+            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Ignore subagent\"},\"cwd\":\"" +
+            EscapeJson(workingDirectory) +
+            "\",\"sessionId\":\"subagent-session\",\"timestamp\":\"2026-08-30T12:01:00Z\"}",
+            Encoding.UTF8);
+
+        var service = new ProviderResumeCatalogService(_root);
+        var candidate = Assert.Single(service.GetCandidates("claude", workingDirectory, includeAllDirectories: false));
+
+        Assert.Equal("claude", candidate.Provider);
+        Assert.Equal("claude-session-1", candidate.SessionId);
+        Assert.Equal(workingDirectory, candidate.WorkingDirectory);
+        Assert.Contains("Continue the Claude SDK integration", candidate.Title, StringComparison.Ordinal);
+    }
+
     public void Dispose()
     {
         try

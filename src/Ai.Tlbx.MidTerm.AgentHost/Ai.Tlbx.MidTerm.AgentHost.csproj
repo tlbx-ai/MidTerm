@@ -69,4 +69,9 @@
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.Common\Ai.Tlbx.MidTerm.Common.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="ClaudeBridge\dist\claude-agent-sdk-bridge.mjs"
+                      LogicalName="Ai.Tlbx.MidTerm.AgentHost.ClaudeBridge.claude-agent-sdk-bridge.mjs" />
+  </ItemGroup>
+
 </Project>

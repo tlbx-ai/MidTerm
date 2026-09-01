@@ -9,6 +9,7 @@ namespace Ai.Tlbx.MidTerm.AgentHost;
 
 internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRuntime
 {
+    private const int MaxInlineImageBytes = 10 * 1024 * 1024;
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly TimeSpan AttachRequestTimeout = TimeSpan.FromSeconds(20);
 
@@ -44,6 +45,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
     private string? _planModeId;
     private string? _defaultModeId;
     private bool _supportsLegacyModels;
+    private bool _supportsImagePrompts;
     private AppServerControlQuickSettingsSummary _quickSettings = new();
     private int _nextRequestId;
     private long _sequence;
@@ -166,6 +168,10 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 ct)
             .ConfigureAwait(false);
         ValidateProtocolVersion(initializeResult);
+        _supportsImagePrompts = Traverse(initializeResult, "agentCapabilities", "promptCapabilities", "image") is
+        {
+            ValueKind: JsonValueKind.True
+        };
 
         var newSessionResult = await SendRequestAsync(
                 "session/new",
@@ -1496,13 +1502,13 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         }
     }
 
-    private static List<AcpPromptBlock> BuildPromptBlocks(AppServerControlTurnRequest request, string? planMode)
+    private List<AcpPromptBlock> BuildPromptBlocks(AppServerControlTurnRequest request, string? planMode)
     {
         var blocks = new List<AcpPromptBlock>();
         var prompt = AppServerControlQuickSettings.ApplyPlanModePrompt(request.Text, planMode);
         if (!string.IsNullOrWhiteSpace(prompt))
         {
-            blocks.Add(new AcpPromptBlock("text", prompt));
+            blocks.Add(AcpPromptBlock.CreateText(prompt));
         }
 
         if (request.Attachments.Count == 0)
@@ -1510,8 +1516,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             return blocks;
         }
 
-        var builder = new StringBuilder();
-        builder.AppendLine(request.Attachments.Count == 1 ? "Attached resource:" : $"Attached resources ({request.Attachments.Count.ToString(CultureInfo.InvariantCulture)}):");
+        var fileReferences = new List<string>();
         foreach (var attachment in request.Attachments)
         {
             if (string.IsNullOrWhiteSpace(attachment.Path))
@@ -1524,20 +1529,35 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 throw new InvalidOperationException($"App Server Controller attachment does not exist: {attachment.Path}");
             }
 
-            builder.Append("- ");
-            builder.Append(string.Equals(attachment.Kind, "image", StringComparison.OrdinalIgnoreCase) ? "[image] " : "[file] ");
-            builder.Append(attachment.Path);
-            if (!string.IsNullOrWhiteSpace(attachment.MimeType))
+            if (_supportsImagePrompts && string.Equals(attachment.Kind, "image", StringComparison.OrdinalIgnoreCase))
             {
-                builder.Append(" (");
-                builder.Append(attachment.MimeType);
-                builder.Append(')');
+                var fileInfo = new FileInfo(attachment.Path);
+                if (fileInfo.Length > MaxInlineImageBytes)
+                {
+                    throw new InvalidOperationException($"ACP image attachment exceeds {MaxInlineImageBytes.ToString(CultureInfo.InvariantCulture)} bytes: {attachment.Path}");
+                }
+
+                var bytes = File.ReadAllBytes(attachment.Path);
+                blocks.Add(AcpPromptBlock.CreateImage(
+                    Convert.ToBase64String(bytes),
+                    ResolveAttachmentMimeType(attachment),
+                    new Uri(attachment.Path).AbsoluteUri));
+                continue;
             }
 
-            builder.AppendLine();
+            var label = string.Equals(attachment.Kind, "image", StringComparison.OrdinalIgnoreCase) ? "[image] " : "[file] ";
+            var mime = string.IsNullOrWhiteSpace(attachment.MimeType) ? string.Empty : $" ({attachment.MimeType})";
+            fileReferences.Add($"- {label}{attachment.Path}{mime}");
         }
 
-        blocks.Add(new AcpPromptBlock("text", builder.ToString().Trim()));
+        if (fileReferences.Count > 0)
+        {
+            var heading = fileReferences.Count == 1
+                ? "Attached resource:"
+                : $"Attached resources ({fileReferences.Count.ToString(CultureInfo.InvariantCulture)}):";
+            blocks.Add(AcpPromptBlock.CreateText($"{heading}{Environment.NewLine}{string.Join(Environment.NewLine, fileReferences)}"));
+        }
+
         return blocks;
     }
 
@@ -1548,7 +1568,16 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         {
             writer.WriteStartObject();
             writer.WriteString("type", block.Type);
-            writer.WriteString("text", block.Text);
+            if (string.Equals(block.Type, "image", StringComparison.Ordinal))
+            {
+                writer.WriteString("data", block.Data);
+                writer.WriteString("mimeType", block.MimeType);
+                if (!string.IsNullOrWhiteSpace(block.Uri)) writer.WriteString("uri", block.Uri);
+            }
+            else
+            {
+                writer.WriteString("text", block.Text);
+            }
             writer.WriteEndObject();
         }
 
@@ -2174,7 +2203,30 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         return current;
     }
 
-    private readonly record struct AcpPromptBlock(string Type, string Text);
+    private static string ResolveAttachmentMimeType(AppServerControlAttachmentReference attachment)
+    {
+        if (!string.IsNullOrWhiteSpace(attachment.MimeType)) return attachment.MimeType.Trim().ToLowerInvariant();
+        return Path.GetExtension(attachment.Path).ToLowerInvariant() switch
+        {
+            ".gif" => "image/gif",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            ".bmp" => "image/bmp",
+            ".tif" or ".tiff" => "image/tiff",
+            ".heic" => "image/heic",
+            ".heif" => "image/heif",
+            ".avif" => "image/avif",
+            _ => "application/octet-stream"
+        };
+    }
+
+    private readonly record struct AcpPromptBlock(string Type, string? Text, string? Data, string? MimeType, string? Uri)
+    {
+        public static AcpPromptBlock CreateText(string text) => new("text", text, null, null, null);
+
+        public static AcpPromptBlock CreateImage(string data, string mimeType, string uri) => new("image", null, data, mimeType, uri);
+    }
 
     private readonly record struct PermissionOption(string OptionId, string? Name, string? Kind);
 

@@ -11,6 +11,8 @@ public sealed class MtAgentHostGrokIntegrationTests
     [Theory]
     [InlineData("grok", "agent", "stdio")]
     [InlineData("opencode", "acp")]
+    [InlineData("gemini", "--acp")]
+    [InlineData("copilot", "--acp")]
     [InlineData("custom-acp", "--stdio-acp")]
     public async Task MtAgentHost_CanDriveStandardAcpAgent(string provider, params string[] expectedArguments)
     {
@@ -19,6 +21,10 @@ public sealed class MtAgentHostGrokIntegrationTests
         var sessionId = $"session-{provider}-" + Guid.NewGuid().ToString("N");
         using var process = StartAgentHost(hostDll);
         var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        var imagePath = Path.Combine(fakeGrok.Root, "pasted-image.png");
+        var imageBytes = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        await File.WriteAllBytesAsync(imagePath, imageBytes);
 
         try
         {
@@ -75,7 +81,16 @@ public sealed class MtAgentHostGrokIntegrationTests
                 StartTurn = new AppServerControlTurnRequest
                 {
                     Text = "Inspect the workspace.",
-                    Attachments = []
+                    Attachments =
+                    [
+                        new AppServerControlAttachmentReference
+                        {
+                            Kind = "image",
+                            Path = imagePath,
+                            MimeType = "image/png",
+                            DisplayName = "pasted-image.png"
+                        }
+                    ]
                 }
             });
 
@@ -97,6 +112,7 @@ public sealed class MtAgentHostGrokIntegrationTests
                 sessionId,
                 count: 96);
             Assert.Contains("Fake Grok reply.", turnWindow.Streams.AssistantText, StringComparison.Ordinal);
+            Assert.Contains($"[image image/png {imageBytes.Length} bytes]", turnWindow.Streams.AssistantText, StringComparison.Ordinal);
             Assert.Contains("Fake Grok is thinking.", turnWindow.Streams.ReasoningText, StringComparison.Ordinal);
             Assert.Contains(turnWindow.Items, item => item.ItemType == "dynamic_tool_call" && item.Status == "completed");
             Assert.Contains(
@@ -114,6 +130,113 @@ public sealed class MtAgentHostGrokIntegrationTests
             Assert.DoesNotContain(
                 turnWindow.Notices,
                 notice => notice.Message.Contains("ignored", StringComparison.OrdinalIgnoreCase));
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-2",
+                SessionId = sessionId,
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest
+                {
+                    Text = "Second turn in the same ACP session.",
+                    Attachments = []
+                }
+            });
+            var secondTurnResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-2");
+            Assert.Equal("accepted", secondTurnResult.Status);
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(
+                process.StandardOutput,
+                pendingPatches,
+                patch => string.Equals(patch.Patch.CurrentTurn.TurnId, secondTurnResult.TurnStarted!.TurnId, StringComparison.Ordinal) &&
+                         string.Equals(patch.Patch.CurrentTurn.State, "completed", StringComparison.Ordinal),
+                maxPatches: 40,
+                timeout: TimeSpan.FromSeconds(10));
+            var secondWindow = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                sessionId,
+                count: 128);
+            Assert.Equal(turnWindow.Thread.ThreadId, secondWindow.Thread.ThreadId);
+            Assert.Contains("Second turn in the same ACP session.", secondWindow.Streams.AssistantText, StringComparison.Ordinal);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-permission",
+                SessionId = sessionId,
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest
+                {
+                    Text = "Inspect permission handling.",
+                    PermissionMode = AppServerControlQuickSettings.PermissionModeManual
+                }
+            });
+            var permissionTurn = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-permission");
+            Assert.Equal("accepted", permissionTurn.Status);
+            var approvalWindow = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                sessionId,
+                window => window.Requests.Any(request => request.State == "open"),
+                TimeSpan.FromSeconds(10),
+                count: 160);
+            var approval = Assert.Single(approvalWindow.Requests, request => request.State == "open");
+            Assert.Equal("command_execution_approval", approval.Kind);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-resolve-permission",
+                SessionId = sessionId,
+                Type = "request.resolve",
+                ResolveRequest = new AppServerControlRequestResolutionCommand
+                {
+                    RequestId = approval.RequestId,
+                    Decision = "accept"
+                }
+            });
+            var permissionResolution = await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput,
+                pendingPatches,
+                "cmd-resolve-permission");
+            Assert.Equal("accepted", permissionResolution.Status);
+            var resolvedWindow = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                sessionId,
+                count: 160);
+            Assert.Contains(
+                resolvedWindow.Requests,
+                request => request.RequestId == approval.RequestId && request.Decision == "accept" && request.State == "resolved");
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-interrupt",
+                SessionId = sessionId,
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest { Text = "Keep running until interrupt." }
+            });
+            var interruptTurn = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-interrupt");
+            Assert.Equal("accepted", interruptTurn.Status);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-interrupt",
+                SessionId = sessionId,
+                Type = "turn.interrupt",
+                InterruptTurn = new AppServerControlInterruptRequest { TurnId = interruptTurn.TurnStarted!.TurnId }
+            });
+            var interrupted = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-interrupt");
+            Assert.Equal("accepted", interrupted.Status);
+            var interruptedWindow = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                sessionId,
+                window => string.Equals(window.CurrentTurn.TurnId, interruptTurn.TurnStarted.TurnId, StringComparison.Ordinal) &&
+                          string.Equals(window.CurrentTurn.State, "interrupted", StringComparison.Ordinal),
+                TimeSpan.FromSeconds(10),
+                count: 192);
+            Assert.Equal("ready", interruptedWindow.Session.State);
         }
         finally
         {
@@ -177,7 +300,10 @@ public sealed class MtAgentHostGrokIntegrationTests
 
     private static string ResolveAgentHostDll()
     {
-        return MtAgentHostTestPathResolver.ResolveAgentHostDll(AppContext.BaseDirectory);
+        var overridePath = Environment.GetEnvironmentVariable("MIDTERM_TEST_AGENTHOST_PATH");
+        return !string.IsNullOrWhiteSpace(overridePath) && File.Exists(overridePath)
+            ? overridePath
+            : MtAgentHostTestPathResolver.ResolveAgentHostDll(AppContext.BaseDirectory);
     }
 
     private static async Task<FakeGrokLaunchCapture> WaitForFakeGrokLaunchCaptureAsync(
@@ -216,17 +342,21 @@ public sealed class MtAgentHostGrokIntegrationTests
 
     private static Process StartAgentHost(string hostDll)
     {
+        var isNativeExecutable = string.Equals(Path.GetExtension(hostDll), ".exe", StringComparison.OrdinalIgnoreCase);
         var dotnetHost = ResolveDotNetHostPath();
         var startInfo = new ProcessStartInfo
         {
-            FileName = dotnetHost,
+            FileName = isNativeExecutable ? hostDll : dotnetHost,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
-        startInfo.ArgumentList.Add(hostDll);
+        if (!isNativeExecutable)
+        {
+            startInfo.ArgumentList.Add(hostDll);
+        }
         startInfo.ArgumentList.Add("--stdio");
         var process = Process.Start(startInfo)
                       ?? throw new InvalidOperationException("Failed to start mtagenthost.");

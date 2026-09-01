@@ -9,6 +9,7 @@ public sealed class ProviderResumeCatalogService
 {
     private static readonly TimeSpan CodexHotSessionCooldown = TimeSpan.FromSeconds(12);
     private readonly string _codexHome;
+    private readonly string _claudeProjectsRoot;
 
     public ProviderResumeCatalogService()
         : this(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))
@@ -21,6 +22,7 @@ public sealed class ProviderResumeCatalogService
             ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
             : userProfileDirectory;
         _codexHome = Path.Combine(home, ".codex");
+        _claudeProjectsRoot = Path.Combine(home, ".claude", "projects");
     }
 
     public IReadOnlyList<ProviderResumeCatalogEntryDto> GetCandidates(
@@ -34,8 +36,152 @@ public sealed class ProviderResumeCatalogService
         return normalizedProvider switch
         {
             AiCliProfileService.CodexProfile => GetCodexCandidates(normalizedWorkingDirectory, includeAllDirectories, ct),
+            AiCliProfileService.ClaudeProfile => GetClaudeCandidates(normalizedWorkingDirectory, includeAllDirectories, ct),
             _ => []
         };
+    }
+
+    private IReadOnlyList<ProviderResumeCatalogEntryDto> GetClaudeCandidates(
+        string? normalizedWorkingDirectory,
+        bool includeAllDirectories,
+        CancellationToken ct)
+    {
+        if (!Directory.Exists(_claudeProjectsRoot))
+        {
+            return [];
+        }
+
+        var cooldownCutoffUtc = DateTimeOffset.UtcNow - CodexHotSessionCooldown;
+        var candidates = new List<ProviderResumeCatalogEntryDto>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var file in Directory.EnumerateFiles(_claudeProjectsRoot, "*.jsonl", SearchOption.AllDirectories)
+                     .Where(path => !path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                         .Contains("subagents", StringComparer.OrdinalIgnoreCase))
+                     .Select(static path => new FileInfo(path))
+                     .Where(file => file.LastWriteTimeUtc <= cooldownCutoffUtc.UtcDateTime)
+                     .OrderByDescending(static file => file.LastWriteTimeUtc)
+                     .Take(400))
+        {
+            ct.ThrowIfCancellationRequested();
+            var candidate = TryReadClaudeCandidate(file, normalizedWorkingDirectory, includeAllDirectories);
+            if (candidate is null || !seen.Add(candidate.SessionId))
+            {
+                continue;
+            }
+
+            candidates.Add(candidate);
+            if (candidates.Count >= 60)
+            {
+                break;
+            }
+        }
+
+        return candidates;
+    }
+
+    private static ProviderResumeCatalogEntryDto? TryReadClaudeCandidate(
+        FileInfo file,
+        string? normalizedWorkingDirectory,
+        bool includeAllDirectories)
+    {
+        using var reader = OpenSharedReaderOrNull(file.FullName);
+        if (reader is null)
+        {
+            return null;
+        }
+
+        string? sessionId = null;
+        string? workingDirectory = null;
+        string? lastUserMessage = null;
+        DateTime updatedAtUtc = file.LastWriteTimeUtc;
+        while (reader.ReadLine() is { } line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            try
+            {
+                using var json = JsonDocument.Parse(line);
+                var root = json.RootElement;
+                sessionId ??= TryGetString(root, "sessionId", out var parsedSessionId) ? parsedSessionId : null;
+                workingDirectory ??= TryGetString(root, "cwd", out var parsedCwd) ? parsedCwd : null;
+                if (TryGetString(root, "timestamp", out var timestampText) &&
+                    DateTimeOffset.TryParse(timestampText, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var timestamp) &&
+                    timestamp.UtcDateTime > updatedAtUtc)
+                {
+                    updatedAtUtc = timestamp.UtcDateTime;
+                }
+
+                if (TryReadClaudeUserMessage(root, out var message))
+                {
+                    lastUserMessage = message;
+                }
+            }
+            catch (JsonException)
+            {
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(workingDirectory))
+        {
+            return null;
+        }
+
+        if (!includeAllDirectories &&
+            !string.Equals(NormalizePathOrNull(workingDirectory), normalizedWorkingDirectory, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return CreateCandidate(
+            AiCliProfileService.ClaudeProfile,
+            sessionId,
+            workingDirectory,
+            lastUserMessage,
+            updatedAtUtc);
+    }
+
+    private static bool TryReadClaudeUserMessage(JsonElement root, out string? message)
+    {
+        message = null;
+        if (!TryGetString(root, "type", out var type) ||
+            !string.Equals(type, "user", StringComparison.Ordinal) ||
+            !root.TryGetProperty("message", out var messageObject) ||
+            messageObject.ValueKind != JsonValueKind.Object ||
+            !messageObject.TryGetProperty("content", out var content))
+        {
+            return false;
+        }
+
+        if (content.ValueKind == JsonValueKind.String)
+        {
+            message = content.GetString();
+            return !string.IsNullOrWhiteSpace(message);
+        }
+
+        if (content.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        var parts = new List<string>();
+        using var items = content.EnumerateArray();
+        while (items.MoveNext())
+        {
+            var item = items.Current;
+            if (item.ValueKind == JsonValueKind.Object &&
+                TryGetString(item, "type", out var itemType) &&
+                string.Equals(itemType, "text", StringComparison.Ordinal) &&
+                TryGetString(item, "text", out var text))
+            {
+                parts.Add(text);
+            }
+        }
+
+        message = parts.Count == 0 ? null : string.Join(" ", parts);
+        return !string.IsNullOrWhiteSpace(message);
     }
 
     private IReadOnlyList<ProviderResumeCatalogEntryDto> GetCodexCandidates(

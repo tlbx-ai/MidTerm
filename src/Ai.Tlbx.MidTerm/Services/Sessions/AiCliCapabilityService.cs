@@ -142,16 +142,20 @@ public sealed class AiCliCapabilityService
     private static AiCliCapabilitySnapshot BuildClaudeTerminalSnapshot(string? userProfileDirectory, bool appServerControlOnly)
     {
         var binaryPath = AiCliCommandLocator.FindExecutableInPath("claude", userProfileDirectory);
+        var nodePath = AiCliCommandLocator.FindExecutableInPath("node", userProfileDirectory);
         if (appServerControlOnly)
         {
+            var ready = binaryPath is not null && nodePath is not null;
             return BuildSnapshot(
-                "unsupported",
-                "attention",
-                "Agent Controller runtime unsupported",
-                "tlbx does not expose Claude Code as an Agent Controller runtime because its previous stream-json adapter was not a supported ACP contract.",
+                ready ? "native" : "native-required",
+                ready ? "positive" : "attention",
+                ready ? "Claude Agent SDK ready" : "Claude Agent SDK unavailable",
+                ready
+                    ? "tlbx controls the local Claude Code installation through the official Claude Agent SDK and canonical mtagenthost events."
+                    : "Claude Agent Controller sessions require both the Claude Code CLI and Node.js 18 or newer on this machine.",
                 [
                     CreateCapability("cli", "Claude CLI", binaryPath is null ? "missing" : "ready", binaryPath is null ? "Missing" : "Ready", binaryPath is null ? "tlbx could not find `claude` on PATH." : $"Using `{binaryPath}`."),
-                    CreateCapability("native", "ACP runtime", "unsupported", "Unsupported", "No maintained standard ACP entry point is registered for Claude Code."),
+                    CreateCapability("native", "Claude Agent SDK", ready ? "ready" : "missing", ready ? "Ready" : "Missing", nodePath is null ? "Node.js 18 or newer was not found on PATH." : $"Using Node.js from `{nodePath}`."),
                     CreateCapability("terminal", "Terminal", "absent", "Absent", "Agent Controller sessions do not own an `mthost` terminal.")
                 ]);
         }
@@ -162,10 +166,10 @@ public sealed class AiCliCapabilityService
             binaryPath is null ? "Terminal profile unavailable" : "Terminal profile ready",
             binaryPath is null
                 ? "tlbx could not find the Claude CLI for this terminal-native profile."
-                : "Claude Code remains available as a terminal-native CLI; tlbx does not claim a structured Agent Controller contract for it.",
+                : "Claude Code is available in the regular terminal and as a structured Claude Agent SDK session when Node.js is installed.",
             [
                 CreateCapability("cli", "Claude CLI", binaryPath is null ? "missing" : "ready", binaryPath is null ? "Missing" : "Ready", binaryPath is null ? "tlbx could not find `claude` on PATH." : $"Using `{binaryPath}`."),
-                CreateCapability("native", "Agent Controller", "unsupported", "Unsupported", "The unmaintained stream-json adapter is intentionally not exposed."),
+                CreateCapability("native", "Agent Controller", nodePath is null ? "missing" : "ready", nodePath is null ? "Missing" : "Ready", nodePath is null ? "Node.js 18 or newer is required by the Claude Agent SDK bridge." : "Structured Claude Agent SDK events are available for explicit Agent Controller sessions."),
                 CreateCapability("terminal", "Terminal", "ready", "Ready", "Claude Code runs in the regular PTY surface.")
             ]);
     }

@@ -7,6 +7,9 @@ internal static class AppServerControlProviderRuntimeConfiguration
     private const string CodexYoloDefaultEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT";
     private const string CodexDefaultModelEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL";
     private const string CodexEnvironmentVariablesEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_ENVIRONMENT_VARIABLES";
+    private const string ClaudeDefaultModelEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CLAUDE_DEFAULT_MODEL";
+    private const string ClaudeEnvironmentVariablesEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CLAUDE_ENVIRONMENT_VARIABLES";
+    private const string ClaudeDangerouslySkipPermissionsEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS";
 
     public static void ApplyUserProfileEnvironment(ProcessStartInfo startInfo, string? profileDirectory)
     {
@@ -59,9 +62,21 @@ internal static class AppServerControlProviderRuntimeConfiguration
                enabled;
     }
 
+    public static bool GetClaudeDangerouslySkipPermissionsDefault()
+    {
+        return bool.TryParse(
+            Environment.GetEnvironmentVariable(ClaudeDangerouslySkipPermissionsEnvironmentVariable),
+            out var enabled) && enabled;
+    }
+
     public static string? GetCodexDefaultModel()
     {
         return NormalizeOptionalValue(Environment.GetEnvironmentVariable(CodexDefaultModelEnvironmentVariable));
+    }
+
+    public static string? GetClaudeDefaultModel()
+    {
+        return NormalizeOptionalValue(Environment.GetEnvironmentVariable(ClaudeDefaultModelEnvironmentVariable));
     }
 
     private static IReadOnlyDictionary<string, string> ReadEnvironmentVariables(string provider)
@@ -69,6 +84,7 @@ internal static class AppServerControlProviderRuntimeConfiguration
         var raw = provider switch
         {
             "codex" => Environment.GetEnvironmentVariable(CodexEnvironmentVariablesEnvironmentVariable),
+            "claude" => Environment.GetEnvironmentVariable(ClaudeEnvironmentVariablesEnvironmentVariable),
             _ => null
         };
 

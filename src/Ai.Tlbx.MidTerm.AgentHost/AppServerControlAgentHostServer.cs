@@ -367,7 +367,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 HostKind = "mtagenthost",
                 HostVersion = "dev",
                 Providers = _syntheticProvider is null
-                    ? ["codex", "acp-v1"]
+                    ? ["codex", "claude-agent-sdk", "acp-v1"]
                     : [_syntheticProvider],
                 Capabilities =
                 [
@@ -422,6 +422,13 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         if (string.Equals(provider, "codex", StringComparison.Ordinal))
         {
             _runtime = new CodexAppServerControlAgentRuntime(EmitRuntimeEvent);
+            return _runtime;
+        }
+
+        if (string.Equals(provider, "claude", StringComparison.Ordinal) &&
+            string.Equals(command.AttachRuntime?.RuntimeKind, "claude-agent-sdk", StringComparison.Ordinal))
+        {
+            _runtime = new ClaudeAppServerControlAgentRuntime(EmitRuntimeEvent);
             return _runtime;
         }
 
@@ -753,7 +760,6 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
     }
 }
-
 
 
 

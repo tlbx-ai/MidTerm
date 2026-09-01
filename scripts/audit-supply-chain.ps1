@@ -59,13 +59,21 @@ if ($LASTEXITCODE -ne 0 -or $actualNpmVersion -ne $requiredNpmVersion) {
 }
 $npmWorkspaces = @(
     (Join-Path $repoRoot "src/Ai.Tlbx.MidTerm"),
+    (Join-Path $repoRoot "src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge"),
     (Join-Path $repoRoot "docs/marketing/ScreenshotAutomation")
 )
 foreach ($workspace in $npmWorkspaces) {
-    Invoke-Checked -FilePath "npm" -ArgumentList @("ci") -WorkingDirectory $workspace
+    $ciArguments = if ($workspace.EndsWith("ClaudeBridge", [StringComparison]::OrdinalIgnoreCase)) {
+        @("ci", "--omit=optional")
+    } else {
+        @("ci")
+    }
+    Invoke-Checked -FilePath "npm" -ArgumentList $ciArguments -WorkingDirectory $workspace
     Invoke-Checked -FilePath "npm" -ArgumentList @("audit", "--audit-level=low") -WorkingDirectory $workspace
     Invoke-Checked -FilePath "npm" -ArgumentList @("audit", "signatures") -WorkingDirectory $workspace
 }
+Invoke-Checked -FilePath "npm" -ArgumentList @("run", "build") -WorkingDirectory (Join-Path $repoRoot "src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge")
+Invoke-Checked -FilePath "git" -ArgumentList @("diff", "--exit-code", "--", "src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge/dist/claude-agent-sdk-bridge.mjs") -WorkingDirectory $repoRoot
 Invoke-Checked -FilePath "npm" -ArgumentList @("test") -WorkingDirectory (Join-Path $repoRoot "src/npx-launcher")
 
 Write-Host "Supply-chain gate: locked NuGet projects and advisories" -ForegroundColor Cyan

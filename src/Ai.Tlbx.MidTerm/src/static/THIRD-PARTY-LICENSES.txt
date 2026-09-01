@@ -263,3 +263,11 @@ The following fonts are licensed under the SIL Open Font License 1.1:
 - Terminus (Copyright 2010-2020 Dimitar Toshkov Zhekov)
 
 The full OFL license text is included in fonts/OFL.txt
+
+
+================================================================================
+Claude Agent SDK
+================================================================================
+
+Copyright Anthropic PBC. All rights reserved. Use is subject to the Legal
+Agreements outlined at https://code.claude.com/docs/en/legal-and-compliance.

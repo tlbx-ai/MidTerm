@@ -4,7 +4,7 @@
 
 This document is the source of truth for the visual and interaction design of tlbx Agent Controller Session. It exists to prevent Agent Controller Session UI behavior from drifting across ad hoc iterations.
 
-Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The new-session launcher discovers locally installed supported runtimes and recognizes Codex app-server plus standard ACP-v1 agents. The built-in ACP catalog covers Grok Build, OpenCode, Gemini CLI, and GitHub Copilot CLI; installations can add or override definitions through the server-owned `acp-agents.json` manifest without adding provider branches to `mtagenthost` or the frontend. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
+Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The new-session launcher discovers locally installed supported runtimes and recognizes Codex app-server, Claude Code through the official Claude Agent SDK, plus standard ACP-v1 agents. The built-in ACP catalog covers Grok Build, OpenCode, Gemini CLI, and GitHub Copilot CLI; installations can add or override definitions through the server-owned `acp-agents.json` manifest without adding provider branches to `mtagenthost` or the frontend. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
 
 Any future Agent Controller Session UI change that affects layout, hierarchy, history ordering, timeline rendering, typography, spacing, scrolling, item rendering, or interaction states must update this document with the new fundamental rule or revised rationale.
 
@@ -63,7 +63,7 @@ New Agent Controller Session work must use the following concept names consisten
 
 - use `Agent Controller` for software that speaks a supported structured agent protocol and provides an agent-control UI
 - use `Agent Controller Session` for one live controlled provider conversation
-- use `provider protocol` for the runtime boundary; currently Codex app-server or Agent Client Protocol (ACP) v1 over stdio
+- use `provider protocol` for the runtime boundary; currently Codex app-server, Claude Agent SDK, or Agent Client Protocol (ACP) v1 over stdio
 - use `ACP client runtime` for tlbx's standards-based client implementation that drives registered ACP agents without provider-specific stream parsing
 - use `Agent Controller Runtime` for the backend-owned provider runtime that drives an Agent Controller Session
 - use `history` for the canonical ordered Agent Controller Session item sequence
@@ -581,10 +581,11 @@ Status in this branch/work item:
 - implemented: hidden/background Agent Controller Sessions may continue ingesting runtime state, but history DOM work is deferred until that Agent Controller Session surface is visible again
 - implemented: hidden/background Agent Controller Sessions clear rendered history DOM and compact retained browser-side history back to a bounded latest window without interrupting the live runtime
 - implemented: Agent Controller Session history is treated as a bounded browser-side view window over tlbx-owned canonical history rather than as an unbounded full-history browser cache
-- implemented: Codex app-server and the generic ACP client runtime route through `mtagenthost` as the single structured runtime boundary; `SessionAppServerControlRuntimeService` no longer falls back to a second in-process Codex runtime when host attach fails
-- implemented: the unsupported, unmaintained Claude stream-json adapter and its invented XML user-input bridge have been removed; Claude Code remains a normal terminal-native CLI instead of being advertised as an Agent Controller runtime
+- implemented: Codex app-server, the official Claude Agent SDK bridge, and the generic ACP client runtime route through `mtagenthost` as the single structured runtime boundary; `SessionAppServerControlRuntimeService` no longer falls back to a second in-process provider runtime when host attach fails
+- implemented: Claude Code uses the official Claude Agent SDK instead of the removed stream-json/XML adapter, including partial text, multi-turn state, permissions, resume, and GIF/JPEG/PNG/WebP image content blocks
 - implemented: the ACP client performs the standard `initialize` and `session/new` flow, consumes canonical `session/update` notifications, handles permission requests and cancellation, and prefers `session/set_config_option` while retaining protocol-level legacy mode/model fallbacks
-- implemented: the new-session launcher queries locally installed Agent Controller runtimes and offers only detected Codex app-server and registered ACP agents; the selected ACP profile is preserved by bookmarks and relaunch
+- implemented: when an ACP agent advertises `promptCapabilities.image`, GIF/JPEG/PNG/WebP and other declared image MIME attachments are sent as bounded ACP `image` content blocks; agents without that capability retain the explicit local-path text fallback
+- implemented: the new-session launcher queries locally installed Agent Controller runtimes and offers detected Codex app-server, Claude Agent SDK, and registered ACP agents; the selected provider profile is preserved by bookmarks and relaunch
 - implemented: Agent Controller Session retains canonical user-facing history rather than a hidden durable raw-event archive
 - implemented: tlbx-side Agent Controller Session persistence now writes canonical reduced session state instead of appending provider-shaped event logs, while transient live event backlog stays bounded in memory only
 - implemented: mouseup inside the Agent Controller Session surface no longer routes through terminal focus reclaim, so drag text selection in Agent Controller Session remains intact after the mouse button is released
