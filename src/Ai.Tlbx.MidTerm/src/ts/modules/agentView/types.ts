@@ -6,6 +6,7 @@ import type {
   AppServerControlHistoryRuntimeNotice,
   AppServerControlQuestion,
   AppServerControlAnsweredQuestion,
+  AppServerControlToolPresentation,
 } from '../../api/types';
 
 export interface SessionAppServerControlViewState {
@@ -188,6 +189,7 @@ export interface AppServerControlHistoryEntry {
   turnDurationNote?: boolean;
   commandText?: string | null;
   commandOutputTail?: string[];
+  toolPresentation?: AppServerControlToolPresentation | null;
   fileMentions?: AppServerControlInlineFileReference[];
   imagePreviews?: AppServerControlInlineImagePreview[];
 }
@@ -261,7 +263,7 @@ export interface HistoryViewportAnchor {
 }
 
 export interface HistoryBodyPresentation {
-  mode: 'plain' | 'monospace' | 'markdown' | 'streaming' | 'diff' | 'command';
+  mode: 'plain' | 'monospace' | 'markdown' | 'streaming' | 'diff' | 'command' | 'tool';
   collapsedByDefault: boolean;
   lineCount: number;
   preview: string;

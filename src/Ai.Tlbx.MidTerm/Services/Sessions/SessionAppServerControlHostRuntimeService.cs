@@ -1444,6 +1444,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             ItemType = source.ItemType,
             Title = source.Title,
             CommandText = source.CommandText,
+            ToolPresentation = AppServerControlToolPresentationProtocol.Clone(source.ToolPresentation),
             Body = source.Body,
             Attachments = source.Attachments.Select(CloneAttachment).ToList(),
             FileMentions = source.FileMentions.Select(CloneInlineFileReference).ToList(),

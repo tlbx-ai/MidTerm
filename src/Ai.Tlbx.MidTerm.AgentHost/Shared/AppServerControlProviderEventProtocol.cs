@@ -38,7 +38,7 @@ public sealed class AppServerControlProviderEventRaw
 {
     public string Source { get; set; } = string.Empty;
     public string? Method { get; set; }
-    public string? PayloadJson { get; set; }
+    public bool PayloadOmitted { get; set; }
 }
 
 public sealed class AppServerControlProviderSessionStatePayload
@@ -96,6 +96,7 @@ public sealed class AppServerControlProviderItemPayload
     public string Status { get; set; } = string.Empty;
     public string? Title { get; set; }
     public string? Detail { get; set; }
+    public AppServerControlToolPresentation? ToolPresentation { get; set; }
     public List<AppServerControlAttachmentReference> Attachments { get; set; } = [];
 }
 
@@ -159,6 +160,7 @@ public sealed class AppServerControlProviderEventListResponse
 [JsonSerializable(typeof(AppServerControlProviderPlanCompletedPayload))]
 [JsonSerializable(typeof(AppServerControlProviderDiffUpdatedPayload))]
 [JsonSerializable(typeof(AppServerControlProviderItemPayload))]
+[JsonSerializable(typeof(AppServerControlToolPresentation))]
 [JsonSerializable(typeof(AppServerControlProviderTaskPayload))]
 [JsonSerializable(typeof(AppServerControlProviderRequestOpenedPayload))]
 [JsonSerializable(typeof(AppServerControlProviderRequestResolvedPayload))]

@@ -588,7 +588,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 Source = appServerControlEvent.Raw.Source,
                 Method = appServerControlEvent.Raw.Method,
-                PayloadJson = appServerControlEvent.Raw.PayloadJson
+                PayloadOmitted = appServerControlEvent.Raw.PayloadOmitted
             },
             SessionState = appServerControlEvent.SessionState is null ? null : new AppServerControlProviderSessionStatePayload
             {
@@ -637,6 +637,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 Status = appServerControlEvent.Item.Status,
                 Title = appServerControlEvent.Item.Title,
                 Detail = appServerControlEvent.Item.Detail,
+                ToolPresentation = AppServerControlToolPresentationProtocol.Clone(appServerControlEvent.Item.ToolPresentation),
                 Attachments = CloneAttachments(appServerControlEvent.Item.Attachments)
             },
             QuickSettingsUpdated = appServerControlEvent.QuickSettingsUpdated is null ? null : new AppServerControlQuickSettingsPayload
@@ -818,8 +819,5 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
     }
 }
-
-
-
 
 

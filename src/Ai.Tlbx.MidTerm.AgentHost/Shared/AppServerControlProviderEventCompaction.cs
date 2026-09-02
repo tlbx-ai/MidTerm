@@ -79,6 +79,7 @@ public static class AppServerControlProviderEventCompaction
                 Status = source.Item.Status,
                 Title = source.Item.Title,
                 Detail = CompactItemDetail(source.Item.ItemType, source.Item.Detail),
+                ToolPresentation = AppServerControlToolPresentationProtocol.Clone(source.Item.ToolPresentation),
                 Attachments = CloneAttachments(source.Item.Attachments)
             },
             Task = source.Task is null ? null : new AppServerControlProviderTaskPayload
@@ -160,10 +161,10 @@ public static class AppServerControlProviderEventCompaction
         {
             Source = source.Source,
             Method = source.Method,
-            PayloadJson = null
+            PayloadOmitted = source.PayloadOmitted
         };
 
-        return string.IsNullOrWhiteSpace(raw.Source) && string.IsNullOrWhiteSpace(raw.Method)
+        return string.IsNullOrWhiteSpace(raw.Source) && string.IsNullOrWhiteSpace(raw.Method) && !raw.PayloadOmitted
             ? null
             : raw;
     }

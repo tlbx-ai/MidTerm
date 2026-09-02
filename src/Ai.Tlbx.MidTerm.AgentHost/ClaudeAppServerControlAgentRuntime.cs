@@ -722,16 +722,21 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             ? $"tool:{_activeTurnId}:{index.Value.ToString(CultureInfo.InvariantCulture)}"
             : state.ProviderItemId;
         state.ItemId = itemId;
-        var detail = contentBlock.TryGetProperty("input", out var input) ? input.GetRawText() : state.Title;
+        JsonElement? input = contentBlock.TryGetProperty("input", out var inputValue)
+            ? inputValue
+            : null;
         var itemType = NormalizeToolItemType(state.Title);
-        state.Detail.Append(detail);
-        _tools[state.ProviderItemId ?? itemId] = new ClaudeToolState
+        var tool = new ClaudeToolState
         {
             ItemId = itemId,
             ItemType = itemType,
             Title = state.Title,
-            Detail = new StringBuilder(detail)
+            Presentation = AppServerControlToolPresentationProjector.FromClaude(
+                state.Title,
+                "in_progress",
+                input)
         };
+        _tools[state.ProviderItemId ?? itemId] = tool;
 
         _emit(CreateEvent("item.started", _activeTurnId, itemId, null, "claude.agent-sdk", "content_block_start", root, appServerControlEvent =>
         {
@@ -740,7 +745,8 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                 ItemType = itemType,
                 Status = "in_progress",
                 Title = state.Title,
-                Detail = detail
+                Detail = tool.Presentation.Subject,
+                ToolPresentation = AppServerControlToolPresentationProjector.Clone(tool.Presentation)
             };
         }, rawLine));
     }
@@ -778,7 +784,6 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                 else
                 {
                     EmitAssistantDelta(delta, root, rawLine);
-                    state.Detail.Append(delta);
                 }
 
                 break;
@@ -791,21 +796,24 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                     return;
                 }
 
-                state.Detail.Append(partialJson);
                 var toolKey = state.ProviderItemId ?? state.ItemId ?? string.Empty;
                 if (_tools.TryGetValue(toolKey, out var tool))
                 {
-                    tool.Detail.Append(partialJson);
-                    _emit(CreateEvent("item.updated", _activeTurnId, tool.ItemId, null, "claude.agent-sdk", "content_block_delta", root, appServerControlEvent =>
+                    tool.InputJson.Append(partialJson);
+                    if (TryUpdateClaudePresentationFromInputJson(tool))
                     {
-                        appServerControlEvent.Item = new AppServerControlProviderItemPayload
+                        _emit(CreateEvent("item.updated", _activeTurnId, tool.ItemId, null, "claude.agent-sdk", "content_block_delta", root, appServerControlEvent =>
                         {
-                            ItemType = tool.ItemType,
-                            Status = "in_progress",
-                            Title = tool.Title,
-                            Detail = tool.Detail.ToString()
-                        };
-                    }, rawLine));
+                            appServerControlEvent.Item = new AppServerControlProviderItemPayload
+                            {
+                                ItemType = tool.ItemType,
+                                Status = "in_progress",
+                                Title = tool.Title,
+                                Detail = tool.Presentation.Subject,
+                                ToolPresentation = AppServerControlToolPresentationProjector.Clone(tool.Presentation)
+                            };
+                        }, rawLine));
+                    }
                 }
 
                 break;
@@ -891,27 +899,21 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                 continue;
             }
 
-            var resultText = ReadToolResultText(item, root);
-            if (!string.IsNullOrWhiteSpace(resultText) && string.Equals(tool.ItemType, "command_execution", StringComparison.Ordinal))
-            {
-                _emit(CreateEvent("content.delta", _activeTurnId, tool.ItemId, null, "claude.agent-sdk", "tool_result", root, appServerControlEvent =>
-                {
-                    appServerControlEvent.ContentDelta = new AppServerControlProviderContentDeltaPayload
-                    {
-                        StreamKind = "command_output",
-                        Delta = resultText
-                    };
-                }, rawLine));
-            }
+            TryUpdateClaudePresentationFromInputJson(tool);
+            AppServerControlToolPresentationProjector.AppendClaudeResult(item, root, tool.Output);
+            var failed = GetBoolean(item, "is_error") || GetBoolean(root, "tool_use_result", "is_error");
+            var status = failed ? "failed" : "completed";
+            AppServerControlToolPresentationProjector.ApplyOutput(tool.Presentation, tool.Output, status);
 
             _emit(CreateEvent("item.completed", _activeTurnId, tool.ItemId, null, "claude.agent-sdk", "tool_result", root, appServerControlEvent =>
             {
                 appServerControlEvent.Item = new AppServerControlProviderItemPayload
                 {
                     ItemType = tool.ItemType,
-                    Status = "completed",
+                    Status = status,
                     Title = tool.Title,
-                    Detail = CombineToolDetail(tool.Detail.ToString(), resultText)
+                    Detail = tool.Presentation.Subject,
+                    ToolPresentation = AppServerControlToolPresentationProjector.Clone(tool.Presentation)
                 };
             }, rawLine));
             _tools.Remove(toolUseId);
@@ -1062,22 +1064,11 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             {
                 Source = source,
                 Method = method,
-                PayloadJson = rawPayloadJson ?? SerializePayload(payload)
+                PayloadOmitted = payload is not null || !string.IsNullOrEmpty(rawPayloadJson)
             }
         };
         configure?.Invoke(appServerControlEvent);
         return appServerControlEvent;
-    }
-
-    private static string? SerializePayload(object? payload)
-    {
-        return payload switch
-        {
-            null => null,
-            JsonElement element => element.GetRawText(),
-            string text => text,
-            _ => payload.ToString()
-        };
     }
 
     private void EnsureAttached()
@@ -1421,27 +1412,10 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         string? method,
         object? payload)
     {
-        var rawPayload = SerializeQuickSettingsRawPayload(payload);
-        return CreateEvent("quick-settings.updated", null, null, null, source, method, rawPayload, appServerControlEvent =>
+        return CreateEvent("quick-settings.updated", null, null, null, source, method, payload, appServerControlEvent =>
         {
             appServerControlEvent.QuickSettingsUpdated = AppServerControlQuickSettings.ToPayload(quickSettings);
         });
-    }
-
-    private static JsonElement SerializeQuickSettingsRawPayload(object? payload)
-    {
-        return payload switch
-        {
-            null => default,
-            JsonElement element => element,
-            AppServerControlAttachRuntimeRequest attach => JsonSerializer.SerializeToElement(
-                attach,
-                AppServerControlHostJsonContext.Default.AppServerControlAttachRuntimeRequest),
-            AppServerControlTurnRequest request => JsonSerializer.SerializeToElement(
-                request,
-                AppServerControlHostJsonContext.Default.AppServerControlTurnRequest),
-            _ => default
-        };
     }
 
     private static string JoinClaudeAssistantText(JsonElement root)
@@ -1467,68 +1441,34 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         return builder.ToString();
     }
 
-    private static string ReadToolResultText(JsonElement item, JsonElement root)
+    private static bool TryUpdateClaudePresentationFromInputJson(ClaudeToolState tool)
     {
-        var parts = new List<string>();
-        if (item.TryGetProperty("content", out var content))
+        if (tool.InputJson.Length == 0 || tool.InputJson.IsTruncated)
         {
-            var contentText = content.ValueKind switch
-            {
-                JsonValueKind.String => content.GetString(),
-                JsonValueKind.Array => JoinContentArrayText(content),
-                _ => content.ToString()
-            };
-            if (!string.IsNullOrWhiteSpace(contentText))
-            {
-                parts.Add(contentText);
-            }
+            return false;
         }
 
-        var stdout = GetString(root, "tool_use_result", "stdout");
-        if (!string.IsNullOrWhiteSpace(stdout))
+        var inputJson = tool.InputJson.ToString();
+        if (!inputJson.AsSpan().TrimEnd().EndsWith("}".AsSpan(), StringComparison.Ordinal))
         {
-            parts.Add(stdout);
+            return false;
         }
 
-        var stderr = GetString(root, "tool_use_result", "stderr");
-        if (!string.IsNullOrWhiteSpace(stderr))
+        try
         {
-            parts.Add(stderr);
+            using var document = JsonDocument.Parse(inputJson);
+            var updated = AppServerControlToolPresentationProjector.FromClaude(
+                tool.Title,
+                "in_progress",
+                document.RootElement);
+            var previousSubject = tool.Presentation.Subject;
+            AppServerControlToolPresentationProjector.Merge(tool.Presentation, updated);
+            return !string.Equals(previousSubject, tool.Presentation.Subject, StringComparison.Ordinal);
         }
-
-        return string.Join(Environment.NewLine, parts);
-    }
-
-    private static string JoinContentArrayText(JsonElement content)
-    {
-        var values = new List<string>();
-        using var contentItems = content.EnumerateArray();
-        while (contentItems.MoveNext())
+        catch (JsonException)
         {
-            var part = contentItems.Current;
-            var value = GetString(part, "text") ?? part.ToString();
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                values.Add(value);
-            }
+            return false;
         }
-
-        return string.Join(Environment.NewLine, values);
-    }
-
-    private static string CombineToolDetail(string? invocationDetail, string? resultText)
-    {
-        if (string.IsNullOrWhiteSpace(invocationDetail))
-        {
-            return resultText ?? string.Empty;
-        }
-
-        if (string.IsNullOrWhiteSpace(resultText))
-        {
-            return invocationDetail;
-        }
-
-        return invocationDetail.Trim() + Environment.NewLine + Environment.NewLine + resultText.Trim();
     }
 
     private static string NormalizeToolItemType(string? toolName)
@@ -1662,7 +1602,6 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         public string? ProviderItemId { get; set; }
         public string? ItemId { get; set; }
         public string Title { get; set; } = string.Empty;
-        public StringBuilder Detail { get; } = new();
     }
 
     private sealed class ClaudeToolState
@@ -1670,10 +1609,9 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         public string ItemId { get; set; } = string.Empty;
         public string ItemType { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;
-        public StringBuilder Detail { get; set; } = new();
+        public AppServerControlToolPresentation Presentation { get; set; } = new();
+        public BoundedTextAccumulator InputJson { get; } = new(4_096);
+        public BoundedToolOutputAccumulator Output { get; } = new();
     }
 
 }
-
-
-

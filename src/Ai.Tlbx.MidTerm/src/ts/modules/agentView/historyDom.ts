@@ -50,6 +50,29 @@ function clampToolCallOutputLines(lines: readonly string[]): string[] {
   return lineLimit <= 0 ? [] : lines.slice(0, lineLimit);
 }
 
+function selectProjectedToolEvidenceLines(entry: AppServerControlHistoryEntry): string[] {
+  const presentation = entry.toolPresentation;
+  if (!presentation?.evidence) {
+    return [];
+  }
+
+  const lines = presentation.evidence.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const lineLimit = resolveToolCallOutputLineLimit();
+  if (lineLimit <= 0 || lines.length === 0) {
+    return [];
+  }
+  if (lines.length <= lineLimit) {
+    return lines;
+  }
+  if (presentation.evidenceKind === 'error') {
+    return lines.slice(lines.length - lineLimit);
+  }
+  if (presentation.category === 'read' || lineLimit === 1) {
+    return lines.slice(0, lineLimit);
+  }
+  return [lines[0] ?? '', ...lines.slice(lines.length - (lineLimit - 1))];
+}
+
 function appServerControlText(key: string, fallback: string): string {
   const translated = t(key);
   return !translated || translated === key ? fallback : translated;
@@ -476,7 +499,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       article.dataset.turnDurationNote = 'true';
       article.classList.add('agent-history-turn-duration');
     }
-    if (entry.kind === 'tool' && hasInlineCommandPresentation(entry)) {
+    if (
+      entry.kind === 'tool' &&
+      (entry.toolPresentation?.category === 'command' || hasInlineCommandPresentation(entry))
+    ) {
       article.dataset.commandEntry = 'true';
       article.classList.add('agent-history-command-entry');
     }
@@ -583,6 +609,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       }
       case 'command':
         return createCommandHistoryBody(entry, sessionId);
+      case 'tool':
+        return createProjectedToolHistoryBody(entry, sessionId);
       case 'streaming':
       case 'markdown': {
         const body = document.createElement('div');
@@ -682,6 +710,81 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       body.appendChild(output);
     }
 
+    return body;
+  }
+
+  function createProjectedToolHistoryBody(
+    entry: AppServerControlHistoryEntry,
+    sessionId: string,
+  ): HTMLElement {
+    const body = document.createElement('div');
+    body.className = 'agent-history-body agent-history-command-body';
+    const presentation = entry.toolPresentation;
+    if (!presentation) {
+      return body;
+    }
+
+    const outcomeIsError = presentation.evidenceKind === 'error';
+    if (outcomeIsError && presentation.outcome) {
+      const outcome = document.createElement('div');
+      outcome.className = 'agent-history-meta';
+      outcome.textContent = presentation.outcome;
+      body.appendChild(outcome);
+    }
+
+    if (presentation.subject) {
+      const subject = document.createElement('div');
+      subject.className = 'agent-history-command-line';
+      if (presentation.category === 'command') {
+        for (const token of tokenizeCommandText(presentation.subject)) {
+          const part = document.createElement('span');
+          part.className = `agent-history-command-token agent-history-command-token-${token.kind}`;
+          part.textContent = token.text;
+          subject.appendChild(part);
+        }
+      } else {
+        subject.textContent = presentation.subject;
+      }
+      enrichInteractiveTextContent(subject, getEntryFileMentions(entry, 'body'));
+      wireAssistantInteractiveContent(subject, sessionId);
+      body.appendChild(subject);
+    }
+
+    const additionalPaths = presentation.paths.filter(
+      (path) => path && path !== presentation.subject,
+    );
+    if (additionalPaths.length > 0) {
+      const paths = document.createElement('pre');
+      paths.className = 'agent-history-command-output-tail';
+      paths.textContent = additionalPaths.join('\n');
+      enrichInteractiveTextContent(paths, getEntryFileMentions(entry, 'body'));
+      wireAssistantInteractiveContent(paths, sessionId);
+      body.appendChild(paths);
+    }
+
+    if (!outcomeIsError && presentation.outcome) {
+      const outcome = document.createElement('div');
+      outcome.className = 'agent-history-meta';
+      outcome.textContent = presentation.outcome;
+      body.appendChild(outcome);
+    }
+
+    const visibleEvidence = selectProjectedToolEvidenceLines(entry);
+    if (visibleEvidence.length > 0) {
+      const evidence = document.createElement('pre');
+      evidence.className = 'agent-history-command-output-tail';
+      const hiddenByPreference = Math.max(
+        0,
+        (presentation.totalLineCount || visibleEvidence.length) - visibleEvidence.length,
+      );
+      evidence.textContent =
+        hiddenByPreference > 0
+          ? `... ${hiddenByPreference} lines omitted ...\n${visibleEvidence.join('\n')}`
+          : visibleEvidence.join('\n');
+      body.appendChild(evidence);
+    }
+
+    appendEntryImagePreviews(body, entry, sessionId);
     return body;
   }
 
@@ -927,6 +1030,9 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   }
 
   function shouldRenderHistoryBody(entry: AppServerControlHistoryEntry): boolean {
+    if (entry.toolPresentation) {
+      return true;
+    }
     if (hasInlineCommandPresentation(entry)) {
       return true;
     }

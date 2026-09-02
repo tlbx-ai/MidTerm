@@ -304,6 +304,7 @@ The canonical history contract must satisfy the following:
 - Giant command outputs, giant file bodies, repetitive progress chatter, and transport-level event spam should be summarized, windowed, or suppressed before they reach canonical history.
 - Agent Controller Session should make it obvious when content is intentionally windowed or summarized by using stable omitted-line markers, bounded previews, or disclosure affordances.
 - Raw provider inputs are transient reducer inputs, not retained Agent Controller Session history.
+- Retained raw-event metadata is limited to provider source, method, and an explicit marker that a payload was deliberately omitted; raw payload text must not be serialized into the event backlog.
 - If content is not meant to be shown later, or needed to determine what is shown later, it should be dropped instead of preserved in a hidden Agent Controller Session data layer.
 
 ### Canonical History Shape
@@ -336,6 +337,8 @@ The canonical history contract must satisfy the following:
 - If a user row for an older turn materializes late, the backend must still promote that user row to the start of its turn instead of leaving it below newer rows that happened to be created first.
 - A streaming assistant response should update its existing row in place.
 - Tool updates should attach to the owning turn and item instead of spawning visually disjoint duplicates.
+- Provider adapters must project tool activity into the canonical `ToolPresentation` shape before history reduction: category, label, tool name, subject, outcome, evidence kind, bounded evidence, counts, exit code, and bounded paths.
+- The browser renders that canonical shape and must not infer tool semantics by parsing provider prose or command-output text.
 
 ### Shared row anatomy
 
@@ -403,17 +406,19 @@ The canonical history contract must satisfy the following:
 - Runtime/system notices should strip raw ANSI/control bytes and de-duplicate repeated message/detail fragments before they render in Agent Controller Session history.
 - Provider startup/runtime state notices that tlbx understands, such as Codex MCP server startup-status updates, should map into quiet canonical `Agent State` system rows instead of falling through as unknown-agent tool rows.
 - Provider CLI/runtime error blocks that arrive outside the normal assistant stream, including multi-line stderr startup failures and deprecation errors, should map into canonical `Agent Error` notice rows with stronger red emphasis than ordinary system rows.
-- When a provider emits an unknown structured event, tlbx should preserve it as a canonical diagnostic history item instead of silently dropping it.
-- Those fallback unknown-agent rows may render raw provider method/payload detail, but they must remain clearly marked as unknown tlbx fallback output rather than pretending to be a first-class mapped concept.
+- When a provider emits an unknown structured event, tlbx should preserve bounded source/method diagnostics as a canonical history item instead of silently dropping it; the raw payload remains transient and omitted.
+- Those fallback unknown-agent rows must remain clearly marked as unknown tlbx fallback output rather than pretending to be a first-class mapped concept.
 - Agent Controller Session should expose a user setting to hide or show those unknown-agent fallback rows, and the default should favor showing them so new provider capabilities are inspectable before tlbx ships a dedicated mapping.
 - Long machine-oriented bodies such as command output, file-change output, reasoning blocks, and similar tool-style details should collapse into unfoldable disclosure panels by default once they are stable.
 - Collapsed tool-style panels should expose a short preview plus line-count context so the user can scan relevance before expanding.
 - Tool commands, command output, file paths, and other machine-oriented detail should use the configured terminal monospace stack.
 - Command/file-read noise should be summarized for screen use instead of dumping full raw terminal-like output into Agent Controller Session history.
 - File-read commands should surface the path and a compact excerpt policy, not the full file body.
-- Generic command output should prefer compact head/tail or tail-oriented summaries with omitted-line markers over unbounded dumps.
+- Generic command output should use a deterministic bounded window: at most four head lines and six tail lines, with each retained line capped at 512 characters and an omitted-line marker when necessary.
+- ANSI CSI/OSC sequences and control bytes must be removed while streaming into the bounded accumulator so split escape sequences cannot leak into history and no full-output copy is required.
+- Completed tool accumulator state must be released immediately after the canonical history item is settled; session lifetime must not retain per-tool builders or full provider results.
 - Command-execution rows should render in a console-like `Ran …` form with lightweight syntax coloring: command name, flags/parameters, quoted strings, and shell operators should be visually distinct without turning the row into a card.
-- When command output is available immediately after a command-execution row, Agent Controller Session should fold up to 12 tail lines beneath that same `Ran …` line in muted terminal monospace instead of rendering a second noisy standalone output row.
+- When command output is available immediately after a command-execution row, Agent Controller Session should fold the already bounded canonical evidence beneath that same `Ran …` line in muted terminal monospace instead of rendering a second noisy standalone output row.
 - Once command output has been folded into a command-execution row, that compact tail must remain attached to that historical command even after later commands and outputs arrive in the same turn.
 - Folded command-output tails should remain raw terminal text. Do not apply assistant-style semantic enrichment, clickable file-path decoration, or inline image previews inside those noisy tail lines.
 - When the backend already materializes a command-output history row that contains both the command header and compact output window, Agent Controller Session should normalize that row directly into the same persistent `Ran …` presentation instead of depending on adjacency with a separate command-execution row.
@@ -595,9 +600,11 @@ Status in this branch/work item:
 - implemented: tool-style titles and bodies use the configured terminal monospace stack consistently
 - implemented: dev mode writes one GUID-named per-session Agent Controller Session screen log derived from canonical history deltas and render hints
 - implemented: Agent Controller Session uses one artificial trailing busy bubble while a turn is active instead of leaving per-row activity indicators running inside history entries
-- implemented: command and file-read tool output is screen-summarized before it reaches both the Agent Controller Session UI and the dev screen log
+- implemented: Codex, Claude, and ACP adapters project tools into one bounded canonical `ToolPresentation`; history, screen logs, recovery, and the browser consume that shape without reparsing provider prose
+- implemented: command and file-read tool output is streamed through a four-head/six-tail accumulator with 512-character line bounds, omitted-line counts, and split-safe ANSI/control filtering before it reaches canonical history or the dev screen log
 - implemented: command-execution tool rows now render as console-like `Ran …` lines with lightweight syntax highlighting and the configured terminal monospace stack
-- implemented: immediate command output is folded into the command row as a muted up-to-12-line tail instead of always rendering as a separate noisy row
+- implemented: immediate command output is folded into the command row from bounded canonical evidence instead of always rendering as a separate noisy row
+- implemented: raw payload strings are no longer retained in provider events; only source/method metadata and an explicit payload-omitted marker survive reduction, and completed per-tool accumulator state is released
 - implemented: folded command-output tails now stay raw terminal text without assistant-style file-path linkification or inline image previews
 - implemented: provisional command-output rows now reconcile onto their canonical command/tool identity so folded `Ran …` tails remain attached after later item completion or later commands in the same turn
 - implemented: command-output history rows now carry canonical command text separately from the truncated output body, so omission markers cannot be mis-promoted into fake `Ran ...` commands and compact tails keep their line structure

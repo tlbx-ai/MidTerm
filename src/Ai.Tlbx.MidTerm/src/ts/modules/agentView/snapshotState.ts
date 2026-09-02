@@ -317,6 +317,9 @@ function cloneSnapshotHistoryEntry(
 ): AppServerControlHistoryItem {
   return {
     ...entry,
+    toolPresentation: entry.toolPresentation
+      ? { ...entry.toolPresentation, paths: [...entry.toolPresentation.paths] }
+      : null,
     attachments: cloneHistoryAttachments(entry.attachments),
     fileMentions: (entry.fileMentions ?? []).map((mention) => ({ ...mention })),
     imagePreviews: (entry.imagePreviews ?? []).map((preview) => ({ ...preview })),

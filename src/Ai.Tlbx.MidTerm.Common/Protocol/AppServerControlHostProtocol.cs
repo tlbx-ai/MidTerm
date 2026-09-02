@@ -247,6 +247,78 @@ public sealed class AppServerControlStreamsSummary
     public string UnifiedDiff { get; set; } = string.Empty;
 }
 
+public sealed class AppServerControlToolPresentation
+{
+    public string Category { get; set; } = "other";
+    public string Label { get; set; } = "Used tool";
+    public string? ToolName { get; set; }
+    public string? Subject { get; set; }
+    public string? Outcome { get; set; }
+    public string? Evidence { get; set; }
+    public string? EvidenceKind { get; set; }
+    public int? ExitCode { get; set; }
+    public int? ResultCount { get; set; }
+    public int TotalLineCount { get; set; }
+    public int OmittedLineCount { get; set; }
+    public List<string> Paths { get; set; } = [];
+}
+
+public static class AppServerControlToolPresentationProtocol
+{
+    private const int MaxCategoryChars = 32;
+    private const int MaxLabelChars = 160;
+    private const int MaxToolNameChars = 160;
+    private const int MaxSubjectChars = 2_048;
+    private const int MaxOutcomeChars = 320;
+    private const int MaxEvidenceChars = 4_096;
+    private const int MaxEvidenceKindChars = 32;
+    private const int MaxPaths = 12;
+    private const int MaxPathChars = 1_024;
+
+    public static AppServerControlToolPresentation? Clone(AppServerControlToolPresentation? source)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        var clone = new AppServerControlToolPresentation
+        {
+            Category = Bound(source.Category, MaxCategoryChars) ?? "other",
+            Label = Bound(source.Label, MaxLabelChars) ?? "Used tool",
+            ToolName = Bound(source.ToolName, MaxToolNameChars),
+            Subject = Bound(source.Subject, MaxSubjectChars),
+            Outcome = Bound(source.Outcome, MaxOutcomeChars),
+            Evidence = Bound(source.Evidence, MaxEvidenceChars),
+            EvidenceKind = Bound(source.EvidenceKind, MaxEvidenceKindChars),
+            ExitCode = source.ExitCode,
+            ResultCount = source.ResultCount,
+            TotalLineCount = Math.Max(0, source.TotalLineCount),
+            OmittedLineCount = Math.Max(0, source.OmittedLineCount)
+        };
+        foreach (var path in (source.Paths ?? []).Take(MaxPaths))
+        {
+            var boundedPath = Bound(path, MaxPathChars);
+            if (!string.IsNullOrWhiteSpace(boundedPath))
+            {
+                clone.Paths.Add(boundedPath);
+            }
+        }
+        return clone;
+    }
+
+    private static string? Bound(string? value, int maxChars)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+        return value.Length <= maxChars
+            ? value
+            : string.Concat(value.AsSpan(0, maxChars - 1), "…");
+    }
+}
+
 public sealed class AppServerControlHistoryItem
 {
     public string EntryId { get; set; } = string.Empty;
@@ -260,6 +332,7 @@ public sealed class AppServerControlHistoryItem
     public string? ItemType { get; set; }
     public string? Title { get; set; }
     public string? CommandText { get; set; }
+    public AppServerControlToolPresentation? ToolPresentation { get; set; }
     public string Body { get; set; } = string.Empty;
     public List<AppServerControlAttachmentReference> Attachments { get; set; } = [];
     public List<AppServerControlInlineFileReference> FileMentions { get; set; } = [];
@@ -631,10 +704,6 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 public partial class AppServerControlHostJsonContext : JsonSerializerContext
 {
 }
-
-
-
-
 
 
 

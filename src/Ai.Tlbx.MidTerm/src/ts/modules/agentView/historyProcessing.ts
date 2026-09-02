@@ -119,6 +119,75 @@ function cloneAnswers(
   return answers?.map((answer) => ({ ...answer, answers: [...answer.answers] })) ?? [];
 }
 
+function resolveSnapshotStatusLabel(entry: AppServerControlHistoryItem, kind: HistoryKind): string {
+  if (entry.streaming) {
+    return appServerControlText('appServerControl.status.streaming', 'Streaming');
+  }
+  return prettify(entry.status ? entry.status : kind);
+}
+
+function cloneToolPresentation(entry: AppServerControlHistoryItem) {
+  if (!entry.toolPresentation) {
+    return null;
+  }
+  return {
+    ...entry.toolPresentation,
+    paths: [...entry.toolPresentation.paths],
+  };
+}
+
+function resolveSnapshotMeta(
+  entry: AppServerControlHistoryItem,
+  kind: HistoryKind,
+  statusLabel: string,
+): string {
+  if (kind === 'diff' || isCommandExecutionSnapshotEntry(entry)) {
+    return '';
+  }
+  return formatHistoryMeta(kind, statusLabel, entry.updatedAt);
+}
+
+function mapSnapshotHistoryEntry(entry: AppServerControlHistoryItem): AppServerControlHistoryEntry {
+  const kind = normalizeSnapshotHistoryKind(entry.kind);
+  const statusLabel = resolveSnapshotStatusLabel(entry, kind);
+  const mapped: AppServerControlHistoryEntry = {
+    id: entry.entryId,
+    order: entry.order,
+    kind,
+    tone: toneFromState(entry.status),
+    label: resolveHistoryEntryLabel(kind, entry.itemType),
+    title: entry.title ? entry.title : '',
+    body: entry.body ? entry.body : '',
+    commandText: entry.commandText ? entry.commandText : null,
+    toolPresentation: cloneToolPresentation(entry),
+    meta: resolveSnapshotMeta(entry, kind, statusLabel),
+    attachments: cloneHistoryAttachments(entry.attachments),
+    fileMentions: cloneFileMentions(entry.fileMentions),
+    imagePreviews: cloneImagePreviews(entry.imagePreviews),
+    live: entry.streaming,
+    sourceItemId: entry.itemId ? entry.itemId : null,
+    sourceTurnId: entry.turnId ? entry.turnId : null,
+    sourceItemType: entry.itemType ? entry.itemType : null,
+    sourceStatus: entry.status,
+    sourceUpdatedAt: entry.updatedAt,
+    questions: cloneQuestions(entry.questions),
+    answers: cloneAnswers(entry.answers),
+  };
+  if (typeof entry.estimatedHeightPx === 'number' && entry.estimatedHeightPx > 0) {
+    mapped.estimatedHeightPx = entry.estimatedHeightPx;
+  }
+  if (entry.requestId) {
+    mapped.requestId = entry.requestId;
+  }
+  if (!mapped.toolPresentation) {
+    applyDirectCommandPresentation(mapped);
+  }
+  if (mapped.toolPresentation || hasInlineCommandPresentation(mapped)) {
+    mapped.meta = '';
+  }
+  return mapped;
+}
+
 export function buildAppServerControlHistoryEntries(
   snapshot: AppServerControlHistorySnapshot,
 ): AppServerControlHistoryEntry[] {
@@ -128,48 +197,7 @@ export function buildAppServerControlHistoryEntries(
   }
 
   return historyEntries
-    .map((entry) => {
-      const kind = normalizeSnapshotHistoryKind(entry.kind);
-      const statusLabel = entry.streaming
-        ? appServerControlText('appServerControl.status.streaming', 'Streaming')
-        : prettify(entry.status || kind);
-      const mapped: AppServerControlHistoryEntry = {
-        id: entry.entryId,
-        order: entry.order,
-        kind,
-        tone: toneFromState(entry.status),
-        label: resolveHistoryEntryLabel(kind, entry.itemType),
-        title: entry.title || '',
-        body: entry.body || '',
-        commandText: entry.commandText ?? null,
-        meta:
-          kind === 'diff' || isCommandExecutionSnapshotEntry(entry)
-            ? ''
-            : formatHistoryMeta(kind, statusLabel, entry.updatedAt),
-        attachments: cloneHistoryAttachments(entry.attachments),
-        fileMentions: cloneFileMentions(entry.fileMentions),
-        imagePreviews: cloneImagePreviews(entry.imagePreviews),
-        live: entry.streaming,
-        sourceItemId: entry.itemId ?? null,
-        sourceTurnId: entry.turnId ?? null,
-        sourceItemType: entry.itemType ?? null,
-        sourceStatus: entry.status,
-        sourceUpdatedAt: entry.updatedAt,
-        questions: cloneQuestions(entry.questions),
-        answers: cloneAnswers(entry.answers),
-      };
-      if (typeof entry.estimatedHeightPx === 'number' && entry.estimatedHeightPx > 0) {
-        mapped.estimatedHeightPx = entry.estimatedHeightPx;
-      }
-      if (entry.requestId) {
-        mapped.requestId = entry.requestId;
-      }
-      applyDirectCommandPresentation(mapped);
-      if (hasInlineCommandPresentation(mapped)) {
-        mapped.meta = '';
-      }
-      return mapped;
-    })
+    .map(mapSnapshotHistoryEntry)
     .filter((entry) => shouldShowUnknownAgentMessages() || !isUnknownAgentFallbackEntry(entry))
     .filter((entry) => !isSuppressedAppServerControlRuntimeNoticeEntry(entry))
     .sort((left, right) => left.order - right.order)
@@ -309,6 +337,9 @@ function resolveCommandPresentation(
 }
 
 function isPersistentCommandEntry(entry: AppServerControlHistoryEntry): boolean {
+  if (entry.toolPresentation) {
+    return false;
+  }
   if (entry.kind !== 'tool') {
     return false;
   }
@@ -448,6 +479,9 @@ function cloneAppServerControlHistoryEntry(
 ): AppServerControlHistoryEntry {
   const cloned: AppServerControlHistoryEntry = {
     ...entry,
+    toolPresentation: entry.toolPresentation
+      ? { ...entry.toolPresentation, paths: [...entry.toolPresentation.paths] }
+      : null,
     attachments: cloneHistoryAttachments(entry.attachments),
     commandOutputTail: [...(entry.commandOutputTail ?? [])],
     fileMentions: cloneFileMentions(entry.fileMentions),
@@ -488,7 +522,7 @@ function mergeCommandOutputHistoryEntries(
   mergedEntries: AppServerControlHistoryEntry[],
   entry: AppServerControlHistoryEntry,
 ): AppServerControlHistoryEntry[] {
-  if (!isCommandOutputHistoryEntry(entry)) {
+  if (entry.toolPresentation || !isCommandOutputHistoryEntry(entry)) {
     mergedEntries.push(entry);
     return mergedEntries;
   }

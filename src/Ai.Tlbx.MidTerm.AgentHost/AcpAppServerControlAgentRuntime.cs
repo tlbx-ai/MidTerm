@@ -774,25 +774,39 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         var title = GetString(update, "title") ?? toolCallId;
         var kind = GetString(update, "kind");
         var status = NormalizeToolStatus(GetString(update, "status"));
-        var detail = BuildToolDetail(update);
-        _tools[toolCallId] = new AcpToolState
+        var itemType = NormalizeToolItemType(kind, title);
+        var presentation = AppServerControlToolPresentationProjector.FromAcp(
+            itemType,
+            status,
+            title,
+            kind,
+            Traverse(update, "rawInput"));
+        var state = new AcpToolState
         {
             ItemId = toolCallId,
-            ItemType = NormalizeToolItemType(kind, title),
+            ItemType = itemType,
             Title = title,
-            Detail = new StringBuilder(detail)
+            Presentation = presentation
         };
+        AppServerControlToolPresentationProjector.AppendAcpContent(Traverse(update, "content"), state.Output);
+        AppServerControlToolPresentationProjector.ApplyOutput(presentation, state.Output, status);
+        _tools[toolCallId] = state;
 
         _emit(CreateEvent(status == "completed" ? "item.completed" : "item.started", turnId, toolCallId, null, "acp", "tool_call", root, appServerControlEvent =>
         {
             appServerControlEvent.Item = new AppServerControlProviderItemPayload
             {
-                ItemType = _tools[toolCallId].ItemType,
+                ItemType = state.ItemType,
                 Status = status,
                 Title = title,
-                Detail = detail
+                Detail = presentation.Subject,
+                ToolPresentation = AppServerControlToolPresentationProjector.Clone(presentation)
             };
         }, rawLine));
+        if (IsTerminalToolStatus(status))
+        {
+            _tools.Remove(toolCallId);
+        }
     }
 
     private void HandleToolCallUpdate(string turnId, JsonElement update, JsonElement root, string rawLine)
@@ -804,23 +818,27 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             {
                 ItemId = toolCallId,
                 ItemType = NormalizeToolItemType(GetString(update, "kind"), GetString(update, "title")),
-                Title = GetString(update, "title") ?? toolCallId
+                Title = GetString(update, "title") ?? toolCallId,
+                Presentation = AppServerControlToolPresentationProjector.FromAcp(
+                    NormalizeToolItemType(GetString(update, "kind"), GetString(update, "title")),
+                    "in_progress",
+                    GetString(update, "title") ?? toolCallId,
+                    GetString(update, "kind"),
+                    Traverse(update, "rawInput"))
             };
             _tools[toolCallId] = state;
         }
 
-        var detail = BuildToolDetail(update);
-        if (!string.IsNullOrWhiteSpace(detail))
-        {
-            if (state.Detail.Length > 0)
-            {
-                state.Detail.AppendLine();
-            }
-
-            state.Detail.Append(detail);
-        }
-
         var status = NormalizeToolStatus(GetString(update, "status"));
+        var updatePresentation = AppServerControlToolPresentationProjector.FromAcp(
+            state.ItemType,
+            status,
+            GetString(update, "title") ?? state.Title,
+            GetString(update, "kind"),
+            Traverse(update, "rawInput"));
+        AppServerControlToolPresentationProjector.Merge(state.Presentation, updatePresentation);
+        AppServerControlToolPresentationProjector.AppendAcpContent(Traverse(update, "content"), state.Output);
+        AppServerControlToolPresentationProjector.ApplyOutput(state.Presentation, state.Output, status);
         var eventType = status is "completed" or "failed" or "cancelled" ? "item.completed" : "item.started";
         _emit(CreateEvent(eventType, turnId, state.ItemId, null, "acp", "tool_call_update", root, appServerControlEvent =>
         {
@@ -829,7 +847,8 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 ItemType = state.ItemType,
                 Status = status,
                 Title = state.Title,
-                Detail = state.Detail.ToString()
+                Detail = state.Presentation.Subject,
+                ToolPresentation = AppServerControlToolPresentationProjector.Clone(state.Presentation)
             };
         }, rawLine));
 
@@ -843,6 +862,10 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                     UnifiedDiff = diff
                 };
             }, rawLine));
+        }
+        if (IsTerminalToolStatus(status))
+        {
+            _tools.Remove(toolCallId);
         }
     }
 
@@ -1665,7 +1688,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             {
                 Source = source,
                 Method = method,
-                PayloadJson = rawLine ?? SerializePayload(payload)
+                PayloadOmitted = payload is not null || !string.IsNullOrEmpty(rawLine)
             }
         };
         configure(appServerControlEvent);
@@ -2016,30 +2039,6 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         }
     }
 
-    private static string BuildToolDetail(JsonElement update)
-    {
-        var parts = new List<string>();
-        var title = GetString(update, "title");
-        if (!string.IsNullOrWhiteSpace(title))
-        {
-            parts.Add(title);
-        }
-
-        var rawInput = Traverse(update, "rawInput");
-        if (rawInput is { ValueKind: not JsonValueKind.Undefined and not JsonValueKind.Null })
-        {
-            parts.Add(rawInput.Value.GetRawText());
-        }
-
-        var contentText = ExtractText(Traverse(update, "content"));
-        if (!string.IsNullOrWhiteSpace(contentText))
-        {
-            parts.Add(contentText);
-        }
-
-        return string.Join(Environment.NewLine, parts.Where(static part => !string.IsNullOrWhiteSpace(part)));
-    }
-
     private static string? ExtractDiff(JsonElement update)
     {
         var content = Traverse(update, "content");
@@ -2119,6 +2118,11 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         };
     }
 
+    private static bool IsTerminalToolStatus(string status)
+    {
+        return status is "completed" or "failed" or "cancelled";
+    }
+
     private static string NormalizeToolItemType(string? kind, string? title)
     {
         if (string.Equals(kind, "execute", StringComparison.OrdinalIgnoreCase) ||
@@ -2141,18 +2145,6 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
     private static string ReadErrorMessage(JsonElement error)
     {
         return GetString(error, "message") ?? error.GetRawText();
-    }
-
-    private static string? SerializePayload(object? payload)
-    {
-        return payload switch
-        {
-            null => null,
-            JsonElement { ValueKind: JsonValueKind.Undefined } => null,
-            JsonElement element => element.GetRawText(),
-            string text => text,
-            _ => null
-        };
     }
 
     private void ResetTurnState()
@@ -2237,6 +2229,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         public string ItemId { get; init; } = string.Empty;
         public string ItemType { get; init; } = "dynamic_tool_call";
         public string Title { get; init; } = string.Empty;
-        public StringBuilder Detail { get; init; } = new();
+        public AppServerControlToolPresentation Presentation { get; init; } = new();
+        public BoundedToolOutputAccumulator Output { get; } = new();
     }
 }

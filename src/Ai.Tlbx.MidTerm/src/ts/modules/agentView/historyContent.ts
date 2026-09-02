@@ -259,6 +259,16 @@ export function resolveHistoryBodyPresentation(
     };
   }
 
+  if (entry.kind === 'tool' && entry.toolPresentation) {
+    const evidenceLines = countHistoryBodyLines(entry.toolPresentation.evidence ?? '');
+    return {
+      mode: 'tool',
+      collapsedByDefault: false,
+      lineCount: Math.max(1, evidenceLines + 1),
+      preview: '',
+    };
+  }
+
   if (isToolCommandPresentationEntry(entry)) {
     return {
       mode: 'command',

@@ -218,6 +218,21 @@ export interface AppServerControlStreamsSummary {
   unifiedDiff: string;
 }
 
+export interface AppServerControlToolPresentation {
+  category: string;
+  label: string;
+  toolName?: string | null;
+  subject?: string | null;
+  outcome?: string | null;
+  evidence?: string | null;
+  evidenceKind?: string | null;
+  exitCode?: number | null;
+  resultCount?: number | null;
+  totalLineCount: number;
+  omittedLineCount: number;
+  paths: string[];
+}
+
 export interface AppServerControlHistoryItem {
   entryId: string;
   order: number;
@@ -230,6 +245,7 @@ export interface AppServerControlHistoryItem {
   itemType?: string | null;
   title?: string | null;
   commandText?: string | null;
+  toolPresentation?: AppServerControlToolPresentation | null;
   body: string;
   attachments: AppServerControlAttachmentReference[];
   fileMentions?: AppServerControlInlineFileReference[];
