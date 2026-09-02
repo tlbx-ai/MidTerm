@@ -20,6 +20,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
         var imageBytes = Convert.FromBase64String(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
         await File.WriteAllBytesAsync(imagePath, imageBytes);
+        string? lastApprovalRequestId = null;
 
         try
         {
@@ -85,6 +86,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
                     count: 128);
                 var approval = Assert.Single(approvalWindow.Requests, request => request.State == "open");
                 Assert.Equal("tool_approval", approval.Kind);
+                lastApprovalRequestId = approval.RequestId;
 
                 await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
                 {
@@ -124,6 +126,25 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 }
                 else Assert.Equal(providerThreadId, completed.Thread.ThreadId);
             }
+
+            Assert.False(string.IsNullOrWhiteSpace(lastApprovalRequestId));
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "approve-already-resolved",
+                SessionId = sessionId,
+                Type = "request.resolve",
+                ResolveRequest = new AppServerControlRequestResolutionCommand
+                {
+                    RequestId = lastApprovalRequestId,
+                    Decision = "accept"
+                }
+            });
+            var duplicateResolution = await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput,
+                pendingPatches,
+                "approve-already-resolved");
+            Assert.Equal("rejected", duplicateResolution.Status);
+            Assert.Contains("was not found", duplicateResolution.Message, StringComparison.Ordinal);
         }
         finally
         {

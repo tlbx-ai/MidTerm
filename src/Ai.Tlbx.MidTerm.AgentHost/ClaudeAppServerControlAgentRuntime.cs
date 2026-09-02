@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
@@ -16,6 +17,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Dictionary<int, ClaudeBlockState> _blocks = [];
     private readonly Dictionary<string, ClaudeToolState> _tools = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, TaskCompletionSource> _bridgeResolutionAcks = new(StringComparer.Ordinal);
     private Process? _process;
     private StreamReader? _output;
     private StreamReader? _error;
@@ -322,7 +324,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
     private async Task<HostCommandOutcome> ResolvePermissionRequestAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
         var request = command.ResolveRequest ?? throw new InvalidOperationException("request.resolve payload is required.");
-        await WriteBridgeCommandAsync(writer =>
+        await WriteBridgeResolutionCommandAsync("permission", request.RequestId, writer =>
         {
             writer.WriteStartObject();
             writer.WriteString("type", "permission.resolve");
@@ -354,7 +356,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
     private async Task<HostCommandOutcome> ResolveUserInputAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
         var request = command.ResolveUserInput ?? throw new InvalidOperationException("user-input.resolve payload is required.");
-        await WriteBridgeCommandAsync(writer =>
+        await WriteBridgeResolutionCommandAsync("user_input", request.RequestId, writer =>
         {
             writer.WriteStartObject();
             writer.WriteString("type", "user_input.resolve");
@@ -554,6 +556,9 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                 }, rawLine));
                 break;
             }
+            case "bridge.permission_resolved":
+                CompleteBridgeResolutionAck("permission", GetString(root, "requestId"));
+                break;
             case "bridge.user_input_request":
             {
                 var requestId = GetString(root, "requestId");
@@ -571,6 +576,9 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                 }, rawLine));
                 break;
             }
+            case "bridge.user_input_resolved":
+                CompleteBridgeResolutionAck("user_input", GetString(root, "requestId"));
+                break;
             case "bridge.stderr":
                 EmitRuntimeMessage("runtime.warning", "Claude Agent SDK diagnostic", GetString(root, "message"));
                 break;
@@ -578,6 +586,10 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             {
                 var message = GetString(root, "message") ?? "Claude Agent SDK bridge failed.";
                 var detail = GetString(root, "detail");
+                FailBridgeResolutionAck(
+                    GetString(root, "commandType"),
+                    GetString(root, "requestId"),
+                    new InvalidOperationException(detail ?? message));
                 _bridgeReady.TrySetException(new InvalidOperationException(detail ?? message));
                 EmitRuntimeMessage("runtime.error", message, detail);
                 if (!string.IsNullOrWhiteSpace(_activeTurnId))
@@ -1184,6 +1196,57 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         await input.WriteLineAsync(json.AsMemory(), ct).ConfigureAwait(false);
         await input.FlushAsync(ct).ConfigureAwait(false);
     }
+
+    private async Task WriteBridgeResolutionCommandAsync(
+        string resolutionType,
+        string requestId,
+        Action<Utf8JsonWriter> write,
+        CancellationToken ct)
+    {
+        var key = BridgeResolutionAckKey(resolutionType, requestId);
+        var ack = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_bridgeResolutionAcks.TryAdd(key, ack))
+        {
+            throw new InvalidOperationException($"Claude bridge resolution is already pending for request '{requestId}'.");
+        }
+
+        try
+        {
+            await WriteBridgeCommandAsync(write, ct).ConfigureAwait(false);
+            await ack.Task.WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _bridgeResolutionAcks.TryRemove(key, out _);
+        }
+    }
+
+    private void CompleteBridgeResolutionAck(string resolutionType, string? requestId)
+    {
+        if (!string.IsNullOrWhiteSpace(requestId) &&
+            _bridgeResolutionAcks.TryGetValue(BridgeResolutionAckKey(resolutionType, requestId), out var ack))
+        {
+            ack.TrySetResult();
+        }
+    }
+
+    private void FailBridgeResolutionAck(string? commandType, string? requestId, Exception error)
+    {
+        var resolutionType = commandType switch
+        {
+            "permission.resolve" => "permission",
+            "user_input.resolve" => "user_input",
+            _ => null
+        };
+        if (resolutionType is not null && !string.IsNullOrWhiteSpace(requestId) &&
+            _bridgeResolutionAcks.TryGetValue(BridgeResolutionAckKey(resolutionType, requestId), out var ack))
+        {
+            ack.TrySetException(error);
+        }
+    }
+
+    private static string BridgeResolutionAckKey(string resolutionType, string requestId) =>
+        $"{resolutionType}:{requestId}";
 
     private static string ExtractBridgeResource()
     {

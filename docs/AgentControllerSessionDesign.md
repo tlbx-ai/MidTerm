@@ -436,6 +436,8 @@ The canonical history contract must satisfy the following:
 - They should read like the next required interaction, not like another log entry.
 - The composer and action affordances should align with that state.
 - Request and approval rows should remain inline in the chronological timeline instead of escaping into detached chrome.
+- Approval prompts should lead with a short human-readable action description and the responsible tool. Raw provider input and exact command text belong behind an explicit technical-details disclosure, never in the default prompt body.
+- A successful approval response means the provider's waiting permission callback has acknowledged the decision. Writing a decision to an intermediate process is not sufficient to resolve the canonical request.
 - Canonical `interview` items should render as a dedicated question-and-answer widget rather than being flattened into ordinary assistant markdown.
 
 ### Diffs and file changes
@@ -588,6 +590,8 @@ Status in this branch/work item:
 - implemented: Agent Controller Session history is treated as a bounded browser-side view window over tlbx-owned canonical history rather than as an unbounded full-history browser cache
 - implemented: Codex app-server, the official Claude Agent SDK bridge, and the generic ACP client runtime route through `mtagenthost` as the single structured runtime boundary; `SessionAppServerControlRuntimeService` no longer falls back to a second in-process provider runtime when host attach fails
 - implemented: Claude Code uses the official Claude Agent SDK instead of the removed stream-json/XML adapter, including partial text, multi-turn state, permissions, resume, and GIF/JPEG/PNG/WebP image content blocks
+- implemented: Claude approval and interview decisions remain pending until the Agent SDK bridge acknowledges resolution of the exact waiting callback; bridge rejection is returned as a failed command instead of falsely resolving the canonical request
+- implemented: approval prompts use compact localized action copy and a tool label, keep provider JSON and exact command text collapsed under technical details, and present concise decline/allow actions
 - implemented: the ACP client performs the standard `initialize` and `session/new` flow, consumes canonical `session/update` notifications, handles permission requests and cancellation, and prefers `session/set_config_option` while retaining protocol-level legacy mode/model fallbacks
 - implemented: when an ACP agent advertises `promptCapabilities.image`, GIF/JPEG/PNG/WebP and other declared image MIME attachments are sent as bounded ACP `image` content blocks; agents without that capability retain the explicit local-path text fallback
 - implemented: the new-session launcher queries locally installed Agent Controller runtimes and offers detected Codex app-server, Claude Agent SDK, and registered ACP agents; the selected provider profile is preserved by bookmarks and relaunch

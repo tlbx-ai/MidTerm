@@ -45,8 +45,13 @@ function emit(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
-function fail(message, detail) {
-  emit({ type: "bridge.error", message, detail: detail instanceof Error ? detail.stack : String(detail ?? "") });
+function fail(message, detail, context = {}) {
+  emit({
+    type: "bridge.error",
+    message,
+    detail: detail instanceof Error ? detail.stack : String(detail ?? ""),
+    ...context,
+  });
 }
 
 function permissionMode(value, planMode) {
@@ -199,12 +204,18 @@ async function handle(command) {
       const resolve = pendingPermissions.get(command.requestId);
       if (!resolve) throw new Error(`Claude permission request was not found: ${command.requestId}`);
       resolve(command.decision);
+      emit({
+        type: "bridge.permission_resolved",
+        requestId: command.requestId,
+        decision: command.decision,
+      });
       return;
     }
     case "user_input.resolve": {
       const resolve = pendingUserInputs.get(command.requestId);
       if (!resolve) throw new Error(`Claude user input request was not found: ${command.requestId}`);
       resolve(command.answers ?? {});
+      emit({ type: "bridge.user_input_resolved", requestId: command.requestId });
       return;
     }
     case "shutdown":
@@ -222,9 +233,18 @@ async function handle(command) {
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
 input.on("line", (line) => {
   if (!line.trim()) return;
+  let command;
   void Promise.resolve()
-    .then(() => handle(JSON.parse(line)))
-    .catch((error) => fail("Claude bridge command failed.", error));
+    .then(() => {
+      command = JSON.parse(line);
+      return handle(command);
+    })
+    .catch((error) =>
+      fail("Claude bridge command failed.", error, {
+        commandType: command?.type,
+        requestId: command?.requestId,
+      }),
+    );
 });
 input.on("close", () => {
   prompts.close();

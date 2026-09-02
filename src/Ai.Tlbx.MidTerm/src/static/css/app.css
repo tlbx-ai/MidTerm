@@ -15236,12 +15236,16 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-request-panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px 14px 12px;
+  gap: 10px;
+  padding: 13px 14px 12px;
   border: 1px solid var(--agent-appServerControl-machine-border);
-  border-radius: 12px;
-  background: var(--agent-appServerControl-machine-surface-strong);
-  box-shadow: none;
+  border-radius: 14px;
+  background: color-mix(
+    in srgb,
+    var(--agent-appServerControl-machine-surface-strong) 92%,
+    transparent
+  );
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--bg-primary) 45%, transparent);
 }
 
 .agent-request-actions-composer {
@@ -15253,7 +15257,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-request-panel-approval {
-  border-color: color-mix(in srgb, var(--warning-badge) 26%, var(--border-color));
+  border-color: color-mix(in srgb, var(--warning-badge) 32%, var(--border-color));
+  border-left-width: 3px;
+  background: color-mix(
+    in srgb,
+    var(--warning-badge) 4%,
+    var(--agent-appServerControl-machine-surface-strong)
+  );
 }
 
 .agent-request-panel-user-input {
@@ -15280,7 +15290,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-request-panel-header {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
 }
 
 .agent-request-panel-topline {
@@ -15291,17 +15301,32 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-request-eyebrow {
-  color: color-mix(in srgb, var(--text-secondary) 88%, transparent);
-  font-size: 0.67rem;
+  color: color-mix(in srgb, var(--warning-badge) 55%, var(--text-primary));
+  font-size: 0.68rem;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
+.agent-request-tool {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.35rem;
+  padding: 0 0.48rem;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 9%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  color: color-mix(in srgb, var(--text-secondary) 88%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+}
+
 .agent-request-summary {
+  margin: 0;
   color: var(--text-primary);
   font-size: 0.92rem;
   font-weight: 600;
+  line-height: 1.4;
 }
 
 .agent-request-progress,
@@ -15324,6 +15349,31 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
   font-size: 0.88rem;
   line-height: 1.45;
+}
+
+.agent-request-technical {
+  color: color-mix(in srgb, var(--text-secondary) 90%, transparent);
+  font-size: 0.78rem;
+}
+
+.agent-request-technical > summary {
+  width: fit-content;
+  cursor: pointer;
+  user-select: none;
+}
+
+.agent-request-technical > pre {
+  max-height: 11rem;
+  margin: 8px 0 0;
+  padding: 9px 10px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-primary) 80%, transparent);
+  color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
+  font: 0.72rem/1.45 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .agent-request-answer-list {
@@ -15552,6 +15602,26 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-request-button-row .agent-view-btn {
   flex: 1 1 150px;
+}
+
+.agent-request-panel-approval .agent-request-button-row {
+  justify-content: flex-end;
+}
+
+.agent-request-panel-approval .agent-request-button-row .agent-view-btn {
+  flex: 0 0 auto;
+  min-width: 104px;
+}
+
+.agent-request-panel-approval .agent-view-btn-primary {
+  border-color: color-mix(in srgb, var(--warning-badge) 32%, transparent);
+  background: color-mix(in srgb, var(--warning-badge) 14%, transparent);
+  color: var(--text-primary);
+}
+
+.agent-request-panel-approval .agent-view-btn-primary:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--warning-badge) 48%, transparent);
+  background: color-mix(in srgb, var(--warning-badge) 22%, transparent);
 }
 
 @media (max-width: 900px) {
