@@ -8205,6 +8205,55 @@ describe('agentView dev errors', () => {
     expect(presentation.lineCount).toBe(2);
   });
 
+  it('renders projected tool evidence with semantic head-and-tail selection', async () => {
+    const { createAgentHistoryDom, resolveHistoryBodyPresentation } = await import('./index');
+    currentSettings = { showUnknownAgentMessages: true, toolCallOutputLines: 5 };
+    const entry = {
+      id: 'tool-projected-command',
+      order: 1,
+      kind: 'tool' as const,
+      tone: 'positive' as const,
+      label: 'Tool',
+      title: 'Ran command',
+      body: '',
+      meta: '',
+      sourceItemType: 'command_execution',
+      toolPresentation: {
+        category: 'command',
+        label: 'Ran command',
+        subject: 'dotnet test',
+        outcome: 'Completed',
+        evidence: 'line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7',
+        evidenceKind: 'output',
+        totalLineCount: 100,
+        omittedLineCount: 93,
+        paths: [],
+      },
+    };
+
+    expect(resolveHistoryBodyPresentation(entry).mode).toBe('tool');
+    const historyDom = createAgentHistoryDom({
+      getState: () => undefined,
+      refreshAppServerControlSnapshot: vi.fn(),
+      renderCurrentAgentView: vi.fn(),
+      retryAppServerControlActivation: vi.fn(),
+      logWarn: vi.fn(),
+    });
+    const article = historyDom.createHistoryEntry(entry, 's1') as any;
+    const toolBody = article.children.find((child: any) =>
+      String(child.className).includes('agent-history-command-body'),
+    );
+    const evidence = toolBody.children.find(
+      (child: any) =>
+        String(child.className).includes('agent-history-command-output-tail') &&
+        String(child.textContent).includes('line 7'),
+    );
+
+    expect(evidence.textContent).toBe(
+      '... 95 lines omitted ...\nline 1\nline 4\nline 5\nline 6\nline 7',
+    );
+  });
+
   it('caps visible command output tails from the AI Agents setting', async () => {
     const { createAgentHistoryDom, resolveToolCallOutputLineLimit } = await import('./index');
     currentSettings = { showUnknownAgentMessages: true, toolCallOutputLines: 5 };

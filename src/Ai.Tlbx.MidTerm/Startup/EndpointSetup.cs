@@ -822,10 +822,31 @@ Start-Service -Name $serviceName -ErrorAction Stop
         BrowserUiBridge? browserUiBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, appServerControlRuntime, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, terminalSizeControlService, sessionLayoutStateService, managerBarQueueService, app.Services.GetRequiredService<TerminalNotificationDeliveryService>(), tmuxLayoutBridge, browserUiBridge);
+        var stateHandler = new StateWebSocketHandler(
+            sessionManager,
+            app.Services.GetRequiredService<SessionCloseCleanupService>(),
+            sessionSupervisor,
+            appServerControlRuntime,
+            updateService,
+            settingsService,
+            authService,
+            shareGrantService,
+            shutdownService,
+            mainBrowserService,
+            terminalSizeControlService,
+            sessionLayoutStateService,
+            managerBarQueueService,
+            app.Services.GetRequiredService<TerminalNotificationDeliveryService>(),
+            tmuxLayoutBridge,
+            browserUiBridge);
         var appServerControlHandler = new AppServerControlWebSocketHandler(sessionManager, sessionSupervisor, app.Services.GetRequiredService<SessionAppServerControlRuntimeService>(), app.Services.GetRequiredService<SessionCodexHandoffService>(), app.Services.GetRequiredService<AiCliProfileService>(), authService, shutdownService);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
-        var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
+        var gitHandler = new GitWebSocketHandler(
+            gitWatcher,
+            settingsService,
+            authService,
+            shutdownService,
+            app.Services.GetRequiredService<SessionGitMetadataService>());
         var browserHandler = new BrowserWebSocketHandler(
             browserCommandService,
             browserPreviewRegistry,

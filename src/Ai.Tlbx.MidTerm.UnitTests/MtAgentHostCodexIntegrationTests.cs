@@ -1011,8 +1011,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                         item.Body.Contains("HELLO_FROM_CODEX", StringComparison.Ordinal));
             Assert.Contains(
                 turnWindow.History,
-                item => !string.IsNullOrWhiteSpace(item.CommandText) &&
-                        item.Body.Contains("pwd", StringComparison.Ordinal));
+                item => item.ToolPresentation?.Category == "command" &&
+                        item.ToolPresentation.Subject?.Contains("pwd", StringComparison.Ordinal) == true);
             Assert.Contains("HELLO_FROM_CODEX", AppServerControlHostTestClient.CollectAssistantText(turnWindow), StringComparison.Ordinal);
         }
         finally
@@ -1198,7 +1198,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                 turnWindow.History,
                 item => item.TurnId == "turn-remote-1" &&
                         item.ItemType == "unknown_agent_message" &&
-                        item.Title == "Unknown agent message" &&
+                        item.Title == "Used tool" &&
                         item.Body.Contains("codex/event/unhandled_notification", StringComparison.Ordinal) &&
                         item.Body.Contains("Unhandled codex event for fallback coverage", StringComparison.Ordinal));
         }

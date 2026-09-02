@@ -484,6 +484,42 @@ public sealed class MuxWebSocketHandler
                     return new MuxClient.RecoveryResult(false, 0, 0, false);
                 }
 
+                if (RequiresAlternateScreenRedraw(sinceSequence, snapshot))
+                {
+                    Log.Verbose(() => $"[MuxHandler] Refreshing truncated alternate-screen replay for {session.Id}");
+                    try
+                    {
+                        if (await _sessionManager.RedrawSessionAsync(session.Id, recoveryCt).ConfigureAwait(false))
+                        {
+                            // A resize acknowledgement means the foreground process has observed both
+                            // the pulse and the canonical geometry. Capture the complete retained ring
+                            // again so its newly emitted full frame follows any truncated older delta.
+                            // Replaying that fresh frame after reset reconstructs static TUI cell
+                            // backgrounds which cannot be inferred from an arbitrary byte-safe tail.
+                            var redrawnSnapshot = await _sessionManager.GetBufferAsync(
+                                session.Id,
+                                maxBytes: null,
+                                reason: reason,
+                                sinceSequence: null,
+                                ct: recoveryCt).ConfigureAwait(false);
+                            if (redrawnSnapshot is not null)
+                            {
+                                snapshot = redrawnSnapshot;
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException) when (recoveryCt.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Redraw is a semantic replay upgrade. Preserve the previous parser-safe
+                        // recovery as a fallback if the foreground process cannot be pulsed.
+                        Log.Warn(() => $"[MuxHandler] Alternate-screen redraw failed for {session.Id}: {ex.Message}");
+                    }
+                }
+
                 var sourceSequenceEndExclusive = snapshot.SequenceStart + (ulong)snapshot.Data.Length;
                 var resetTerminal = forceTerminalReset
                     || sinceSequence is null
@@ -532,6 +568,23 @@ public sealed class MuxWebSocketHandler
             ct);
     }
 
+    internal static bool RequiresAlternateScreenRedraw(
+        ulong? sinceSequence,
+        TtyHostBufferSnapshot snapshot)
+    {
+        if (!snapshot.TerminalState.AlternateScreenActive)
+        {
+            return false;
+        }
+
+        // A full replay beginning after sequence zero has already lost the TUI's
+        // initial frame. A cursor replay whose requested start differs from the
+        // returned start was capped or aged out and has the same semantic hole.
+        return sinceSequence is null
+            ? snapshot.SequenceStart > 0
+            : RequiresReconcile(sinceSequence, snapshot);
+    }
+
     private async Task ProcessMessagesAsync(
         WebSocket ws,
         string clientId,
@@ -543,10 +596,10 @@ public sealed class MuxWebSocketHandler
 
         while (ws.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
         {
-            WebSocketReceiveResult result;
+            MuxReceiveMessage result;
             try
             {
-                result = await ws.ReceiveAsync(receiveBuffer, shutdownToken);
+                result = await ReceiveMuxMessageAsync(ws, receiveBuffer, shutdownToken);
             }
             catch (OperationCanceledException)
             {
@@ -554,6 +607,21 @@ public sealed class MuxWebSocketHandler
             }
             catch (WebSocketException)
             {
+                break;
+            }
+
+            if (result.TooLarge)
+            {
+                try
+                {
+                    await ws.CloseOutputAsync(
+                        WebSocketCloseStatus.MessageTooBig,
+                        $"Mux frame exceeds {MuxProtocol.MaxFrameSize} bytes",
+                        shutdownToken);
+                }
+                catch (WebSocketException)
+                {
+                }
                 break;
             }
 
@@ -569,6 +637,46 @@ public sealed class MuxWebSocketHandler
 
         }
     }
+
+    internal static async ValueTask<MuxReceiveMessage> ReceiveMuxMessageAsync(
+        WebSocket ws,
+        byte[] receiveBuffer,
+        CancellationToken ct)
+    {
+        var totalBytes = 0;
+        WebSocketMessageType? messageType = null;
+
+        while (true)
+        {
+            if (totalBytes == receiveBuffer.Length)
+            {
+                return new MuxReceiveMessage(
+                    messageType ?? WebSocketMessageType.Binary,
+                    totalBytes,
+                    TooLarge: true);
+            }
+
+            var result = await ws.ReceiveAsync(
+                new ArraySegment<byte>(receiveBuffer, totalBytes, receiveBuffer.Length - totalBytes),
+                ct);
+            messageType ??= result.MessageType;
+            if (result.MessageType != messageType)
+            {
+                throw new WebSocketException(WebSocketError.HeaderError);
+            }
+
+            totalBytes += result.Count;
+            if (result.EndOfMessage || result.MessageType == WebSocketMessageType.Close)
+            {
+                return new MuxReceiveMessage(result.MessageType, totalBytes, TooLarge: false);
+            }
+        }
+    }
+
+    internal readonly record struct MuxReceiveMessage(
+        WebSocketMessageType MessageType,
+        int Count,
+        bool TooLarge);
 
     private async Task ProcessFrameAsync(
         ReadOnlyMemory<byte> data,

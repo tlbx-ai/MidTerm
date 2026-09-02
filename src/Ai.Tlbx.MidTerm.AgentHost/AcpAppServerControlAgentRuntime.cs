@@ -9,6 +9,7 @@ namespace Ai.Tlbx.MidTerm.AgentHost;
 
 internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRuntime
 {
+    private const int MaxInlineImageBytes = 10 * 1024 * 1024;
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly TimeSpan AttachRequestTimeout = TimeSpan.FromSeconds(20);
 
@@ -44,6 +45,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
     private string? _planModeId;
     private string? _defaultModeId;
     private bool _supportsLegacyModels;
+    private bool _supportsImagePrompts;
     private AppServerControlQuickSettingsSummary _quickSettings = new();
     private int _nextRequestId;
     private long _sequence;
@@ -166,6 +168,10 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 ct)
             .ConfigureAwait(false);
         ValidateProtocolVersion(initializeResult);
+        _supportsImagePrompts = Traverse(initializeResult, "agentCapabilities", "promptCapabilities", "image") is
+        {
+            ValueKind: JsonValueKind.True
+        };
 
         var newSessionResult = await SendRequestAsync(
                 "session/new",
@@ -768,25 +774,39 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         var title = GetString(update, "title") ?? toolCallId;
         var kind = GetString(update, "kind");
         var status = NormalizeToolStatus(GetString(update, "status"));
-        var detail = BuildToolDetail(update);
-        _tools[toolCallId] = new AcpToolState
+        var itemType = NormalizeToolItemType(kind, title);
+        var presentation = AppServerControlToolPresentationProjector.FromAcp(
+            itemType,
+            status,
+            title,
+            kind,
+            Traverse(update, "rawInput"));
+        var state = new AcpToolState
         {
             ItemId = toolCallId,
-            ItemType = NormalizeToolItemType(kind, title),
+            ItemType = itemType,
             Title = title,
-            Detail = new StringBuilder(detail)
+            Presentation = presentation
         };
+        AppServerControlToolPresentationProjector.AppendAcpContent(Traverse(update, "content"), state.Output);
+        AppServerControlToolPresentationProjector.ApplyOutput(presentation, state.Output, status);
+        _tools[toolCallId] = state;
 
         _emit(CreateEvent(status == "completed" ? "item.completed" : "item.started", turnId, toolCallId, null, "acp", "tool_call", root, appServerControlEvent =>
         {
             appServerControlEvent.Item = new AppServerControlProviderItemPayload
             {
-                ItemType = _tools[toolCallId].ItemType,
+                ItemType = state.ItemType,
                 Status = status,
                 Title = title,
-                Detail = detail
+                Detail = presentation.Subject,
+                ToolPresentation = AppServerControlToolPresentationProjector.Clone(presentation)
             };
         }, rawLine));
+        if (IsTerminalToolStatus(status))
+        {
+            _tools.Remove(toolCallId);
+        }
     }
 
     private void HandleToolCallUpdate(string turnId, JsonElement update, JsonElement root, string rawLine)
@@ -798,23 +818,27 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             {
                 ItemId = toolCallId,
                 ItemType = NormalizeToolItemType(GetString(update, "kind"), GetString(update, "title")),
-                Title = GetString(update, "title") ?? toolCallId
+                Title = GetString(update, "title") ?? toolCallId,
+                Presentation = AppServerControlToolPresentationProjector.FromAcp(
+                    NormalizeToolItemType(GetString(update, "kind"), GetString(update, "title")),
+                    "in_progress",
+                    GetString(update, "title") ?? toolCallId,
+                    GetString(update, "kind"),
+                    Traverse(update, "rawInput"))
             };
             _tools[toolCallId] = state;
         }
 
-        var detail = BuildToolDetail(update);
-        if (!string.IsNullOrWhiteSpace(detail))
-        {
-            if (state.Detail.Length > 0)
-            {
-                state.Detail.AppendLine();
-            }
-
-            state.Detail.Append(detail);
-        }
-
         var status = NormalizeToolStatus(GetString(update, "status"));
+        var updatePresentation = AppServerControlToolPresentationProjector.FromAcp(
+            state.ItemType,
+            status,
+            GetString(update, "title") ?? state.Title,
+            GetString(update, "kind"),
+            Traverse(update, "rawInput"));
+        AppServerControlToolPresentationProjector.Merge(state.Presentation, updatePresentation);
+        AppServerControlToolPresentationProjector.AppendAcpContent(Traverse(update, "content"), state.Output);
+        AppServerControlToolPresentationProjector.ApplyOutput(state.Presentation, state.Output, status);
         var eventType = status is "completed" or "failed" or "cancelled" ? "item.completed" : "item.started";
         _emit(CreateEvent(eventType, turnId, state.ItemId, null, "acp", "tool_call_update", root, appServerControlEvent =>
         {
@@ -823,7 +847,8 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 ItemType = state.ItemType,
                 Status = status,
                 Title = state.Title,
-                Detail = state.Detail.ToString()
+                Detail = state.Presentation.Subject,
+                ToolPresentation = AppServerControlToolPresentationProjector.Clone(state.Presentation)
             };
         }, rawLine));
 
@@ -837,6 +862,10 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                     UnifiedDiff = diff
                 };
             }, rawLine));
+        }
+        if (IsTerminalToolStatus(status))
+        {
+            _tools.Remove(toolCallId);
         }
     }
 
@@ -1496,13 +1525,13 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         }
     }
 
-    private static List<AcpPromptBlock> BuildPromptBlocks(AppServerControlTurnRequest request, string? planMode)
+    private List<AcpPromptBlock> BuildPromptBlocks(AppServerControlTurnRequest request, string? planMode)
     {
         var blocks = new List<AcpPromptBlock>();
         var prompt = AppServerControlQuickSettings.ApplyPlanModePrompt(request.Text, planMode);
         if (!string.IsNullOrWhiteSpace(prompt))
         {
-            blocks.Add(new AcpPromptBlock("text", prompt));
+            blocks.Add(AcpPromptBlock.CreateText(prompt));
         }
 
         if (request.Attachments.Count == 0)
@@ -1510,8 +1539,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             return blocks;
         }
 
-        var builder = new StringBuilder();
-        builder.AppendLine(request.Attachments.Count == 1 ? "Attached resource:" : $"Attached resources ({request.Attachments.Count.ToString(CultureInfo.InvariantCulture)}):");
+        var fileReferences = new List<string>();
         foreach (var attachment in request.Attachments)
         {
             if (string.IsNullOrWhiteSpace(attachment.Path))
@@ -1524,20 +1552,35 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 throw new InvalidOperationException($"App Server Controller attachment does not exist: {attachment.Path}");
             }
 
-            builder.Append("- ");
-            builder.Append(string.Equals(attachment.Kind, "image", StringComparison.OrdinalIgnoreCase) ? "[image] " : "[file] ");
-            builder.Append(attachment.Path);
-            if (!string.IsNullOrWhiteSpace(attachment.MimeType))
+            if (_supportsImagePrompts && string.Equals(attachment.Kind, "image", StringComparison.OrdinalIgnoreCase))
             {
-                builder.Append(" (");
-                builder.Append(attachment.MimeType);
-                builder.Append(')');
+                var fileInfo = new FileInfo(attachment.Path);
+                if (fileInfo.Length > MaxInlineImageBytes)
+                {
+                    throw new InvalidOperationException($"ACP image attachment exceeds {MaxInlineImageBytes.ToString(CultureInfo.InvariantCulture)} bytes: {attachment.Path}");
+                }
+
+                var bytes = File.ReadAllBytes(attachment.Path);
+                blocks.Add(AcpPromptBlock.CreateImage(
+                    Convert.ToBase64String(bytes),
+                    ResolveAttachmentMimeType(attachment),
+                    new Uri(attachment.Path).AbsoluteUri));
+                continue;
             }
 
-            builder.AppendLine();
+            var label = string.Equals(attachment.Kind, "image", StringComparison.OrdinalIgnoreCase) ? "[image] " : "[file] ";
+            var mime = string.IsNullOrWhiteSpace(attachment.MimeType) ? string.Empty : $" ({attachment.MimeType})";
+            fileReferences.Add($"- {label}{attachment.Path}{mime}");
         }
 
-        blocks.Add(new AcpPromptBlock("text", builder.ToString().Trim()));
+        if (fileReferences.Count > 0)
+        {
+            var heading = fileReferences.Count == 1
+                ? "Attached resource:"
+                : $"Attached resources ({fileReferences.Count.ToString(CultureInfo.InvariantCulture)}):";
+            blocks.Add(AcpPromptBlock.CreateText($"{heading}{Environment.NewLine}{string.Join(Environment.NewLine, fileReferences)}"));
+        }
+
         return blocks;
     }
 
@@ -1548,7 +1591,16 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         {
             writer.WriteStartObject();
             writer.WriteString("type", block.Type);
-            writer.WriteString("text", block.Text);
+            if (string.Equals(block.Type, "image", StringComparison.Ordinal))
+            {
+                writer.WriteString("data", block.Data);
+                writer.WriteString("mimeType", block.MimeType);
+                if (!string.IsNullOrWhiteSpace(block.Uri)) writer.WriteString("uri", block.Uri);
+            }
+            else
+            {
+                writer.WriteString("text", block.Text);
+            }
             writer.WriteEndObject();
         }
 
@@ -1636,7 +1688,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             {
                 Source = source,
                 Method = method,
-                PayloadJson = rawLine ?? SerializePayload(payload)
+                PayloadOmitted = payload is not null || !string.IsNullOrEmpty(rawLine)
             }
         };
         configure(appServerControlEvent);
@@ -1987,30 +2039,6 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         }
     }
 
-    private static string BuildToolDetail(JsonElement update)
-    {
-        var parts = new List<string>();
-        var title = GetString(update, "title");
-        if (!string.IsNullOrWhiteSpace(title))
-        {
-            parts.Add(title);
-        }
-
-        var rawInput = Traverse(update, "rawInput");
-        if (rawInput is { ValueKind: not JsonValueKind.Undefined and not JsonValueKind.Null })
-        {
-            parts.Add(rawInput.Value.GetRawText());
-        }
-
-        var contentText = ExtractText(Traverse(update, "content"));
-        if (!string.IsNullOrWhiteSpace(contentText))
-        {
-            parts.Add(contentText);
-        }
-
-        return string.Join(Environment.NewLine, parts.Where(static part => !string.IsNullOrWhiteSpace(part)));
-    }
-
     private static string? ExtractDiff(JsonElement update)
     {
         var content = Traverse(update, "content");
@@ -2090,6 +2118,11 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         };
     }
 
+    private static bool IsTerminalToolStatus(string status)
+    {
+        return status is "completed" or "failed" or "cancelled";
+    }
+
     private static string NormalizeToolItemType(string? kind, string? title)
     {
         if (string.Equals(kind, "execute", StringComparison.OrdinalIgnoreCase) ||
@@ -2112,18 +2145,6 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
     private static string ReadErrorMessage(JsonElement error)
     {
         return GetString(error, "message") ?? error.GetRawText();
-    }
-
-    private static string? SerializePayload(object? payload)
-    {
-        return payload switch
-        {
-            null => null,
-            JsonElement { ValueKind: JsonValueKind.Undefined } => null,
-            JsonElement element => element.GetRawText(),
-            string text => text,
-            _ => null
-        };
     }
 
     private void ResetTurnState()
@@ -2174,7 +2195,30 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         return current;
     }
 
-    private readonly record struct AcpPromptBlock(string Type, string Text);
+    private static string ResolveAttachmentMimeType(AppServerControlAttachmentReference attachment)
+    {
+        if (!string.IsNullOrWhiteSpace(attachment.MimeType)) return attachment.MimeType.Trim().ToLowerInvariant();
+        return Path.GetExtension(attachment.Path).ToLowerInvariant() switch
+        {
+            ".gif" => "image/gif",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            ".bmp" => "image/bmp",
+            ".tif" or ".tiff" => "image/tiff",
+            ".heic" => "image/heic",
+            ".heif" => "image/heif",
+            ".avif" => "image/avif",
+            _ => "application/octet-stream"
+        };
+    }
+
+    private readonly record struct AcpPromptBlock(string Type, string? Text, string? Data, string? MimeType, string? Uri)
+    {
+        public static AcpPromptBlock CreateText(string text) => new("text", text, null, null, null);
+
+        public static AcpPromptBlock CreateImage(string data, string mimeType, string uri) => new("image", null, data, mimeType, uri);
+    }
 
     private readonly record struct PermissionOption(string OptionId, string? Name, string? Kind);
 
@@ -2185,6 +2229,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         public string ItemId { get; init; } = string.Empty;
         public string ItemType { get; init; } = "dynamic_tool_call";
         public string Title { get; init; } = string.Empty;
-        public StringBuilder Detail { get; init; } = new();
+        public AppServerControlToolPresentation Presentation { get; init; } = new();
+        public BoundedToolOutputAccumulator Output { get; } = new();
     }
 }

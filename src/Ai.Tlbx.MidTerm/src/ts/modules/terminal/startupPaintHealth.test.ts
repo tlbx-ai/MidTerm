@@ -34,6 +34,7 @@ describe('terminal startup paint health', () => {
   it('bounds retries and escalates only confirmed consecutive blank paints', () => {
     expect(getTerminalStartupPaintAction('indeterminate', 0, 1, 6)).toBe('retry');
     expect(getTerminalStartupPaintAction('indeterminate', 0, 6, 6)).toBe('complete');
+    expect(getTerminalStartupPaintAction('indeterminate', 0, 6, 6, true)).toBe('fallback');
     expect(getTerminalStartupPaintAction('blank', 1, 1, 6)).toBe('refresh');
     expect(getTerminalStartupPaintAction('blank', 2, 2, 6)).toBe('fallback');
     expect(getTerminalStartupPaintAction('healthy', 4, 4, 6)).toBe('complete');

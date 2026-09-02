@@ -234,6 +234,11 @@ public sealed class FileService
 
     internal static void ResetFileInfoCacheForTests()
     {
+        ClearCachedMetadata();
+    }
+
+    public static void ClearCachedMetadata()
+    {
         lock (_fileInfoCacheLock)
         {
             _fileInfoCache.Clear();

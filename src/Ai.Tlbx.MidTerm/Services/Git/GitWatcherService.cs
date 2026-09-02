@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -13,7 +14,12 @@ public sealed class GitWatcherService : IDisposable
     private readonly ConcurrentDictionary<string, string> _sessionToRepo = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, GitRepoBinding>> _sessionExtraRepos = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _sessionPrimaryLabels = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, byte> _subscribedSessions = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, int> _subscribedSessions = new(StringComparer.Ordinal);
+    private readonly object _sessionStateGate = new();
+    private readonly Lock _subscriptionLock = new();
+    private readonly Dictionary<string, HashSet<string>> _subscribedRepos = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Task> _sessionCleanupTasks = new(StringComparer.Ordinal);
+    private Func<string, bool>? _sessionExists;
     private static readonly SemaphoreSlim _globalRefreshThrottle = new(2, 2);
 
     private sealed class RepoWatcher : IDisposable
@@ -48,10 +54,12 @@ public sealed class GitWatcherService : IDisposable
         public GitStatusResponse? CachedStatus;
         public string? LastFingerprint;
         public volatile bool IsDisposed;
+        [SuppressMessage("Reliability", "CA2213:Disposable fields should be disposed", Justification = "Refresh calls may already be queued when a repo is detached. The semaphore is intentionally collected with the watcher after WaitForIdleAsync instead of being disposed underneath late waiters.")]
         public readonly SemaphoreSlim RefreshGate = new(1, 1);
         public volatile bool RefreshPending;
         public int SubscriberCount;
         private readonly OwnedCancellationSource _poll = new();
+        private int _disposeStarted;
 
         public void StartIndexWatcher(IEnumerable<string> gitDirs, FileSystemEventHandler onIndexChange)
         {
@@ -122,8 +130,13 @@ public sealed class GitWatcherService : IDisposable
             _poll.Dispose();
         }
 
-        public void Dispose()
+        public void BeginDispose()
         {
+            if (Interlocked.Exchange(ref _disposeStarted, 1) != 0)
+            {
+                return;
+            }
+
             IsDisposed = true;
             _poll.Dispose();
             _debounce.Dispose();
@@ -133,15 +146,42 @@ public sealed class GitWatcherService : IDisposable
                 watcher.Dispose();
             }
             _indexWatchers.Clear();
-            RefreshGate.Dispose();
+        }
+
+        public void Dispose()
+        {
+            BeginDispose();
+        }
+
+        public async Task WaitForIdleAsync()
+        {
+            await RefreshGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            RefreshGate.Release();
         }
     }
 
     public event Action<string, GitStatusResponse>? OnStatusChanged;
     public event Action<string>? OnReposChanged;
+    internal int GetSessionSubscriberCountForTests(string sessionId) =>
+        _subscribedSessions.TryGetValue(sessionId, out var count) ? count : 0;
+
+    public void ConfigureSessionValidator(Func<string, bool> sessionExists)
+    {
+        _sessionExists = sessionExists;
+    }
+
+    private bool IsSessionActive(string sessionId)
+    {
+        return _sessionExists?.Invoke(sessionId) ?? true;
+    }
 
     public async Task RegisterSessionAsync(string sessionId, string? workingDir)
     {
+        if (!IsSessionActive(sessionId))
+        {
+            return;
+        }
+
         if (string.IsNullOrEmpty(workingDir))
         {
             Log.Verbose(() => $"[Git] RegisterSession({sessionId}): workingDir is null/empty");
@@ -151,7 +191,7 @@ public sealed class GitWatcherService : IDisposable
         Log.Verbose(() => $"[Git] RegisterSession({sessionId}): cwd={workingDir}");
 
         var repoRoot = await GitCommandRunner.GetRepoRootAsync(workingDir);
-        if (repoRoot is null)
+        if (repoRoot is null || !IsSessionActive(sessionId))
         {
             Log.Verbose(() => $"[Git] RegisterSession({sessionId}): not a git repo at {workingDir}");
             return;
@@ -161,27 +201,42 @@ public sealed class GitWatcherService : IDisposable
         Log.Verbose(() => $"[Git] RegisterSession({sessionId}): repoRoot={repoRoot}");
 
         var changed = true;
-
-        if (_sessionToRepo.TryGetValue(sessionId, out var existing))
+        lock (_sessionStateGate)
         {
-            if (string.Equals(existing, repoRoot, StringComparison.OrdinalIgnoreCase))
+            if (!IsSessionActive(sessionId))
             {
-                Log.Verbose(() => $"[Git] RegisterSession({sessionId}): already registered for {repoRoot}");
-                changed = false;
+                return;
             }
-            else
-            {
-                ReleaseRepo(existing);
-            }
-        }
 
-        if (changed)
-        {
-            _sessionToRepo[sessionId] = repoRoot;
-            AddRef(repoRoot, workingDir);
+            if (_sessionToRepo.TryGetValue(sessionId, out var existing))
+            {
+                if (string.Equals(existing, repoRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    Log.Verbose(() => $"[Git] RegisterSession({sessionId}): already registered for {repoRoot}");
+                    changed = false;
+                }
+                else
+                {
+                    RemoveSubscribedRepo(sessionId, existing);
+                    TrackSessionCleanup(sessionId, ReleaseRepoAsync(existing));
+                }
+            }
+
+            if (changed)
+            {
+                _sessionToRepo[sessionId] = repoRoot;
+                AddRef(repoRoot, workingDir);
+                AddSubscribedRepo(sessionId, repoRoot);
+            }
         }
 
         await RefreshStatusAsync(repoRoot);
+        if (!IsSessionActive(sessionId))
+        {
+            UnregisterSessionCore(sessionId);
+            return;
+        }
+
         if (changed)
         {
             OnReposChanged?.Invoke(sessionId);
@@ -192,33 +247,86 @@ public sealed class GitWatcherService : IDisposable
 
     public void UnregisterSession(string sessionId)
     {
-        _subscribedSessions.TryRemove(sessionId, out _);
-        _sessionPrimaryLabels.TryRemove(sessionId, out _);
-        if (_sessionToRepo.TryRemove(sessionId, out var repoRoot))
+        UnregisterSessionCore(sessionId);
+    }
+
+    private void UnregisterSessionCore(string sessionId)
+    {
+        var cleanupTasks = new List<Task>();
+        lock (_sessionStateGate)
         {
-            ReleaseRepo(repoRoot);
+            lock (_subscriptionLock)
+            {
+                _subscribedSessions.TryRemove(sessionId, out _);
+                if (_subscribedRepos.Remove(sessionId, out var subscribedRepoRoots))
+                {
+                    foreach (var watchedRepoRoot in subscribedRepoRoots)
+                    {
+                        RemoveRepoSubscriber(watchedRepoRoot);
+                    }
+                }
+            }
+
+            _sessionPrimaryLabels.TryRemove(sessionId, out _);
+            if (_sessionToRepo.TryRemove(sessionId, out var repoRoot))
+            {
+                cleanupTasks.Add(ReleaseRepoAsync(repoRoot));
+            }
+
+            if (_sessionExtraRepos.TryRemove(sessionId, out var repos))
+            {
+                foreach (var repo in repos.Keys)
+                {
+                    cleanupTasks.Add(ReleaseRepoAsync(repo));
+                }
+            }
         }
 
-        if (_sessionExtraRepos.TryRemove(sessionId, out var repos))
+        var releasedRepos = cleanupTasks.Count == 0 ? Task.CompletedTask : Task.WhenAll(cleanupTasks);
+        TrackSessionCleanup(sessionId, releasedRepos);
+    }
+
+    private void TrackSessionCleanup(string sessionId, Task newlyReleased)
+    {
+        var cleanup = _sessionCleanupTasks.AddOrUpdate(
+            sessionId,
+            newlyReleased,
+            (_, current) => Task.WhenAll(current, newlyReleased));
+        _ = RemoveCleanupWhenCompleteAsync(sessionId, cleanup);
+    }
+
+    private async Task RemoveCleanupWhenCompleteAsync(string sessionId, Task cleanup)
+    {
+        await cleanup.ConfigureAwait(false);
+        if (_sessionCleanupTasks.TryGetValue(sessionId, out var current)
+            && ReferenceEquals(current, cleanup))
         {
-            foreach (var repo in repos.Keys)
-            {
-                ReleaseRepo(repo);
-            }
+            _sessionCleanupTasks.TryRemove(sessionId, out _);
         }
     }
 
-    private void ReleaseRepo(string repoRoot)
+    public async Task WaitForSessionCleanupAsync(string sessionId)
     {
-        if (!_watchers.TryGetValue(repoRoot, out var watcher)) return;
+        if (_sessionCleanupTasks.TryGetValue(sessionId, out var cleanup))
+        {
+            await cleanup.ConfigureAwait(false);
+        }
+    }
+
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "BeginDispose releases owned OS resources immediately; the object and its semaphore must remain alive until WaitForIdleAsync has crossed the active-refresh barrier.")]
+    private Task ReleaseRepoAsync(string repoRoot)
+    {
+        if (!_watchers.TryGetValue(repoRoot, out var watcher)) return Task.CompletedTask;
 
         if (Interlocked.Decrement(ref watcher.RefCount) <= 0)
         {
             if (_watchers.TryRemove(repoRoot, out var removed))
             {
-                removed.Dispose();
+                removed.BeginDispose();
+                return removed.WaitForIdleAsync();
             }
         }
+        return Task.CompletedTask;
     }
 
     private RepoWatcher AddRef(string repoRoot, string workingDir)
@@ -311,77 +419,85 @@ public sealed class GitWatcherService : IDisposable
 
     public async Task<GitRepoBinding[]?> AddSessionRepoAsync(string sessionId, string path, string? label, string? role, string source)
     {
+        if (!IsSessionActive(sessionId)) return null;
         if (string.IsNullOrWhiteSpace(path)) return null;
         var fullPath = Path.GetFullPath(path.Trim());
         var repoRoot = await GitCommandRunner.GetRepoRootAsync(fullPath);
-        if (repoRoot is null) return null;
+        if (repoRoot is null || !IsSessionActive(sessionId)) return null;
 
         repoRoot = Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar);
-        if (_sessionToRepo.TryGetValue(sessionId, out var primary)
-            && string.Equals(primary, repoRoot, StringComparison.OrdinalIgnoreCase))
-        {
-            // The added path is the session's primary/cwd repo: honor an explicit
-            // label instead of silently discarding it. Refresh before notifying so
-            // listeners never observe the binding without a status.
-            await RefreshStatusAsync(repoRoot);
-            if (!string.IsNullOrWhiteSpace(label))
-            {
-                var primaryLabel = label.Trim();
-                _sessionPrimaryLabels.TryGetValue(sessionId, out var currentLabel);
-                if (!string.Equals(currentLabel, primaryLabel, StringComparison.Ordinal))
-                {
-                    _sessionPrimaryLabels[sessionId] = primaryLabel;
-                    OnReposChanged?.Invoke(sessionId);
-                }
-            }
-
-            return GetRepoBindings(sessionId);
-        }
-
-        var repos = _sessionExtraRepos.GetOrAdd(
-            sessionId,
-            _ => new ConcurrentDictionary<string, GitRepoBinding>(StringComparer.OrdinalIgnoreCase));
-
-        var nextLabel = string.IsNullOrWhiteSpace(label) ? Path.GetFileName(repoRoot) : label.Trim();
-        var nextRole = string.IsNullOrWhiteSpace(role) ? "target" : role.Trim();
-
+        var isPrimary = false;
+        var primaryLabelChanged = false;
+        var bindingChanged = false;
         var announceAdded = false;
-        if (repos.TryGetValue(repoRoot, out var existing))
+        lock (_sessionStateGate)
         {
-            if (!string.Equals(existing.Label, nextLabel, StringComparison.Ordinal)
-                || !string.Equals(existing.Role, nextRole, StringComparison.Ordinal)
-                || !string.Equals(existing.Source, source, StringComparison.Ordinal))
+            if (!IsSessionActive(sessionId)) return null;
+
+            if (_sessionToRepo.TryGetValue(sessionId, out var primary)
+                && string.Equals(primary, repoRoot, StringComparison.OrdinalIgnoreCase))
             {
-                existing.Label = nextLabel;
-                existing.Role = nextRole;
-                existing.Source = source;
-                OnReposChanged?.Invoke(sessionId);
-            }
-        }
-        else if (repos.TryAdd(repoRoot, new GitRepoBinding
-        {
-            RepoRoot = repoRoot,
-            Label = nextLabel,
-            Role = nextRole,
-            Source = source,
-            IsPrimary = false
-        }))
-        {
-            AddRef(repoRoot, fullPath);
-            if (_subscribedSessions.ContainsKey(sessionId) && _watchers.TryGetValue(repoRoot, out var watcher))
-            {
-                if (Interlocked.Increment(ref watcher.SubscriberCount) == 1)
+                isPrimary = true;
+                if (!string.IsNullOrWhiteSpace(label))
                 {
-                    StartPolling(repoRoot, watcher);
+                    var primaryLabel = label.Trim();
+                    _sessionPrimaryLabels.TryGetValue(sessionId, out var currentLabel);
+                    if (!string.Equals(currentLabel, primaryLabel, StringComparison.Ordinal))
+                    {
+                        _sessionPrimaryLabels[sessionId] = primaryLabel;
+                        primaryLabelChanged = true;
+                    }
                 }
             }
+            else
+            {
+                var repos = _sessionExtraRepos.GetOrAdd(
+                    sessionId,
+                    _ => new ConcurrentDictionary<string, GitRepoBinding>(StringComparer.OrdinalIgnoreCase));
+                var nextLabel = string.IsNullOrWhiteSpace(label) ? Path.GetFileName(repoRoot) : label.Trim();
+                var nextRole = string.IsNullOrWhiteSpace(role) ? "target" : role.Trim();
 
-            announceAdded = true;
+                if (repos.TryGetValue(repoRoot, out var existing))
+                {
+                    if (!string.Equals(existing.Label, nextLabel, StringComparison.Ordinal)
+                        || !string.Equals(existing.Role, nextRole, StringComparison.Ordinal)
+                        || !string.Equals(existing.Source, source, StringComparison.Ordinal))
+                    {
+                        existing.Label = nextLabel;
+                        existing.Role = nextRole;
+                        existing.Source = source;
+                        bindingChanged = true;
+                    }
+                }
+                else if (repos.TryAdd(repoRoot, new GitRepoBinding
+                {
+                    RepoRoot = repoRoot,
+                    Label = nextLabel,
+                    Role = nextRole,
+                    Source = source,
+                    IsPrimary = false
+                }))
+                {
+                    AddRef(repoRoot, fullPath);
+                    AddSubscribedRepo(sessionId, repoRoot);
+
+                    announceAdded = true;
+                }
+            }
         }
 
         // Populate the cached status before announcing a newly added repo so the
         // first repos push never carries a null status (branch/stats missing).
         await RefreshStatusAsync(repoRoot);
+        if (!IsSessionActive(sessionId))
+        {
+            UnregisterSessionCore(sessionId);
+            return null;
+        }
+        if ((isPrimary && primaryLabelChanged) || bindingChanged)
+        {
+            OnReposChanged?.Invoke(sessionId);
+        }
         if (announceAdded)
         {
             OnReposChanged?.Invoke(sessionId);
@@ -408,26 +524,72 @@ public sealed class GitWatcherService : IDisposable
         }
     }
 
+    public async Task ReplaceSessionExtraReposAsync(
+        string sessionId,
+        IEnumerable<TtyHostGitRepoMetadata> repos)
+    {
+        var desired = repos
+            .Where(static repo => !string.IsNullOrWhiteSpace(repo.RepoRoot))
+            .Select(static repo => (Repo: repo, Root: TryNormalizeRepoRoot(repo.RepoRoot)))
+            .Where(static item => item.Root is not null)
+            .GroupBy(static item => item.Root!, StringComparer.OrdinalIgnoreCase)
+            .Select(static group => group.Last().Repo)
+            .ToArray();
+        var desiredRoots = desired
+            .Select(static repo => Path.GetFullPath(repo.RepoRoot).TrimEnd(Path.DirectorySeparatorChar))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var existing in GetRepoBindings(sessionId).Where(static repo => !repo.IsPrimary))
+        {
+            if (!desiredRoots.Contains(existing.RepoRoot))
+            {
+                RemoveSessionRepo(sessionId, existing.RepoRoot);
+            }
+        }
+
+        foreach (var repo in desired)
+        {
+            await AddSessionRepoAsync(
+                sessionId,
+                repo.RepoRoot,
+                repo.Label,
+                repo.Role,
+                string.IsNullOrWhiteSpace(repo.Source) ? "manual" : repo.Source).ConfigureAwait(false);
+        }
+    }
+
+    private static string? TryNormalizeRepoRoot(string repoRoot)
+    {
+        try
+        {
+            return Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+    }
+
     public bool RemoveSessionRepo(string sessionId, string repoRoot)
     {
-        var resolved = ResolveRepoRoot(sessionId, repoRoot);
-        if (resolved is null || string.Equals(resolved, GetRepoRoot(sessionId), StringComparison.OrdinalIgnoreCase))
+        string? resolved;
+        lock (_sessionStateGate)
         {
-            return false;
-        }
+            resolved = ResolveRepoRoot(sessionId, repoRoot);
+            if (resolved is null || string.Equals(resolved, GetRepoRoot(sessionId), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
 
-        if (!_sessionExtraRepos.TryGetValue(sessionId, out var repos) || !repos.TryRemove(resolved, out _))
-        {
-            return false;
-        }
+            if (!_sessionExtraRepos.TryGetValue(sessionId, out var repos) || !repos.TryRemove(resolved, out _))
+            {
+                return false;
+            }
 
-        if (_subscribedSessions.ContainsKey(sessionId) && _watchers.TryGetValue(resolved, out var watcher)
-            && Interlocked.Decrement(ref watcher.SubscriberCount) <= 0)
-        {
-            watcher.StopPolling();
-        }
+            RemoveSubscribedRepo(sessionId, resolved);
 
-        ReleaseRepo(resolved);
+            TrackSessionCleanup(sessionId, ReleaseRepoAsync(resolved));
+        }
         OnReposChanged?.Invoke(sessionId);
         return true;
     }
@@ -458,13 +620,17 @@ public sealed class GitWatcherService : IDisposable
     {
         if (!_watchers.TryGetValue(repoRoot, out var watcher))
         {
-            await RefreshStatusCoreAsync(repoRoot).ConfigureAwait(false);
             return;
         }
 
         await watcher.RefreshGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
+            if (watcher.IsDisposed)
+            {
+                return;
+            }
+
             await _globalRefreshThrottle.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try
             {
@@ -643,27 +809,111 @@ public sealed class GitWatcherService : IDisposable
 
     public void Subscribe(string sessionId)
     {
-        _subscribedSessions[sessionId] = 1;
-        foreach (var repoRoot in GetRepoBindings(sessionId).Select(repo => repo.RepoRoot))
+        if (_sessionExists?.Invoke(sessionId) == false)
         {
-            if (_watchers.TryGetValue(repoRoot, out var watcher)
-                && Interlocked.Increment(ref watcher.SubscriberCount) == 1)
+            return;
+        }
+
+        lock (_subscriptionLock)
+        {
+            if (!IsSessionActive(sessionId))
             {
-                StartPolling(repoRoot, watcher);
+                return;
+            }
+
+            var subscribers = _subscribedSessions.AddOrUpdate(sessionId, 1, static (_, current) => current + 1);
+            if (subscribers > 1)
+            {
+                return;
+            }
+
+            var repos = GetRepoBindings(sessionId)
+                .Select(repo => repo.RepoRoot)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _subscribedRepos[sessionId] = repos;
+            foreach (var repoRoot in repos)
+            {
+                AddRepoSubscriber(repoRoot);
             }
         }
     }
 
     public void Unsubscribe(string sessionId)
     {
-        _subscribedSessions.TryRemove(sessionId, out _);
-        foreach (var repoRoot in GetRepoBindings(sessionId).Select(repo => repo.RepoRoot))
+        lock (_subscriptionLock)
         {
-            if (_watchers.TryGetValue(repoRoot, out var watcher)
-                && Interlocked.Decrement(ref watcher.SubscriberCount) <= 0)
+            if (!_subscribedSessions.TryGetValue(sessionId, out var subscribers))
             {
-                watcher.StopPolling();
+                return;
             }
+
+            if (subscribers > 1)
+            {
+                _subscribedSessions[sessionId] = subscribers - 1;
+                return;
+            }
+
+            _subscribedSessions.TryRemove(sessionId, out _);
+            if (_subscribedRepos.Remove(sessionId, out var repos))
+            {
+                foreach (var repoRoot in repos)
+                {
+                    RemoveRepoSubscriber(repoRoot);
+                }
+            }
+        }
+    }
+
+    private void AddSubscribedRepo(string sessionId, string repoRoot)
+    {
+        lock (_subscriptionLock)
+        {
+            if (!IsSessionActive(sessionId) || !_subscribedSessions.ContainsKey(sessionId))
+            {
+                return;
+            }
+
+            if (!_subscribedRepos.TryGetValue(sessionId, out var repos))
+            {
+                repos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                _subscribedRepos[sessionId] = repos;
+            }
+
+            if (repos.Add(repoRoot))
+            {
+                AddRepoSubscriber(repoRoot);
+            }
+        }
+    }
+
+    private void RemoveSubscribedRepo(string sessionId, string repoRoot)
+    {
+        lock (_subscriptionLock)
+        {
+            if (_subscribedRepos.TryGetValue(sessionId, out var repos)
+                && repos.Remove(repoRoot))
+            {
+                RemoveRepoSubscriber(repoRoot);
+            }
+        }
+    }
+
+    private void AddRepoSubscriber(string repoRoot)
+    {
+        if (_watchers.TryGetValue(repoRoot, out var watcher)
+            && Interlocked.Increment(ref watcher.SubscriberCount) == 1)
+        {
+            StartPolling(repoRoot, watcher);
+        }
+    }
+
+    private void RemoveRepoSubscriber(string repoRoot)
+    {
+        if (_watchers.TryGetValue(repoRoot, out var watcher)
+            && Interlocked.Decrement(ref watcher.SubscriberCount) <= 0)
+        {
+            Interlocked.Exchange(ref watcher.SubscriberCount, 0);
+            watcher.StopPolling();
         }
     }
 
@@ -716,11 +966,16 @@ public sealed class GitWatcherService : IDisposable
     {
         foreach (var watcher in _watchers.Values)
         {
-            watcher.Dispose();
+            watcher.BeginDispose();
         }
         _watchers.Clear();
         _sessionToRepo.Clear();
         _sessionExtraRepos.Clear();
         _subscribedSessions.Clear();
+        _sessionCleanupTasks.Clear();
+        lock (_subscriptionLock)
+        {
+            _subscribedRepos.Clear();
+        }
     }
 }

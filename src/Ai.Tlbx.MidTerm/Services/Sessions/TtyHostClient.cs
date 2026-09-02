@@ -39,6 +39,9 @@ public sealed class TtyHostClient : IAsyncDisposable
     private readonly object _responseLock = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly SemaphoreSlim _requestLock = new(1, 1);
+    private readonly ArrayPool<byte> _bufferPool = ArrayPool<byte>.Create(
+        TtyHostProtocol.MaxPayloadSize + TtyHostProtocol.HeaderSize,
+        maxArraysPerBucket: 2);
 
 #if WINDOWS
     private NamedPipeClientStream? _pipe;
@@ -261,7 +264,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         if (_disposed) return;
 
         var frameSize = TtyHostProtocol.HeaderSize + data.Length;
-        var buffer = ArrayPool<byte>.Shared.Rent(frameSize);
+        var buffer = _bufferPool.Rent(frameSize);
         try
         {
             if (data.Length < 20)
@@ -277,7 +280,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            _bufferPool.Return(buffer);
         }
     }
 
@@ -291,7 +294,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         var traceMarkerFrameSize = TtyHostProtocol.HeaderSize + TtyHostProtocol.InputTraceMarkerPayloadSize;
         var inputFrameSize = TtyHostProtocol.HeaderSize + data.Length;
         var frameSize = traceMarkerFrameSize + inputFrameSize;
-        var buffer = ArrayPool<byte>.Shared.Rent(frameSize);
+        var buffer = _bufferPool.Rent(frameSize);
         try
         {
             if (data.Length < 20)
@@ -313,7 +316,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            _bufferPool.Return(buffer);
         }
     }
 
@@ -757,14 +760,14 @@ public sealed class TtyHostClient : IAsyncDisposable
                     // Return previous rented buffer before renting new one
                     if (rentedPayload is not null)
                     {
-                        ArrayPool<byte>.Shared.Return(rentedPayload);
+                        _bufferPool.Return(rentedPayload);
                         rentedPayload = null;
                     }
 
                     Memory<byte> payload = Memory<byte>.Empty;
                     if (payloadLength > 0)
                     {
-                        rentedPayload = ArrayPool<byte>.Shared.Rent(payloadLength);
+                        rentedPayload = _bufferPool.Rent(payloadLength);
                         var totalRead = 0;
                         while (totalRead < payloadLength)
                         {
@@ -806,7 +809,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         {
             if (rentedPayload is not null)
             {
-                ArrayPool<byte>.Shared.Return(rentedPayload);
+                _bufferPool.Return(rentedPayload);
             }
         }
     }

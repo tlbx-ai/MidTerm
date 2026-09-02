@@ -21,6 +21,53 @@ type AppServerControlFormat = (
   replacements: Record<string, string | number>,
 ) => string;
 
+export type ApprovalDetailPresentation = {
+  summary: string | null;
+  technicalDetail: string | null;
+  tool: string | null;
+};
+
+export function parseApprovalDetail(detail: string | null | undefined): ApprovalDetailPresentation {
+  const value = detail?.trim();
+  if (!value) {
+    return { summary: null, technicalDetail: null, tool: null };
+  }
+
+  const match = /^([^:\r\n]{1,80}):\s*(\{[\s\S]*\})$/.exec(value);
+  if (!match) {
+    return { summary: value, technicalDetail: null, tool: null };
+  }
+  const [, rawTool = '', rawInput = ''] = match;
+  const tool = rawTool.trim();
+  if (!tool || !rawInput) {
+    return { summary: value, technicalDetail: null, tool: null };
+  }
+
+  try {
+    const input = JSON.parse(rawInput) as Record<string, unknown>;
+    const description = readApprovalString(input, 'description');
+    const technicalDetail =
+      readApprovalString(input, 'command') ??
+      readApprovalString(input, 'cmd') ??
+      readApprovalString(input, 'path') ??
+      readApprovalString(input, 'file_path') ??
+      readApprovalString(input, 'url') ??
+      JSON.stringify(input, null, 2);
+    return {
+      summary: description,
+      technicalDetail,
+      tool,
+    };
+  } catch {
+    return { summary: value, technicalDetail: null, tool: null };
+  }
+}
+
+function readApprovalString(input: Record<string, unknown>, key: string): string | null {
+  const value = input[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 export function createRequestActionBlock(args: {
   busy: boolean;
   deps: AgentHistoryRequestDomDeps;
@@ -47,7 +94,7 @@ export function createRequestActionBlock(args: {
   const panel = document.createElement('section');
   panel.className = `agent-request-panel agent-request-panel-${surface} ${isInterviewRequest ? 'agent-request-panel-user-input' : 'agent-request-panel-approval'} ${request.state === 'open' ? 'agent-request-panel-open' : 'agent-request-panel-resolved'}`;
   panel.appendChild(
-    createRequestPanelHeader(request, appServerControlText, appServerControlFormat, surface),
+    createRequestPanelHeader(request, appServerControlText, appServerControlFormat),
   );
 
   if (request.state !== 'open') {
@@ -192,7 +239,7 @@ function createApprovalButtonRow(
   approve.disabled = busy;
   approve.textContent = busy
     ? appServerControlText('appServerControl.request.working', 'Working…')
-    : appServerControlText('appServerControl.request.approveOnce', 'Approve once');
+    : appServerControlText('appServerControl.request.approveOnce', 'Allow');
   approve.addEventListener('click', () => {
     void runRequestAction(deps, appServerControlText, sessionId, request.requestId, () =>
       approveAppServerControlRequest(sessionId, request.requestId),
@@ -210,7 +257,7 @@ function createApprovalButtonRow(
     );
   });
 
-  buttonRow.append(approve, decline);
+  buttonRow.append(decline, approve);
   return buttonRow;
 }
 
@@ -218,7 +265,6 @@ function createRequestPanelHeader(
   request: AppServerControlHistoryRequestSummary,
   appServerControlText: AppServerControlText,
   appServerControlFormat: AppServerControlFormat,
-  surface: 'composer' | 'history',
 ): HTMLElement {
   const header = document.createElement('div');
   header.className = 'agent-request-panel-header';
@@ -227,20 +273,49 @@ function createRequestPanelHeader(
 
   const eyebrow = document.createElement('span');
   eyebrow.className = 'agent-request-eyebrow';
-  eyebrow.textContent = summarizeRequestEyebrow(request, appServerControlText, surface);
+  eyebrow.textContent = summarizeRequestEyebrow(request, appServerControlText);
   topRow.appendChild(eyebrow);
 
-  const summary = document.createElement('span');
-  summary.className = 'agent-request-summary';
-  summary.textContent = summarizeRequestInterruption(
-    request,
-    appServerControlText,
-    appServerControlFormat,
-  );
-  topRow.appendChild(summary);
+  const approvalDetail = request.kind === 'interview' ? null : parseApprovalDetail(request.detail);
+  if (approvalDetail?.tool) {
+    const tool = document.createElement('span');
+    tool.className = 'agent-request-tool';
+    tool.textContent = approvalDetail.tool;
+    topRow.appendChild(tool);
+  }
+
   header.appendChild(topRow);
 
-  if (request.detail?.trim()) {
+  const summary = document.createElement('p');
+  summary.className = 'agent-request-summary';
+  summary.textContent =
+    request.state === 'open' && approvalDetail
+      ? (approvalDetail.summary ??
+        appServerControlFormat(
+          'appServerControl.request.toolAction',
+          '{tool} wants to perform an action.',
+          {
+            tool:
+              approvalDetail.tool ??
+              appServerControlText('appServerControl.request.toolFallback', 'The agent'),
+          },
+        ))
+      : summarizeRequestInterruption(request, appServerControlText, appServerControlFormat);
+  header.appendChild(summary);
+
+  if (approvalDetail?.technicalDetail) {
+    const disclosure = document.createElement('details');
+    disclosure.className = 'agent-request-technical';
+    const label = document.createElement('summary');
+    label.textContent = appServerControlText(
+      'appServerControl.request.technicalDetails',
+      'Technical details',
+    );
+    const detail = document.createElement('pre');
+    detail.textContent = approvalDetail.technicalDetail;
+    disclosure.append(label, detail);
+    header.appendChild(disclosure);
+  } else if (request.kind === 'interview' && request.detail?.trim()) {
     const detail = document.createElement('p');
     detail.className = 'agent-request-detail';
     detail.textContent = request.detail;
@@ -253,22 +328,16 @@ function createRequestPanelHeader(
 function summarizeRequestEyebrow(
   request: AppServerControlHistoryRequestSummary,
   appServerControlText: AppServerControlText,
-  surface: 'composer' | 'history',
 ): string {
-  const prefix =
-    surface === 'history'
-      ? appServerControlText('appServerControl.request.historyPrefix', 'History item')
-      : appServerControlText('appServerControl.request.interruptionPrefix', 'Needs action');
-
   if (request.kind === 'interview') {
     return request.state === 'open'
-      ? `${prefix} · ${appServerControlText('appServerControl.request.pendingInterview', 'Pending interview')}`
-      : `${prefix} · ${appServerControlText('appServerControl.request.completedInterview', 'Interview answered')}`;
+      ? appServerControlText('appServerControl.request.pendingUserInput', 'Input required')
+      : appServerControlText('appServerControl.request.completedInterview', 'Answer submitted');
   }
 
   return request.state === 'open'
-    ? `${prefix} · ${appServerControlText('appServerControl.request.pendingApproval', 'Pending approval')}`
-    : `${prefix} · ${appServerControlText('appServerControl.request.completedApproval', 'Approval resolved')}`;
+    ? appServerControlText('appServerControl.request.approvalRequired', 'Approval required')
+    : appServerControlText('appServerControl.request.completedApproval', 'Approval resolved');
 }
 
 function summarizeRequestInterruption(

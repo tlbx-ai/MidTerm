@@ -25,6 +25,19 @@ public sealed class AgentControllerInstallationService(
             supportsResume: true,
             userProfileDirectory);
 
+        if (AiCliCommandLocator.FindExecutableInPath(AiCliProfileService.ClaudeProfile, userProfileDirectory) is not null &&
+            AiCliCommandLocator.FindExecutableInPath("node", userProfileDirectory) is not null)
+        {
+            installed.Add(new AgentControllerInstallationDto
+            {
+                Profile = AiCliProfileService.ClaudeProfile,
+                Name = "Claude Code",
+                Protocol = "Claude Agent SDK",
+                Command = "claude + node",
+                SupportsResume = true
+            });
+        }
+
         foreach (var definition in acpAgentCatalog.GetDefinitions())
         {
             AddIfInstalled(

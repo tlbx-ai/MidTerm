@@ -49,7 +49,7 @@ export function initBadges(): void {
       hideDataLossWarning();
       return;
     }
-    showDataLossWarning(loss.sessionId);
+    showDataLossWarning(loss.sessionId, loss.reason);
   });
 }
 
@@ -65,12 +65,15 @@ export function cleanupBadges(): void {
 /**
  * Show data loss warning badge.
  */
-function showDataLossWarning(sessionId: string): void {
+function showDataLossWarning(sessionId: string, reason?: string): void {
   if (!dataLossBadge) return;
 
   const session = getSession(sessionId);
   const name = session ? getSessionDisplayName(session) : sessionId;
-  dataLossBadge.textContent = `⚠ ${t('badges.overflow')} (${name})`;
+  const identity = name === sessionId ? sessionId : `${name} · ${sessionId.slice(0, 8)}`;
+  const reasonLabel = reason ? ` · ${formatDataLossReason(reason)}` : '';
+  dataLossBadge.textContent = `⚠ ${t('badges.overflow')} (${identity}${reasonLabel})`;
+  dataLossBadge.title = reason ?? '';
   dataLossBadge.classList.add('active');
 
   // Clear any existing timer
@@ -83,6 +86,17 @@ function showDataLossWarning(sessionId: string): void {
     hideDataLossWarning();
     $dataLossDetected.set(null);
   }, DATA_LOSS_DISPLAY_MS);
+}
+
+function formatDataLossReason(reason: string): string {
+  switch (reason) {
+    case 'browser_pending_overflow':
+      return 'browser queue';
+    case 'browser_forward_sequence_gap':
+      return 'sequence gap';
+    default:
+      return reason.replace(/_/g, ' ');
+  }
 }
 
 /**

@@ -769,10 +769,17 @@ export function applyTerminalScalingSync(state: TerminalState): void {
 
   const context = createTerminalScalingContext(state);
   if (!context) return;
+  const hadPendingVisualRefresh = state.pendingVisualRefresh === true;
   const prepared = prepareTerminalPresentation(state, context);
   const previousSnapshot = getCommittedTerminalPresentation(state);
   const snapshot = reduceTerminalPresentationSnapshot(previousSnapshot, prepared.snapshot);
-  if (snapshot === previousSnapshot) return;
+  if (snapshot === previousSnapshot) {
+    if (hadPendingVisualRefresh) {
+      state.pendingVisualRefresh = false;
+      refreshTerminalRenderer(state);
+    }
+    return;
+  }
   commitTerminalPresentationDom({
     container: context.container,
     xterm: context.xterm,
@@ -789,6 +796,9 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   });
   commitTerminalPresentation(state, snapshot);
   state.pendingVisualRefresh = false;
+  if (hadPendingVisualRefresh) {
+    refreshTerminalRenderer(state);
+  }
 }
 
 interface TerminalScalingContext {

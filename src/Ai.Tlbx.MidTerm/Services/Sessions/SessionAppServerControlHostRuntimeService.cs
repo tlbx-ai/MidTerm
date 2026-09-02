@@ -32,6 +32,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         out string? failure);
 
     private const string CodexMode = "codex";
+    private const string ClaudeAgentSdkMode = "claude-agent-sdk";
     private const string OffMode = "off";
     private const string SyntheticMode = "synthetic";
     private const string HostModeEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_HOST_MODE";
@@ -79,7 +80,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     public bool IsEnabledFor(string? profile)
     {
         return _mode is SyntheticMode or CodexMode &&
-               (string.Equals(profile, AiCliProfileService.CodexProfile, StringComparison.Ordinal) ||
+            (string.Equals(profile, AiCliProfileService.CodexProfile, StringComparison.Ordinal) ||
+             string.Equals(profile, AiCliProfileService.ClaudeProfile, StringComparison.Ordinal) ||
                 _acpAgentCatalog.ContainsProfile(profile));
     }
 
@@ -127,6 +129,76 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                state.Input is not null &&
                state.Output is not null &&
                state.Status is not HostRuntimeStatus.None and not HostRuntimeStatus.Stopped;
+    }
+
+    public async Task<TtyHostGitRepoMetadata[]?> GetGitMetadataAsync(
+        string sessionId,
+        CancellationToken ct = default)
+    {
+        if (!_states.TryGetValue(sessionId, out var state))
+        {
+            return null;
+        }
+
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (state.Input is null || state.Output is null)
+            {
+                return null;
+            }
+
+            var result = await SendCommandAsync(
+                state,
+                commandId => new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "session.git-metadata.get"
+                },
+                ct).ConfigureAwait(false);
+            return result.GitMetadata?.Repos.ToArray() ?? [];
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    public async Task<TtyHostGitRepoMetadata[]?> SetGitMetadataAsync(
+        string sessionId,
+        IEnumerable<TtyHostGitRepoMetadata> repos,
+        CancellationToken ct = default)
+    {
+        if (!_states.TryGetValue(sessionId, out var state))
+        {
+            return null;
+        }
+
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (state.Input is null || state.Output is null)
+            {
+                return null;
+            }
+
+            var result = await SendCommandAsync(
+                state,
+                commandId => new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "session.git-metadata.set",
+                    GitMetadata = new AppServerControlHostGitMetadata { Repos = repos.ToList() }
+                },
+                ct).ConfigureAwait(false);
+            return result.GitMetadata?.Repos.ToArray();
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
     }
 
     public async Task<bool> EnsureAttachedAsync(
@@ -210,11 +282,12 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             var settings = _settingsService.Load();
             var userProfileDirectory = ResolveConfiguredUserProfileDirectory(settings);
             var isCodex = string.Equals(profile, AiCliProfileService.CodexProfile, StringComparison.Ordinal);
+            var isClaude = string.Equals(profile, AiCliProfileService.ClaudeProfile, StringComparison.Ordinal);
             ResolvedAcpAgentDefinition? acpAgent = null;
-            var executablePath = attachPoint is null && isCodex
+            var executablePath = attachPoint is null && (isCodex || isClaude)
                 ? AiCliCommandLocator.ResolveExecutablePath(profile, session, userProfileDirectory)
                 : null;
-            if (!isCodex && !_acpAgentCatalog.TryResolve(profile, userProfileDirectory, out acpAgent))
+            if (!isCodex && !isClaude && !_acpAgentCatalog.TryResolve(profile, userProfileDirectory, out acpAgent))
             {
                 state.Status = HostRuntimeStatus.Error;
                 state.LastError = $"ACP executable for profile '{profile}' could not be resolved from the trusted catalog.";
@@ -305,7 +378,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     {
                         SessionId = sessionId,
                         Provider = profile,
-                        RuntimeKind = acpAgent is null ? CodexMode : "acp-v1",
+                        RuntimeKind = isCodex ? CodexMode : isClaude ? ClaudeAgentSdkMode : "acp-v1",
                         WorkingDirectory = workingDirectory,
                         InstanceId = _instanceIdentity.InstanceId,
                         OwnerToken = _instanceIdentity.OwnerToken,
@@ -1371,6 +1444,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             ItemType = source.ItemType,
             Title = source.Title,
             CommandText = source.CommandText,
+            ToolPresentation = AppServerControlToolPresentationProtocol.Clone(source.ToolPresentation),
             Body = source.Body,
             Attachments = source.Attachments.Select(CloneAttachment).ToList(),
             FileMentions = source.FileMentions.Select(CloneInlineFileReference).ToList(),

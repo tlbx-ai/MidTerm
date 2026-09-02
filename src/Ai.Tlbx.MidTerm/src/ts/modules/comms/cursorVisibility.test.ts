@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  hideBurstCursor,
+  hideSynchronizedOutputCursor,
   processCursorVisibilityControls,
   scheduleBurstCursorShow,
   showBurstCursor,
+  showSynchronizedOutputCursor,
   shouldHideCursorForOutput,
 } from './cursorVisibility';
 import { $currentSettings } from '../../stores';
@@ -118,7 +121,33 @@ describe('processCursorVisibilityControls', () => {
     expect(state.terminal.write).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(500);
-    expect(state.terminal.write).toHaveBeenCalledWith('\x1b[?25h');
+    expect(state.terminal.write).not.toHaveBeenCalled();
+    expect(state.burstCursorHidden).toBe(false);
+  });
+
+  it('never injects synthetic cursor controls between application output chunks', () => {
+    $currentSettings.set({ preserveTerminalCursorControl: false } as never);
+    const state = {
+      terminal: {
+        write: vi.fn(),
+      },
+      burstCursorHidden: false,
+      remoteCursorVisible: true,
+      syncOutputCursorHidden: false,
+      burstCursorRestoreTimer: null,
+      burstCursorRestoreDueAtMs: null,
+    } as never;
+
+    // xterm may still be parsing an application sequence such as ESC[38;2
+    // when either cursor helper runs. They must never write into that stream.
+    hideBurstCursor(state);
+    hideSynchronizedOutputCursor(state);
+    showSynchronizedOutputCursor(state);
+    showBurstCursor(state);
+
+    expect(state.terminal.write).not.toHaveBeenCalled();
+    expect(state.burstCursorHidden).toBe(false);
+    expect(state.syncOutputCursorHidden).toBe(false);
   });
 
   it('does not synthesize cursor writes when app cursor control is preserved', () => {

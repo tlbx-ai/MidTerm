@@ -6,6 +6,7 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
+[Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class TlbxCliScriptWriterTests : IDisposable
 {
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "tlbx-cli-tests", Guid.NewGuid().ToString("N"));

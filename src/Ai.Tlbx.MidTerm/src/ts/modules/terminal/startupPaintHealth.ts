@@ -102,8 +102,12 @@ export function getTerminalStartupPaintAction(
   consecutiveBlankChecks: number,
   attempt: number,
   maxAttempts: number,
+  fallbackWhenIndeterminate = false,
 ): TerminalStartupPaintAction {
   if (health === 'healthy') return 'complete';
-  if (health === 'indeterminate') return attempt < maxAttempts ? 'retry' : 'complete';
+  if (health === 'indeterminate') {
+    if (attempt < maxAttempts) return 'retry';
+    return fallbackWhenIndeterminate ? 'fallback' : 'complete';
+  }
   return consecutiveBlankChecks <= 1 ? 'refresh' : 'fallback';
 }

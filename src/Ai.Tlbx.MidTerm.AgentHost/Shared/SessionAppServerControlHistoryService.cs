@@ -3,8 +3,8 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using System.Threading.Channels;
+using Ai.Tlbx.MidTerm.AgentHost;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Settings;
@@ -22,7 +22,6 @@ public sealed partial class SessionAppServerControlHistoryService
     private const int CollapsibleHistoryBodyMinChars = 320;
     private const int HistoryPreviewMaxChars = 160;
     private const int MaxVisibleDiffScreenLogLines = 200;
-    private const int MaxVisibleCommandOutputLines = 10;
     private const int MaxAssistantStreamChars = 262144;
     private const int MaxReasoningStreamChars = 8192;
     private const int MaxReasoningSummaryStreamChars = 8192;
@@ -30,7 +29,6 @@ public sealed partial class SessionAppServerControlHistoryService
     private const int MaxCommandOutputStreamChars = 16384;
     private const int MaxFileChangeOutputStreamChars = 16384;
     private const int MaxUnifiedDiffChars = 32768;
-    private const int MaxToolRawOutputChars = 16384;
     private const int MaxHistoryBodyChars = 4096;
     private const int MaxHistoryLineChars = 512;
     private const string TailRetentionMarker = "... earlier output omitted ...";
@@ -39,12 +37,6 @@ public sealed partial class SessionAppServerControlHistoryService
     private readonly string _storeDirectory;
     private readonly bool _screenLoggingEnabled;
     private readonly string? _screenLogDirectory;
-
-    [GeneratedRegex("-Command\\s+(?:'(?<cmd>[^']+)'|\"(?<cmd>[^\"]+)\"|(?<cmd>.+))", RegexOptions.IgnoreCase, 1000)]
-    private static partial Regex InlineCommandRegex();
-
-    [GeneratedRegex("^(?:Get-Content|cat|type)\\s+(?:-[^\\s]+\\s+)*(?:'(?<path>[^']+)'|\"(?<path>[^\"]+)\"|(?<path>\\S+))", RegexOptions.IgnoreCase, 1000)]
-    private static partial Regex ReadFileTargetRegex();
 
     public SessionAppServerControlHistoryService(
         SettingsService? settingsService = null,
@@ -917,9 +909,8 @@ public sealed partial class SessionAppServerControlHistoryService
                 .Select(static pair => new AppServerControlPersistedToolRenderState
                 {
                     EntryId = pair.Key,
-                    CommandText = pair.Value.CommandText,
-                    RawOutput = pair.Value.RawOutput,
-                    RetainHeadOutput = pair.Value.RetainHeadOutput
+                    Presentation = AppServerControlToolPresentationProtocol.Clone(pair.Value.Presentation),
+                    Output = pair.Value.Output.Export()
                 })
                 .ToList(),
             Notices = source.Notices.Select(CloneRuntimeNotice).ToList(),
@@ -963,10 +954,9 @@ public sealed partial class SessionAppServerControlHistoryService
         {
             target.ToolRenderStates[toolState.EntryId] = new AppServerControlToolRenderState
             {
-                CommandText = toolState.CommandText ?? string.Empty,
-                RawOutput = toolState.RawOutput ?? string.Empty,
-                RetainHeadOutput = toolState.RetainHeadOutput
+                Presentation = AppServerControlToolPresentationProtocol.Clone(toolState.Presentation)
             };
+            target.ToolRenderStates[toolState.EntryId].Output.Restore(toolState.Output);
         }
 
         target.Notices.Clear();
@@ -1449,22 +1439,19 @@ public sealed partial class SessionAppServerControlHistoryService
                 entry.EntryId,
                 appServerControlEvent.ContentDelta.StreamKind);
             var toolState = GetOrCreateToolRenderState(state, entry.EntryId);
-            toolState.RawOutput = AppendRetainedToolOutput(
-                toolState.RawOutput,
-                appServerControlEvent.ContentDelta.Delta,
-                toolState.RetainHeadOutput);
-            entry.CommandText = string.IsNullOrWhiteSpace(toolState.CommandText)
-                ? null
-                : toolState.CommandText;
-            entry.Title = ResolveToolEntryTitle(
-                appServerControlEvent.ContentDelta.StreamKind,
-                entry.Title,
-                toolState.CommandText);
-            entry.Body = BuildToolScreenBody(
-                appServerControlEvent.ContentDelta.StreamKind,
-                toolState.CommandText,
-                toolState.RawOutput,
-                streaming: true);
+            toolState.Presentation ??=
+                AppServerControlToolPresentationProtocol.Clone(entry.ToolPresentation) ??
+                AppServerControlToolPresentationProjector.FromLegacy(
+                    appServerControlEvent.ContentDelta.StreamKind,
+                    "in_progress",
+                    entry.Title,
+                    null);
+            toolState.Output.Append(appServerControlEvent.ContentDelta.Delta);
+            AppServerControlToolPresentationProjector.ApplyOutput(
+                toolState.Presentation,
+                toolState.Output,
+                "in_progress");
+            ApplyToolPresentation(entry, toolState.Presentation);
             entry.Streaming = true;
         }
         else
@@ -1541,209 +1528,61 @@ public sealed partial class SessionAppServerControlHistoryService
         return toolState;
     }
 
-    private static string? ResolveToolEntryTitle(
-        string? itemType,
-        string? incomingTitle,
-        string? commandText)
+    private static void ApplyToolPresentation(
+        AppServerControlHistoryItem entry,
+        AppServerControlToolPresentation presentation)
     {
-        var normalizedType = NormalizeItemType(itemType);
-        var normalizedTitle = PreferMeaningfulText(null, incomingTitle);
-        var commandSummary = SummarizeCommandText(commandText);
-
-        return normalizedType switch
-        {
-            "command_execution" or "command_output"
-                => string.IsNullOrWhiteSpace(commandSummary) && !string.IsNullOrWhiteSpace(normalizedTitle)
-                    ? normalizedTitle
-                    : TryExtractReadFileTarget(commandSummary, out _) ? "Read file" : "Run command",
-            "file_change_output" => "File change output",
-            "reasoning" => "Reasoning",
-            "reasoning_summary_text" => "Reasoning summary",
-            _ => IsGenericToolTitle(normalizedTitle)
-                ? Prettify(normalizedType)
-                : normalizedTitle
-        };
+        entry.ToolPresentation = AppServerControlToolPresentationProtocol.Clone(presentation);
+        entry.Title = presentation.Label;
+        entry.CommandText = null;
+        entry.Body = BuildToolPresentationBody(presentation);
     }
 
-    private static bool IsGenericToolTitle(string? value)
+    private static string BuildToolPresentationBody(AppServerControlToolPresentation presentation)
     {
-        var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
-        return normalized is "" or "tool started" or "tool completed" or "command running";
-    }
-
-    private static string BuildToolScreenBody(
-        string? itemType,
-        string? commandText,
-        string? detail,
-        bool streaming)
-    {
-        var normalizedType = NormalizeItemType(itemType);
-        return normalizedType switch
+        var builder = new StringBuilder();
+        if (string.Equals(presentation.EvidenceKind, "error", StringComparison.Ordinal))
         {
-            "command_execution" => BuildCommandInvocationBody(commandText, detail),
-            "command_output" => BuildCommandOutputBody(commandText, detail, streaming),
-            "file_change_output" => BuildFileChangeOutputBody(commandText, detail, streaming),
-            _ => NormalizeHistoryText(detail).Trim()
-        };
-    }
-
-    private static string BuildCommandInvocationBody(string? commandText, string? detail)
-    {
-        var command = SummarizeCommandText(commandText);
-        if (!string.IsNullOrWhiteSpace(command))
-        {
-            return command;
+            AppendToolPresentationSection(builder, presentation.Outcome);
         }
-
-        return NormalizeHistoryText(detail).Trim();
-    }
-
-    private static string BuildCommandOutputBody(string? commandText, string? rawOutput, bool streaming)
-    {
-        var normalizedOutput = NormalizeHistoryText(rawOutput).Trim('\n');
-        var command = SummarizeCommandText(commandText);
-        if (TryExtractReadFileTarget(command, out var filePath))
+        AppendToolPresentationSection(builder, presentation.Subject);
+        foreach (var path in presentation.Paths)
         {
-            return BuildWindowedOutputBody(
-                filePath,
-                normalizedOutput,
-                takeHead: true,
-                streaming: streaming);
-        }
-
-        return BuildWindowedOutputBody(command, normalizedOutput, takeHead: false, streaming: streaming);
-    }
-
-    private static string BuildFileChangeOutputBody(string? commandText, string? rawOutput, bool streaming)
-    {
-        return BuildWindowedOutputBody(
-            SummarizeCommandText(commandText),
-            NormalizeHistoryText(rawOutput).Trim('\n'),
-            takeHead: false,
-            streaming: streaming);
-    }
-
-    private static string BuildWindowedOutputBody(
-        string? header,
-        string output,
-        bool takeHead,
-        bool streaming)
-    {
-        var lines = output.Length == 0 ? [] : output.Split('\n');
-        var visibleLines = lines;
-        var omittedLineCount = 0;
-        if (lines.Length > MaxVisibleCommandOutputLines)
-        {
-            omittedLineCount = lines.Length - MaxVisibleCommandOutputLines;
-            visibleLines = takeHead
-                ? lines.Take(MaxVisibleCommandOutputLines).ToArray()
-                : lines.Skip(lines.Length - MaxVisibleCommandOutputLines).ToArray();
-        }
-
-        var sections = new List<string>();
-        if (!string.IsNullOrWhiteSpace(header))
-        {
-            sections.Add(header.Trim());
-        }
-
-        if (visibleLines.Length > 0)
-        {
-            if (!string.IsNullOrWhiteSpace(header))
+            if (!string.Equals(path, presentation.Subject, StringComparison.Ordinal))
             {
-                sections.Add(string.Empty);
-            }
-
-            if (omittedLineCount > 0 && !takeHead)
-            {
-                sections.Add(string.Create(CultureInfo.InvariantCulture, $"... {omittedLineCount} earlier lines omitted ..."));
-            }
-
-            sections.AddRange(visibleLines.Select(static line => CompactHistoryLine(line)));
-
-            if (omittedLineCount > 0 && takeHead)
-            {
-                sections.Add(string.Empty);
-                sections.Add(string.Create(CultureInfo.InvariantCulture, $"... {omittedLineCount} more lines omitted ..."));
+                AppendToolPresentationSection(builder, path);
             }
         }
-        else if (streaming && !string.IsNullOrWhiteSpace(header))
+        if (!string.Equals(presentation.EvidenceKind, "error", StringComparison.Ordinal))
         {
-            sections.Add(string.Empty);
-            sections.Add("Waiting for output...");
+            AppendToolPresentationSection(builder, presentation.Outcome);
         }
-
-        return CompactHistorySections(sections);
+        if (!string.IsNullOrWhiteSpace(presentation.Evidence))
+        {
+            if (presentation.OmittedLineCount > 0)
+            {
+                AppendToolPresentationSection(
+                    builder,
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"... {presentation.OmittedLineCount} lines omitted ..."));
+            }
+            AppendToolPresentationSection(builder, presentation.Evidence);
+        }
+        return builder.ToString();
     }
 
-    private static string ResolveRenderableToolItemType(string normalizedType, string? rawOutput)
+    private static void AppendToolPresentationSection(StringBuilder builder, string? value)
     {
-        if (normalizedType == "command_execution" &&
-            !string.IsNullOrWhiteSpace(rawOutput))
+        if (string.IsNullOrWhiteSpace(value))
         {
-            return "command_output";
+            return;
         }
-
-        return normalizedType;
-    }
-
-    private static string SummarizeCommandText(string? value)
-    {
-        var normalized = NormalizeHistoryText(value).Trim();
-        if (string.IsNullOrWhiteSpace(normalized))
+        if (builder.Length > 0)
         {
-            return string.Empty;
+            builder.AppendLine();
         }
-
-        if (TryExtractInlineCommand(normalized, out var inlineCommand))
-        {
-            normalized = inlineCommand;
-        }
-
-        return normalized;
-    }
-
-    private static string? ExtractCommandText(string? value)
-    {
-        var normalized = NormalizeHistoryText(value).Trim();
-        if (string.IsNullOrWhiteSpace(normalized))
-        {
-            return null;
-        }
-
-        return TryExtractInlineCommand(normalized, out var inlineCommand)
-            ? inlineCommand
-            : normalized;
-    }
-
-    private static bool TryExtractInlineCommand(string value, out string command)
-    {
-        command = string.Empty;
-        var commandMatch = InlineCommandRegex().Match(value);
-        if (commandMatch.Success)
-        {
-            command = commandMatch.Groups["cmd"].Value.Trim();
-            return !string.IsNullOrWhiteSpace(command);
-        }
-
-        return false;
-    }
-
-    private static bool TryExtractReadFileTarget(string? commandText, out string filePath)
-    {
-        filePath = string.Empty;
-        if (string.IsNullOrWhiteSpace(commandText))
-        {
-            return false;
-        }
-
-        var match = ReadFileTargetRegex().Match(commandText);
-        if (!match.Success)
-        {
-            return false;
-        }
-
-        filePath = match.Groups["path"].Value.Trim();
-        return !string.IsNullOrWhiteSpace(filePath);
+        builder.Append(value);
     }
 
     private static void ApplyItemUpdate(AppServerControlConversationState state, AppServerControlProviderEvent appServerControlEvent)
@@ -1811,36 +1650,36 @@ public sealed partial class SessionAppServerControlHistoryService
                 break;
             default:
                 var toolState = GetOrCreateToolRenderState(state, entry.EntryId);
-                if (normalizedType == "command_execution")
+                var incomingPresentation = appServerControlEvent.Item.ToolPresentation ??
+                                           AppServerControlToolPresentationProjector.FromLegacy(
+                                               normalizedType,
+                                               item.Status,
+                                               appServerControlEvent.Item.Title,
+                                               appServerControlEvent.Item.Detail);
+                if (toolState.Presentation is null)
                 {
-                    toolState.CommandText = PreferMeaningfulText(
-                        toolState.CommandText,
-                        ExtractCommandText(appServerControlEvent.Item.Detail)) ?? string.Empty;
-                    toolState.RetainHeadOutput = TryExtractReadFileTarget(toolState.CommandText, out _);
+                    toolState.Presentation = AppServerControlToolPresentationProjector.Clone(incomingPresentation);
                 }
-                else if (normalizedType is "command_output" or "file_change_output")
+                else
                 {
-                    toolState.RawOutput = AppendRetainedToolOutput(
-                        toolState.RawOutput,
-                        appServerControlEvent.Item.Detail,
-                        toolState.RetainHeadOutput);
+                    AppServerControlToolPresentationProjector.Merge(toolState.Presentation, incomingPresentation);
                 }
 
-                var renderItemType = ResolveRenderableToolItemType(normalizedType, toolState.RawOutput);
-                entry.ItemType = renderItemType;
-                entry.CommandText = string.IsNullOrWhiteSpace(toolState.CommandText)
-                    ? null
-                    : toolState.CommandText;
-                entry.Title = ResolveToolEntryTitle(renderItemType, appServerControlEvent.Item.Title, toolState.CommandText);
-                entry.Body = BuildToolScreenBody(
-                    renderItemType,
-                    toolState.CommandText,
-                    renderItemType is "command_output" or "file_change_output"
-                        ? toolState.RawOutput
-                        : MergeHistoryBody(entry.Body, appServerControlEvent.Item.Detail),
-                    streaming: !IsTerminalStatus(item.Status));
+                entry.ItemType = normalizedType;
+                if (toolState.Output.HasContent)
+                {
+                    AppServerControlToolPresentationProjector.ApplyOutput(
+                        toolState.Presentation,
+                        toolState.Output,
+                        item.Status);
+                }
+                ApplyToolPresentation(entry, toolState.Presentation);
                 entry.Streaming = !IsTerminalStatus(item.Status);
                 item.Detail = entry.Body;
+                if (IsTerminalStatus(item.Status))
+                {
+                    state.ToolRenderStates.Remove(entry.EntryId);
+                }
                 break;
         }
     }
@@ -1958,7 +1797,7 @@ public sealed partial class SessionAppServerControlHistoryService
             {
                 Source = source.Raw.Source,
                 Method = source.Raw.Method,
-                PayloadJson = source.Raw.PayloadJson
+                PayloadOmitted = source.Raw.PayloadOmitted
             },
             SessionState = source.SessionState is null ? null : new AppServerControlProviderSessionStatePayload
             {
@@ -2007,6 +1846,7 @@ public sealed partial class SessionAppServerControlHistoryService
                 Status = source.Item.Status,
                 Title = source.Item.Title,
                 Detail = source.Item.Detail,
+                ToolPresentation = AppServerControlToolPresentationProtocol.Clone(source.Item.ToolPresentation),
                 Attachments = CloneAttachments(source.Item.Attachments)
             },
             Task = source.Task is null ? null : new AppServerControlProviderTaskPayload
@@ -2243,6 +2083,7 @@ public sealed partial class SessionAppServerControlHistoryService
             ItemType = source.ItemType,
             Title = source.Title,
             CommandText = source.CommandText,
+            ToolPresentation = AppServerControlToolPresentationProtocol.Clone(source.ToolPresentation),
             Body = source.Body,
             Attachments = CloneAttachments(source.Attachments),
             FileMentions = CloneInlineFileReferences(source.FileMentions),
@@ -3019,29 +2860,6 @@ public sealed partial class SessionAppServerControlHistoryService
         return $"{normalizedExisting}\n{normalizedChunk}";
     }
 
-    private static string AppendRetainedToolOutput(string? existing, string? incoming, bool retainHead)
-    {
-        var normalizedIncoming = NormalizeHistoryText(incoming);
-        if (string.IsNullOrWhiteSpace(normalizedIncoming))
-        {
-            return NormalizeHistoryText(existing);
-        }
-
-        var normalizedExisting = StripRetentionMarkers(NormalizeHistoryText(existing));
-        if (string.IsNullOrWhiteSpace(normalizedExisting))
-        {
-            return RetainWithinLineBudget(normalizedIncoming, MaxToolRawOutputChars, retainHead);
-        }
-
-        var separator = !normalizedExisting.EndsWith('\n') && !normalizedIncoming.StartsWith('\n')
-            ? "\n"
-            : string.Empty;
-        return RetainWithinLineBudget(
-            normalizedExisting + separator + normalizedIncoming,
-            MaxToolRawOutputChars,
-            retainHead);
-    }
-
     private static string AppendRetainedHistoryChunk(string? existing, string? incoming, int maxChars, bool retainHead)
     {
         return AppendRetainedStreamText(existing, incoming, maxChars, retainHead, separateWithNewline: true);
@@ -3092,71 +2910,6 @@ public sealed partial class SessionAppServerControlHistoryService
         return retainHead
             ? string.Concat(normalized.AsSpan(0, availableChars), "\n", marker)
             : string.Concat(marker, "\n", normalized.AsSpan(normalized.Length - availableChars));
-    }
-
-    private static string RetainWithinLineBudget(string? value, int maxChars, bool retainHead)
-    {
-        var normalized = NormalizeHistoryText(value);
-        if (normalized.Length <= maxChars)
-        {
-            return normalized;
-        }
-
-        var lines = normalized.Split('\n');
-        if (lines.Length <= 1)
-        {
-            return RetainWithinBudget(normalized, maxChars, retainHead);
-        }
-
-        var marker = retainHead ? HeadRetentionMarker : TailRetentionMarker;
-        var reserved = marker.Length + 1;
-        if (reserved >= maxChars)
-        {
-            return RetainWithinBudget(normalized, maxChars, retainHead);
-        }
-
-        var selectedLines = new List<string>();
-        var usedChars = reserved;
-
-        if (retainHead)
-        {
-            foreach (var line in lines)
-            {
-                var lineCost = line.Length + (selectedLines.Count > 0 ? 1 : 0);
-                if (usedChars + lineCost > maxChars)
-                {
-                    break;
-                }
-
-                selectedLines.Add(line);
-                usedChars += lineCost;
-            }
-
-            return selectedLines.Count == 0
-                ? RetainWithinBudget(normalized, maxChars, retainHead)
-                : string.Join("\n", selectedLines) + "\n" + marker;
-        }
-
-        for (var index = lines.Length - 1; index >= 0; index--)
-        {
-            var line = lines[index];
-            var lineCost = line.Length + (selectedLines.Count > 0 ? 1 : 0);
-            if (usedChars + lineCost > maxChars)
-            {
-                break;
-            }
-
-            selectedLines.Add(line);
-            usedChars += lineCost;
-        }
-
-        if (selectedLines.Count == 0)
-        {
-            return RetainWithinBudget(normalized, maxChars, retainHead);
-        }
-
-        selectedLines.Reverse();
-        return marker + "\n" + string.Join("\n", selectedLines);
     }
 
     private static string StripRetentionMarkers(string value)
@@ -3463,7 +3216,7 @@ public sealed partial class SessionAppServerControlHistoryService
         var diffScreenBody = kind == "diff"
             ? BuildScreenLogDiffBody(entry.Body)
             : entry.Body;
-        var collapsedByDefault = kind == "diff"
+        var collapsedByDefault = kind == "diff" || entry.ToolPresentation is not null
             ? false
             : ShouldCollapseHistoryBodyByDefault(entry, kind);
 
@@ -3477,9 +3230,12 @@ public sealed partial class SessionAppServerControlHistoryService
             Label = ResolveHistoryLabel(kind),
             Title = entry.Title ?? string.Empty,
             CommandText = entry.CommandText ?? string.Empty,
+            ToolPresentation = AppServerControlToolPresentationProtocol.Clone(entry.ToolPresentation),
             Meta = FormatHistoryMeta(kind, statusLabel, entry.UpdatedAt),
             Body = diffScreenBody,
-            RenderMode = ResolveHistoryRenderMode(kind, entry.Streaming),
+            RenderMode = entry.ToolPresentation is not null
+                ? "tool"
+                : ResolveHistoryRenderMode(kind, entry.Streaming),
             CollapsedByDefault = collapsedByDefault,
             Preview = kind == "diff" ? BuildHistoryPreview(diffScreenBody) : BuildHistoryPreview(entry.Body),
             LineCount = kind == "diff" ? CountHistoryBodyLines(diffScreenBody) : CountHistoryBodyLines(entry.Body),
@@ -3898,9 +3654,8 @@ public sealed partial class SessionAppServerControlHistoryService
 
     private sealed class AppServerControlToolRenderState
     {
-        public string CommandText { get; set; } = string.Empty;
-        public string RawOutput { get; set; } = string.Empty;
-        public bool RetainHeadOutput { get; set; }
+        public AppServerControlToolPresentation? Presentation { get; set; }
+        public BoundedToolOutputAccumulator Output { get; } = new();
     }
 
     private sealed class AppServerControlPersistedSessionState
@@ -3928,9 +3683,8 @@ public sealed partial class SessionAppServerControlHistoryService
     private sealed class AppServerControlPersistedToolRenderState
     {
         public string EntryId { get; init; } = string.Empty;
-        public string? CommandText { get; init; }
-        public string? RawOutput { get; init; }
-        public bool RetainHeadOutput { get; init; }
+        public AppServerControlToolPresentation? Presentation { get; init; }
+        public BoundedToolOutputSnapshot? Output { get; init; }
     }
 
     private sealed class AppServerControlScreenLogHeaderRecord
@@ -3985,6 +3739,7 @@ public sealed partial class SessionAppServerControlHistoryService
         public string Label { get; init; } = string.Empty;
         public string Title { get; init; } = string.Empty;
         public string CommandText { get; init; } = string.Empty;
+        public AppServerControlToolPresentation? ToolPresentation { get; init; }
         public string Meta { get; init; } = string.Empty;
         public string Body { get; init; } = string.Empty;
         public string RenderMode { get; init; } = string.Empty;
@@ -4072,16 +3827,6 @@ public sealed class SessionAppServerControlHistoryPatchSubscription : IDisposabl
         _state.Close();
     }
 }
-
-
-
-
-
-
-
-
-
-
 
 
 

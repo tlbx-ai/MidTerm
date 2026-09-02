@@ -344,7 +344,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
     }
 
     [Fact]
-    public void GetEvents_DropsRawPayloadBodiesDuringRetention()
+    public void GetEvents_RetainsOnlyRawSourceMetadata()
     {
         var service = new SessionAppServerControlHistoryService();
 
@@ -360,7 +360,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
             {
                 Source = "codex",
                 Method = "session.started",
-                PayloadJson = new string('x', 12_000)
+                PayloadOmitted = true
             }
         });
 
@@ -369,7 +369,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
         Assert.NotNull(retained.Raw);
         Assert.Equal("codex", retained.Raw!.Source);
         Assert.Equal("session.started", retained.Raw.Method);
-        Assert.True(string.IsNullOrEmpty(retained.Raw.PayloadJson));
+        Assert.True(retained.Raw.PayloadOmitted);
     }
 
     [Fact]
@@ -1010,9 +1010,10 @@ public sealed class SessionAppServerControlHistoryServiceTests
         var toolEntries = snapshot!.History.Where(entry => entry.Kind == "tool").ToList();
         var tool = Assert.Single(toolEntries);
         Assert.Equal("tool:tool-1", tool.EntryId);
-        Assert.Equal("Run tests", tool.Title);
-        Assert.Contains("npm test", tool.Body, StringComparison.Ordinal);
-        Assert.Contains("All green", tool.Body, StringComparison.Ordinal);
+        Assert.Equal("Ran command", tool.Title);
+        Assert.NotNull(tool.ToolPresentation);
+        Assert.Equal("npm test", tool.ToolPresentation!.Subject);
+        Assert.Equal("All green", tool.ToolPresentation.Evidence);
         Assert.False(tool.Streaming);
     }
 
@@ -1141,7 +1142,15 @@ public sealed class SessionAppServerControlHistoryServiceTests
                 ItemType = "command_execution",
                 Status = "in_progress",
                 Title = "Tool started",
-                Detail = "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command 'Get-Content .midterm/AGENTS.md'"
+                Detail = ".midterm/AGENTS.md",
+                ToolPresentation = new AppServerControlToolPresentation
+                {
+                    Category = "read",
+                    Label = "Read file",
+                    ToolName = "Read",
+                    Subject = ".midterm/AGENTS.md",
+                    Paths = [".midterm/AGENTS.md"]
+                }
             }
         });
 
@@ -1171,10 +1180,9 @@ public sealed class SessionAppServerControlHistoryServiceTests
         Assert.Equal("command_output", toolEntry.ItemType);
         Assert.Contains(".midterm/AGENTS.md", toolEntry.Body, StringComparison.Ordinal);
         Assert.Contains("line 1", toolEntry.Body, StringComparison.Ordinal);
-        Assert.Contains("line 10", toolEntry.Body, StringComparison.Ordinal);
-        Assert.DoesNotContain("line 11", toolEntry.Body, StringComparison.Ordinal);
-        Assert.DoesNotContain("line 12", toolEntry.Body, StringComparison.Ordinal);
-        Assert.Contains("2 more lines omitted", toolEntry.Body, StringComparison.Ordinal);
+        Assert.Contains("line 4", toolEntry.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("line 5", toolEntry.Body, StringComparison.Ordinal);
+        Assert.Contains("8 lines omitted", toolEntry.Body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1197,7 +1205,13 @@ public sealed class SessionAppServerControlHistoryServiceTests
                 ItemType = "command_execution",
                 Status = "in_progress",
                 Title = "Tool started",
-                Detail = "codex -m gpt-5.4"
+                Detail = "codex -m gpt-5.4",
+                ToolPresentation = new AppServerControlToolPresentation
+                {
+                    Category = "command",
+                    Label = "Ran command",
+                    Subject = "codex -m gpt-5.4"
+                }
             }
         });
 
@@ -1225,7 +1239,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
         Assert.NotNull(snapshot);
         var toolEntry = Assert.Single(snapshot!.History, entry => entry.Kind == "tool");
         Assert.Equal("command_output", toolEntry.ItemType);
-        Assert.Equal("codex -m gpt-5.4", toolEntry.CommandText);
+        Assert.Equal("codex -m gpt-5.4", toolEntry.ToolPresentation?.Subject);
         Assert.Contains('\n', toolEntry.Body);
         Assert.Contains("line ", toolEntry.Body, StringComparison.Ordinal);
     }
@@ -1435,7 +1449,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
 
         Assert.Equal(2, toolEntries.Count);
         Assert.Equal("tool:cmd-1", toolEntries[0].EntryId);
-        Assert.Equal("command_output", toolEntries[0].ItemType);
+        Assert.Equal("command_execution", toolEntries[0].ItemType);
         Assert.Contains("git describe --tags --abbrev=0", toolEntries[0].Body, StringComparison.Ordinal);
         Assert.Contains("v9.0.16-dev", toolEntries[0].Body, StringComparison.Ordinal);
         Assert.Equal("tool:cmd-2", toolEntries[1].EntryId);
@@ -1501,7 +1515,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
         var toolEntry = Assert.Single(snapshot!.History, entry => entry.Kind == "tool");
         Assert.Equal("tool:cmd-1", toolEntry.EntryId);
         Assert.Equal("cmd-1", toolEntry.ItemId);
-        Assert.Equal("command_output", toolEntry.ItemType);
+        Assert.Equal("command_execution", toolEntry.ItemType);
         Assert.Contains("git status --short --branch", toolEntry.Body, StringComparison.Ordinal);
         Assert.Contains("## dev...origin/dev", toolEntry.Body, StringComparison.Ordinal);
         Assert.DoesNotContain("tool:command_output", snapshot.History.Select(entry => entry.EntryId));
@@ -1550,15 +1564,26 @@ public sealed class SessionAppServerControlHistoryServiceTests
                 Type = "item.completed",
                 Item = new AppServerControlProviderItemPayload
                 {
-                    ItemType = "command_output",
-                    Status = "completed",
-                    Title = "git diff --stat",
-                    Detail = string.Join(
+                ItemType = "command_output",
+                Status = "completed",
+                Title = "git diff --stat",
+                ToolPresentation = new AppServerControlToolPresentation
+                {
+                    Category = "command",
+                    Label = "Ran command",
+                    Subject = "git diff --stat",
+                    Evidence = string.Join(
                         '\n',
-                        Enumerable.Range(1, 10).Select(
-                            index => string.Create(CultureInfo.InvariantCulture, $"line {index}: tool output")))
+                        Enumerable.Range(1, 6).Select(
+                            index => string.Create(CultureInfo.InvariantCulture, $"line {index}: tool output"))),
+                    EvidenceKind = "output",
+                    TotalLineCount = 10,
+                    OmittedLineCount = 4
+                }
                 }
             });
+
+            Assert.NotNull(Assert.Single(service.GetSnapshot("s-log")!.History).ToolPresentation);
 
             var logPath = Assert.Single(Directory.GetFiles(screenLogDirectory, "*.appServerControllog.jsonl"));
             Assert.Matches(@"[0-9a-f]{32}\.appServerControllog\.jsonl$", Path.GetFileName(logPath));
@@ -1579,11 +1604,10 @@ public sealed class SessionAppServerControlHistoryServiceTests
             var toolEntry = historyUpserts[0];
             Assert.Equal("tool", toolEntry.GetProperty("kind").GetString());
             Assert.Equal("Tool", toolEntry.GetProperty("label").GetString());
-            Assert.Equal("monospace", toolEntry.GetProperty("renderMode").GetString());
-            Assert.True(toolEntry.GetProperty("collapsedByDefault").GetBoolean());
-            Assert.Equal(10, toolEntry.GetProperty("lineCount").GetInt32());
-            Assert.Equal("line 1: tool output", toolEntry.GetProperty("preview").GetString());
-            Assert.Contains("line 10: tool output", toolEntry.GetProperty("body").GetString(), StringComparison.Ordinal);
+            Assert.Equal("tool", toolEntry.GetProperty("renderMode").GetString());
+            Assert.False(toolEntry.GetProperty("collapsedByDefault").GetBoolean());
+            Assert.Equal("command", toolEntry.GetProperty("toolPresentation").GetProperty("category").GetString());
+            Assert.Contains("line 6: tool output", toolEntry.GetProperty("body").GetString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -1770,10 +1794,17 @@ public sealed class SessionAppServerControlHistoryServiceTests
                 Type = "item.started",
                 Item = new AppServerControlProviderItemPayload
                 {
-                    ItemType = "command_execution",
-                    Status = "in_progress",
-                    Title = "Tool started",
-                    Detail = "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command 'Get-Content src/Ai.Tlbx.MidTerm/Program.cs'"
+                ItemType = "command_execution",
+                Status = "in_progress",
+                Title = "Tool started",
+                Detail = "src/Ai.Tlbx.MidTerm/Program.cs",
+                ToolPresentation = new AppServerControlToolPresentation
+                {
+                    Category = "read",
+                    Label = "Read file",
+                    Subject = "src/Ai.Tlbx.MidTerm/Program.cs",
+                    Paths = ["src/Ai.Tlbx.MidTerm/Program.cs"]
+                }
                 }
             });
 
@@ -1806,7 +1837,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
             var toolEntry = Assert.Single(snapshot.History, entry => entry.Kind == "tool");
             Assert.True(toolEntry.Body.Length <= 4_096);
             Assert.Contains("Read file", toolEntry.Title, StringComparison.Ordinal);
-            Assert.Contains("output truncated", toolEntry.Body, StringComparison.OrdinalIgnoreCase);
+            Assert.EndsWith("…", toolEntry.ToolPresentation?.Evidence, StringComparison.Ordinal);
 
             var logPath = Assert.Single(Directory.GetFiles(screenLogDirectory, "*.appServerControllog.jsonl"));
             var lastLine = File.ReadLines(logPath).Last();
@@ -2300,7 +2331,3 @@ public sealed class SessionAppServerControlHistoryServiceTests
 
     private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
 }
-
-
-
-

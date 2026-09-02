@@ -36,7 +36,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                     loadSession = true,
                     promptCapabilities = new
                     {
-                        image = false,
+                        image = true,
                         audio = false,
                         embeddedContext = true
                     },
@@ -65,6 +65,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
         case "session/prompt":
             activePromptId = id.ToString();
             var text = ReadPromptText(root);
+            var imageSummary = ReadPromptImageSummary(root);
             await WriteAvailableCommandsUpdateAsync(sessionId).ConfigureAwait(false);
             await WriteNotificationAsync("session/update", new
             {
@@ -154,7 +155,6 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
 
             if (text.Contains("interrupt", StringComparison.OrdinalIgnoreCase))
             {
-                await Task.Delay(TimeSpan.FromSeconds(30)).ConfigureAwait(false);
                 break;
             }
 
@@ -167,7 +167,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                     content = new
                     {
                         type = "text",
-                        text = "Fake Grok reply. prompt=" + text
+                        text = "Fake Grok reply. prompt=" + text + imageSummary
                     }
                 }
             }).ConfigureAwait(false);
@@ -274,6 +274,26 @@ static string ReadPromptText(JsonElement root)
     }
 
     return string.Join(" ", parts).Trim();
+}
+
+static string ReadPromptImageSummary(JsonElement root)
+{
+    if (!root.TryGetProperty("params", out var parameters) ||
+        !parameters.TryGetProperty("prompt", out var prompt) ||
+        prompt.ValueKind != JsonValueKind.Array)
+    {
+        return string.Empty;
+    }
+
+    foreach (var block in prompt.EnumerateArray())
+    {
+        if (!string.Equals(GetString(block, "type"), "image", StringComparison.Ordinal)) continue;
+        var mimeType = GetString(block, "mimeType") ?? "unknown";
+        var data = GetString(block, "data") ?? string.Empty;
+        return $" [image {mimeType} {Convert.FromBase64String(data).Length.ToString(CultureInfo.InvariantCulture)} bytes]";
+    }
+
+    return string.Empty;
 }
 
 static async Task WriteRequestAsync(string id, string method, object parameters)

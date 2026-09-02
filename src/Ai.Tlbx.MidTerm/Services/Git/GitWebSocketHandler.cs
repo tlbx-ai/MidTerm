@@ -5,7 +5,6 @@ using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Git;
 using Ai.Tlbx.MidTerm.Settings;
 
-using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Services.WebSockets;
 namespace Ai.Tlbx.MidTerm.Services.Git;
 
@@ -15,20 +14,20 @@ public sealed class GitWebSocketHandler
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
     private readonly ShutdownService _shutdownService;
-    private readonly TtyHostSessionManager _sessionManager;
+    private readonly SessionGitMetadataService _gitMetadata;
 
     public GitWebSocketHandler(
         GitWatcherService gitWatcher,
         SettingsService settingsService,
         AuthService authService,
         ShutdownService shutdownService,
-        TtyHostSessionManager sessionManager)
+        SessionGitMetadataService gitMetadata)
     {
         _gitWatcher = gitWatcher;
         _settingsService = settingsService;
         _authService = authService;
         _shutdownService = shutdownService;
-        _sessionManager = sessionManager;
+        _gitMetadata = gitMetadata;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -209,20 +208,13 @@ public sealed class GitWebSocketHandler
                         isNew = subscribedSessions.Add(sessionId);
                     }
 
-                    if (_gitWatcher.GetRepoRoot(sessionId) is null)
-                    {
-                        var session = _sessionManager.GetSession(sessionId);
-                        if (session is not null && !string.IsNullOrEmpty(session.CurrentDirectory))
-                        {
-                            await _gitWatcher.RegisterSessionAsync(sessionId, session.CurrentDirectory);
-                        }
-                    }
+                    var metadata = await _gitMetadata.GetAsync(sessionId, _shutdownService.Token);
 
                     await sendMessage(new GitWsMessage
                     {
                         Type = "repos",
                         SessionId = sessionId,
-                        Repos = _gitWatcher.GetRepoBindings(sessionId)
+                        Repos = metadata.IsSuccess ? metadata.Repos : []
                     });
 
                     if (isNew)
@@ -230,7 +222,7 @@ public sealed class GitWebSocketHandler
                         _gitWatcher.Subscribe(sessionId);
                     }
 
-                    foreach (var repo in _gitWatcher.GetRepoBindings(sessionId))
+                    foreach (var repo in metadata.IsSuccess ? metadata.Repos : [])
                     {
                         _ = _gitWatcher.RefreshStatusAsync(repo.RepoRoot);
                     }

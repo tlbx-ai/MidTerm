@@ -3,6 +3,7 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
+[Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class ShellConfigurationsTests
 {
     [Fact]

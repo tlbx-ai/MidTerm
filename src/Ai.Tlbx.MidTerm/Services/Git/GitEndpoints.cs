@@ -42,7 +42,11 @@ public sealed class GitDebugSessionInfo
 
 public static class GitEndpoints
 {
-    public static void MapGitEndpoints(WebApplication app, GitWatcherService gitWatcher, TtyHostSessionManager sessionManager)
+    public static void MapGitEndpoints(
+        WebApplication app,
+        GitWatcherService gitWatcher,
+        TtyHostSessionManager sessionManager,
+        SessionGitMetadataService gitMetadata)
     {
         app.MapGet("/api/git/debug", async (string? sessionId) =>
         {
@@ -102,66 +106,53 @@ public static class GitEndpoints
             return Results.Json(debug, GitJsonContext.Default.GitDebugResponse);
         });
 
-        app.MapGet("/api/git/repos", async (string? sessionId) =>
+        app.MapGet("/api/git/repos", async (string? sessionId, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId))
             {
                 return Results.BadRequest("sessionId required");
             }
 
-            var session = sessionManager.GetSession(sessionId);
-            if (session is not null && !string.IsNullOrEmpty(session.CurrentDirectory) && gitWatcher.GetRepoRoot(sessionId) is null)
-            {
-                await gitWatcher.RegisterSessionAsync(sessionId, session.CurrentDirectory);
-            }
-
-            return Results.Json(
-                new GitRepoListResponse { Repos = gitWatcher.GetRepoBindings(sessionId) },
-                GitJsonContext.Default.GitRepoListResponse);
+            return ToResult(await gitMetadata.GetAsync(sessionId, ct));
         });
 
-        app.MapPost("/api/git/repos", async (GitRepoBindRequest request) =>
+        app.MapPost("/api/git/repos", async (GitRepoBindRequest request, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(request.SessionId) || string.IsNullOrEmpty(request.Path))
             {
                 return Results.BadRequest("sessionId and path required");
             }
 
-            var repos = await gitWatcher.AddSessionRepoAsync(
+            var result = await gitMetadata.AddAsync(
                 request.SessionId,
                 request.Path,
                 request.Label,
                 request.Role,
-                "manual");
-
-            if (repos is null)
-            {
-                return Results.BadRequest("Path is not in a git repository");
-            }
-
-            sessionManager.SetSessionExtraGitReposMetadata(request.SessionId, repos);
-            return Results.Json(new GitRepoListResponse { Repos = repos }, GitJsonContext.Default.GitRepoListResponse);
+                ct);
+            return ToResult(result);
         });
 
-        app.MapDelete("/api/git/repos", (string? sessionId, string? repoRoot) =>
+        app.MapDelete("/api/git/repos", async (string? sessionId, string? repoRoot, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(repoRoot))
             {
                 return Results.BadRequest("sessionId and repoRoot required");
             }
 
-            gitWatcher.RemoveSessionRepo(sessionId, repoRoot);
-            sessionManager.SetSessionExtraGitReposMetadata(sessionId, gitWatcher.GetRepoBindings(sessionId));
-            return Results.Json(
-                new GitRepoListResponse { Repos = gitWatcher.GetRepoBindings(sessionId) },
-                GitJsonContext.Default.GitRepoListResponse);
+            return ToResult(await gitMetadata.RemoveAsync(sessionId, repoRoot, ct));
         });
 
-        app.MapPost("/api/git/repos/refresh", async (GitRepoRefreshRequest request) =>
+        app.MapPost("/api/git/repos/refresh", async (GitRepoRefreshRequest request, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(request.SessionId))
             {
                 return Results.BadRequest("sessionId required");
+            }
+
+            var metadata = await gitMetadata.GetAsync(request.SessionId, ct);
+            if (!metadata.IsSuccess)
+            {
+                return ToResult(metadata);
             }
 
             if (!string.IsNullOrWhiteSpace(request.RepoRoot))
@@ -188,31 +179,20 @@ public static class GitEndpoints
                 GitJsonContext.Default.GitRepoListResponse);
         });
 
-        app.MapGet("/api/git/status", async (string? sessionId, string? repoRoot) =>
+        app.MapGet("/api/git/status", async (string? sessionId, string? repoRoot, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId))
             {
                 return Results.BadRequest("sessionId required");
             }
 
-            var session = sessionManager.GetSession(sessionId);
-            if (session is null)
+            var metadata = await gitMetadata.GetAsync(sessionId, ct);
+            if (!metadata.IsSuccess)
             {
-                return Results.NotFound("Session not found");
+                return ToResult(metadata);
             }
 
             var resolvedRepoRoot = gitWatcher.ResolveRepoRoot(sessionId, repoRoot);
-            if (resolvedRepoRoot is null)
-            {
-                var workingDir = session.CurrentDirectory;
-                if (string.IsNullOrEmpty(workingDir))
-                {
-                    return Results.Json(new GitStatusResponse(), GitJsonContext.Default.GitStatusResponse);
-                }
-
-                await gitWatcher.RegisterSessionAsync(sessionId, workingDir);
-                resolvedRepoRoot = gitWatcher.ResolveRepoRoot(sessionId, repoRoot);
-            }
 
             if (resolvedRepoRoot is null)
             {
@@ -230,21 +210,21 @@ public static class GitEndpoints
             return Results.Json(status, GitJsonContext.Default.GitStatusResponse);
         });
 
-        app.MapGet("/api/git/diff", async (string? sessionId, string? repoRoot, string? path, bool? staged) =>
+        app.MapGet("/api/git/diff", async (string? sessionId, string? repoRoot, string? path, bool? staged, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(path))
             {
                 return Results.BadRequest("sessionId and path required");
             }
 
-            var (resolvedRepoRoot, error) = ResolveRepo(sessionId, repoRoot, gitWatcher, sessionManager);
+            var (resolvedRepoRoot, error) = await ResolveRepoAsync(sessionId, repoRoot, gitWatcher, gitMetadata, ct);
             if (error is not null) return error;
 
             var diff = await GitCommandRunner.GetDiffAsync(resolvedRepoRoot!, path, staged ?? false);
             return Results.Text(diff, "text/plain");
         });
 
-        app.MapGet("/api/git/diff-view", async (string? sessionId, string? repoRoot, string? path, string? scope) =>
+        app.MapGet("/api/git/diff-view", async (string? sessionId, string? repoRoot, string? path, string? scope, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(path))
             {
@@ -255,7 +235,7 @@ public static class GitEndpoints
                 ? "staged"
                 : "worktree";
 
-            var (resolvedRepoRoot, error) = ResolveRepo(sessionId, repoRoot, gitWatcher, sessionManager);
+            var (resolvedRepoRoot, error) = await ResolveRepoAsync(sessionId, repoRoot, gitWatcher, gitMetadata, ct);
             if (error is not null) return error;
 
             var (patch, isTruncated) = await GitCommandRunner.GetDiffPatchAsync(
@@ -267,28 +247,28 @@ public static class GitEndpoints
             return Results.Json(response, GitJsonContext.Default.GitDiffViewResponse);
         });
 
-        app.MapGet("/api/git/log", async (string? sessionId, string? repoRoot, int? count) =>
+        app.MapGet("/api/git/log", async (string? sessionId, string? repoRoot, int? count, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId))
             {
                 return Results.BadRequest("sessionId required");
             }
 
-            var (resolvedRepoRoot, error) = ResolveRepo(sessionId, repoRoot, gitWatcher, sessionManager);
+            var (resolvedRepoRoot, error) = await ResolveRepoAsync(sessionId, repoRoot, gitWatcher, gitMetadata, ct);
             if (error is not null) return error;
 
             var entries = await GitCommandRunner.GetLogAsync(resolvedRepoRoot!, count ?? 20);
             return Results.Json(entries, GitJsonContext.Default.GitLogEntryArray);
         });
 
-        app.MapGet("/api/git/commit", async (string? sessionId, string? repoRoot, string? hash) =>
+        app.MapGet("/api/git/commit", async (string? sessionId, string? repoRoot, string? hash, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(hash))
             {
                 return Results.BadRequest("sessionId and hash required");
             }
 
-            var (resolvedRepoRoot, error) = ResolveRepo(sessionId, repoRoot, gitWatcher, sessionManager);
+            var (resolvedRepoRoot, error) = await ResolveRepoAsync(sessionId, repoRoot, gitWatcher, gitMetadata, ct);
             if (error is not null) return error;
 
             var metadata = await GitCommandRunner.GetCommitMetadataAsync(resolvedRepoRoot!, hash);
@@ -303,21 +283,34 @@ public static class GitEndpoints
         });
     }
 
-    private static (string? RepoRoot, IResult? Error) ResolveRepo(
+    private static IResult ToResult(SessionGitMetadataResult result)
+    {
+        if (result.IsSuccess)
+        {
+            return Results.Json(
+                new GitRepoListResponse { Repos = result.Repos },
+                GitJsonContext.Default.GitRepoListResponse);
+        }
+
+        return Results.Problem(result.Error, statusCode: result.StatusCode);
+    }
+
+    private static async Task<(string? RepoRoot, IResult? Error)> ResolveRepoAsync(
         string? sessionId,
         string? repoRoot,
         GitWatcherService gitWatcher,
-        TtyHostSessionManager sessionManager)
+        SessionGitMetadataService gitMetadata,
+        CancellationToken ct)
     {
         if (string.IsNullOrEmpty(sessionId))
         {
             return (null, Results.BadRequest("sessionId required"));
         }
 
-        var session = sessionManager.GetSession(sessionId);
-        if (session is null)
+        var metadata = await gitMetadata.GetAsync(sessionId, ct);
+        if (!metadata.IsSuccess)
         {
-            return (null, Results.NotFound("Session not found"));
+            return (null, ToResult(metadata));
         }
 
         var resolvedRepoRoot = gitWatcher.ResolveRepoRoot(sessionId, repoRoot);

@@ -7409,9 +7409,7 @@ body::before {
 }
 
 .session-launcher-providers {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  min-width: 0;
 }
 
 .session-launcher-targets {
@@ -7460,35 +7458,14 @@ body::before {
   word-break: break-word;
 }
 
-.session-launcher-provider {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-start;
-  min-height: 0;
-  padding: 14px 16px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--bg-dialog-muted) 92%, var(--bg-dialog));
-  color: var(--text-primary);
-  text-align: left;
-  cursor: pointer;
-  transition:
-    transform 0.16s ease,
-    border-color 0.16s ease,
-    background-color 0.16s ease,
-    box-shadow 0.16s ease;
-}
-
-.session-launcher-provider:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent-blue) 42%, var(--border-color));
-}
-
-.session-launcher-provider:disabled {
-  cursor: wait;
-  opacity: 0.6;
-  transform: none;
+.session-launcher-provider-control {
+  display: grid;
+  grid-template:
+    'label meta actions' auto
+    'select meta actions' auto /
+    minmax(180px, 0.75fr) minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  align-items: center;
 }
 
 .session-launcher-provider-heading {
@@ -7499,19 +7476,51 @@ body::before {
 }
 
 .session-launcher-provider-title {
-  font-size: var(--fs-xl);
+  font-size: var(--fs-base);
   font-weight: 700;
+}
+
+.session-launcher-provider-select {
+  grid-area: select;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 38px 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-dialog-muted) 82%, var(--bg-dialog));
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.session-launcher-provider-select:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent-blue) 52%, var(--border-color));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 22%, transparent);
+}
+
+.session-launcher-provider-meta {
+  grid-area: meta;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
 }
 
 .session-launcher-provider-description {
   color: var(--text-secondary);
+  font-size: var(--fs-sm);
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-launcher-provider-actions {
+  grid-area: actions;
   display: flex;
   gap: 10px;
-  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .session-launcher-provider-action {
@@ -7549,6 +7558,11 @@ body::before {
   flex-direction: column;
   gap: 10px;
   flex-shrink: 0;
+}
+
+.session-launcher-browser + .session-launcher-launch {
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
 }
 
 .session-launcher-launch-label {
@@ -7902,32 +7916,33 @@ body::before {
   }
 
   .session-launcher-providers {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
+    min-width: 0;
   }
 
   .session-launcher-targets {
     grid-template-columns: 1fr;
   }
 
-  .session-launcher-provider {
-    align-items: center;
-    justify-content: center;
+  .session-launcher-provider-control {
+    grid-template:
+      'label' auto
+      'select' auto
+      'meta' auto
+      'actions' auto /
+      minmax(0, 1fr);
     gap: 6px;
-    min-height: 52px;
-    padding: 10px 8px;
   }
 
-  .session-launcher-provider-heading {
-    justify-content: center;
+  .session-launcher-provider-meta {
+    min-height: 38px;
   }
 
-  .session-launcher-provider-title {
-    font-size: var(--fs-base);
+  .session-launcher-provider-actions {
+    justify-content: stretch;
   }
 
-  .session-launcher-provider-description {
-    display: none;
+  .session-launcher-provider-action {
+    flex: 1;
   }
 
   .space-dialog-modal {
@@ -15221,12 +15236,16 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-request-panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px 14px 12px;
+  gap: 10px;
+  padding: 13px 14px 12px;
   border: 1px solid var(--agent-appServerControl-machine-border);
-  border-radius: 12px;
-  background: var(--agent-appServerControl-machine-surface-strong);
-  box-shadow: none;
+  border-radius: 14px;
+  background: color-mix(
+    in srgb,
+    var(--agent-appServerControl-machine-surface-strong) 92%,
+    transparent
+  );
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--bg-primary) 45%, transparent);
 }
 
 .agent-request-actions-composer {
@@ -15238,7 +15257,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-request-panel-approval {
-  border-color: color-mix(in srgb, var(--warning-badge) 26%, var(--border-color));
+  border-color: color-mix(in srgb, var(--warning-badge) 32%, var(--border-color));
+  border-left-width: 3px;
+  background: color-mix(
+    in srgb,
+    var(--warning-badge) 4%,
+    var(--agent-appServerControl-machine-surface-strong)
+  );
 }
 
 .agent-request-panel-user-input {
@@ -15265,7 +15290,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-request-panel-header {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
 }
 
 .agent-request-panel-topline {
@@ -15276,17 +15301,32 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-request-eyebrow {
-  color: color-mix(in srgb, var(--text-secondary) 88%, transparent);
-  font-size: 0.67rem;
+  color: color-mix(in srgb, var(--warning-badge) 55%, var(--text-primary));
+  font-size: 0.68rem;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
+.agent-request-tool {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.35rem;
+  padding: 0 0.48rem;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 9%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  color: color-mix(in srgb, var(--text-secondary) 88%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+}
+
 .agent-request-summary {
+  margin: 0;
   color: var(--text-primary);
   font-size: 0.92rem;
   font-weight: 600;
+  line-height: 1.4;
 }
 
 .agent-request-progress,
@@ -15309,6 +15349,31 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
   font-size: 0.88rem;
   line-height: 1.45;
+}
+
+.agent-request-technical {
+  color: color-mix(in srgb, var(--text-secondary) 90%, transparent);
+  font-size: 0.78rem;
+}
+
+.agent-request-technical > summary {
+  width: fit-content;
+  cursor: pointer;
+  user-select: none;
+}
+
+.agent-request-technical > pre {
+  max-height: 11rem;
+  margin: 8px 0 0;
+  padding: 9px 10px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-primary) 80%, transparent);
+  color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
+  font: 0.72rem/1.45 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .agent-request-answer-list {
@@ -15537,6 +15602,26 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-request-button-row .agent-view-btn {
   flex: 1 1 150px;
+}
+
+.agent-request-panel-approval .agent-request-button-row {
+  justify-content: flex-end;
+}
+
+.agent-request-panel-approval .agent-request-button-row .agent-view-btn {
+  flex: 0 0 auto;
+  min-width: 104px;
+}
+
+.agent-request-panel-approval .agent-view-btn-primary {
+  border-color: color-mix(in srgb, var(--warning-badge) 32%, transparent);
+  background: color-mix(in srgb, var(--warning-badge) 14%, transparent);
+  color: var(--text-primary);
+}
+
+.agent-request-panel-approval .agent-view-btn-primary:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--warning-badge) 48%, transparent);
+  background: color-mix(in srgb, var(--warning-badge) 22%, transparent);
 }
 
 @media (max-width: 900px) {

@@ -12,3 +12,13 @@ https://github.com/swagger-api/swagger-ui
 
 swagger-ui
 Copyright 2020-2021 SmartBear Software Inc.
+
+
+================================================================================
+Claude Agent SDK
+https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk
+================================================================================
+
+Copyright Anthropic PBC. All rights reserved.
+Use is subject to Anthropic's legal agreements documented at
+https://code.claude.com/docs/en/legal-and-compliance.

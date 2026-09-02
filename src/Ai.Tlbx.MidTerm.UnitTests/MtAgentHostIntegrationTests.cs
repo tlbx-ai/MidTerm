@@ -54,6 +54,43 @@ public sealed class MtAgentHostIntegrationTests
             Assert.Equal("cmd-attach", attachResult.CommandId);
             Assert.Equal("accepted", attachResult.Status);
 
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-git-set",
+                SessionId = "session-1",
+                Type = "session.git-metadata.set",
+                GitMetadata = new AppServerControlHostGitMetadata
+                {
+                    Repos =
+                    [
+                        new TtyHostGitRepoMetadata
+                        {
+                            RepoRoot = @"Q:\repos\tlbx",
+                            Label = "tlbx",
+                            Role = "target",
+                            Source = "manual"
+                        }
+                    ]
+                }
+            });
+            var gitSetResult = await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput,
+                pendingPatches,
+                "cmd-git-set");
+            Assert.Equal(@"Q:\repos\tlbx", Assert.Single(gitSetResult.GitMetadata!.Repos).RepoRoot);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-git-get",
+                SessionId = "session-1",
+                Type = "session.git-metadata.get"
+            });
+            var gitGetResult = await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput,
+                pendingPatches,
+                "cmd-git-get");
+            Assert.Equal("tlbx", Assert.Single(gitGetResult.GitMetadata!.Repos).Label);
+
             _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingPatches,
@@ -172,7 +209,7 @@ public sealed class MtAgentHostIntegrationTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Equal("app-server-control-host-v2", hello.ProtocolVersion);
+            Assert.Equal("app-server-control-host-v3", hello.ProtocolVersion);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {

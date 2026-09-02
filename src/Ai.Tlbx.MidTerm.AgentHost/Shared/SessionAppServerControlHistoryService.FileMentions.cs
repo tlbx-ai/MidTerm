@@ -169,6 +169,7 @@ public sealed partial class SessionAppServerControlHistoryService
             ItemType = enriched.ItemType,
             Title = enriched.Title,
             CommandText = enriched.CommandText,
+            ToolPresentation = AppServerControlToolPresentationProtocol.Clone(enriched.ToolPresentation),
             Body = enriched.Body,
             Attachments = CloneAttachments(enriched.Attachments),
             FileMentions = CloneInlineFileReferences(enriched.FileMentions),

@@ -1003,13 +1003,11 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
 
                 _emit(CreateEvent("item.updated", ResolveTurnId(payload), ResolveItemId(payload), null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
-                    appServerControlEvent.Item = new AppServerControlProviderItemPayload
-                    {
-                        ItemType = "file_change",
-                        Status = "in_progress",
-                        Title = "File change updated",
-                        Detail = BuildCodexPatchUpdatedSummary(payload) ?? diff
-                    };
+                    appServerControlEvent.Item = BuildCodexToolItemPayload(
+                        "file_change",
+                        "in_progress",
+                        "File change updated",
+                        payload);
                 }));
                 break;
             }
@@ -1067,17 +1065,13 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             {
                 var processHandle = GetString(payload, "processHandle") ?? "process";
                 var exitCode = GetLong(payload, "exitCode");
-                var stdout = GetString(payload, "stdout");
-                var stderr = GetString(payload, "stderr");
                 _emit(CreateEvent("process.exited", ResolveTurnId(payload), processHandle, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
-                    appServerControlEvent.Item = new AppServerControlProviderItemPayload
-                    {
-                        ItemType = "command_execution",
-                        Status = exitCode is 0 or null ? "completed" : "failed",
-                        Title = exitCode is null ? "Process exited" : $"Process exited with code {exitCode.Value.ToString(CultureInfo.InvariantCulture)}",
-                        Detail = JoinNonEmpty(stdout, stderr, BuildCompactJsonDetail(payload))
-                    };
+                    appServerControlEvent.Item = BuildCodexToolItemPayload(
+                        "command_execution",
+                        exitCode is 0 or null ? "completed" : "failed",
+                        exitCode is null ? "Process exited" : $"Process exited with code {exitCode.Value.ToString(CultureInfo.InvariantCulture)}",
+                        payload);
                 }));
                 break;
             }
@@ -1105,13 +1099,11 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                 var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
                 _emit(CreateEvent("item.started", turnId, itemId, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
-                    appServerControlEvent.Item = new AppServerControlProviderItemPayload
-                    {
-                        ItemType = itemType,
-                        Status = "in_progress",
-                        Title = $"{PrettifyToolKind(itemType)} started",
-                        Detail = BuildCodexItemDetail(payload)
-                    };
+                    appServerControlEvent.Item = BuildCodexToolItemPayload(
+                        itemType,
+                        "in_progress",
+                        $"{PrettifyToolKind(itemType)} started",
+                        payload);
                 }));
                 break;
             }
@@ -1129,15 +1121,14 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                     : BuildCodexItemDetail(payload);
                 _emit(CreateEvent("item.updated", turnId, itemId, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
-                    appServerControlEvent.Item = new AppServerControlProviderItemPayload
-                    {
-                        ItemType = itemType,
-                        Status = "in_progress",
-                        Title = method == "item/commandExecution/terminalInteraction"
+                    appServerControlEvent.Item = BuildCodexToolItemPayload(
+                        itemType,
+                        "in_progress",
+                        method == "item/commandExecution/terminalInteraction"
                             ? "Command running"
                             : PrettifyToolKind(itemType),
-                        Detail = detail
-                    };
+                        payload,
+                        detail);
                 }));
                 break;
             }
@@ -1164,13 +1155,12 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                 var detail = GetString(payload, "summary") ?? BuildCodexItemDetail(payload);
                 _emit(CreateEvent("item.updated", turnId, itemId, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
-                    appServerControlEvent.Item = new AppServerControlProviderItemPayload
-                    {
-                        ItemType = itemType,
-                        Status = "in_progress",
-                        Title = title,
-                        Detail = detail
-                    };
+                    appServerControlEvent.Item = BuildCodexToolItemPayload(
+                        itemType,
+                        "in_progress",
+                        title,
+                        payload,
+                        detail);
                 }));
                 break;
             }
@@ -1326,13 +1316,15 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                     : $"{PrettifyToolKind(itemType)} completed";
                 _emit(CreateEvent("item.completed", turnId, itemId, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
-                    appServerControlEvent.Item = new AppServerControlProviderItemPayload
-                    {
-                        ItemType = itemType is "agent_message" ? "assistant_message" : itemType,
-                        Status = "completed",
-                        Title = title,
-                        Detail = BuildCodexItemDetail(payload)
-                    };
+                    appServerControlEvent.Item = itemType is "assistant_message" or "agent_message"
+                        ? new AppServerControlProviderItemPayload
+                        {
+                            ItemType = "assistant_message",
+                            Status = "completed",
+                            Title = title,
+                            Detail = BuildCodexItemDetail(payload)
+                        }
+                        : BuildCodexToolItemPayload(itemType, "completed", title, payload);
                 }));
                 break;
             }
@@ -1822,7 +1814,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             {
                 Source = rawSource,
                 Method = rawMethod,
-                PayloadJson = payload.ValueKind == JsonValueKind.Undefined ? null : payload.GetRawText()
+                PayloadOmitted = payload.ValueKind != JsonValueKind.Undefined
             }
         };
 
@@ -2927,27 +2919,11 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
         string? method,
         object? payload)
     {
-        var rawPayload = SerializeQuickSettingsRawPayload(payload);
-        return CreateEvent("quick-settings.updated", null, null, null, source, method, rawPayload, appServerControlEvent =>
+        return CreateEvent("quick-settings.updated", null, null, null, source, method, default, appServerControlEvent =>
         {
             appServerControlEvent.QuickSettingsUpdated = AppServerControlQuickSettings.ToPayload(quickSettings);
+            appServerControlEvent.Raw!.PayloadOmitted = payload is not null;
         });
-    }
-
-    private static JsonElement SerializeQuickSettingsRawPayload(object? payload)
-    {
-        return payload switch
-        {
-            null => default,
-            JsonElement element => element,
-            AppServerControlAttachRuntimeRequest attach => JsonSerializer.SerializeToElement(
-                attach,
-                AppServerControlHostJsonContext.Default.AppServerControlAttachRuntimeRequest),
-            AppServerControlTurnRequest request => JsonSerializer.SerializeToElement(
-                request,
-                AppServerControlHostJsonContext.Default.AppServerControlTurnRequest),
-            _ => default
-        };
     }
 
     private static string ResolveCodexApprovalPolicy(string permissionMode)
@@ -3317,33 +3293,6 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
         return false;
     }
 
-    private static string? BuildCodexPatchUpdatedSummary(JsonElement payload)
-    {
-        if (payload.ValueKind != JsonValueKind.Object ||
-            !payload.TryGetProperty("changes", out var changes) ||
-            changes.ValueKind != JsonValueKind.Array)
-        {
-            return null;
-        }
-
-        var parts = new List<string>();
-        using var changeItems = changes.EnumerateArray();
-        while (changeItems.MoveNext())
-        {
-            var change = changeItems.Current;
-            var path = GetString(change, "path");
-            var kind = GetString(change, "kind");
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                continue;
-            }
-
-            parts.Add(string.IsNullOrWhiteSpace(kind) ? path.Trim() : $"{kind.Trim()}: {path.Trim()}");
-        }
-
-        return parts.Count == 0 ? null : string.Join("\n", parts);
-    }
-
     private static string BuildCodexPatchUpdatedDiff(JsonElement payload)
     {
         if (payload.ValueKind != JsonValueKind.Object ||
@@ -3379,6 +3328,35 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                ?? GetString(item, "summary")
                ?? GetString(item, "kind")
                ?? string.Empty;
+    }
+
+    private static AppServerControlProviderItemPayload BuildCodexToolItemPayload(
+        string itemType,
+        string status,
+        string? title,
+        JsonElement payload,
+        string? subjectFallback = null)
+    {
+        var presentation = AppServerControlToolPresentationProjector.FromCodex(
+            itemType,
+            status,
+            title,
+            payload);
+        if (string.IsNullOrWhiteSpace(presentation.Subject) && !string.IsNullOrWhiteSpace(subjectFallback))
+        {
+            presentation.Subject = subjectFallback.Length <= 2_048
+                ? subjectFallback
+                : string.Concat(subjectFallback.AsSpan(0, 2_047), "…");
+        }
+
+        return new AppServerControlProviderItemPayload
+        {
+            ItemType = itemType,
+            Status = status,
+            Title = presentation.Label,
+            Detail = presentation.Subject,
+            ToolPresentation = presentation
+        };
     }
 
     private static string? ReadCodexContentText(JsonElement item)

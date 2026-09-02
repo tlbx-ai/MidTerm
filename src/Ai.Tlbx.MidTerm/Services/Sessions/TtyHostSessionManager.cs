@@ -37,6 +37,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly SettingsService? _settingsService;
     private readonly ConcurrentDictionary<string, TerminalTransportRuntimeState> _transportState = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _resizeGates = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _metadataGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, TerminalDimensions> _redrawDimensionOverrides = new(StringComparer.Ordinal);
     private string? _runAsUser;
     private string? _runAsUserSid;
@@ -761,31 +762,38 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
     }
 
-    private async Task PersistHostMetadataAsync(string sessionId)
+    private async Task<bool> PersistHostMetadataAsync(string sessionId, CancellationToken ct = default)
     {
         if (!_clients.TryGetValue(sessionId, out var client))
         {
-            return;
+            return false;
         }
 
-        if (!_sessionCache.TryGetValue(sessionId, out var info))
-        {
-            return;
-        }
-
+        var gate = _metadataGates.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            if (!_sessionCache.TryGetValue(sessionId, out var info))
+            {
+                return false;
+            }
+
             var metadata = new TtyHostSessionMetadata
             {
                 Topic = _registry.SessionTopics.TryGetValue(sessionId, out var topic) ? topic : null,
                 ExtraGitRepos = info.ExtraGitRepos
             };
 
-            await client.SetMetadataAsync(metadata).ConfigureAwait(false);
+            return await client.SetMetadataAsync(metadata, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             Log.Verbose(() => $"TtyHostSessionManager: Failed to persist host metadata for {sessionId}: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            gate.Release();
         }
     }
 
@@ -883,6 +891,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         _ownershipRegistry.Remove(sessionId);
         _transportState.TryRemove(sessionId, out _);
         _redrawDimensionOverrides.TryRemove(sessionId, out _);
+        _metadataGates.TryRemove(sessionId, out _);
 
         await client.CloseAsync(ct).ConfigureAwait(false);
         await client.DisposeAsync().ConfigureAwait(false);
@@ -1150,15 +1159,19 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return updated;
     }
 
-    public bool SetSessionExtraGitReposMetadata(string sessionId, IEnumerable<GitRepoBinding> repos)
+    public async Task<bool> SetSessionExtraGitReposMetadataAsync(
+        string sessionId,
+        IEnumerable<TtyHostGitRepoMetadata> repos,
+        CancellationToken ct = default)
     {
         if (!_sessionCache.TryGetValue(sessionId, out var info))
         {
             return false;
         }
 
+        var previous = info.ExtraGitRepos;
         info.ExtraGitRepos = repos
-            .Where(static repo => !repo.IsPrimary && !string.IsNullOrWhiteSpace(repo.RepoRoot))
+            .Where(static repo => !string.IsNullOrWhiteSpace(repo.RepoRoot))
             .Select(static repo => new TtyHostGitRepoMetadata
             {
                 RepoRoot = repo.RepoRoot,
@@ -1168,8 +1181,21 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             })
             .ToArray();
 
-        _ = PersistHostMetadataAsync(sessionId);
-        return true;
+        if (await PersistHostMetadataAsync(sessionId, ct).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        info.ExtraGitRepos = previous;
+        return false;
+    }
+
+    public async Task<TtyHostGitRepoMetadata[]?> GetSessionExtraGitReposMetadataAsync(
+        string sessionId,
+        CancellationToken ct = default)
+    {
+        var info = await GetSessionFreshAsync(sessionId, ct).ConfigureAwait(false);
+        return info?.ExtraGitRepos;
     }
 
     public TtyHostGitRepoMetadata[] GetPersistedSessionExtraGitRepos(string sessionId)
@@ -1702,6 +1728,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         _registry.ClearAll();
         _resizeGates.Clear();
+        _metadataGates.Clear();
         _redrawDimensionOverrides.Clear();
     }
 

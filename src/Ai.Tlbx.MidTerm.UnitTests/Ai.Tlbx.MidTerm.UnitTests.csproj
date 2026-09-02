@@ -23,6 +23,8 @@
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.TtyHost\Ai.Tlbx.MidTerm.TtyHost.csproj" />
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.AgentHost\Ai.Tlbx.MidTerm.AgentHost.csproj"
                       ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Ai.Tlbx.MidTerm.FakeClaude\Ai.Tlbx.MidTerm.FakeClaude.csproj"
+                      ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.FakeCodex\Ai.Tlbx.MidTerm.FakeCodex.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
@@ -30,9 +32,12 @@
     <Compile Remove="AppServerControlHostProtocolTests.cs" />
     <Compile Remove="AppServerControlHostTestClient.cs" />
     <Compile Remove="MtAgentHostCodexIntegrationTests.cs" />
+    <Compile Remove="MtAgentHostClaudeIntegrationTests.cs" />
     <Compile Remove="MtAgentHostGrokIntegrationTests.cs" />
     <Compile Remove="MtAgentHostIntegrationTests.cs" />
     <Compile Remove="MtAgentHostRealCodexSmokeTests.cs" />
+    <Compile Remove="MtAgentHostRealClaudeSmokeTests.cs" />
+    <Compile Remove="MtAgentHostRealAcpSmokeTests.cs" />
     <Compile Remove="MtAgentHostRealResumeCatalogSmokeTests.cs" />
     <Compile Remove="SessionAppServerControlHistoryServiceTests.cs" />
   </ItemGroup>

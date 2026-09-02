@@ -25,6 +25,7 @@ import {
   setSessionBytesCallback,
   setSuppressHeatCallback,
   reportBrowserActivity,
+  getBrowserTransportSnapshot,
 } from './modules/comms';
 import { connectInitialSessionTransports } from './modules/comms/initialMuxConnection';
 import { initBadges } from './modules/badges';
@@ -270,6 +271,9 @@ window.mmDebug = {
   },
   get settings() {
     return $currentSettings.get();
+  },
+  transport(sessionId: string) {
+    return getBrowserTransportSnapshot(sessionId);
   },
   perf: createMidtermPerfDebugApi(),
   layout: {

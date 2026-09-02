@@ -193,6 +193,8 @@ public static class ServerSetup
         builder.Services.AddSingleton<SpaceService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();
         builder.Services.AddSingleton<GitWatcherService>();
+        builder.Services.AddSingleton<SessionGitMetadataService>();
+        builder.Services.AddSingleton<SessionCloseCleanupService>();
         builder.Services.AddSingleton<CommandService>();
         builder.Services.AddSingleton<ShutdownService>();
         builder.Services.AddSingleton<HubService>();

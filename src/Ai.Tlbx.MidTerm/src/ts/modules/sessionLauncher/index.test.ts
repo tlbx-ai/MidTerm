@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HubMachineState } from '../hub/types';
 import type { HubSessionLauncherTarget } from './index';
 
 describe('session launcher target selection', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('includes local plus launchable remote machines', async () => {
     const { buildSessionLauncherTargets } = await import('./index');
 
@@ -80,6 +84,13 @@ describe('session launcher target selection', () => {
         supportsResume: true,
       },
       {
+        profile: 'claude',
+        name: 'Claude Code',
+        protocol: 'Claude Agent SDK',
+        command: 'claude + node',
+        supportsResume: true,
+      },
+      {
         profile: 'grok',
         name: 'Grok Build',
         protocol: 'ACP v1',
@@ -97,10 +108,15 @@ describe('session launcher target selection', () => {
     expect(providers.map((provider) => provider.provider)).toEqual([
       'terminal',
       'codex',
+      'claude',
       'grok',
       'opencode',
     ]);
-    expect(providers.some((provider) => provider.provider === 'claude')).toBe(false);
+    expect(providers.find((provider) => provider.provider === 'claude')).toMatchObject({
+      title: 'Claude Code',
+      description: 'Claude Agent SDK · claude + node',
+      supportsResume: true,
+    });
     expect(providers.find((provider) => provider.provider === 'grok')).toMatchObject({
       title: 'Grok Build',
       launchLabel: 'Grok Build',
@@ -119,5 +135,19 @@ describe('session launcher target selection', () => {
     expect(hasMatchingMajorMinorVersion('9.1.23-dev', '9.2.0')).toBe(false);
     expect(hasMatchingMajorMinorVersion('9.1.23-dev', '10.1.0')).toBe(false);
     expect(hasMatchingMajorMinorVersion('9.1.23-dev', null)).toBe(true);
+  });
+
+  it('remembers the last selected provider for the next launcher', async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    });
+    const { getRememberedSessionLauncherProvider, rememberSessionLauncherProvider } =
+      await import('./index');
+
+    expect(getRememberedSessionLauncherProvider()).toBeNull();
+    rememberSessionLauncherProvider('claude');
+    expect(getRememberedSessionLauncherProvider()).toBe('claude');
   });
 });

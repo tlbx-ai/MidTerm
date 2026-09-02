@@ -27,13 +27,34 @@ public sealed class SessionUpdateStateServiceTests
     }
 
     [Theory]
+    [InlineData("To continue this session, run codex resume, then select Analyse logs (019ff5ac-a7ab-7c23-8341-e3cc38782efa)")]
+    [InlineData("To resume this session, run codex resume, then select Analyse logs (019ff5ac-a7ab-7c23-8341-e3cc38782efa)")]
+    [InlineData("To continue this session, run codex resume, then select Analyse\r\nlogs (019ff5ac-a7ab-7c23-8341-e3cc38782efa)")]
+    [InlineData("To continue this session, run codex resume 019ff5ac-a7ab-7c23-8341-e3cc38782efa trailing upstream text")]
+    public void TryExtractCodexExitResumeId_AcceptsSemanticUpstreamVariants(string output)
+    {
+        Assert.Equal(
+            "019ff5ac-a7ab-7c23-8341-e3cc38782efa",
+            SessionUpdateStateService.TryExtractCodexExitResumeId(output));
+    }
+
+    [Theory]
     [InlineData("codex --yolo resume capture")]
     [InlineData("Release title: Codex resume capture")]
     [InlineData("To continue this session, run codex resume capture")]
-    [InlineData("To continue this session, run codex resume 019ff5ac-a7ab-7c23-8341-e3cc38782efa trailing")]
+    [InlineData("To continue this session, run codex resume, then select ambiguous (019ff5ac-a7ab-7c23-8341-e3cc38782efa) or (029ff5ac-a7ab-7c23-8341-e3cc38782efa)")]
     public void TryExtractCodexExitResumeId_RejectsRenderedTextAndInvalidIds(string output)
     {
         Assert.Null(SessionUpdateStateService.TryExtractCodexExitResumeId(output));
+    }
+
+    [Fact]
+    public void BuildCodexInteractiveResumeCommand_PreservesSafetyFlagsAndOpensSessionPicker()
+    {
+        var command = SessionUpdateStateService.BuildCodexInteractiveResumeCommand(
+            "codex --yolo --model gpt-5.6-sol app-server --listen ws://127.0.0.1");
+
+        Assert.Equal("codex --yolo --model gpt-5.6-sol resume", command);
     }
 
     [Theory]

@@ -16,6 +16,8 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
     private readonly TtyHostSessionManager _historySessions = new();
     private readonly SessionAppServerControlHistoryService _history;
     private readonly Lock _clientLock = new();
+    private readonly Lock _gitMetadataLock = new();
+    private TtyHostGitRepoMetadata[] _gitRepos = [];
     private ConnectionState? _currentClient;
     private IAppServerControlAgentRuntime? _runtime;
     private readonly List<Task> _connectionTasks = [];
@@ -260,6 +262,22 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             };
         }
 
+        if (string.Equals(command.Type, "session.git-metadata.get", StringComparison.Ordinal))
+        {
+            return AcceptedGitMetadata(command, GetGitRepos());
+        }
+
+        if (string.Equals(command.Type, "session.git-metadata.set", StringComparison.Ordinal))
+        {
+            var repos = command.GitMetadata?.Repos
+                ?? throw new InvalidOperationException("Git metadata payload is required.");
+            lock (_gitMetadataLock)
+            {
+                _gitRepos = CloneGitRepos(repos);
+            }
+            return AcceptedGitMetadata(command, GetGitRepos());
+        }
+
         if (command.AttachRuntime is not null)
         {
             _historySessions.SetWorkingDirectory(command.SessionId, command.AttachRuntime.WorkingDirectory);
@@ -367,7 +385,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 HostKind = "mtagenthost",
                 HostVersion = "dev",
                 Providers = _syntheticProvider is null
-                    ? ["codex", "acp-v1"]
+                    ? ["codex", "claude-agent-sdk", "acp-v1"]
                     : [_syntheticProvider],
                 Capabilities =
                 [
@@ -380,10 +398,50 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                     "request.resolve",
                     "user-input.resolve",
                     "history.window.get",
+                    "session.git-metadata.get",
+                    "session.git-metadata.set",
                     "history.patch"
                 ]
             },
             AppServerControlHostJsonContext.Default.AppServerControlHostHello).ConfigureAwait(false);
+    }
+
+    private TtyHostGitRepoMetadata[] GetGitRepos()
+    {
+        lock (_gitMetadataLock)
+        {
+            return CloneGitRepos(_gitRepos);
+        }
+    }
+
+    private static HostCommandOutcome AcceptedGitMetadata(
+        AppServerControlHostCommandEnvelope command,
+        IEnumerable<TtyHostGitRepoMetadata> repos)
+    {
+        return new HostCommandOutcome
+        {
+            Result = new AppServerControlHostCommandResultEnvelope
+            {
+                CommandId = command.CommandId,
+                SessionId = command.SessionId,
+                Status = "accepted",
+                GitMetadata = new AppServerControlHostGitMetadata { Repos = CloneGitRepos(repos).ToList() }
+            }
+        };
+    }
+
+    private static TtyHostGitRepoMetadata[] CloneGitRepos(IEnumerable<TtyHostGitRepoMetadata> repos)
+    {
+        return repos
+            .Where(static repo => !string.IsNullOrWhiteSpace(repo.RepoRoot))
+            .Select(static repo => new TtyHostGitRepoMetadata
+            {
+                RepoRoot = repo.RepoRoot,
+                Label = repo.Label,
+                Role = repo.Role,
+                Source = repo.Source
+            })
+            .ToArray();
     }
 
     private async Task EnqueueRejectedAsync(ConnectionState connection, AppServerControlHostCommandEnvelope command, string message)
@@ -422,6 +480,13 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         if (string.Equals(provider, "codex", StringComparison.Ordinal))
         {
             _runtime = new CodexAppServerControlAgentRuntime(EmitRuntimeEvent);
+            return _runtime;
+        }
+
+        if (string.Equals(provider, "claude", StringComparison.Ordinal) &&
+            string.Equals(command.AttachRuntime?.RuntimeKind, "claude-agent-sdk", StringComparison.Ordinal))
+        {
+            _runtime = new ClaudeAppServerControlAgentRuntime(EmitRuntimeEvent);
             return _runtime;
         }
 
@@ -523,7 +588,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 Source = appServerControlEvent.Raw.Source,
                 Method = appServerControlEvent.Raw.Method,
-                PayloadJson = appServerControlEvent.Raw.PayloadJson
+                PayloadOmitted = appServerControlEvent.Raw.PayloadOmitted
             },
             SessionState = appServerControlEvent.SessionState is null ? null : new AppServerControlProviderSessionStatePayload
             {
@@ -572,6 +637,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 Status = appServerControlEvent.Item.Status,
                 Title = appServerControlEvent.Item.Title,
                 Detail = appServerControlEvent.Item.Detail,
+                ToolPresentation = AppServerControlToolPresentationProtocol.Clone(appServerControlEvent.Item.ToolPresentation),
                 Attachments = CloneAttachments(appServerControlEvent.Item.Attachments)
             },
             QuickSettingsUpdated = appServerControlEvent.QuickSettingsUpdated is null ? null : new AppServerControlQuickSettingsPayload
@@ -753,10 +819,5 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
     }
 }
-
-
-
-
-
 
 

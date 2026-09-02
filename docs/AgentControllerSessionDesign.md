@@ -4,7 +4,7 @@
 
 This document is the source of truth for the visual and interaction design of tlbx Agent Controller Session. It exists to prevent Agent Controller Session UI behavior from drifting across ad hoc iterations.
 
-Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The new-session launcher discovers locally installed supported runtimes and recognizes Codex app-server plus standard ACP-v1 agents. The built-in ACP catalog covers Grok Build, OpenCode, Gemini CLI, and GitHub Copilot CLI; installations can add or override definitions through the server-owned `acp-agents.json` manifest without adding provider branches to `mtagenthost` or the frontend. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
+Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The new-session launcher discovers locally installed supported runtimes and recognizes Codex app-server, Claude Code through the official Claude Agent SDK, plus standard ACP-v1 agents. The built-in ACP catalog covers Grok Build, OpenCode, Gemini CLI, and GitHub Copilot CLI; installations can add or override definitions through the server-owned `acp-agents.json` manifest without adding provider branches to `mtagenthost` or the frontend. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
 
 Any future Agent Controller Session UI change that affects layout, hierarchy, history ordering, timeline rendering, typography, spacing, scrolling, item rendering, or interaction states must update this document with the new fundamental rule or revised rationale.
 
@@ -63,7 +63,7 @@ New Agent Controller Session work must use the following concept names consisten
 
 - use `Agent Controller` for software that speaks a supported structured agent protocol and provides an agent-control UI
 - use `Agent Controller Session` for one live controlled provider conversation
-- use `provider protocol` for the runtime boundary; currently Codex app-server or Agent Client Protocol (ACP) v1 over stdio
+- use `provider protocol` for the runtime boundary; currently Codex app-server, Claude Agent SDK, or Agent Client Protocol (ACP) v1 over stdio
 - use `ACP client runtime` for tlbx's standards-based client implementation that drives registered ACP agents without provider-specific stream parsing
 - use `Agent Controller Runtime` for the backend-owned provider runtime that drives an Agent Controller Session
 - use `history` for the canonical ordered Agent Controller Session item sequence
@@ -304,6 +304,7 @@ The canonical history contract must satisfy the following:
 - Giant command outputs, giant file bodies, repetitive progress chatter, and transport-level event spam should be summarized, windowed, or suppressed before they reach canonical history.
 - Agent Controller Session should make it obvious when content is intentionally windowed or summarized by using stable omitted-line markers, bounded previews, or disclosure affordances.
 - Raw provider inputs are transient reducer inputs, not retained Agent Controller Session history.
+- Retained raw-event metadata is limited to provider source, method, and an explicit marker that a payload was deliberately omitted; raw payload text must not be serialized into the event backlog.
 - If content is not meant to be shown later, or needed to determine what is shown later, it should be dropped instead of preserved in a hidden Agent Controller Session data layer.
 
 ### Canonical History Shape
@@ -336,6 +337,8 @@ The canonical history contract must satisfy the following:
 - If a user row for an older turn materializes late, the backend must still promote that user row to the start of its turn instead of leaving it below newer rows that happened to be created first.
 - A streaming assistant response should update its existing row in place.
 - Tool updates should attach to the owning turn and item instead of spawning visually disjoint duplicates.
+- Provider adapters must project tool activity into the canonical `ToolPresentation` shape before history reduction: category, label, tool name, subject, outcome, evidence kind, bounded evidence, counts, exit code, and bounded paths.
+- The browser renders that canonical shape and must not infer tool semantics by parsing provider prose or command-output text.
 
 ### Shared row anatomy
 
@@ -403,17 +406,19 @@ The canonical history contract must satisfy the following:
 - Runtime/system notices should strip raw ANSI/control bytes and de-duplicate repeated message/detail fragments before they render in Agent Controller Session history.
 - Provider startup/runtime state notices that tlbx understands, such as Codex MCP server startup-status updates, should map into quiet canonical `Agent State` system rows instead of falling through as unknown-agent tool rows.
 - Provider CLI/runtime error blocks that arrive outside the normal assistant stream, including multi-line stderr startup failures and deprecation errors, should map into canonical `Agent Error` notice rows with stronger red emphasis than ordinary system rows.
-- When a provider emits an unknown structured event, tlbx should preserve it as a canonical diagnostic history item instead of silently dropping it.
-- Those fallback unknown-agent rows may render raw provider method/payload detail, but they must remain clearly marked as unknown tlbx fallback output rather than pretending to be a first-class mapped concept.
+- When a provider emits an unknown structured event, tlbx should preserve bounded source/method diagnostics as a canonical history item instead of silently dropping it; the raw payload remains transient and omitted.
+- Those fallback unknown-agent rows must remain clearly marked as unknown tlbx fallback output rather than pretending to be a first-class mapped concept.
 - Agent Controller Session should expose a user setting to hide or show those unknown-agent fallback rows, and the default should favor showing them so new provider capabilities are inspectable before tlbx ships a dedicated mapping.
 - Long machine-oriented bodies such as command output, file-change output, reasoning blocks, and similar tool-style details should collapse into unfoldable disclosure panels by default once they are stable.
 - Collapsed tool-style panels should expose a short preview plus line-count context so the user can scan relevance before expanding.
 - Tool commands, command output, file paths, and other machine-oriented detail should use the configured terminal monospace stack.
 - Command/file-read noise should be summarized for screen use instead of dumping full raw terminal-like output into Agent Controller Session history.
 - File-read commands should surface the path and a compact excerpt policy, not the full file body.
-- Generic command output should prefer compact head/tail or tail-oriented summaries with omitted-line markers over unbounded dumps.
+- Generic command output should use a deterministic bounded window: at most four head lines and six tail lines, with each retained line capped at 512 characters and an omitted-line marker when necessary.
+- ANSI CSI/OSC sequences and control bytes must be removed while streaming into the bounded accumulator so split escape sequences cannot leak into history and no full-output copy is required.
+- Completed tool accumulator state must be released immediately after the canonical history item is settled; session lifetime must not retain per-tool builders or full provider results.
 - Command-execution rows should render in a console-like `Ran …` form with lightweight syntax coloring: command name, flags/parameters, quoted strings, and shell operators should be visually distinct without turning the row into a card.
-- When command output is available immediately after a command-execution row, Agent Controller Session should fold up to 12 tail lines beneath that same `Ran …` line in muted terminal monospace instead of rendering a second noisy standalone output row.
+- When command output is available immediately after a command-execution row, Agent Controller Session should fold the already bounded canonical evidence beneath that same `Ran …` line in muted terminal monospace instead of rendering a second noisy standalone output row.
 - Once command output has been folded into a command-execution row, that compact tail must remain attached to that historical command even after later commands and outputs arrive in the same turn.
 - Folded command-output tails should remain raw terminal text. Do not apply assistant-style semantic enrichment, clickable file-path decoration, or inline image previews inside those noisy tail lines.
 - When the backend already materializes a command-output history row that contains both the command header and compact output window, Agent Controller Session should normalize that row directly into the same persistent `Ran …` presentation instead of depending on adjacency with a separate command-execution row.
@@ -431,6 +436,8 @@ The canonical history contract must satisfy the following:
 - They should read like the next required interaction, not like another log entry.
 - The composer and action affordances should align with that state.
 - Request and approval rows should remain inline in the chronological timeline instead of escaping into detached chrome.
+- Approval prompts should lead with a short human-readable action description and the responsible tool. Raw provider input and exact command text belong behind an explicit technical-details disclosure, never in the default prompt body.
+- A successful approval response means the provider's waiting permission callback has acknowledged the decision. Writing a decision to an intermediate process is not sufficient to resolve the canonical request.
 - Canonical `interview` items should render as a dedicated question-and-answer widget rather than being flattened into ordinary assistant markdown.
 
 ### Diffs and file changes
@@ -581,10 +588,13 @@ Status in this branch/work item:
 - implemented: hidden/background Agent Controller Sessions may continue ingesting runtime state, but history DOM work is deferred until that Agent Controller Session surface is visible again
 - implemented: hidden/background Agent Controller Sessions clear rendered history DOM and compact retained browser-side history back to a bounded latest window without interrupting the live runtime
 - implemented: Agent Controller Session history is treated as a bounded browser-side view window over tlbx-owned canonical history rather than as an unbounded full-history browser cache
-- implemented: Codex app-server and the generic ACP client runtime route through `mtagenthost` as the single structured runtime boundary; `SessionAppServerControlRuntimeService` no longer falls back to a second in-process Codex runtime when host attach fails
-- implemented: the unsupported, unmaintained Claude stream-json adapter and its invented XML user-input bridge have been removed; Claude Code remains a normal terminal-native CLI instead of being advertised as an Agent Controller runtime
+- implemented: Codex app-server, the official Claude Agent SDK bridge, and the generic ACP client runtime route through `mtagenthost` as the single structured runtime boundary; `SessionAppServerControlRuntimeService` no longer falls back to a second in-process provider runtime when host attach fails
+- implemented: Claude Code uses the official Claude Agent SDK instead of the removed stream-json/XML adapter, including partial text, multi-turn state, permissions, resume, and GIF/JPEG/PNG/WebP image content blocks
+- implemented: Claude approval and interview decisions remain pending until the Agent SDK bridge acknowledges resolution of the exact waiting callback; bridge rejection is returned as a failed command instead of falsely resolving the canonical request
+- implemented: approval prompts use compact localized action copy and a tool label, keep provider JSON and exact command text collapsed under technical details, and present concise decline/allow actions
 - implemented: the ACP client performs the standard `initialize` and `session/new` flow, consumes canonical `session/update` notifications, handles permission requests and cancellation, and prefers `session/set_config_option` while retaining protocol-level legacy mode/model fallbacks
-- implemented: the new-session launcher queries locally installed Agent Controller runtimes and offers only detected Codex app-server and registered ACP agents; the selected ACP profile is preserved by bookmarks and relaunch
+- implemented: when an ACP agent advertises `promptCapabilities.image`, GIF/JPEG/PNG/WebP and other declared image MIME attachments are sent as bounded ACP `image` content blocks; agents without that capability retain the explicit local-path text fallback
+- implemented: the new-session launcher queries locally installed Agent Controller runtimes and offers detected Codex app-server, Claude Agent SDK, and registered ACP agents; the selected provider profile is preserved by bookmarks and relaunch
 - implemented: Agent Controller Session retains canonical user-facing history rather than a hidden durable raw-event archive
 - implemented: tlbx-side Agent Controller Session persistence now writes canonical reduced session state instead of appending provider-shaped event logs, while transient live event backlog stays bounded in memory only
 - implemented: mouseup inside the Agent Controller Session surface no longer routes through terminal focus reclaim, so drag text selection in Agent Controller Session remains intact after the mouse button is released
@@ -594,9 +604,11 @@ Status in this branch/work item:
 - implemented: tool-style titles and bodies use the configured terminal monospace stack consistently
 - implemented: dev mode writes one GUID-named per-session Agent Controller Session screen log derived from canonical history deltas and render hints
 - implemented: Agent Controller Session uses one artificial trailing busy bubble while a turn is active instead of leaving per-row activity indicators running inside history entries
-- implemented: command and file-read tool output is screen-summarized before it reaches both the Agent Controller Session UI and the dev screen log
+- implemented: Codex, Claude, and ACP adapters project tools into one bounded canonical `ToolPresentation`; history, screen logs, recovery, and the browser consume that shape without reparsing provider prose
+- implemented: command and file-read tool output is streamed through a four-head/six-tail accumulator with 512-character line bounds, omitted-line counts, and split-safe ANSI/control filtering before it reaches canonical history or the dev screen log
 - implemented: command-execution tool rows now render as console-like `Ran …` lines with lightweight syntax highlighting and the configured terminal monospace stack
-- implemented: immediate command output is folded into the command row as a muted up-to-12-line tail instead of always rendering as a separate noisy row
+- implemented: immediate command output is folded into the command row from bounded canonical evidence instead of always rendering as a separate noisy row
+- implemented: raw payload strings are no longer retained in provider events; only source/method metadata and an explicit payload-omitted marker survive reduction, and completed per-tool accumulator state is released
 - implemented: folded command-output tails now stay raw terminal text without assistant-style file-path linkification or inline image previews
 - implemented: provisional command-output rows now reconcile onto their canonical command/tool identity so folded `Ran …` tails remain attached after later item completion or later commands in the same turn
 - implemented: command-output history rows now carry canonical command text separately from the truncated output body, so omission markers cannot be mis-promoted into fake `Ran ...` commands and compact tails keep their line structure

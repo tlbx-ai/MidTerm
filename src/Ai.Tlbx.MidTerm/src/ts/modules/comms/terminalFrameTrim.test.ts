@@ -18,9 +18,19 @@ describe('terminalFrameTrim', () => {
     expect(new TextDecoder().decode(trimFrameToUnseenSuffix(data, 13n, 10n))).toBe('cde');
   });
 
-  it('keeps a frame intact when trimming would split terminal parser state', () => {
+  it('continues an ANSI sequence at the exact xterm parser cursor', () => {
     const data = new Uint8Array([0x1b, 0x5b, 0x33, 0x31, 0x6d, 0x78]);
 
-    expect(trimFrameToUnseenSuffix(data, 16n, 12n)).toEqual(data);
+    expect(trimFrameToUnseenSuffix(data, 16n, 12n)).toEqual(
+      new Uint8Array([0x33, 0x31, 0x6d, 0x78]),
+    );
+  });
+
+  it('does not duplicate printable bytes before an overlapping ANSI sequence', () => {
+    const data = new Uint8Array([0x41, 0x42, 0x1b, 0x5b, 0x33, 0x31, 0x6d, 0x58]);
+
+    expect(trimFrameToUnseenSuffix(data, 18n, 14n)).toEqual(
+      new Uint8Array([0x33, 0x31, 0x6d, 0x58]),
+    );
   });
 });

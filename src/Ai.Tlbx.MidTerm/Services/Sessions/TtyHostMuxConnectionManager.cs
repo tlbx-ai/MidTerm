@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.WebSockets;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
@@ -74,10 +75,20 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
     private const int MaxInputLatencyTraces = 256;
     private const long InputLatencyTraceTimeoutMs = 10_000;
     private const int MaxQueuedOutputs = 1000;
+    private const int MaxQueuedOutputBytes = 8 * 1024 * 1024;
+    private const int MaxCoalescedOutputBytes = 32 * 1024;
     private const int OutputQueueDrainMaxItemsPerPass = 64;
     private const int ActiveOutputBurstLimit = 32;
     private readonly BoundedSessionOutputQueue<PooledOutputItem> _outputQueue =
-        new(MaxQueuedOutputs, ActiveOutputBurstLimit);
+        new(
+            MaxQueuedOutputs,
+            ActiveOutputBurstLimit,
+            MaxQueuedOutputBytes,
+            static item => item.Buffer.Length);
+    private readonly ConcurrentDictionary<string, Task> _sessionCleanupTasks = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ArrayPool<byte>> _sessionOutputPools = new(StringComparer.Ordinal);
+    [SuppressMessage("Reliability", "CA2213:Disposable fields should be disposed", Justification = "Late in-flight output callbacks may still cross this lifetime gate after event unsubscription; the lock is collected with the manager instead of being disposed underneath them.")]
+    private readonly ReaderWriterLockSlim _outputLifecycleGate = new(LockRecursionPolicy.NoRecursion);
     private Task? _outputProcessor;
     private CancellationTokenSource? _cts;
     private readonly SettingsService _settingsService;
@@ -118,55 +129,133 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         RemoveInputTracesForSession(sessionId);
         _archivedRecoveryCounters.TryRemove(sessionId, out _);
         MuxProtocol.ClearSessionCache(sessionId);
-
-        foreach (var client in _clients.Values)
+        List<PooledOutputItem> removedOutputs;
+        Task cleanup;
+        _outputLifecycleGate.EnterWriteLock();
+        try
         {
-            client.RemoveSession(sessionId);
+            _sessionOutputPools.TryRemove(sessionId, out _);
+            removedOutputs = _outputQueue.RemoveSession(sessionId);
+            cleanup = Task.WhenAll(_clients.Values.Select(client => client.RemoveSessionAsync(sessionId)));
+        }
+        finally
+        {
+            _outputLifecycleGate.ExitWriteLock();
+        }
+
+        foreach (var item in removedOutputs)
+        {
+            item.Buffer.Release();
+        }
+
+        _sessionCleanupTasks[sessionId] = cleanup;
+        _ = RemoveCleanupWhenCompleteAsync(sessionId, cleanup);
+    }
+
+    private async Task RemoveCleanupWhenCompleteAsync(string sessionId, Task cleanup)
+    {
+        await cleanup.ConfigureAwait(false);
+        if (_sessionCleanupTasks.TryGetValue(sessionId, out var current)
+            && ReferenceEquals(current, cleanup))
+        {
+            _sessionCleanupTasks.TryRemove(sessionId, out _);
         }
     }
 
     private void HandleOutput(string sessionId, ulong sequenceStart, int cols, int rows, ReadOnlyMemory<byte> data)
     {
-        if (_inputTimestamps.TryRemove(sessionId, out var inputTicks))
+        _outputLifecycleGate.EnterReadLock();
+        try
         {
-            _lastServerRttMs[sessionId] = (int)(Environment.TickCount64 - inputTicks);
-        }
+            if (!TryGetSessionOutputPool(sessionId, out var outputPool))
+            {
+                return;
+            }
 
-        var shared = SharedOutputBuffer.Rent(data.Length);
-        data.Span.CopyTo(shared.WriteSpan);
+            if (_inputTimestamps.TryRemove(sessionId, out var inputTicks))
+            {
+                _lastServerRttMs[sessionId] = (int)(Environment.TickCount64 - inputTicks);
+            }
 
-        var sequenceEndExclusive = sequenceStart + (ulong)data.Length;
-        var trace = MarkInputTraceOutputObserved(sessionId, sequenceEndExclusive);
-        if (!_outputQueue.TryEnqueue(sessionId, new PooledOutputItem(sessionId, sequenceEndExclusive, cols, rows, shared)))
-        {
+            var shared = SharedOutputBuffer.Rent(outputPool, data.Length);
+            data.Span.CopyTo(shared.WriteSpan);
+
+            var sequenceEndExclusive = sequenceStart + (ulong)data.Length;
+            var trace = MarkInputTraceOutputObserved(sessionId, sequenceEndExclusive);
+            var outputItem = new PooledOutputItem(sessionId, sequenceEndExclusive, cols, rows, shared);
+            if (!_outputQueue.TryEnqueueOrMerge(
+                    sessionId,
+                    outputItem,
+                    (PooledOutputItem existing, PooledOutputItem incoming, out PooledOutputItem merged) =>
+                        TryMergeOutputItems(outputPool, existing, incoming, out merged)))
+            {
+                if (trace is not null)
+                {
+                    RemoveInputTrace(trace);
+                }
+                Log.Warn(() => $"[MuxManager] Output queue full, dropping frame for {sessionId} ({data.Length} bytes)");
+                foreach (var client in _clients.Values)
+                {
+                    if (client.WebSocket.State == WebSocketState.Open)
+                    {
+                        client.NotifyDataLoss(
+                            sessionId,
+                            TerminalReplayReason.MuxOverflow,
+                            data.Length,
+                            sequenceStart,
+                            sequenceEndExclusive);
+                    }
+                }
+                shared.Release();
+                return;
+            }
+
             if (trace is not null)
             {
-                RemoveInputTrace(trace);
-            }
-            Log.Warn(() => $"[MuxManager] Output queue full, dropping frame for {sessionId} ({data.Length} bytes)");
-            foreach (var client in _clients.Values)
-            {
-                if (client.WebSocket.State == WebSocketState.Open)
+                lock (trace.Gate)
                 {
-                    client.NotifyDataLoss(
-                        sessionId,
-                        TerminalReplayReason.MuxOverflow,
-                        data.Length,
-                        sequenceStart,
-                        sequenceEndExclusive);
+                    trace.MuxQueueEnqueuedAtMs = Environment.TickCount64;
                 }
             }
-            shared.Release();
-            return;
+        }
+        finally
+        {
+            _outputLifecycleGate.ExitReadLock();
+        }
+    }
+
+    private static bool TryMergeOutputItems(
+        ArrayPool<byte> outputPool,
+        PooledOutputItem existing,
+        PooledOutputItem incoming,
+        out PooledOutputItem merged)
+    {
+        merged = default;
+        var incomingLength = incoming.Buffer.Length;
+        var incomingSequenceStart = incoming.SequenceEndExclusive >= (ulong)incomingLength
+            ? incoming.SequenceEndExclusive - (ulong)incomingLength
+            : 0;
+        var combinedLength = existing.Buffer.Length + incomingLength;
+        if (existing.Cols != incoming.Cols
+            || existing.Rows != incoming.Rows
+            || existing.SequenceEndExclusive != incomingSequenceStart
+            || combinedLength > MaxCoalescedOutputBytes)
+        {
+            return false;
         }
 
-        if (trace is not null)
-        {
-            lock (trace.Gate)
-            {
-                trace.MuxQueueEnqueuedAtMs = Environment.TickCount64;
-            }
-        }
+        var combined = SharedOutputBuffer.Rent(outputPool, combinedLength);
+        existing.Buffer.Span.CopyTo(combined.WriteSpan);
+        incoming.Buffer.Span.CopyTo(combined.WriteSpan[existing.Buffer.Length..]);
+        merged = new PooledOutputItem(
+            incoming.SessionId,
+            incoming.SequenceEndExclusive,
+            incoming.Cols,
+            incoming.Rows,
+            combined);
+        existing.Buffer.Release();
+        incoming.Buffer.Release();
+        return true;
     }
 
     private void HandleDataLoss(string sessionId, TtyHostDataLossPayload payload)
@@ -243,8 +332,14 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
 
     private void QueueOutputToClients(PooledOutputItem item)
     {
+        _outputLifecycleGate.EnterReadLock();
         try
         {
+            if (_sessionManager.GetSession(item.SessionId) is null)
+            {
+                return;
+            }
+
             if (item.Buffer.Length < 50)
             {
                 Log.Verbose(() => $"[WS-OUTPUT] {item.SessionId}: {BitConverter.ToString(item.Buffer.Memory[..item.Buffer.Length].Span.ToArray())}");
@@ -266,14 +361,33 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         finally
         {
             item.Buffer.Release();
+            _outputLifecycleGate.ExitReadLock();
         }
     }
 
     public MuxClient AddClient(string clientId, WebSocket webSocket, string? allowedSessionId = null)
     {
-        var client = new MuxClient(clientId, webSocket, GetResumeMode, allowedSessionId, HandleClientOutputFrameSent);
+        var client = new MuxClient(
+            clientId,
+            webSocket,
+            GetResumeMode,
+            allowedSessionId,
+            HandleClientOutputFrameSent,
+            sessionId => _sessionManager.GetSession(sessionId) is not null,
+            startFlushSuspended: true);
+        // The client becomes visible to the global PTY broadcaster below. Keep
+        // live output buffered from its first observable instant so no frame can
+        // overtake the initial replay transaction and create a false sequence gap.
         _clients[clientId] = client;
         return client;
+    }
+
+    public async Task WaitForSessionCleanupAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (_sessionCleanupTasks.TryGetValue(sessionId, out var cleanup))
+        {
+            await cleanup.WaitAsync(ct).ConfigureAwait(false);
+        }
     }
 
     private TerminalResumeModeSetting GetResumeMode() => _resumeMode;
@@ -654,23 +768,68 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
 
     public void BroadcastTerminalOutput(string sessionId, ReadOnlyMemory<byte> data)
     {
-        var sessionInfo = _sessionManager.GetSession(sessionId);
-        var cols = sessionInfo?.Cols ?? 80;
-        var rows = sessionInfo?.Rows ?? 24;
-        var sequenceEndExclusive = _sessionManager.GetTransportRuntimeSnapshot(sessionId).SourceSeq;
-
-        // Queue raw data to each client - clients handle buffering and framing
-        var buffer = SharedOutputBuffer.Rent(data.Length);
-        data.Span.CopyTo(buffer.WriteSpan);
-        foreach (var client in _clients.Values)
+        _outputLifecycleGate.EnterReadLock();
+        try
         {
-            if (client.WebSocket.State == WebSocketState.Open)
+            if (!TryGetSessionOutputPool(sessionId, out var outputPool))
             {
-                buffer.AddRef();
-                client.QueueOutput(sessionId, sequenceEndExclusive, cols, rows, buffer);
+                return;
+            }
+
+            var buffer = SharedOutputBuffer.Rent(outputPool, data.Length);
+            data.Span.CopyTo(buffer.WriteSpan);
+            try
+            {
+                if (_sessionManager.GetSession(sessionId) is { } sessionInfo)
+                {
+                    var sequenceEndExclusive = _sessionManager.GetTransportRuntimeSnapshot(sessionId).SourceSeq;
+
+                    // Queue raw data to each client. The close path uses the
+                    // write side of this gate and purges anything accepted here.
+                    foreach (var client in _clients.Values)
+                    {
+                        if (client.WebSocket.State == WebSocketState.Open)
+                        {
+                            buffer.AddRef();
+                            client.QueueOutput(
+                                sessionId,
+                                sequenceEndExclusive,
+                                sessionInfo.Cols,
+                                sessionInfo.Rows,
+                                buffer);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                buffer.Release();
             }
         }
-        buffer.Release();
+        finally
+        {
+            _outputLifecycleGate.ExitReadLock();
+        }
+    }
+
+    private bool TryGetSessionOutputPool(string sessionId, out ArrayPool<byte> outputPool)
+    {
+        outputPool = _sessionOutputPools.GetOrAdd(
+            sessionId,
+            static _ => ArrayPool<byte>.Create(
+                maxArrayLength: TtyHostProtocol.MaxPayloadSize,
+                maxArraysPerBucket: 4));
+        if (_sessionManager.GetSession(sessionId) is not null)
+        {
+            return true;
+        }
+
+        if (_sessionOutputPools.TryGetValue(sessionId, out var current)
+            && ReferenceEquals(current, outputPool))
+        {
+            _sessionOutputPools.TryRemove(sessionId, out _);
+        }
+        return false;
     }
 
     public async ValueTask DisposeAsync()
@@ -680,6 +839,12 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
             return;
         }
         _disposed = true;
+
+        _sessionManager.OnOutput -= _outputHandler;
+        _sessionManager.OnSessionClosed -= _sessionClosedHandler;
+        _sessionManager.OnForegroundChanged -= _foregroundChangedHandler;
+        _sessionManager.OnInputTrace -= _inputTraceHandler;
+        _sessionManager.OnDataLoss -= _dataLossHandler;
 
         var cts = _cts;
         _cts = null;
@@ -694,6 +859,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
             item.Buffer.Release();
         }
         _outputQueue.Dispose();
+        _sessionOutputPools.Clear();
         cts?.Dispose();
 
         var clients = _clients.ToArray();
@@ -710,11 +876,6 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
             }
         }
 
-        _sessionManager.OnOutput -= _outputHandler;
-        _sessionManager.OnSessionClosed -= _sessionClosedHandler;
-        _sessionManager.OnForegroundChanged -= _foregroundChangedHandler;
-        _sessionManager.OnInputTrace -= _inputTraceHandler;
-        _sessionManager.OnDataLoss -= _dataLossHandler;
         _inputTraceMarkers.Clear();
         _activeInputTraces.Clear();
         _archivedRecoveryCounters.Clear();

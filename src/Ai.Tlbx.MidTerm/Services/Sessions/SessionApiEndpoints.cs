@@ -77,6 +77,7 @@ public static partial class SessionApiEndpoints
         TerminalSizeControlService terminalSizeControlService)
     {
         var sessionLaunchCoordinator = app.Services.GetRequiredService<SessionLaunchCoordinator>();
+        var sessionCloseCleanup = app.Services.GetRequiredService<SessionCloseCleanupService>();
 
         void RecordPromptHistory(string sessionId, AppServerControlTurnRequest turn, string source, string? surface = null)
         {
@@ -459,9 +460,10 @@ public static partial class SessionApiEndpoints
             CancellationToken ct) =>
         {
             var normalizedProvider = aiCliProfileService.NormalizeProfile(provider);
-            if (normalizedProvider is not AiCliProfileService.CodexProfile)
+            if (normalizedProvider is not AiCliProfileService.CodexProfile and
+                not AiCliProfileService.ClaudeProfile)
             {
-                return Results.BadRequest("Only the Codex resume catalog is supported.");
+                return Results.BadRequest("Only Codex and Claude resume catalogs are supported.");
             }
 
             var includeAllDirectories = string.Equals(scope, "all", StringComparison.OrdinalIgnoreCase);
@@ -489,7 +491,11 @@ public static partial class SessionApiEndpoints
         {
             workerSessionRegistry.Forget(id);
             agentFeed.Forget(id);
-            await sessionManager.CloseSessionAsync(id, ct);
+            var closed = await sessionManager.CloseSessionAsync(id, ct);
+            if (closed)
+            {
+                await sessionCloseCleanup.ReclaimAfterUserTriggeredCloseAsync(id);
+            }
             return Results.Ok();
         });
 

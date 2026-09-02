@@ -16,6 +16,7 @@ public sealed partial class SessionUpdateStateService
 {
     private const int ResumeHintTailLineCount = 8;
     private const int GracefulExitOutputLimit = 64 * 1024;
+    private const int CodexExitResumeSearchLimit = 1024;
     private static readonly TimeSpan GracefulExitInterruptDelay = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan GracefulExitOutputDrainDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan GracefulExitTimeout = TimeSpan.FromSeconds(15);
@@ -463,14 +464,37 @@ public sealed partial class SessionUpdateStateService
         }
 
         var clean = TerminalOutputSanitizer.StripEscapeSequences(capturedAfterExitStarted);
-        var matches = CodexExitResumeHintRegex().Matches(clean);
-        if (matches.Count == 0)
+        var markers = CodexExitResumeMarkerRegex().Matches(clean);
+        for (var markerIndex = markers.Count - 1; markerIndex >= 0; markerIndex--)
         {
-            return null;
+            var marker = markers[markerIndex];
+            var searchStart = marker.Index + marker.Length;
+            var searchLength = Math.Min(CodexExitResumeSearchLimit, clean.Length - searchStart);
+            if (markerIndex + 1 < markers.Count)
+            {
+                searchLength = Math.Min(searchLength, markers[markerIndex + 1].Index - searchStart);
+            }
+
+            if (searchLength <= 0)
+            {
+                continue;
+            }
+
+            var searchWindow = clean.Substring(searchStart, searchLength);
+            var candidates = CodexThreadIdRegex().Matches(searchWindow);
+            if (candidates.Count != 1)
+            {
+                continue;
+            }
+
+            var candidate = candidates[0].Value;
+            if (Guid.TryParse(candidate, out _))
+            {
+                return candidate;
+            }
         }
 
-        var candidate = matches[^1].Groups["threadId"].Value;
-        return Guid.TryParse(candidate, out _) ? candidate : null;
+        return null;
     }
 
     private static bool IsCodexForeground(
@@ -531,10 +555,7 @@ public sealed partial class SessionUpdateStateService
                 return;
             }
 
-            var command = BuildCommand([
-                AiCliProfileService.CodexProfile,
-                ..PreserveResumeFlags(originalCommandLine)
-            ]);
+            var command = BuildCodexInteractiveResumeCommand(originalCommandLine);
             await sessionManager.SendInputAsync(
                 sessionId,
                 Encoding.UTF8.GetBytes(command + "\r"),
@@ -544,6 +565,15 @@ public sealed partial class SessionUpdateStateService
         {
             Log.Warn(() => $"Failed to relaunch Codex in session {sessionId} after authoritative resume capture failed: {ex.Message}");
         }
+    }
+
+    internal static string BuildCodexInteractiveResumeCommand(string? originalCommandLine)
+    {
+        return BuildCommand([
+            AiCliProfileService.CodexProfile,
+            ..PreserveResumeFlags(originalCommandLine),
+            "resume"
+        ]);
     }
 
     private static async Task RestoreDecorationsAsync(
@@ -894,16 +924,13 @@ public sealed partial class SessionUpdateStateService
         {
             await gitWatcher.RestoreSessionExtraReposAsync(targetSessionId, decoration.ExtraGitRepos)
                 .ConfigureAwait(false);
-            sessionManager.SetSessionExtraGitReposMetadata(
-                targetSessionId,
-                decoration.ExtraGitRepos.Select(static repo => new GitRepoBinding
-                {
-                    RepoRoot = repo.RepoRoot,
-                    Label = repo.Label ?? Path.GetFileName(repo.RepoRoot),
-                    Role = repo.Role ?? "target",
-                    Source = repo.Source ?? "manual",
-                    IsPrimary = false
-                }));
+            if (!decoration.AppServerControlOnly)
+            {
+                await sessionManager.SetSessionExtraGitReposMetadataAsync(
+                    targetSessionId,
+                    decoration.ExtraGitRepos,
+                    ct).ConfigureAwait(false);
+            }
         }
     }
 
@@ -1282,8 +1309,11 @@ public sealed partial class SessionUpdateStateService
     [GeneratedRegex(@"\b(?<provider>codex|claude|grok)(?:\.exe)?\s+(?<resumeArg>--?resume|resume)\s+(?<threadId>[A-Za-z0-9._:-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex AiResumeHintRegex();
 
-    [GeneratedRegex(@"^\s*To continue this session, run codex resume (?<threadId>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\s*$", RegexOptions.Multiline | RegexOptions.CultureInvariant, 1000)]
-    private static partial Regex CodexExitResumeHintRegex();
+    [GeneratedRegex(@"\bTo\s+(?:continue|resume)\s+this\s+session\s*,?\s*run\s+codex\s+resume\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex CodexExitResumeMarkerRegex();
+
+    [GeneratedRegex(@"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex CodexThreadIdRegex();
 
     private sealed record AiResumeHint(string Provider, string ResumeArgument, string ThreadId);
 
