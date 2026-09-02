@@ -147,24 +147,18 @@ public sealed class TtyHostSessionManagerStateTests
     }
 
     [Fact]
-    public async Task SetSessionExtraGitReposMetadata_StoresOnlyExtraRepos()
+    public async Task SetSessionExtraGitReposMetadataAsync_DoesNotMutateCacheWithoutHostAck()
     {
         await using var manager = CreateManager();
         AddCachedSession(manager, "s1");
 
-        var ok = manager.SetSessionExtraGitReposMetadata("s1",
+        var ok = await manager.SetSessionExtraGitReposMetadataAsync("s1",
         [
-            new GitRepoBinding { RepoRoot = @"Q:\repos\Jpa", Label = "Jpa", Role = "cwd", Source = "auto", IsPrimary = true },
-            new GitRepoBinding { RepoRoot = @"Q:\repos\MidTerm", Label = "MidTerm", Role = "target", Source = "manual", IsPrimary = false }
+            new TtyHostGitRepoMetadata { RepoRoot = @"Q:\repos\tlbx", Label = "tlbx", Role = "target", Source = "manual" }
         ]);
 
-        Assert.True(ok);
-        var repos = manager.GetPersistedSessionExtraGitRepos("s1");
-        var repo = Assert.Single(repos);
-        Assert.Equal(@"Q:\repos\MidTerm", repo.RepoRoot);
-        Assert.Equal("MidTerm", repo.Label);
-        Assert.Equal("target", repo.Role);
-        Assert.Equal("manual", repo.Source);
+        Assert.False(ok);
+        Assert.Empty(manager.GetPersistedSessionExtraGitRepos("s1"));
     }
 
     [Fact]

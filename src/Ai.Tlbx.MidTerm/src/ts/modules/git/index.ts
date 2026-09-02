@@ -12,7 +12,7 @@ import {
   setGitRepoActionHandlers,
   updateGitIndicatorForSession,
 } from '../sessionTabs';
-import { $activeSessionId } from '../../stores';
+import { $activeSessionId, $sessionList } from '../../stores';
 import { addProcessStateListener } from '../process';
 import { updateGitStatus, destroyGitPanel } from './gitPanel';
 import {
@@ -28,6 +28,7 @@ import { addGitRepo, fetchGitRepos, refreshGitRepo, removeGitRepo } from './gitA
 import { showTextPrompt } from '../../utils/dialog';
 import type { GitRepoBinding, GitStatusResponse } from './types';
 import type { GitDiagEvent } from './gitChannel';
+import { SessionSubscriptionSet } from './sessionSubscriptions';
 
 const log = createLogger('git');
 
@@ -35,7 +36,7 @@ const cachedStatuses = new Map<string, GitStatusResponse>();
 const cachedRepos = new Map<string, GitRepoBinding[]>();
 const sessionCwds = new Map<string, string>();
 const repoCacheListeners = new Set<(sessionId: string) => void>();
-let previousSessionId: string | null = null;
+const visibleSessionIds = new SessionSubscriptionSet();
 
 export type { GitDiagEvent };
 
@@ -52,16 +53,14 @@ export function initGitPanel(): void {
     updateGitIndicatorForSession(sessionId, repos);
   });
 
-  $activeSessionId.subscribe((sessionId) => {
-    if (previousSessionId && previousSessionId !== sessionId) {
-      unsubscribeFromSession(previousSessionId);
-    }
-    previousSessionId = sessionId ?? null;
+  $sessionList.subscribe((sessions) => {
+    syncGitSessionSubscriptions(sessions.map((session) => session.id));
+  });
 
+  $activeSessionId.subscribe((sessionId) => {
     if (!sessionId) {
       return;
     }
-    subscribeToSession(sessionId);
     const cached = cachedRepos.get(sessionId);
     updateGitIndicatorForSession(sessionId, cached ?? null);
   });
@@ -140,13 +139,14 @@ export {
 } from './gitChannel';
 
 export function destroyGitSession(sessionId: string): void {
-  unsubscribeFromSession(sessionId);
+  visibleSessionIds.remove(sessionId, unsubscribeFromSession);
   destroyGitPanel(sessionId);
   clearSessionGitCache(sessionId);
   sessionCwds.delete(sessionId);
-  if (previousSessionId === sessionId) {
-    previousSessionId = null;
-  }
+}
+
+export function syncGitSessionSubscriptions(sessionIds: string[]): void {
+  visibleSessionIds.sync(sessionIds, subscribeToSession, unsubscribeFromSession);
 }
 
 export function getCachedGitReposForSession(sessionId: string): GitRepoBinding[] {

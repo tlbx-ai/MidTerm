@@ -4,7 +4,7 @@ namespace Ai.Tlbx.MidTerm.Common.Protocol;
 
 public static class AppServerControlHostProtocol
 {
-    public const string CurrentVersion = "app-server-control-host-v2";
+    public const string CurrentVersion = "app-server-control-host-v3";
 }
 
 public sealed class AppServerControlQuickSettingsPayload
@@ -517,6 +517,11 @@ public sealed class AppServerControlHostHistoryWindowRequest
     public int? ViewportWidth { get; set; }
 }
 
+public sealed class AppServerControlHostGitMetadata
+{
+    public List<TtyHostGitRepoMetadata> Repos { get; set; } = [];
+}
+
 public sealed class AppServerControlHostCommandEnvelope
 {
     public string ProtocolVersion { get; set; } = AppServerControlHostProtocol.CurrentVersion;
@@ -531,6 +536,7 @@ public sealed class AppServerControlHostCommandEnvelope
     public AppServerControlUserInputResolutionCommand? ResolveUserInput { get; set; }
     public AppServerControlGoalSetRequest? SetGoal { get; set; }
     public AppServerControlHostHistoryWindowRequest? HistoryWindow { get; set; }
+    public AppServerControlHostGitMetadata? GitMetadata { get; set; }
 }
 
 public sealed class AppServerControlRequestResolutionCommand
@@ -555,6 +561,7 @@ public sealed class AppServerControlHostCommandResultEnvelope
     public AppServerControlTurnStartResponse? TurnStarted { get; set; }
     public AppServerControlCommandAcceptedResponse? Accepted { get; set; }
     public AppServerControlHistoryWindowResponse? HistoryWindow { get; set; }
+    public AppServerControlHostGitMetadata? GitMetadata { get; set; }
 }
 
 public sealed class AppServerControlHostHistoryPatchEnvelope
@@ -570,6 +577,8 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 [JsonSerializable(typeof(AppServerControlHostCommandResultEnvelope))]
 [JsonSerializable(typeof(AppServerControlAttachRuntimeRequest))]
 [JsonSerializable(typeof(AppServerControlHostHistoryWindowRequest))]
+[JsonSerializable(typeof(AppServerControlHostGitMetadata))]
+[JsonSerializable(typeof(List<TtyHostGitRepoMetadata>))]
 [JsonSerializable(typeof(SessionAgentAttachPoint))]
 [JsonSerializable(typeof(AppServerControlRequestResolutionCommand))]
 [JsonSerializable(typeof(AppServerControlUserInputResolutionCommand))]
@@ -622,7 +631,6 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 public partial class AppServerControlHostJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

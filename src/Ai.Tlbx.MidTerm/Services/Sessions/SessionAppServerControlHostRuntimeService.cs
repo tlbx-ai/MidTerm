@@ -131,6 +131,76 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                state.Status is not HostRuntimeStatus.None and not HostRuntimeStatus.Stopped;
     }
 
+    public async Task<TtyHostGitRepoMetadata[]?> GetGitMetadataAsync(
+        string sessionId,
+        CancellationToken ct = default)
+    {
+        if (!_states.TryGetValue(sessionId, out var state))
+        {
+            return null;
+        }
+
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (state.Input is null || state.Output is null)
+            {
+                return null;
+            }
+
+            var result = await SendCommandAsync(
+                state,
+                commandId => new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "session.git-metadata.get"
+                },
+                ct).ConfigureAwait(false);
+            return result.GitMetadata?.Repos.ToArray() ?? [];
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    public async Task<TtyHostGitRepoMetadata[]?> SetGitMetadataAsync(
+        string sessionId,
+        IEnumerable<TtyHostGitRepoMetadata> repos,
+        CancellationToken ct = default)
+    {
+        if (!_states.TryGetValue(sessionId, out var state))
+        {
+            return null;
+        }
+
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (state.Input is null || state.Output is null)
+            {
+                return null;
+            }
+
+            var result = await SendCommandAsync(
+                state,
+                commandId => new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "session.git-metadata.set",
+                    GitMetadata = new AppServerControlHostGitMetadata { Repos = repos.ToList() }
+                },
+                ct).ConfigureAwait(false);
+            return result.GitMetadata?.Repos.ToArray();
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
     public async Task<bool> EnsureAttachedAsync(
         string sessionId,
         string profile,

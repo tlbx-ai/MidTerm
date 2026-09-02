@@ -9,9 +9,9 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class AppServerControlHostProtocolTests
 {
     [Fact]
-    public void AppServerControlHostProtocol_UsesV2AsTheOnlyCurrentVersion()
+    public void AppServerControlHostProtocol_UsesV3AsTheOnlyCurrentVersion()
     {
-        Assert.Equal("app-server-control-host-v2", AppServerControlHostProtocol.CurrentVersion);
+        Assert.Equal("app-server-control-host-v3", AppServerControlHostProtocol.CurrentVersion);
     }
 
     [Fact]
@@ -491,7 +491,6 @@ public sealed class AppServerControlHostProtocolTests
         AppServerControlHostCommandResultEnvelope Result,
         IReadOnlyList<AppServerControlProviderEvent> Events);
 }
-
 
 
 

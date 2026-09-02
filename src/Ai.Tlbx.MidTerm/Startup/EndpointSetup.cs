@@ -841,7 +841,12 @@ Start-Service -Name $serviceName -ErrorAction Stop
             browserUiBridge);
         var appServerControlHandler = new AppServerControlWebSocketHandler(sessionManager, sessionSupervisor, app.Services.GetRequiredService<SessionAppServerControlRuntimeService>(), app.Services.GetRequiredService<SessionCodexHandoffService>(), app.Services.GetRequiredService<AiCliProfileService>(), authService, shutdownService);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
-        var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
+        var gitHandler = new GitWebSocketHandler(
+            gitWatcher,
+            settingsService,
+            authService,
+            shutdownService,
+            app.Services.GetRequiredService<SessionGitMetadataService>());
         var browserHandler = new BrowserWebSocketHandler(
             browserCommandService,
             browserPreviewRegistry,

@@ -524,6 +524,52 @@ public sealed class GitWatcherService : IDisposable
         }
     }
 
+    public async Task ReplaceSessionExtraReposAsync(
+        string sessionId,
+        IEnumerable<TtyHostGitRepoMetadata> repos)
+    {
+        var desired = repos
+            .Where(static repo => !string.IsNullOrWhiteSpace(repo.RepoRoot))
+            .Select(static repo => (Repo: repo, Root: TryNormalizeRepoRoot(repo.RepoRoot)))
+            .Where(static item => item.Root is not null)
+            .GroupBy(static item => item.Root!, StringComparer.OrdinalIgnoreCase)
+            .Select(static group => group.Last().Repo)
+            .ToArray();
+        var desiredRoots = desired
+            .Select(static repo => Path.GetFullPath(repo.RepoRoot).TrimEnd(Path.DirectorySeparatorChar))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var existing in GetRepoBindings(sessionId).Where(static repo => !repo.IsPrimary))
+        {
+            if (!desiredRoots.Contains(existing.RepoRoot))
+            {
+                RemoveSessionRepo(sessionId, existing.RepoRoot);
+            }
+        }
+
+        foreach (var repo in desired)
+        {
+            await AddSessionRepoAsync(
+                sessionId,
+                repo.RepoRoot,
+                repo.Label,
+                repo.Role,
+                string.IsNullOrWhiteSpace(repo.Source) ? "manual" : repo.Source).ConfigureAwait(false);
+        }
+    }
+
+    private static string? TryNormalizeRepoRoot(string repoRoot)
+    {
+        try
+        {
+            return Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+    }
+
     public bool RemoveSessionRepo(string sessionId, string repoRoot)
     {
         string? resolved;

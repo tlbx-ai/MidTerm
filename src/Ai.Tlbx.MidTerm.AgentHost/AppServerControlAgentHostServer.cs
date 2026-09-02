@@ -16,6 +16,8 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
     private readonly TtyHostSessionManager _historySessions = new();
     private readonly SessionAppServerControlHistoryService _history;
     private readonly Lock _clientLock = new();
+    private readonly Lock _gitMetadataLock = new();
+    private TtyHostGitRepoMetadata[] _gitRepos = [];
     private ConnectionState? _currentClient;
     private IAppServerControlAgentRuntime? _runtime;
     private readonly List<Task> _connectionTasks = [];
@@ -260,6 +262,22 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             };
         }
 
+        if (string.Equals(command.Type, "session.git-metadata.get", StringComparison.Ordinal))
+        {
+            return AcceptedGitMetadata(command, GetGitRepos());
+        }
+
+        if (string.Equals(command.Type, "session.git-metadata.set", StringComparison.Ordinal))
+        {
+            var repos = command.GitMetadata?.Repos
+                ?? throw new InvalidOperationException("Git metadata payload is required.");
+            lock (_gitMetadataLock)
+            {
+                _gitRepos = CloneGitRepos(repos);
+            }
+            return AcceptedGitMetadata(command, GetGitRepos());
+        }
+
         if (command.AttachRuntime is not null)
         {
             _historySessions.SetWorkingDirectory(command.SessionId, command.AttachRuntime.WorkingDirectory);
@@ -380,10 +398,50 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                     "request.resolve",
                     "user-input.resolve",
                     "history.window.get",
+                    "session.git-metadata.get",
+                    "session.git-metadata.set",
                     "history.patch"
                 ]
             },
             AppServerControlHostJsonContext.Default.AppServerControlHostHello).ConfigureAwait(false);
+    }
+
+    private TtyHostGitRepoMetadata[] GetGitRepos()
+    {
+        lock (_gitMetadataLock)
+        {
+            return CloneGitRepos(_gitRepos);
+        }
+    }
+
+    private static HostCommandOutcome AcceptedGitMetadata(
+        AppServerControlHostCommandEnvelope command,
+        IEnumerable<TtyHostGitRepoMetadata> repos)
+    {
+        return new HostCommandOutcome
+        {
+            Result = new AppServerControlHostCommandResultEnvelope
+            {
+                CommandId = command.CommandId,
+                SessionId = command.SessionId,
+                Status = "accepted",
+                GitMetadata = new AppServerControlHostGitMetadata { Repos = CloneGitRepos(repos).ToList() }
+            }
+        };
+    }
+
+    private static TtyHostGitRepoMetadata[] CloneGitRepos(IEnumerable<TtyHostGitRepoMetadata> repos)
+    {
+        return repos
+            .Where(static repo => !string.IsNullOrWhiteSpace(repo.RepoRoot))
+            .Select(static repo => new TtyHostGitRepoMetadata
+            {
+                RepoRoot = repo.RepoRoot,
+                Label = repo.Label,
+                Role = repo.Role,
+                Source = repo.Source
+            })
+            .ToArray();
     }
 
     private async Task EnqueueRejectedAsync(ConnectionState connection, AppServerControlHostCommandEnvelope command, string message)
@@ -760,7 +818,6 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
     }
 }
-
 
 
 

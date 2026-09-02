@@ -350,13 +350,17 @@ public class Program
         });
 
 #pragma warning disable IDISP013 // Update capture intentionally runs during the app lifetime before restart.
-        updateService.BeforeApplyUpdateAsync = (updateType, ct) =>
-            sessionUpdateStateService.CaptureAsync(
-                sessionManager,
-                gitWatcher,
-                updateType == UpdateType.Full,
-                settingsService.Load().TryResumeNonAiAgentProcesses,
-                ct);
+        var sessionGitMetadata = app.Services.GetRequiredService<SessionGitMetadataService>();
+        updateService.BeforeApplyUpdateAsync = async (updateType, ct) =>
+        {
+            await sessionGitMetadata.ReconcileAllAsync(requireHosts: true, ct);
+            await sessionUpdateStateService.CaptureAsync(
+                    sessionManager,
+                    gitWatcher,
+                    updateType == UpdateType.Full,
+                    settingsService.Load().TryResumeNonAiAgentProcesses,
+                    ct);
+        };
 #pragma warning restore IDISP013
 
         var shutdownService = app.Services.GetRequiredService<ShutdownService>();
@@ -434,7 +438,7 @@ public class Program
             inputHistoryService);
         ActionGraphEndpoints.MapActionGraphEndpoints(app, actionGraphService);
         FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService, settingsService, gitWatcher);
-        GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
+        GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager, sessionGitMetadata);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
         HubEndpoints.MapHubEndpoints(app, app.Services.GetRequiredService<HubService>());
         WebPreviewEndpoints.MapWebPreviewEndpoints(
@@ -503,6 +507,10 @@ public class Program
         WelcomeScreen.PrintWelcomeBanner(port, bindAddress, settingsService, version);
 
         await sessionManager.DiscoverExistingSessionsAsync(shutdownService.Token);
+        var appServerControlSessionIds = sessionManager.GetSessionList(includeHidden: true).Sessions
+            .Where(static session => session.AppServerControlOnly)
+            .Select(static session => session.Id)
+            .ToHashSet(StringComparer.Ordinal);
         foreach (var session in sessionManager.GetAllSessions())
         {
             if (session.HostPid > 0)
@@ -514,7 +522,9 @@ public class Program
                     message => Log.Warn(() => message));
             }
 
-            var persistedRepos = sessionManager.GetPersistedSessionExtraGitRepos(session.Id);
+            var persistedRepos = appServerControlSessionIds.Contains(session.Id)
+                ? []
+                : sessionManager.GetPersistedSessionExtraGitRepos(session.Id);
             if (persistedRepos.Length > 0)
             {
                 await gitWatcher.RestoreSessionExtraReposAsync(session.Id, persistedRepos);
@@ -523,6 +533,7 @@ public class Program
         await sessionUpdateStateService.RestoreAsync(sessionManager, gitWatcher, shutdownService.Token);
         await spaceService.ReconcileSessionBindingsAsync(sessionManager, shutdownService.Token);
         await appServerControlRuntime.DiscoverExistingSessionsAsync(sessionManager, shutdownService.Token);
+        await sessionGitMetadata.ReconcileAllAsync(ct: shutdownService.Token);
         managerBarQueueService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
         managerBarQueueService.Start();
         var layoutSnapshot = layoutStateService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));

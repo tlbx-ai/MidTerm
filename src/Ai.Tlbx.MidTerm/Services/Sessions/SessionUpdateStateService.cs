@@ -924,16 +924,13 @@ public sealed partial class SessionUpdateStateService
         {
             await gitWatcher.RestoreSessionExtraReposAsync(targetSessionId, decoration.ExtraGitRepos)
                 .ConfigureAwait(false);
-            sessionManager.SetSessionExtraGitReposMetadata(
-                targetSessionId,
-                decoration.ExtraGitRepos.Select(static repo => new GitRepoBinding
-                {
-                    RepoRoot = repo.RepoRoot,
-                    Label = repo.Label ?? Path.GetFileName(repo.RepoRoot),
-                    Role = repo.Role ?? "target",
-                    Source = repo.Source ?? "manual",
-                    IsPrimary = false
-                }));
+            if (!decoration.AppServerControlOnly)
+            {
+                await sessionManager.SetSessionExtraGitReposMetadataAsync(
+                    targetSessionId,
+                    decoration.ExtraGitRepos,
+                    ct).ConfigureAwait(false);
+            }
         }
     }
 
