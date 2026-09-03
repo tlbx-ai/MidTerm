@@ -69,7 +69,11 @@ foreach ($workspace in $npmWorkspaces) {
         @("ci")
     }
     Invoke-Checked -FilePath "npm" -ArgumentList $ciArguments -WorkingDirectory $workspace
-    Invoke-Checked -FilePath "npm" -ArgumentList @("audit", "--audit-level=low") -WorkingDirectory $workspace
+    # The registry's bulk advisory endpoint can take slightly longer than npm's
+    # five-minute default for the Claude SDK graph. Keep the audit fail-closed,
+    # but allow the complete response to arrive instead of treating latency as
+    # a vulnerability result.
+    Invoke-Checked -FilePath "npm" -ArgumentList @("audit", "--audit-level=low", "--fetch-timeout=600000") -WorkingDirectory $workspace
     Invoke-Checked -FilePath "npm" -ArgumentList @("audit", "signatures") -WorkingDirectory $workspace
 }
 Invoke-Checked -FilePath "npm" -ArgumentList @("run", "build") -WorkingDirectory (Join-Path $repoRoot "src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge")
