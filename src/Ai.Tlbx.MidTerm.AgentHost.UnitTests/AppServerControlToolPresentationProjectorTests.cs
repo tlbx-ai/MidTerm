@@ -40,6 +40,42 @@ public sealed class AppServerControlToolPresentationProjectorTests
     }
 
     [Fact]
+    public void FromCodex_HandlesNullExitCodeOnStartedCommand()
+    {
+        using var document = JsonDocument.Parse(
+            """
+            {
+              "threadId": "thread-1",
+              "turnId": "turn-1",
+              "startedAt": 1,
+              "item": {
+                "type": "commandExecution",
+                "id": "command-1",
+                "command": "printf hello",
+                "cwd": "/tmp",
+                "processId": null,
+                "source": "agent",
+                "status": "inProgress",
+                "commandActions": [],
+                "aggregatedOutput": null,
+                "exitCode": null,
+                "durationMs": null
+              }
+            }
+            """);
+
+        var presentation = AppServerControlToolPresentationProjector.FromCodex(
+            "command_execution",
+            "in_progress",
+            "Command started",
+            document.RootElement);
+
+        Assert.Equal("command", presentation.Category);
+        Assert.Equal("printf hello", presentation.Subject);
+        Assert.Null(presentation.ExitCode);
+    }
+
+    [Fact]
     public void FromClaude_UsesStructuredToolIdentityAndPath()
     {
         using var document = JsonDocument.Parse("""{"file_path":"Q:\\repos\\tlbx\\README.md"}""");
