@@ -2,6 +2,26 @@ import type { Session } from '../../types';
 import { dom } from '../../state';
 import { getSessionDisplayInfo } from './sessionList';
 
+interface SidebarSessionStructuralClassState {
+  active: boolean;
+  reorderable: boolean;
+  child: boolean;
+  inLayout: boolean;
+}
+
+export function syncSidebarSessionStructuralClasses(
+  item: HTMLElement,
+  state: SidebarSessionStructuralClassState,
+): void {
+  // The keyed row owns transient interaction classes (menu/drag). Update only
+  // the structural classes derived from session state so hot patches preserve them.
+  item.classList.add('session-item', 'two-line', 'spaces-tree-session-item');
+  item.classList.toggle('active', state.active);
+  item.classList.toggle('spaces-tree-session-item-reorderable', state.reorderable);
+  item.classList.toggle('tmux-child', state.child);
+  item.classList.toggle('in-layout', state.inLayout);
+}
+
 export function syncSidebarSessionDisplayText(session: Session): boolean {
   const host = dom.sessionList;
   if (!host) {

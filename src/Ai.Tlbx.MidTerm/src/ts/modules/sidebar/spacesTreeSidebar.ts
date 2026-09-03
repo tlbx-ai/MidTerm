@@ -67,6 +67,7 @@ import {
   createSpaceChevron,
   createTextSpan,
 } from './spacesTreeSidebarElements';
+import { syncSidebarSessionStructuralClasses } from './spacesTreeSidebarDisplay';
 
 export interface SessionListCallbacks {
   onSelect: (sessionId: string, options?: SessionSelectionOptions) => void;
@@ -233,7 +234,7 @@ export function renderSessionList(): void {
     void refreshSidebarSpacesTree();
   }
 
-  closePopovers();
+  closeSpacesTreePopovers();
   renderSidebarTree();
 }
 
@@ -350,6 +351,15 @@ function renderSidebarTree(): void {
     patch: patchSidebarRootNode,
     destroy: destroySidebarTreeNode,
   });
+
+  const openMobileMenuItem = host.querySelector<HTMLElement>('.session-item.menu-open');
+  if (openMobileMenuItem) {
+    if (isMobileSessionMenuEnabled()) {
+      queueMobileSessionActionMenuPosition(openMobileMenuItem);
+    } else {
+      closeMobileSessionActionMenu();
+    }
+  }
 }
 
 function getSidebarRootItems(): SidebarRootItem[] {
@@ -1139,24 +1149,18 @@ function configureSidebarSessionNode(
   isReorderable: boolean,
 ): void {
   const isChild = !!entry.session.parentSessionId;
-  const classNames = ['session-item', 'two-line', 'spaces-tree-session-item'];
-  if (entry.id === $activeSessionId.get()) {
-    classNames.push('active');
-  }
-  if (isReorderable) {
-    classNames.push('spaces-tree-session-item-reorderable');
-  }
+  syncSidebarSessionStructuralClasses(item, {
+    active: entry.id === $activeSessionId.get(),
+    reorderable: isReorderable,
+    child: isChild,
+    inLayout: isSessionInLayout(entry.id),
+  });
+
   if (isChild) {
-    classNames.push('tmux-child');
     item.dataset.parentId = entry.session.parentSessionId ?? '';
   } else {
     delete item.dataset.parentId;
   }
-  if (isSessionInLayout(entry.id)) {
-    classNames.push('in-layout');
-  }
-
-  item.className = classNames.join(' ');
   item.dataset.sessionId = entry.id;
   item.dataset.controlMode = getSessionControlMode(entry.session);
   if (reorderScope) {
@@ -1365,6 +1369,7 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
 // =============================================================================
 
 let mobileSessionActionBackdrop: HTMLDivElement | null = null;
+let mobileSessionActionPositionFrameId: number | null = null;
 
 /**
  * Session action dropdowns are only used on mobile layouts.
@@ -1384,6 +1389,11 @@ function isMobileSessionMenuEnabled(): boolean {
  * Close any open mobile session action menus.
  */
 export function closeMobileSessionActionMenu(): void {
+  if (mobileSessionActionPositionFrameId !== null) {
+    window.cancelAnimationFrame(mobileSessionActionPositionFrameId);
+    mobileSessionActionPositionFrameId = null;
+  }
+
   document.querySelectorAll<HTMLElement>('.session-item.menu-open').forEach((el) => {
     el.classList.remove('menu-open');
     el.classList.remove('menu-open-up');
@@ -1402,6 +1412,19 @@ export function closeMobileSessionActionMenu(): void {
     mobileSessionActionBackdrop.remove();
     mobileSessionActionBackdrop = null;
   }
+}
+
+function queueMobileSessionActionMenuPosition(item: HTMLElement): void {
+  if (mobileSessionActionPositionFrameId !== null) {
+    window.cancelAnimationFrame(mobileSessionActionPositionFrameId);
+  }
+
+  mobileSessionActionPositionFrameId = window.requestAnimationFrame(() => {
+    mobileSessionActionPositionFrameId = null;
+    if (item.isConnected && item.classList.contains('menu-open')) {
+      positionMobileSessionActionMenu(item);
+    }
+  });
 }
 
 function showMobileSessionActionBackdrop(): void {
@@ -1491,9 +1514,7 @@ function createSidebarSessionMenuButton(
       item.classList.add('menu-open');
       menuBtn.setAttribute('aria-expanded', 'true');
       showMobileSessionActionBackdrop();
-      requestAnimationFrame(() => {
-        positionMobileSessionActionMenu(item);
-      });
+      queueMobileSessionActionMenuPosition(item);
     }
   });
   return menuBtn;
@@ -2176,9 +2197,13 @@ function positionPopover(popover: HTMLElement, trigger: HTMLElement): void {
   popover.style.left = `${Math.round(left)}px`;
 }
 
-function closePopovers(): void {
+function closeSpacesTreePopovers(): void {
   actionPopoverEl?.classList.add('hidden');
   chooserPopoverEl?.classList.add('hidden');
+}
+
+function closePopovers(): void {
+  closeSpacesTreePopovers();
   closeMobileSessionActionMenu();
 }
 
