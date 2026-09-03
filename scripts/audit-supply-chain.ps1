@@ -32,6 +32,33 @@ function Invoke-Checked {
     }
 }
 
+function Invoke-NpmAdvisoryAudit {
+    param(
+        [Parameter(Mandatory=$true)][string]$WorkingDirectory,
+        [int]$MaxAttempts = 3
+    )
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            Invoke-Checked -FilePath "npm" -ArgumentList @(
+                "audit",
+                "--audit-level=low",
+                "--fetch-timeout=600000"
+            ) -WorkingDirectory $WorkingDirectory
+            return
+        }
+        catch {
+            if ($attempt -eq $MaxAttempts) {
+                throw
+            }
+
+            $retryDelaySeconds = 5 * $attempt
+            Write-Warning "npm advisory audit attempt $attempt of $MaxAttempts failed; retrying in $retryDelaySeconds seconds."
+            Start-Sleep -Seconds $retryDelaySeconds
+        }
+    }
+}
+
 Write-Host "Supply-chain gate: immutable GitHub Actions" -ForegroundColor Cyan
 $workflowFiles = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot ".github") -Recurse -File |
     Where-Object { $_.Extension -in ".yml", ".yaml" })
@@ -69,11 +96,10 @@ foreach ($workspace in $npmWorkspaces) {
         @("ci")
     }
     Invoke-Checked -FilePath "npm" -ArgumentList $ciArguments -WorkingDirectory $workspace
-    # The registry's bulk advisory endpoint can take slightly longer than npm's
-    # five-minute default for the Claude SDK graph. Keep the audit fail-closed,
-    # but allow the complete response to arrive instead of treating latency as
-    # a vulnerability result.
-    Invoke-Checked -FilePath "npm" -ArgumentList @("audit", "--audit-level=low", "--fetch-timeout=600000") -WorkingDirectory $workspace
+    # The registry's bulk advisory endpoint can be slow or transiently return
+    # 503 for the Claude SDK graph. Keep the audit fail-closed while allowing a
+    # complete response and a bounded retry of this idempotent remote check.
+    Invoke-NpmAdvisoryAudit -WorkingDirectory $workspace
     Invoke-Checked -FilePath "npm" -ArgumentList @("audit", "signatures") -WorkingDirectory $workspace
 }
 Invoke-Checked -FilePath "npm" -ArgumentList @("run", "build") -WorkingDirectory (Join-Path $repoRoot "src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge")
