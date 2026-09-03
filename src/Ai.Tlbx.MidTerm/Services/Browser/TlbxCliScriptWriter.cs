@@ -28,9 +28,21 @@ public static class TlbxCliScriptWriter
         #
         # Auth token below is auto-generated and ephemeral (expires in ~8 days).
         # It only works on this machine's tlbx instance. Treat it like a local session secret.
-        # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
-        _MT="https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
-        _MK="mm-session={{token}}"
+        # The owning tlbx session environment wins over this file's generated fallback so
+        # parallel local instances cannot redirect an already-running agent to the wrong server.
+        # Optional: set MT_API_KEY to use API-key auth instead of the session cookie.
+        if [ -n "${MT_BASE_URL:-}" ]; then
+          _MT="${MT_BASE_URL%/}"
+        elif [ -n "${MT_PORT:-}" ]; then
+          _MT="https://localhost:$MT_PORT"
+        else
+          _MT="https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
+        fi
+        if [ -n "${MT_TOKEN:-}" ]; then
+          _MK="mm-session=$MT_TOKEN"
+        else
+          _MK="mm-session={{token}}"
+        fi
         _MTDIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
         _MCURL() {
           if command -v curl.exe >/dev/null 2>&1; then
@@ -1080,9 +1092,17 @@ public static class TlbxCliScriptWriter
         #
         # Auth token below is auto-generated and ephemeral (expires in ~8 days).
         # It only works on this machine's tlbx instance. Treat it like a local session secret.
-        # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
-        $script:_MT = "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
-        $script:_MK = "mm-session={{token}}"
+        # The owning tlbx session environment wins over this file's generated fallback so
+        # parallel local instances cannot redirect an already-running agent to the wrong server.
+        # Optional: set MT_API_KEY to use API-key auth instead of the session cookie.
+        $script:_MT = if ($env:MT_BASE_URL) {
+            $env:MT_BASE_URL.TrimEnd('/')
+        } elseif ($env:MT_PORT) {
+            "https://localhost:$($env:MT_PORT)"
+        } else {
+            "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
+        }
+        $script:_MK = if ($env:MT_TOKEN) { "mm-session=$($env:MT_TOKEN)" } else { "mm-session={{token}}" }
 
         function script:_MC {
             $output = if ($env:MT_API_KEY) {

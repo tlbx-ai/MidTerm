@@ -67,6 +67,101 @@ public sealed class BrowserUiBridgeTests
     }
 
     [Fact]
+    public async Task RequestDetachAsync_ReturnsTheBrowserUiFailure()
+    {
+        var bridge = new BrowserUiBridge(new MainBrowserService());
+        bridge.RegisterAcknowledgedListener(
+            "connection-a",
+            "browser-a",
+            (requestId, _, _) => bridge.CompleteUiCommand(new BrowserUiCommandResult
+            {
+                RequestId = requestId,
+                Command = "detach",
+                Success = false,
+                Error = "Popup blocked"
+            }),
+            (_, _, _) => { },
+            (_, _, _, _, _) => { },
+            (_, _, _, _, _, _) => { });
+
+        var result = await bridge.RequestDetachAsync("session-a", "default");
+
+        Assert.False(result.Success);
+        Assert.Equal("Popup blocked", result.Error);
+    }
+
+    [Fact]
+    public async Task RequestOpenAsync_ForwardsTheExpectedTargetRevision()
+    {
+        var bridge = new BrowserUiBridge(new MainBrowserService());
+        long? receivedRevision = null;
+        bridge.RegisterAcknowledgedListener(
+            "connection-a",
+            "browser-a",
+            (_, _, _) => { },
+            (_, _, _) => { },
+            (_, _, _, _, _) => { },
+            (requestId, _, _, _, _, targetRevision) =>
+            {
+                receivedRevision = targetRevision;
+                bridge.CompleteUiCommand(new BrowserUiCommandResult
+                {
+                    RequestId = requestId,
+                    Command = "open",
+                    Success = true
+                });
+            });
+
+        var result = await bridge.RequestOpenAsync(
+            "session-a",
+            "default",
+            "https://example.com",
+            activateSession: false,
+            targetRevision: 42);
+
+        Assert.True(result.Success);
+        Assert.Equal(42, receivedRevision);
+    }
+
+    [Fact]
+    public async Task SerializeTargetOperationAsync_OrdersOpenAndCloseForTheSamePreview()
+    {
+        var bridge = new BrowserUiBridge(new MainBrowserService());
+        var releaseOpen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var openEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var order = new List<string>();
+
+        var open = bridge.SerializeTargetOperationAsync(
+            "session-a",
+            "default",
+            async () =>
+            {
+                order.Add("open-start");
+                openEntered.SetResult();
+                await releaseOpen.Task;
+                order.Add("open-end");
+                return true;
+            });
+        await openEntered.Task;
+
+        var close = bridge.SerializeTargetOperationAsync(
+            "session-a",
+            "default",
+            () =>
+            {
+                order.Add("close");
+                return Task.FromResult(true);
+            });
+
+        await Task.Delay(25);
+        Assert.Equal(["open-start"], order);
+        releaseOpen.SetResult();
+        await Task.WhenAll(open, close);
+
+        Assert.Equal(["open-start", "open-end", "close"], order);
+    }
+
+    [Fact]
     public void RequestMobileDevice_ForwardsToSelectedBrowserUi()
     {
         var bridge = new BrowserUiBridge(new MainBrowserService());

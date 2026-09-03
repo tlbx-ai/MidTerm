@@ -13,8 +13,17 @@ public sealed class BrowserUiInstruction
     public string? DeviceAction { get; set; }
     public string? DeviceProfile { get; set; }
     public string? RequestId { get; set; }
+    public long? TargetRevision { get; set; }
     public double? DeltaY { get; set; }
     public int? Steps { get; set; }
+}
+
+public sealed class BrowserUiCommandResult
+{
+    public string RequestId { get; init; } = "";
+    public string Command { get; init; } = "";
+    public bool Success { get; init; }
+    public string? Error { get; init; }
 }
 
 public sealed class MobileDeviceRequest

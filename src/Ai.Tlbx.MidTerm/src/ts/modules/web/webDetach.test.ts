@@ -42,15 +42,17 @@ vi.mock('./webSessionState', () => ({
 import { $activeSessionId, $webPreviewDetached } from '../../stores';
 import { createBrowserPreviewClient } from './webApi';
 import { hideWebPreviewDockForDetach, openWebPreviewDock } from './webDock';
-import { cleanupDetach, detachPreview, dockBack } from './webDetach';
+import { cleanupDetach, detachPreview, dockBack, setDetachedPreviewViewport } from './webDetach';
 import { loadPreview } from './webPanel';
 import { getSessionPreview, setSessionDockedClient, setSessionMode } from './webSessionState';
 
 describe('webDetach dock layout sync', () => {
   const popupReplace = vi.fn();
+  const popupFocus = vi.fn();
   const windowOpen = vi.fn();
 
   beforeEach(() => {
+    vi.clearAllMocks();
     $activeSessionId.set('s1');
     $webPreviewDetached.set(false);
 
@@ -71,6 +73,7 @@ describe('webDetach dock layout sync', () => {
     });
 
     popupReplace.mockReset();
+    popupFocus.mockReset();
     vi.stubGlobal(
       'BroadcastChannel',
       class {
@@ -86,7 +89,7 @@ describe('webDetach dock layout sync', () => {
         ({
           closed: false,
           close: vi.fn(),
-          focus: vi.fn(),
+          focus: popupFocus,
           document: {
             title: '',
             body: {
@@ -135,6 +138,27 @@ describe('webDetach dock layout sync', () => {
 
     expect(popupReplace).toHaveBeenCalledTimes(1);
     expect(String(popupReplace.mock.calls[0]?.[0] ?? '')).toContain('&mobile=1');
+  });
+
+  it('returns a concrete failure without claiming detached state when popups are blocked', async () => {
+    windowOpen.mockReturnValueOnce(null);
+
+    const result = await detachPreview('s1', 'default', { suppressFocus: true });
+
+    expect(result).toEqual({
+      success: false,
+      error:
+        'The browser blocked the detached preview window. Allow popups for this tlbx site and retry.',
+    });
+    expect(setSessionMode).not.toHaveBeenCalled();
+    expect(hideWebPreviewDockForDetach).not.toHaveBeenCalled();
+  });
+
+  it('does not focus a detached popup during agent viewport automation', async () => {
+    await detachPreview('s1', 'default', { suppressFocus: true });
+
+    expect(setDetachedPreviewViewport('s1', 'default', 390, 844)).toBe(true);
+    expect(popupFocus).not.toHaveBeenCalled();
   });
 
   it('reopens the dock immediately when the active preview docks back', () => {

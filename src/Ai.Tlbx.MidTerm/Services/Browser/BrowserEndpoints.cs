@@ -142,36 +142,59 @@ public static class BrowserEndpoints
                 ? Results.Ok()
                 : Results.NotFound());
 
-        app.MapPost("/api/browser/detach", (Models.WebPreview.WebPreviewSessionRequest request) =>
-        {
-            return uiBridge.RequestDetach(
-                NormalizeOptional(request.SessionId),
-                NormalizeOptional(request.PreviewName),
-                out var error)
+        app.MapPost("/api/browser/ui-result", (Models.Browser.BrowserUiCommandResult result) =>
+            uiBridge.CompleteUiCommand(result)
                 ? Results.Ok()
-                : Results.Text(error + "\n", statusCode: 409);
+                : Results.NotFound());
+
+        app.MapPost("/api/browser/detach", async (
+            Models.WebPreview.WebPreviewSessionRequest request,
+            CancellationToken cancellationToken) =>
+        {
+            var sessionId = NormalizeOptional(request.SessionId);
+            var previewName = NormalizeOptional(request.PreviewName);
+            return await uiBridge.SerializeTargetOperationAsync(
+                sessionId ?? "(active)",
+                previewName,
+                async () => BrowserUiCommandHttpResult(await uiBridge.RequestDetachAsync(
+                    sessionId,
+                    previewName,
+                    cancellationToken)),
+                cancellationToken);
         });
 
-        app.MapPost("/api/browser/dock", (Models.WebPreview.WebPreviewSessionRequest request) =>
+        app.MapPost("/api/browser/dock", async (
+            Models.WebPreview.WebPreviewSessionRequest request,
+            CancellationToken cancellationToken) =>
         {
-            return uiBridge.RequestDock(
-                NormalizeOptional(request.SessionId),
-                NormalizeOptional(request.PreviewName),
-                out var error)
-                ? Results.Ok()
-                : Results.Text(error + "\n", statusCode: 409);
+            var sessionId = NormalizeOptional(request.SessionId);
+            var previewName = NormalizeOptional(request.PreviewName);
+            return await uiBridge.SerializeTargetOperationAsync(
+                sessionId ?? "(active)",
+                previewName,
+                async () => BrowserUiCommandHttpResult(await uiBridge.RequestDockAsync(
+                    sessionId,
+                    previewName,
+                    cancellationToken)),
+                cancellationToken);
         });
 
-        app.MapPost("/api/browser/viewport", (Models.Browser.ViewportRequest request) =>
+        app.MapPost("/api/browser/viewport", async (
+            Models.Browser.ViewportRequest request,
+            CancellationToken cancellationToken) =>
         {
-            return uiBridge.RequestViewport(
-                NormalizeOptional(request.SessionId),
-                NormalizeOptional(request.PreviewName),
-                request.Width,
-                request.Height,
-                out var error)
-                ? Results.Ok()
-                : Results.Text(error + "\n", statusCode: 409);
+            var sessionId = NormalizeOptional(request.SessionId);
+            var previewName = NormalizeOptional(request.PreviewName);
+            return await uiBridge.SerializeTargetOperationAsync(
+                sessionId ?? "(active)",
+                previewName,
+                async () => BrowserUiCommandHttpResult(await uiBridge.RequestViewportAsync(
+                    sessionId,
+                    previewName,
+                    request.Width,
+                    request.Height,
+                    cancellationToken)),
+                cancellationToken);
         });
 
         app.MapPost("/api/browser/mobile-device", (Models.Browser.MobileDeviceRequest request) =>
@@ -202,45 +225,55 @@ public static class BrowserEndpoints
                 return Results.BadRequest("sessionId required");
             }
 
-            if (!webPreviewService.SetTarget(sessionId, previewName, url))
-            {
-                return Results.BadRequest("Invalid URL. Must be http://, https://, or a local file:/// URL, and cannot point to this server.");
-            }
-
-            var openResult = await uiBridge.RequestOpenWhenAvailableAsync(
+            return await uiBridge.SerializeTargetOperationAsync(
                 sessionId,
                 previewName,
-                url,
-                activateSession,
-                cancellationToken: cancellationToken);
-            if (!openResult.Success)
-            {
-                return Results.Text(openResult.Error + "\n", statusCode: 409);
-            }
+                async () =>
+                {
+                    var commandStartedAt = DateTimeOffset.UtcNow;
+                    if (!webPreviewService.SetTarget(sessionId, previewName, url))
+                    {
+                        return Results.BadRequest("Invalid URL. Must be http://, https://, or a local file:/// URL, and cannot point to this server.");
+                    }
 
-            var status = await commandService.WaitForControllableAsync(
-                url,
-                sessionId,
-                previewName,
-                requireClientConnectedAfterUtc: DateTimeOffset.UtcNow,
-                requireVisibleClient: activateSession,
-                connectedUiClientCountProvider: () => uiBridge.ConnectedBrowserCount,
-                cancellationToken: cancellationToken);
+                    var targetRevision = webPreviewService.GetPreviewSession(sessionId, previewName)?.TargetRevision;
+                    var openResult = await uiBridge.RequestOpenWhenAvailableAsync(
+                        sessionId,
+                        previewName,
+                        url,
+                        activateSession,
+                        targetRevision: targetRevision,
+                        cancellationToken: cancellationToken);
+                    if (!openResult.Success)
+                    {
+                        return Results.Text(openResult.Error + "\n", statusCode: 409);
+                    }
 
-            var statusText = commandService.GetStatusText(
-                url,
-                sessionId,
-                previewName,
-                connectedUiClientCount: uiBridge.ConnectedBrowserCount);
-
-            var ready = status.Controllable
-                && (!activateSession || status.DefaultClient?.IsVisible == true);
-            return ready
-                ? Results.Text(statusText)
-                : Results.Text(statusText, statusCode: 409);
+                    var status = await commandService.WaitForControllableAsync(
+                        url,
+                        sessionId,
+                        previewName,
+                        requireClientConnectedAfterUtc: commandStartedAt,
+                        requireVisibleClient: activateSession,
+                        connectedUiClientCountProvider: () => uiBridge.ConnectedBrowserCount,
+                        cancellationToken: cancellationToken);
+                    var statusText = commandService.GetStatusText(
+                        url,
+                        sessionId,
+                        previewName,
+                        connectedUiClientCount: uiBridge.ConnectedBrowserCount);
+                    var ready = status.Controllable
+                        && (!activateSession || status.DefaultClient?.IsVisible == true);
+                    return ready
+                        ? Results.Text(statusText)
+                        : Results.Text(statusText, statusCode: 409);
+                },
+                cancellationToken);
         });
 
-        app.MapPost("/api/browser/close", (Models.WebPreview.WebPreviewSessionRequest request) =>
+        app.MapPost("/api/browser/close", async (
+            Models.WebPreview.WebPreviewSessionRequest request,
+            CancellationToken cancellationToken) =>
         {
             var sessionId = NormalizeOptional(request.SessionId);
             var previewName = WebPreviewService.NormalizePreviewName(request.PreviewName);
@@ -249,21 +282,37 @@ public static class BrowserEndpoints
                 return Results.BadRequest("sessionId required");
             }
 
-            if (string.Equals(previewName, WebPreviewService.DefaultPreviewName, StringComparison.OrdinalIgnoreCase))
-            {
-                webPreviewService.ClearTarget(sessionId, previewName);
-            }
-            else
-            {
-                // Close is deliberately idempotent so automation cleanup can safely run from finally.
-                webPreviewService.DeletePreviewSession(sessionId, previewName);
-                previewOwnerService.Release(sessionId, previewName);
-            }
+            return await uiBridge.SerializeTargetOperationAsync(
+                sessionId,
+                previewName,
+                () =>
+                {
+                    if (string.Equals(previewName, WebPreviewService.DefaultPreviewName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        webPreviewService.ClearTarget(sessionId, previewName);
+                    }
+                    else
+                    {
+                        // Close is deliberately idempotent so automation cleanup can safely run from finally.
+                        webPreviewService.DeletePreviewSession(sessionId, previewName);
+                        previewOwnerService.Release(sessionId, previewName);
+                    }
 
-            previewRegistry.Remove(sessionId, previewName);
-            uiBridge.RequestClose(sessionId, previewName);
-            return Results.Ok();
+                    previewRegistry.Remove(sessionId, previewName);
+                    uiBridge.RequestClose(sessionId, previewName);
+                    return Task.FromResult<IResult>(Results.Ok());
+                },
+                cancellationToken);
         });
+    }
+
+    private static IResult BrowserUiCommandHttpResult(Models.Browser.BrowserUiCommandResult result)
+    {
+        return result.Success
+            ? Results.Ok()
+            : Results.Text(
+                (result.Error ?? $"The tlbx browser UI could not complete the {result.Command} command.") + "\n",
+                statusCode: StatusCodes.Status409Conflict);
     }
 
     private static void MapCliEndpoint(

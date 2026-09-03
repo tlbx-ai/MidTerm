@@ -386,33 +386,36 @@ public sealed class StateWebSocketHandler
             _tmuxLayoutBridge.OnSwapRequested += OnSwapRequested;
         }
 
-        void OnBrowserDetach(string? sessionId, string? previewName)
+        void OnBrowserDetach(string requestId, string? sessionId, string? previewName)
         {
             var instruction = new Models.Browser.BrowserUiInstruction
             {
                 Command = "detach",
+                RequestId = requestId,
                 SessionId = sessionId,
                 PreviewName = previewName
             };
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
-        void OnBrowserDock(string? sessionId, string? previewName)
+        void OnBrowserDock(string requestId, string? sessionId, string? previewName)
         {
             var instruction = new Models.Browser.BrowserUiInstruction
             {
                 Command = "dock",
+                RequestId = requestId,
                 SessionId = sessionId,
                 PreviewName = previewName
             };
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
-        void OnBrowserViewport(string? sessionId, string? previewName, int width, int height)
+        void OnBrowserViewport(string requestId, string? sessionId, string? previewName, int width, int height)
         {
             var instruction = new Models.Browser.BrowserUiInstruction
             {
                 Command = "viewport",
+                RequestId = requestId,
                 SessionId = sessionId,
                 PreviewName = previewName,
                 Width = width,
@@ -421,24 +424,33 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
-        void OnBrowserOpen(string? sessionId, string? previewName, string url, bool activateSession)
+        void OnBrowserOpen(
+            string requestId,
+            string? sessionId,
+            string? previewName,
+            string url,
+            bool activateSession,
+            long? targetRevision)
         {
             var instruction = new Models.Browser.BrowserUiInstruction
             {
                 Command = "open",
+                RequestId = requestId,
                 Url = url,
                 SessionId = sessionId,
                 PreviewName = previewName,
-                ActivateSession = activateSession
+                ActivateSession = activateSession,
+                TargetRevision = targetRevision
             };
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
-        void OnBrowserClose(string? sessionId, string? previewName)
+        void OnBrowserClose(string requestId, string? sessionId, string? previewName)
         {
             var instruction = new Models.Browser.BrowserUiInstruction
             {
                 Command = "close",
+                RequestId = requestId,
                 SessionId = sessionId,
                 PreviewName = previewName
             };
@@ -473,7 +485,7 @@ public sealed class StateWebSocketHandler
 
         if (shareAccess is null && !isSizeControlOnly)
         {
-            _browserUiBridge?.RegisterListener(
+            _browserUiBridge?.RegisterAcknowledgedListener(
                 connectionId: browserUiListenerId,
                 browserId: browserId,
                 detach: OnBrowserDetach,

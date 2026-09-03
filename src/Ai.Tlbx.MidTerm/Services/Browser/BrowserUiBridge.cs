@@ -7,6 +7,8 @@ public sealed class BrowserUiBridge
     private readonly Lock _lock = new();
     private readonly Dictionary<string, ListenerRegistration> _listeners = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TaskCompletionSource<AgentHistoryWheelResult>> _pendingAgentWheels = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TaskCompletionSource<BrowserUiCommandResult>> _pendingUiCommands = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TargetOperationGate> _targetOperationGates = new(StringComparer.Ordinal);
     private readonly MainBrowserService _mainBrowserService;
     private readonly BrowserPreviewOwnerService? _previewOwnerService;
 
@@ -25,6 +27,50 @@ public sealed class BrowserUiBridge
             lock (_lock)
             {
                 return _listeners.Count;
+            }
+        }
+    }
+
+    public async Task<T> SerializeTargetOperationAsync<T>(
+        string sessionId,
+        string? previewName,
+        Func<Task<T>> operation,
+        CancellationToken cancellationToken = default)
+    {
+        var key = $"{sessionId}::{(string.IsNullOrWhiteSpace(previewName) ? "default" : previewName.Trim())}";
+        TargetOperationGate targetGate;
+        lock (_lock)
+        {
+            if (!_targetOperationGates.TryGetValue(key, out targetGate!))
+            {
+                targetGate = new TargetOperationGate();
+                _targetOperationGates[key] = targetGate;
+            }
+            targetGate.References++;
+        }
+
+        try
+        {
+            await targetGate.Semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await operation().ConfigureAwait(false);
+            }
+            finally
+            {
+                targetGate.Semaphore.Release();
+            }
+        }
+        finally
+        {
+            lock (_lock)
+            {
+                targetGate.References--;
+                if (targetGate.References == 0)
+                {
+                    _targetOperationGates.Remove(key);
+                    targetGate.Semaphore.Dispose();
+                }
             }
         }
     }
@@ -53,6 +99,40 @@ public sealed class BrowserUiBridge
                 Close = close,
                 MobileDevice = mobileDevice,
                 AgentWheel = agentWheel,
+                ConnectedAtUtc = DateTimeOffset.UtcNow
+            };
+        }
+    }
+
+    public void RegisterAcknowledgedListener(
+        string connectionId,
+        string browserId,
+        Action<string, string?, string?> detach,
+        Action<string, string?, string?> dock,
+        Action<string, string?, string?, int, int> viewport,
+        Action<string, string?, string?, string, bool, long?> open,
+        Action<string?, string?, string, string?>? mobileDevice = null,
+        Action<string, string, double, int>? agentWheel = null,
+        Action<string, string?, string?>? close = null)
+    {
+        lock (_lock)
+        {
+            _listeners[connectionId] = new ListenerRegistration
+            {
+                ConnectionId = connectionId,
+                BrowserId = browserId,
+                Detach = (_, _) => { },
+                Dock = (_, _) => { },
+                Viewport = (_, _, _, _) => { },
+                Open = (_, _, _, _) => { },
+                Close = null,
+                MobileDevice = mobileDevice,
+                AgentWheel = agentWheel,
+                AcknowledgedDetach = detach,
+                AcknowledgedDock = dock,
+                AcknowledgedViewport = viewport,
+                AcknowledgedOpen = open,
+                AcknowledgedClose = close,
                 ConnectedAtUtc = DateTimeOffset.UtcNow
             };
         }
@@ -229,19 +309,180 @@ public sealed class BrowserUiBridge
         return true;
     }
 
+    public Task<BrowserUiCommandResult> RequestDetachAsync(
+        string? sessionId,
+        string? previewName,
+        CancellationToken cancellationToken = default) =>
+        RequestUiCommandAsync(
+            "detach",
+            sessionId,
+            previewName,
+            (target, requestId) =>
+            {
+                if (target.AcknowledgedDetach is not null)
+                    target.AcknowledgedDetach(requestId, sessionId, previewName);
+                else
+                {
+                    target.Detach(sessionId, previewName);
+                    CompleteUiCommand(requestId, "detach");
+                }
+            },
+            cancellationToken);
+
+    public Task<BrowserUiCommandResult> RequestDockAsync(
+        string? sessionId,
+        string? previewName,
+        CancellationToken cancellationToken = default) =>
+        RequestUiCommandAsync(
+            "dock",
+            sessionId,
+            previewName,
+            (target, requestId) =>
+            {
+                if (target.AcknowledgedDock is not null)
+                    target.AcknowledgedDock(requestId, sessionId, previewName);
+                else
+                {
+                    target.Dock(sessionId, previewName);
+                    CompleteUiCommand(requestId, "dock");
+                }
+            },
+            cancellationToken);
+
+    public Task<BrowserUiCommandResult> RequestViewportAsync(
+        string? sessionId,
+        string? previewName,
+        int width,
+        int height,
+        CancellationToken cancellationToken = default) =>
+        RequestUiCommandAsync(
+            "viewport",
+            sessionId,
+            previewName,
+            (target, requestId) =>
+            {
+                if (target.AcknowledgedViewport is not null)
+                    target.AcknowledgedViewport(requestId, sessionId, previewName, width, height);
+                else
+                {
+                    target.Viewport(sessionId, previewName, width, height);
+                    CompleteUiCommand(requestId, "viewport");
+                }
+            },
+            cancellationToken);
+
+    public Task<BrowserUiCommandResult> RequestOpenAsync(
+        string? sessionId,
+        string? previewName,
+        string url,
+        bool activateSession,
+        long? targetRevision,
+        CancellationToken cancellationToken = default) =>
+        RequestUiCommandAsync(
+            "open",
+            sessionId,
+            previewName,
+            (target, requestId) =>
+            {
+                if (target.AcknowledgedOpen is not null)
+                    target.AcknowledgedOpen(
+                        requestId,
+                        sessionId,
+                        previewName,
+                        url,
+                        activateSession,
+                        targetRevision);
+                else
+                {
+                    target.Open(sessionId, previewName, url, activateSession);
+                    CompleteUiCommand(requestId, "open");
+                }
+            },
+            cancellationToken);
+
+    public bool CompleteUiCommand(BrowserUiCommandResult result)
+    {
+        if (string.IsNullOrWhiteSpace(result.RequestId))
+            return false;
+
+        TaskCompletionSource<BrowserUiCommandResult>? completion;
+        lock (_lock)
+        {
+            _pendingUiCommands.TryGetValue(result.RequestId, out completion);
+        }
+
+        return completion?.TrySetResult(result) == true;
+    }
+
+    private void CompleteUiCommand(string requestId, string command)
+    {
+        CompleteUiCommand(new BrowserUiCommandResult
+        {
+            RequestId = requestId,
+            Command = command,
+            Success = true
+        });
+    }
+
+    private async Task<BrowserUiCommandResult> RequestUiCommandAsync(
+        string command,
+        string? sessionId,
+        string? previewName,
+        Action<ListenerRegistration, string> dispatch,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetTargetListener(sessionId, previewName, out var target, out var error))
+            return new BrowserUiCommandResult { Command = command, Error = error };
+
+        var requestId = Guid.NewGuid().ToString("N");
+        var completion = new TaskCompletionSource<BrowserUiCommandResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_lock)
+        {
+            _pendingUiCommands[requestId] = completion;
+        }
+
+        try
+        {
+            dispatch(target, requestId);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            return await completion.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new BrowserUiCommandResult
+            {
+                RequestId = requestId,
+                Command = command,
+                Error = $"Timed out waiting for the tlbx browser UI to complete the {command} command."
+            };
+        }
+        finally
+        {
+            lock (_lock)
+            {
+                _pendingUiCommands.Remove(requestId);
+            }
+        }
+    }
+
     public int RequestClose(string sessionId, string? previewName)
     {
         ListenerRegistration[] targets;
         lock (_lock)
         {
             targets = _listeners.Values
-                .Where(listener => listener.Close is not null)
+                .Where(listener => listener.Close is not null || listener.AcknowledgedClose is not null)
                 .ToArray();
         }
 
         foreach (var target in targets)
         {
-            target.Close!(sessionId, previewName);
+            if (target.AcknowledgedClose is not null)
+                target.AcknowledgedClose("", sessionId, previewName);
+            else
+                target.Close!(sessionId, previewName);
         }
 
         return targets.Length;
@@ -254,6 +495,7 @@ public sealed class BrowserUiBridge
         bool activateSession,
         TimeSpan? timeout = null,
         TimeSpan? pollInterval = null,
+        long? targetRevision = null,
         CancellationToken cancellationToken = default)
     {
         var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(4));
@@ -262,9 +504,22 @@ public sealed class BrowserUiBridge
 
         while (true)
         {
-            if (RequestOpen(sessionId, previewName, url, activateSession, out lastError))
+            var result = await RequestOpenAsync(
+                sessionId,
+                previewName,
+                url,
+                activateSession,
+                targetRevision,
+                cancellationToken).ConfigureAwait(false);
+            if (result.Success)
             {
                 return (true, "");
+            }
+
+            lastError = result.Error ?? "The tlbx browser UI could not complete the open command.";
+            if (ConnectedBrowserCount > 0)
+            {
+                return (false, lastError);
             }
 
             if (DateTimeOffset.UtcNow >= deadline)
@@ -523,8 +778,19 @@ public sealed class BrowserUiBridge
         public required Action<string?, string?, int, int> Viewport { get; init; }
         public required Action<string?, string?, string, bool> Open { get; init; }
         public Action<string?, string?>? Close { get; init; }
+        public Action<string, string?, string?>? AcknowledgedDetach { get; init; }
+        public Action<string, string?, string?>? AcknowledgedDock { get; init; }
+        public Action<string, string?, string?, int, int>? AcknowledgedViewport { get; init; }
+        public Action<string, string?, string?, string, bool, long?>? AcknowledgedOpen { get; init; }
+        public Action<string, string?, string?>? AcknowledgedClose { get; init; }
         public Action<string?, string?, string, string?>? MobileDevice { get; init; }
         public Action<string, string, double, int>? AgentWheel { get; init; }
         public DateTimeOffset ConnectedAtUtc { get; init; }
+    }
+
+    private sealed class TargetOperationGate
+    {
+        public SemaphoreSlim Semaphore { get; } = new(1, 1);
+        public int References { get; set; }
     }
 }

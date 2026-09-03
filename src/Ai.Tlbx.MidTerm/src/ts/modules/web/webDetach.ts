@@ -37,6 +37,11 @@ export interface DetachPreviewOptions {
   suppressFocus?: boolean;
 }
 
+export interface DetachPreviewResult {
+  success: boolean;
+  error?: string;
+}
+
 function popupKey(sessionId: string, previewName: string): string {
   return `${sessionId}::${previewName}`;
 }
@@ -96,9 +101,12 @@ function getActiveDetachedViewport(
   sessionId: string,
   previewName: string,
 ): { width: number; height: number } | null {
-  return sessionId === $activeSessionId.get() && previewName === getActivePreviewName()
-    ? $webPreviewViewport.get()
-    : null;
+  return (
+    getSessionPreview(sessionId, previewName)?.viewport ??
+    (sessionId === $activeSessionId.get() && previewName === getActivePreviewName()
+      ? $webPreviewViewport.get()
+      : null)
+  );
 }
 
 function buildDetachedPopupUrl(args: {
@@ -182,10 +190,10 @@ export async function detachPreview(
   sessionId?: string,
   previewName?: string,
   options?: DetachPreviewOptions,
-): Promise<void> {
+): Promise<DetachPreviewResult> {
   const targetSessionId = sessionId ?? $activeSessionId.get();
   if (!targetSessionId) {
-    return;
+    return { success: false, error: 'No terminal session is available for the browser preview.' };
   }
 
   const targetPreviewName = setSessionSelectedPreviewName(targetSessionId, previewName);
@@ -194,12 +202,16 @@ export async function detachPreview(
   const existing = popups.get(key);
   if (existing && !existing.closed) {
     activateExistingPopup(key, existing, mobileMode, options?.suppressFocus === true);
-    return;
+    return { success: true };
   }
 
   const popup = openDetachedBootstrapPopup(targetSessionId, targetPreviewName);
   if (!popup) {
-    return;
+    return {
+      success: false,
+      error:
+        'The browser blocked the detached preview window. Allow popups for this tlbx site and retry.',
+    };
   }
 
   const url = getPreviewUrlForDetach(targetSessionId, targetPreviewName);
@@ -210,7 +222,7 @@ export async function detachPreview(
     log.warn(
       () => `Failed to create detached browser client for ${targetSessionId}/${targetPreviewName}`,
     );
-    return;
+    return { success: false, error: 'tlbx could not create a client for the detached preview.' };
   }
 
   setSessionDockedClient(targetSessionId, targetPreviewName, previewClient);
@@ -230,7 +242,7 @@ export async function detachPreview(
     popup.location.replace(popupUrl);
   } catch {
     popup.close();
-    return;
+    return { success: false, error: 'tlbx could not navigate the detached preview window.' };
   }
 
   closePopupForPreview(targetSessionId, targetPreviewName);
@@ -252,6 +264,7 @@ export async function detachPreview(
   }
 
   log.info(() => `Web preview detached to popup for ${targetSessionId}/${targetPreviewName}`);
+  return { success: true };
 }
 
 /** Close a detached popup and restore the named web preview into the dock panel. */
@@ -345,12 +358,6 @@ export function setDetachedPreviewViewport(
     width,
     height,
   });
-
-  try {
-    popup.focus();
-  } catch {
-    // Ignore popup focus failures from the host browser.
-  }
 
   return true;
 }

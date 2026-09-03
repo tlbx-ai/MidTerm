@@ -15,6 +15,7 @@ export interface WebPreviewState {
   targetRevision: number;
   mode: WebPreviewMode;
   dockedClient: BrowserPreviewClientResponse | null;
+  viewport: { width: number; height: number } | null;
 }
 
 export interface SessionWebPreviewState {
@@ -35,6 +36,7 @@ function buildPreviewState(previewName: string): WebPreviewState {
     targetRevision: 0,
     mode: 'hidden',
     dockedClient: null,
+    viewport: null,
   };
 }
 
@@ -311,6 +313,17 @@ export function setActiveMode(mode: WebPreviewMode): void {
 /** Set the display mode for a specific named preview. */
 export function setSessionMode(sessionId: string, previewName: string, mode: WebPreviewMode): void {
   ensurePreviewState(sessionId, previewName).mode = mode;
+}
+
+/** Persist a viewport override with the named preview, including while it is hidden. */
+export function setSessionViewport(
+  sessionId: string,
+  previewName: string,
+  width: number,
+  height: number,
+): void {
+  ensurePreviewState(sessionId, previewName).viewport =
+    width > 0 || height > 0 ? { width, height } : null;
 }
 
 /** Get the full preview session state for a session. */

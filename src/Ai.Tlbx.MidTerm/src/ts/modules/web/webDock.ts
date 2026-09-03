@@ -28,6 +28,7 @@ import {
   listSessionPreviews,
   setActiveMode,
   setSessionSelectedPreviewName,
+  setSessionViewport,
 } from './webSessionState';
 
 const log = createLogger('webDock');
@@ -361,6 +362,11 @@ export function setViewportSize(width: number, height: number): void {
   const body = document.querySelector<HTMLElement>('.web-preview-dock-body');
   const badge = document.getElementById('web-preview-viewport-badge');
   if (!iframe || !body) return;
+
+  const activeSessionId = $activeSessionId.get();
+  if (activeSessionId) {
+    setSessionViewport(activeSessionId, getActivePreviewName(), width, height);
+  }
 
   if (width <= 0 && height <= 0) {
     $webPreviewViewport.set(null);
