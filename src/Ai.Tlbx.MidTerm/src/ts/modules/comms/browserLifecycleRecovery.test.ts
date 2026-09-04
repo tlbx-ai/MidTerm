@@ -233,6 +233,44 @@ describe('browserLifecycleRecovery', () => {
     expect(options.focusActiveTerminal).toHaveBeenCalledTimes(1);
   });
 
+  it('never coalesces away a new background resume within the foreground debounce window', () => {
+    const options = setup();
+    emitWindow('focus');
+    vi.advanceTimersByTime(0);
+
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      vi.advanceTimersByTime(10);
+      setVisibility('hidden');
+      emitDocument('visibilitychange');
+      vi.advanceTimersByTime(10);
+      setVisibility('visible');
+      emitDocument('visibilitychange');
+      emitWindow('focus');
+      vi.advanceTimersByTime(0);
+    }
+
+    expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(3);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(3);
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledTimes(4);
+    expect(options.recoverTerminalPresentationAfterResume).toHaveBeenCalledTimes(4);
+  });
+
+  it('recovers a pending suspension on the foreground heartbeat when resume events are missing', () => {
+    setup();
+    setVisibility('hidden');
+    emitDocument('visibilitychange');
+    vi.advanceTimersByTime(10);
+    setVisibility('visible');
+    vi.advanceTimersByTime(1100);
+
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
+      'sess1234',
+      ['sess1234'],
+      { forceReconnect: true },
+    );
+  });
+
   it('does not classify a visible window blur as a browser suspension', () => {
     const options = setup();
 

@@ -111,6 +111,7 @@ export function setupBrowserLifecycleRecovery(
     if (
       recoveryTimer === null &&
       !forceTransportReconnect &&
+      !resumeFromBackgroundPending &&
       now - lastRecoveryAtMs < FOREGROUND_RECOVERY_COALESCE_MS
     ) {
       return;
@@ -212,6 +213,10 @@ export function setupBrowserLifecycleRecovery(
 
     if (isDocumentHidden()) {
       enterBrowserBackground();
+      return;
+    }
+    if (resumeFromBackgroundPending) {
+      scheduleForegroundRecovery();
       return;
     }
     if (!hasSuspendedForegroundEventLoop(previousHeartbeatAtMs, now)) {

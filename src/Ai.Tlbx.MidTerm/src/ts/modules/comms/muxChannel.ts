@@ -155,6 +155,7 @@ const BUFFER_REPLAY_MAX_MS = 12000;
 
 interface BrowserTransportSnapshot {
   receivedSeq: bigint;
+  submittedSeq: bigint;
   renderedSeq: bigint;
   dataLossCount: number;
   lastDataLossReason: string | null;
@@ -400,6 +401,7 @@ let muxSuspendedForBrowserBackground = false;
 
 interface OutputFrameItem {
   sessionId: string;
+  generation: number;
   payload: Uint8Array;
   compressed: boolean;
 }
@@ -479,6 +481,7 @@ function getOrCreateBrowserTransportSnapshot(sessionId: string): BrowserTranspor
   if (!snapshot) {
     snapshot = {
       receivedSeq: 0n,
+      submittedSeq: 0n,
       renderedSeq: 0n,
       dataLossCount: 0,
       lastDataLossReason: null,
@@ -645,7 +648,7 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
     return;
   }
 
-  queue.items.push({ sessionId, payload, compressed });
+  queue.items.push({ sessionId, generation: getOutputGeneration(sessionId), payload, compressed });
   queue.bytes += payload.byteLength;
   scheduleSessionOutputQueue(sessionId, getOutputGeneration(sessionId));
 }
@@ -926,6 +929,11 @@ function processParsedOutputFrame(
   rows: number,
   data: Uint8Array,
 ): TerminalOutputDelivery | null {
+  // A recovery or reconnect can retire this frame while decompression or an
+  // xterm preparation barrier is awaited. Retired work must not move cursors.
+  if (!isOutputGenerationCurrent(item.sessionId, item.generation)) {
+    return null;
+  }
   try {
     const snapshot = getOrCreateBrowserTransportSnapshot(item.sessionId);
     const sequence = classifyTerminalFrameSequence(data.length, sequenceEnd, snapshot.receivedSeq);
@@ -1029,6 +1037,8 @@ function writeTerminalData(
     recordInputTraceOutputParsed(sessionId, sequenceEnd);
     onParsed?.();
   });
+  const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
+  snapshot.submittedSeq = maxSequence(snapshot.submittedSeq, sequenceEnd);
 }
 
 function processTerminalOutputCursorState(
@@ -1122,6 +1132,10 @@ function writeToTerminal(
   generation: number,
   onParsed?: () => void,
 ): void {
+  if (!isOutputGenerationCurrent(sessionId, generation)) {
+    onParsed?.();
+    return;
+  }
   const cursorVisibility = processTerminalOutputCursorState(state, sessionId, data);
   applyTerminalResizeIfNeeded(sessionId, state, cols, rows);
   writeOutputDataWithPathScan(
@@ -1221,6 +1235,7 @@ function handleMuxRecoveryBeginFrame(
   // Invalidate only this session. Async decompression and xterm callbacks from
   // other terminals must remain live while this transaction re-establishes one cursor.
   clearQueuedOutput(sessionId);
+  discardSessionRecovery(sessionId);
   pendingOutputFrames.delete(sessionId);
   pendingTerminalReplayModes.delete(sessionId);
   sessionsNeedingResync.delete(sessionId);
@@ -1254,7 +1269,12 @@ function handleMuxRecoveryBeginFrame(
     }
 
     const finishPreparation = (): void => {
+      if (activeSessionRecoveries.get(sessionId) !== recovery) {
+        releaseRecoveryBarrier();
+        return;
+      }
       snapshot.receivedSeq = sequenceStart;
+      snapshot.submittedSeq = sequenceStart;
       snapshot.renderedSeq = sequenceStart;
       recovery.prepared = true;
       recovery.ready = null;
@@ -1390,6 +1410,7 @@ function handleMuxResyncFrame(type: number, sessionId: string): boolean {
     sessionsNeedingResync.delete(sessionId);
     const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
     snapshot.receivedSeq = 0n;
+    snapshot.submittedSeq = 0n;
     snapshot.renderedSeq = 0n;
     discardSessionRecovery(sessionId);
     recoveryRequestsInFlight.delete(sessionId);
@@ -1403,6 +1424,7 @@ function handleMuxResyncFrame(type: number, sessionId: string): boolean {
     sessionsNeedingResync.clear();
     browserTransportSnapshots.forEach((snapshot) => {
       snapshot.receivedSeq = 0n;
+      snapshot.submittedSeq = 0n;
       snapshot.renderedSeq = 0n;
     });
     discardAllSessionRecoveries();
@@ -1500,6 +1522,25 @@ function handleMuxDataLossFrame(type: number, sessionId: string, payload: Uint8A
   return true;
 }
 
+function retireMuxConnectionState(): void {
+  // Explicit socket replacement disables onclose. Both close paths must retire
+  // transactions and invalidate async output before releasing their barriers.
+  clearQueuedOutput();
+  discardAllSessionRecoveries();
+  recoveryRequestsInFlight.clear();
+  recoveryFollowupCauses.clear();
+  replaySuppressedSessions.clear();
+  lastHintedSessionId = null;
+  syncCompletePending = false;
+  if (syncCompleteTimeout !== null) {
+    clearTimeout(syncCompleteTimeout);
+    syncCompleteTimeout = null;
+  }
+  _suppressHeatCallback?.(0);
+  setBellNotificationsSuppressed(false);
+  clearInputLatencyTraceInFlight();
+}
+
 /**
  * Connect to the mux WebSocket for terminal I/O.
  * Uses a binary protocol with 9-byte header.
@@ -1511,6 +1552,7 @@ export function connectMuxWebSocket(): void {
 
   muxReconnect.cancel();
   closeWebSocket(muxWs, setMuxWs);
+  retireMuxConnectionState();
   $muxWsConnected.set(false);
 
   const activeId = $activeSessionId.get();
@@ -1650,13 +1692,7 @@ export function connectMuxWebSocket(): void {
   ws.onclose = (event) => {
     if (muxWs !== ws) return;
     $muxWsConnected.set(false);
-    lastHintedSessionId = null;
-    syncCompletePending = false;
-    replaySuppressedSessions.clear();
-    discardAllSessionRecoveries();
-    recoveryRequestsInFlight.clear();
-    recoveryFollowupCauses.clear();
-    clearInputLatencyTraceInFlight();
+    retireMuxConnectionState();
 
     // Log close reason
     if (event.code === WS_CLOSE_SERVER_SHUTDOWN) {
@@ -1906,6 +1942,7 @@ export function restartStalledSessionRecovery(
 
   const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
   snapshot.receivedSeq = 0n;
+  snapshot.submittedSeq = 0n;
   snapshot.renderedSeq = 0n;
   requestBufferRefresh(sessionId, 'fullReplay', recoveryCause);
 }
@@ -2031,7 +2068,7 @@ export function suspendMuxForBrowserBackground(): void {
   muxReconnect.cancel();
   closeWebSocket(muxWs, setMuxWs);
   $muxWsConnected.set(false);
-  clearQueuedOutput();
+  retireMuxConnectionState();
 }
 
 export function recoverVisibleTerminalsAfterBrowserResume(
