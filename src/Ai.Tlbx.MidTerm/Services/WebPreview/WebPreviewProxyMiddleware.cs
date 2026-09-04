@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -1485,10 +1486,7 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var msg = new HttpRequestMessage(method, url);
             ForwardRequestHeaders(context.Request, msg, routeKey, targetUri, upstreamOrigin);
-            msg.Headers.TryAddWithoutValidation("X-Forwarded-For",
-                context.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1");
-            msg.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
-            msg.Headers.TryAddWithoutValidation("X-Forwarded-Host", context.Request.Host.ToString());
+            AddForwardedHeaders(msg, context.Connection.RemoteIpAddress);
             if (_service.IsSelfTarget(msg.RequestUri!))
             {
                 msg.Headers.TryAddWithoutValidation(
@@ -1656,7 +1654,19 @@ public sealed partial class WebPreviewProxyMiddleware
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
         var targetOrigin = targetUri.GetLeftPart(UriPartial.Authority);
         var originScript = $"<script>window.__mtTargetOrigin=\"{targetOrigin}\";</script>";
-        html = HeadTagRegex().Replace(html, $"$0<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix), 1);
+        var redirectedProxyPath = BuildRedirectedProxyPath(
+            routePrefix,
+            targetUri,
+            finalUrl,
+            context.Request.Path.Value ?? "/",
+            context.Request.QueryString.Value);
+        var redirectPathScript = redirectedProxyPath is null
+            ? ""
+            : $"<script>history.replaceState(history.state,\"\",\"{JsonEncodedText.Encode(redirectedProxyPath)}\");</script>";
+        html = HeadTagRegex().Replace(
+            html,
+            $"$0<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix) + redirectPathScript,
+            1);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");
@@ -1674,6 +1684,37 @@ public sealed partial class WebPreviewProxyMiddleware
         var lastSlash = path.LastIndexOf('/');
         var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
         return routePrefix + directory;
+    }
+
+    internal static string? BuildRedirectedProxyPath(
+        string routePrefix,
+        Uri targetUri,
+        string? finalUrl,
+        string requestPath,
+        string? requestQuery)
+    {
+        if (string.IsNullOrWhiteSpace(finalUrl)
+            || !Uri.TryCreate(finalUrl, UriKind.Absolute, out var finalUri)
+            || !finalUri.Authority.Equals(targetUri.Authority, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var upstreamRequestPath = TryParseProxyRoute(requestPath, out _, out var remainingPath)
+            ? remainingPath
+            : requestPath;
+        var initialUrl = BuildUpstreamUrlFromPath(
+            targetUri,
+            BuildUpstreamPath(targetUri, upstreamRequestPath),
+            StripPreviewBootstrapQuery(requestQuery));
+
+        if (Uri.TryCreate(initialUrl, UriKind.Absolute, out var initialUri)
+            && initialUri.AbsoluteUri.Equals(finalUri.AbsoluteUri, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return routePrefix + finalUri.PathAndQuery + finalUri.Fragment;
     }
 
     internal static string BuildInjectedBaseHref(string routePrefix, string? finalUrl, string? originalBaseHref, string html)
@@ -1916,6 +1957,18 @@ public sealed partial class WebPreviewProxyMiddleware
             target.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
         }
 
+    }
+
+    internal static void AddForwardedHeaders(HttpRequestMessage target, IPAddress? remoteAddress)
+    {
+        var targetUri = target.RequestUri
+            ?? throw new InvalidOperationException("A web preview upstream request must have a target URI.");
+
+        target.Headers.TryAddWithoutValidation(
+            "X-Forwarded-For",
+            remoteAddress?.ToString() ?? IPAddress.Loopback.ToString());
+        target.Headers.TryAddWithoutValidation("X-Forwarded-Proto", targetUri.Scheme);
+        target.Headers.TryAddWithoutValidation("X-Forwarded-Host", targetUri.Authority);
     }
 
     internal string RewriteRefererForUpstream(string refererValue, string currentRouteKey, Uri currentTargetUri)

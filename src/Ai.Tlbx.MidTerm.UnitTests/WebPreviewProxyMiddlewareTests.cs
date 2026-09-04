@@ -2,6 +2,7 @@ using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using System.Net;
 using System.Reflection;
 using System.Text;
 using Xunit;
@@ -11,6 +12,22 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public class WebPreviewProxyMiddlewareTests
 {
     [Fact]
+    public void AddForwardedHeaders_UsesUpstreamAuthorityInsteadOfOuterTlbxHost()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "https://demo.kilv.de/login?ReturnUrl=%2F");
+
+        WebPreviewProxyMiddleware.AddForwardedHeaders(
+            request,
+            IPAddress.Parse("100.78.171.121"));
+
+        Assert.Equal("100.78.171.121", Assert.Single(request.Headers.GetValues("X-Forwarded-For")));
+        Assert.Equal("https", Assert.Single(request.Headers.GetValues("X-Forwarded-Proto")));
+        Assert.Equal("demo.kilv.de", Assert.Single(request.Headers.GetValues("X-Forwarded-Host")));
+    }
+
+    [Fact]
     public void BuildUpstreamPath_TargetWithBaseAndRootPath_ReturnsTargetBase()
     {
         var target = new Uri("https://example.com/dashboard");
@@ -18,6 +35,45 @@ public class WebPreviewProxyMiddlewareTests
         var result = WebPreviewProxyMiddleware.BuildUpstreamPath(target, "/");
 
         Assert.Equal("/dashboard", result);
+    }
+
+    [Fact]
+    public void BuildRedirectedProxyPath_SameAuthorityRedirect_PreservesFinalPathAndQuery()
+    {
+        var result = WebPreviewProxyMiddleware.BuildRedirectedProxyPath(
+            "/webpreview/route-1",
+            new Uri("https://demo.kilv.de/"),
+            "https://demo.kilv.de/login?ReturnUrl=%2F",
+            "/webpreview/route-1/",
+            "?__mtPreviewId=preview-1&__mtPreviewToken=secret&__mtTargetRevision=2");
+
+        Assert.Equal("/webpreview/route-1/login?ReturnUrl=%2F", result);
+    }
+
+    [Fact]
+    public void BuildRedirectedProxyPath_UnchangedRequest_ReturnsNull()
+    {
+        var result = WebPreviewProxyMiddleware.BuildRedirectedProxyPath(
+            "/webpreview/route-1",
+            new Uri("https://demo.kilv.de/"),
+            "https://demo.kilv.de/login?ReturnUrl=%2F",
+            "/webpreview/route-1/login",
+            "?ReturnUrl=%2F");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void BuildRedirectedProxyPath_CrossAuthorityRedirect_ReturnsNull()
+    {
+        var result = WebPreviewProxyMiddleware.BuildRedirectedProxyPath(
+            "/webpreview/route-1",
+            new Uri("https://demo.kilv.de/"),
+            "https://login.example.net/authorize",
+            "/webpreview/route-1/",
+            null);
+
+        Assert.Null(result);
     }
 
     [Fact]
