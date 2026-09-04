@@ -1,4 +1,5 @@
 import { $activeSessionId, $stateWsConnected } from '../../stores';
+import { MOBILE_PIP_ACTIVE_CHANGED_EVENT } from '../../constants';
 import { connectStateWebSocket, reportBrowserActivity } from './stateChannel';
 import {
   recoverVisibleTerminalsAfterBrowserResume,
@@ -10,9 +11,15 @@ interface BrowserLifecycleRecoveryOptions {
   syncMuxTerminalVisibility: () => void;
   focusActiveTerminal: () => void;
   applyScrollbackProtection: () => void;
+  recoverTerminalPresentationAfterResume: () => void;
   keepTerminalOutputActiveWhileHidden: () => boolean;
+  suspendAdditionalTerminalTransport?: () => void;
+  recoverAdditionalTerminalTransport?: () => void;
   reconnectSettingsAfterLongResume?: () => void;
   recoverAppServerControlAfterResume?: () => void;
+  suspendAppServerControlForBackground?: () => void;
+  suspendAncillaryTransportForBackground?: () => void;
+  recoverAncillaryTransportAfterResume?: () => void;
 }
 
 const LONG_BACKGROUND_TRANSPORT_RESET_MS = 5000;
@@ -35,6 +42,7 @@ export function setupBrowserLifecycleRecovery(
   let lastRecoveryAtMs = Number.NEGATIVE_INFINITY;
   let lastForegroundHeartbeatAtMs = Date.now();
   let resumeFromBackgroundPending = hiddenAtMs !== null;
+  let backgroundLifecycleApplied = false;
 
   const recoverRealtimeAfterBrowserResume = (
     forceReconnect: boolean,
@@ -50,6 +58,7 @@ export function setupBrowserLifecycleRecovery(
     if (replaceBrowserTransports) {
       options.reconnectSettingsAfterLongResume?.();
       options.recoverAppServerControlAfterResume?.();
+      options.recoverAncillaryTransportAfterResume?.();
     }
 
     recoverVisibleTerminalsAfterBrowserResume(
@@ -57,8 +66,10 @@ export function setupBrowserLifecycleRecovery(
       options.getVisibleTerminalSessionIds(),
       { forceReconnect: replaceBrowserTransports },
     );
+    options.recoverAdditionalTerminalTransport?.();
 
     options.syncMuxTerminalVisibility();
+    options.recoverTerminalPresentationAfterResume();
     options.focusActiveTerminal();
     options.applyScrollbackProtection();
   };
@@ -73,6 +84,20 @@ export function setupBrowserLifecycleRecovery(
     hiddenAtMs ??= Date.now();
     resumeFromBackgroundPending = true;
     cancelScheduledRecovery();
+  };
+
+  const enterBrowserBackground = (): void => {
+    rememberBackgroundStart();
+    if (backgroundLifecycleApplied) return;
+
+    backgroundLifecycleApplied = true;
+    reportBrowserActivity(false);
+    options.suspendAppServerControlForBackground?.();
+    options.suspendAncillaryTransportForBackground?.();
+    if (!options.keepTerminalOutputActiveWhileHidden()) {
+      suspendMuxForBrowserBackground();
+      options.suspendAdditionalTerminalTransport?.();
+    }
   };
 
   const scheduleForegroundRecovery = (): void => {
@@ -105,20 +130,17 @@ export function setupBrowserLifecycleRecovery(
       resumeFromBackgroundPending = false;
       lastRecoveryAtMs = Date.now();
       recoverRealtimeAfterBrowserResume(shouldForceReconnect, resumedFromBackground);
+      backgroundLifecycleApplied = false;
     }, 0);
   };
 
   const handleVisibilityChange = (): void => {
-    reportBrowserActivity();
-
     if (isDocumentHidden()) {
-      rememberBackgroundStart();
-      if (!options.keepTerminalOutputActiveWhileHidden()) {
-        suspendMuxForBrowserBackground();
-      }
+      enterBrowserBackground();
       return;
     }
 
+    reportBrowserActivity();
     scheduleForegroundRecovery();
   };
 
@@ -131,8 +153,7 @@ export function setupBrowserLifecycleRecovery(
   };
 
   const handlePageHide = (): void => {
-    rememberBackgroundStart();
-    reportBrowserActivity(false);
+    enterBrowserBackground();
   };
 
   const handlePageShow = (): void => {
@@ -144,11 +165,24 @@ export function setupBrowserLifecycleRecovery(
   };
 
   const handleFreeze = (): void => {
-    rememberBackgroundStart();
-    reportBrowserActivity(false);
+    enterBrowserBackground();
+  };
+
+  const handleMobilePiPActiveChanged = (): void => {
+    if (!isDocumentHidden()) return;
     if (!options.keepTerminalOutputActiveWhileHidden()) {
       suspendMuxForBrowserBackground();
+      options.suspendAdditionalTerminalTransport?.();
+      return;
     }
+
+    const activeSessionId = $activeSessionId.get();
+    recoverVisibleTerminalsAfterBrowserResume(
+      activeSessionId,
+      activeSessionId === null ? [] : [activeSessionId],
+      { forceReconnect: true },
+    );
+    options.recoverAdditionalTerminalTransport?.();
   };
 
   document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -158,6 +192,14 @@ export function setupBrowserLifecycleRecovery(
   window.addEventListener('pageshow', handlePageShow);
   document.addEventListener('resume', handleResume);
   document.addEventListener('freeze', handleFreeze);
+  window.addEventListener(MOBILE_PIP_ACTIVE_CHANGED_EVENT, handleMobilePiPActiveChanged);
+
+  // A PWA can be restored or launched while its document is already hidden.
+  // Apply the same backpressure immediately, before the initial mux connection
+  // is allowed to receive and render output no user can see.
+  if (isDocumentHidden()) {
+    enterBrowserBackground();
+  }
 
   // Android may freeze a standalone PWA without reliably delivering every
   // visibility/focus event. A suspended event loop makes this lightweight
@@ -169,7 +211,7 @@ export function setupBrowserLifecycleRecovery(
     lastForegroundHeartbeatAtMs = now;
 
     if (isDocumentHidden()) {
-      hiddenAtMs ??= now;
+      enterBrowserBackground();
       return;
     }
     if (!hasSuspendedForegroundEventLoop(previousHeartbeatAtMs, now)) {
@@ -190,6 +232,7 @@ export function setupBrowserLifecycleRecovery(
     window.removeEventListener('pageshow', handlePageShow);
     document.removeEventListener('resume', handleResume);
     document.removeEventListener('freeze', handleFreeze);
+    window.removeEventListener(MOBILE_PIP_ACTIVE_CHANGED_EVENT, handleMobilePiPActiveChanged);
   };
 }
 

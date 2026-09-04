@@ -57,13 +57,23 @@ describe('browserLifecycleRecovery', () => {
     });
   }
 
-  function setup(keepTerminalOutputActiveWhileHidden = false) {
+  function setup(keepTerminalOutputActiveWhileHidden: boolean | (() => boolean) = false) {
     const options = {
       getVisibleTerminalSessionIds: vi.fn(() => ['sess1234']),
       syncMuxTerminalVisibility: vi.fn(),
       focusActiveTerminal: vi.fn(),
       applyScrollbackProtection: vi.fn(),
-      keepTerminalOutputActiveWhileHidden: vi.fn(() => keepTerminalOutputActiveWhileHidden),
+      recoverTerminalPresentationAfterResume: vi.fn(),
+      keepTerminalOutputActiveWhileHidden: vi.fn(() =>
+        typeof keepTerminalOutputActiveWhileHidden === 'function'
+          ? keepTerminalOutputActiveWhileHidden()
+          : keepTerminalOutputActiveWhileHidden,
+      ),
+      suspendAdditionalTerminalTransport: vi.fn(),
+      recoverAdditionalTerminalTransport: vi.fn(),
+      suspendAppServerControlForBackground: vi.fn(),
+      suspendAncillaryTransportForBackground: vi.fn(),
+      recoverAncillaryTransportAfterResume: vi.fn(),
       reconnectSettingsAfterLongResume: vi.fn(),
       recoverAppServerControlAfterResume: vi.fn(),
     };
@@ -87,6 +97,9 @@ describe('browserLifecycleRecovery', () => {
 
     expect(mocks.reportBrowserActivity).toHaveBeenCalledTimes(1);
     expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(1);
+    expect(options.suspendAdditionalTerminalTransport).toHaveBeenCalledTimes(1);
+    expect(options.suspendAppServerControlForBackground).toHaveBeenCalledTimes(1);
+    expect(options.suspendAncillaryTransportForBackground).toHaveBeenCalledTimes(1);
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).not.toHaveBeenCalled();
     expect(options.syncMuxTerminalVisibility).not.toHaveBeenCalled();
   });
@@ -109,6 +122,8 @@ describe('browserLifecycleRecovery', () => {
     expect(options.syncMuxTerminalVisibility).toHaveBeenCalledTimes(1);
     expect(options.focusActiveTerminal).toHaveBeenCalledTimes(1);
     expect(options.applyScrollbackProtection).toHaveBeenCalledTimes(1);
+    expect(options.recoverTerminalPresentationAfterResume).toHaveBeenCalledTimes(1);
+    expect(options.recoverAdditionalTerminalTransport).toHaveBeenCalledTimes(1);
   });
 
   it('replaces stale-open core transports once after a long background interval', () => {
@@ -127,6 +142,7 @@ describe('browserLifecycleRecovery', () => {
     expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
     expect(options.reconnectSettingsAfterLongResume).toHaveBeenCalledTimes(1);
     expect(options.recoverAppServerControlAfterResume).toHaveBeenCalledTimes(1);
+    expect(options.recoverAncillaryTransportAfterResume).toHaveBeenCalledTimes(1);
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledTimes(1);
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
       'sess1234',
@@ -157,6 +173,52 @@ describe('browserLifecycleRecovery', () => {
       ['sess1234'],
       { forceReconnect: true },
     );
+  });
+
+  it('applies backpressure immediately when initialized in an already hidden document', () => {
+    setVisibility('hidden');
+    const options = setup();
+
+    expect(mocks.reportBrowserActivity).toHaveBeenCalledWith(false);
+    expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(1);
+    expect(options.suspendAdditionalTerminalTransport).toHaveBeenCalledTimes(1);
+
+    emitWindow('pagehide');
+    emitDocument('freeze');
+    vi.advanceTimersByTime(1000);
+    expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(1);
+
+    setVisibility('visible');
+    emitDocument('resume');
+    vi.advanceTimersByTime(0);
+
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
+      'sess1234',
+      ['sess1234'],
+      { forceReconnect: true },
+    );
+    expect(options.recoverTerminalPresentationAfterResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('suspends on pagehide when visibilitychange is missing', () => {
+    const options = setup();
+
+    emitWindow('pagehide');
+
+    expect(mocks.reportBrowserActivity).toHaveBeenCalledWith(false);
+    expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(1);
+
+    emitWindow('pageshow');
+    vi.advanceTimersByTime(0);
+
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
+      'sess1234',
+      ['sess1234'],
+      { forceReconnect: true },
+    );
+    expect(options.recoverTerminalPresentationAfterResume).toHaveBeenCalledTimes(1);
   });
 
   it('coalesces duplicate foreground events without hiding the document first', () => {
@@ -204,12 +266,37 @@ describe('browserLifecycleRecovery', () => {
   });
 
   it('keeps hidden terminal output active for mobile PiP', () => {
-    setup(true);
+    const options = setup(true);
     setVisibility('hidden');
 
     emitDocument('visibilitychange');
 
     expect(mocks.suspendMuxForBrowserBackground).not.toHaveBeenCalled();
+    expect(options.suspendAppServerControlForBackground).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps output active only while a real mobile PiP window exists', () => {
+    let pipActive = false;
+    const options = setup(() => pipActive);
+    setVisibility('hidden');
+    emitDocument('visibilitychange');
+
+    expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(1);
+
+    pipActive = true;
+    emitWindow('tlbx:mobile-pip-active-changed');
+
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
+      'sess1234',
+      ['sess1234'],
+      { forceReconnect: true },
+    );
+
+    pipActive = false;
+    emitWindow('tlbx:mobile-pip-active-changed');
+    expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(2);
+    expect(options.recoverAdditionalTerminalTransport).toHaveBeenCalledTimes(1);
+    expect(options.suspendAdditionalTerminalTransport).toHaveBeenCalledTimes(2);
   });
 
   it('reconnects state immediately when its store already reports a disconnect', () => {

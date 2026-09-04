@@ -8,7 +8,7 @@
  * sidebar heat strip so replayed browser bytes cannot re-arm PiP heat.
  */
 
-import { ASSET_VERSION, MOBILE_BREAKPOINT } from '../../constants';
+import { ASSET_VERSION, MOBILE_BREAKPOINT, MOBILE_PIP_ACTIVE_CHANGED_EVENT } from '../../constants';
 import { sessionTerminals } from '../../state';
 import { $activeSessionId, $sessionList } from '../../stores';
 import { getDisplayedSessionHeat, getSessionHeat } from '../sidebar/heatIndicator';
@@ -20,7 +20,6 @@ const log = createLogger('mobilePiP');
 const PREVIEW_LINES = 16;
 const PREVIEW_COLS = 88;
 const PREVIEW_REFRESH_MS = 1000;
-const HEAT_POLL_MS = 1000;
 const LIVE_HEAT_THRESHOLD = 0.02;
 const DISPLAY_HEAT_THRESHOLD = 0.02;
 const FLASH_DURATION_MS = 600;
@@ -49,7 +48,6 @@ interface SessionHeatReading {
 }
 
 let initialized = false;
-let enabled = false;
 let autoPiPDisabled = false;
 let pipWindow: Window | null = null;
 let pipRoot: HTMLDivElement | null = null;
@@ -57,7 +55,6 @@ let pipTitleEl: HTMLDivElement | null = null;
 let pipRateEl: HTMLDivElement | null = null;
 let pipPreviewEl: HTMLPreElement | null = null;
 let previewIntervalId: number | null = null;
-let heatIntervalId: number | null = null;
 let flashTimeoutId: number | null = null;
 
 let trackedSessionId: string | null = null;
@@ -72,8 +69,7 @@ let heatTrend: HeatTrend = 'idle';
 export function initMobilePiP(): void {
   if (initialized) return;
   initialized = true;
-  enabled = isMobileContext();
-  if (!enabled) return;
+  if (!isMobileContext()) return;
 
   trackedSessionId = $activeSessionId.get();
   resetHeatTracking(trackedSessionId);
@@ -102,14 +98,10 @@ export function initMobilePiP(): void {
   $sessionList.subscribe(() => {
     updatePiPContent();
   });
-
-  if (heatIntervalId === null) {
-    heatIntervalId = window.setInterval(onHeatWindowTick, HEAT_POLL_MS);
-  }
 }
 
-export function isMobilePiPEnabled(): boolean {
-  return enabled;
+export function isMobilePiPActive(): boolean {
+  return pipWindow !== null;
 }
 
 function handleVisibilityChange(): void {
@@ -173,9 +165,11 @@ async function openPiPIfEligibleAsync(): Promise<void> {
 
 function attachPiPWindow(win: Window): void {
   pipWindow = win;
+  window.dispatchEvent(new Event(MOBILE_PIP_ACTIVE_CHANGED_EVENT));
   buildPiPDocument(win.document);
   syncPiPTheme(win.document);
   win.addEventListener('pagehide', clearPiPReferences);
+  resetHeatTracking($activeSessionId.get());
   startPreviewLoop();
   updatePiPContent();
   applyHeatUi();
@@ -340,7 +334,10 @@ function buildPiPDocument(doc: Document): void {
 
 function startPreviewLoop(): void {
   if (previewIntervalId !== null) return;
-  previewIntervalId = window.setInterval(updatePiPContent, PREVIEW_REFRESH_MS);
+  previewIntervalId = window.setInterval(() => {
+    updatePiPContent();
+    onHeatWindowTick();
+  }, PREVIEW_REFRESH_MS);
 }
 
 function closePiPWindow(): void {
@@ -356,6 +353,7 @@ function closePiPWindow(): void {
 }
 
 function clearPiPReferences(): void {
+  const wasActive = pipWindow !== null;
   if (previewIntervalId !== null) {
     window.clearInterval(previewIntervalId);
     previewIntervalId = null;
@@ -369,6 +367,9 @@ function clearPiPReferences(): void {
   pipTitleEl = null;
   pipRateEl = null;
   pipPreviewEl = null;
+  if (wasActive) {
+    window.dispatchEvent(new Event(MOBILE_PIP_ACTIVE_CHANGED_EVENT));
+  }
 }
 
 function updatePiPContent(): void {

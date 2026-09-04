@@ -136,6 +136,8 @@ export {
   setGitDiagCallback,
   getGitWsState,
   getSubscribedSessions,
+  suspendGitWebSocketForBrowserBackground,
+  recoverGitWebSocketAfterBrowserResume,
 } from './gitChannel';
 
 export function destroyGitSession(sessionId: string): void {

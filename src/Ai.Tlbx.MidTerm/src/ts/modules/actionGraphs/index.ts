@@ -201,6 +201,7 @@ export function closeActionGraphsView(): void {
 function startRefreshTimer(): void {
   stopRefreshTimer();
   refreshTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
     void refreshGraphs();
   }, REFRESH_INTERVAL_MS);
 }

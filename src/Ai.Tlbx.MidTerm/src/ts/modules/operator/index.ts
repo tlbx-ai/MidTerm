@@ -457,6 +457,7 @@ function setLoading(loading: boolean): void {
 function startRefreshTimer(): void {
   stopRefreshTimer();
   refreshTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
     void refreshOperator();
   }, 5000);
 }

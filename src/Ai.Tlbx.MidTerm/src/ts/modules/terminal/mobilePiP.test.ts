@@ -173,6 +173,7 @@ vi.mock('../logging', () => ({
 }));
 
 let initMobilePiP: typeof import('./mobilePiP').initMobilePiP;
+let isMobilePiPActive: typeof import('./mobilePiP').isMobilePiPActive;
 
 describe('mobilePiP heat tracking', () => {
   let documentListeners: Record<string, Listener[]>;
@@ -212,7 +213,7 @@ describe('mobilePiP heat tracking', () => {
   }
 
   beforeAll(async () => {
-    ({ initMobilePiP } = await import('./mobilePiP'));
+    ({ initMobilePiP, isMobilePiPActive } = await import('./mobilePiP'));
   });
 
   beforeEach(() => {
@@ -299,6 +300,7 @@ describe('mobilePiP heat tracking', () => {
         addEventListener: vi.fn(),
       })),
       addEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
       setInterval: vi.fn((callback: () => void) => {
         intervalCallbacks.push(callback);
         return intervalCallbacks.length;
@@ -333,10 +335,15 @@ describe('mobilePiP heat tracking', () => {
   it('uses server heat transitions for PiP status and cooldown flashing', async () => {
     initMobilePiP();
 
+    expect(isMobilePiPActive()).toBe(false);
+
     (document as { visibilityState: string }).visibilityState = 'hidden';
     (document as { hidden: boolean }).hidden = true;
     triggerDocumentEvent('visibilitychange');
     await flushPromises();
+
+    expect(isMobilePiPActive()).toBe(true);
+    expect(window.dispatchEvent).toHaveBeenCalled();
 
     expect(getRateElement().textContent).toBe('. idle');
     expect(getRootElement().classList.contains('heat-idle')).toBe(true);
@@ -362,5 +369,12 @@ describe('mobilePiP heat tracking', () => {
 
     expect(getRateElement().textContent).toBe('. idle');
     expect(getRootElement().classList.contains('heat-idle')).toBe(true);
+
+    (document as { visibilityState: string }).visibilityState = 'visible';
+    (document as { hidden: boolean }).hidden = false;
+    triggerDocumentEvent('visibilitychange');
+
+    expect(isMobilePiPActive()).toBe(false);
+    expect(window.dispatchEvent).toHaveBeenCalledTimes(2);
   });
 });

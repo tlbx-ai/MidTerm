@@ -103,6 +103,7 @@ let connectPromise: Promise<void> | null = null;
 let connectReject: ((error: Error) => void) | null = null;
 let connectTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
 let connectionGeneration = 0;
+let browserBackgroundSuspended = false;
 
 function createAppServerControlWsError(detail: string): Error {
   return new AppServerControlHttpError(400, detail);
@@ -388,6 +389,9 @@ function closeSupersededSocket(socket: WebSocket | null): void {
 }
 
 async function ensureConnected(): Promise<void> {
+  if (browserBackgroundSuspended) {
+    throw createAppServerControlWsError('AppServerControl WebSocket is suspended in background.');
+  }
   if (ws?.readyState === WebSocket.OPEN) {
     return;
   }
@@ -453,7 +457,7 @@ async function ensureConnected(): Promise<void> {
         return;
       }
 
-      const shouldReconnect = subscriptions.size > 0;
+      const shouldReconnect = subscriptions.size > 0 && !browserBackgroundSuspended;
       ws = null;
       const disconnectError = createAppServerControlWsError(
         'AppServerControl WebSocket disconnected.',
@@ -579,6 +583,7 @@ export async function detachAppServerControlSession(sessionId: string): Promise<
  * the page was frozen, so foreground recovery must not wait for TCP backoff.
  */
 export async function recoverAppServerControlWebSocket(): Promise<void> {
+  browserBackgroundSuspended = false;
   const shouldReconnect = subscriptions.size > 0;
   if (!shouldReconnect && pending.size === 0 && ws === null && connectPromise === null) {
     return;
@@ -597,6 +602,21 @@ export async function recoverAppServerControlWebSocket(): Promise<void> {
   if (shouldReconnect) {
     await ensureConnected();
   }
+}
+
+export function suspendAppServerControlWebSocketForBrowserBackground(): void {
+  if (browserBackgroundSuspended) return;
+  browserBackgroundSuspended = true;
+  reconnect.cancel();
+  connectionGeneration += 1;
+  const supersededSocket = ws;
+  ws = null;
+  const suspensionError = createAppServerControlWsError(
+    'AppServerControl WebSocket suspended while browser is in background.',
+  );
+  rejectConnectAttempt(suspensionError);
+  rejectAllPending(suspensionError);
+  closeSupersededSocket(supersededSocket);
 }
 
 export async function getAppServerControlHistoryWindowWs(

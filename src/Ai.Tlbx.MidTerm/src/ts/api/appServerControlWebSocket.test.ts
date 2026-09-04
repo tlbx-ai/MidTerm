@@ -272,4 +272,33 @@ describe('appServerControlWebSocket', () => {
     expect(FakeWebSocket.instances[1]?.sent).toHaveLength(1);
     disconnect();
   });
+
+  it('stops background patches and reconnects existing subscriptions on resume', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+
+    const {
+      openAppServerControlHistorySocket,
+      recoverAppServerControlWebSocket,
+      suspendAppServerControlWebSocketForBrowserBackground,
+    } = await import('./appServerControlWebSocket');
+    const onOpen = vi.fn();
+    const disconnect = openAppServerControlHistorySocket(
+      'session-1',
+      9,
+      0,
+      40,
+      'rev-9',
+      { onPatch: vi.fn(), onOpen },
+      390,
+    );
+    await vi.waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
+
+    suspendAppServerControlWebSocketForBrowserBackground();
+    expect(FakeWebSocket.instances[0]?.readyState).toBe(FakeWebSocket.CLOSED);
+
+    await recoverAppServerControlWebSocket();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(onOpen).toHaveBeenCalledTimes(2);
+    disconnect();
+  });
 });

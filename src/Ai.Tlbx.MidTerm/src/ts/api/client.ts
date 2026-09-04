@@ -53,6 +53,7 @@ import {
   interruptAppServerControlTurnWs,
   openAppServerControlHistorySocket,
   recoverAppServerControlWebSocket,
+  suspendAppServerControlWebSocketForBrowserBackground,
   setAppServerControlGoalWs,
   updateAppServerControlHistorySocketWindow,
   resolveAppServerControlUserInputWs,
@@ -693,6 +694,10 @@ export async function getAppServerControlHistoryWindow(
 
 export async function recoverAppServerControlConnection(): Promise<void> {
   await recoverAppServerControlWebSocket();
+}
+
+export function suspendAppServerControlConnectionForBrowserBackground(): void {
+  suspendAppServerControlWebSocketForBrowserBackground();
 }
 
 export async function interruptAppServerControlTurn(

@@ -63,10 +63,16 @@ export function initHubRuntime(): void {
     return;
   }
 
-  void refreshHubState().catch(() => {});
-  refreshTimer = window.setInterval(() => {
+  const refreshIfVisible = (): void => {
+    if (document.visibilityState !== 'visible') return;
     void refreshHubState().catch(() => {});
+  };
+
+  refreshIfVisible();
+  refreshTimer = window.setInterval(() => {
+    refreshIfVisible();
   }, 10000);
+  document.addEventListener('visibilitychange', refreshIfVisible);
 }
 
 export function subscribeHubState(listener: () => void): () => void {

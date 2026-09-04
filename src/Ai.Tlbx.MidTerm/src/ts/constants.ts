@@ -22,6 +22,8 @@ export const JS_BUILD_VERSION: string =
 export const ASSET_VERSION: string =
   typeof BUILD_ASSET_VERSION !== 'undefined' ? BUILD_ASSET_VERSION : JS_BUILD_VERSION;
 
+export const MOBILE_PIP_ACTIVE_CHANGED_EVENT = 'tlbx:mobile-pip-active-changed';
+
 // =============================================================================
 // Mux Protocol Constants
 // =============================================================================

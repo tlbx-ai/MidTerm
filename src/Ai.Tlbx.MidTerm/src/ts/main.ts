@@ -40,9 +40,10 @@ import {
   setupGlobalFocusReclaim,
   handleClipboardPaste,
   initMobilePiP,
-  isMobilePiPEnabled,
+  isMobilePiPActive,
   initDevSoftKeyboardSimulator,
   resolveLaunchDimensions,
+  scheduleForegroundResizeRecovery,
   syncWebglSessionPriority,
 } from './modules/terminal';
 import {
@@ -135,6 +136,7 @@ import {
   initAgentView,
   getAppServerControlDebugScenarioNames,
   recoverAppServerControlAfterBrowserResume,
+  suspendAppServerControlForBrowserBackground,
   showAppServerControlDebugScenario,
 } from './modules/agentView';
 import {
@@ -145,7 +147,7 @@ import {
 } from './modules/sessionTabs/mobileActions';
 import { openSessionLauncher, type SessionLauncherSelection } from './modules/sessionLauncher';
 import { initFileBrowser } from './modules/fileBrowser';
-import { initGitPanel, connectGitWebSocket } from './modules/git';
+import * as gitModule from './modules/git';
 import { initCommandsPanel } from './modules/commands';
 import { initWebPreview, syncActiveWebPreview } from './modules/web';
 import { initBackButtonGuard } from './modules/navigation/backButtonGuard';
@@ -159,6 +161,8 @@ import {
   renderHubSettings,
   subscribeHubState,
   toHubCompositeId,
+  suspendHubChannelForBrowserBackground,
+  recoverHubChannelAfterBrowserResume,
 } from './modules/hub';
 import {
   initSessionShareButton,
@@ -433,6 +437,8 @@ async function init(): Promise<void> {
   bindTabIdentityCollisionRecovery();
   await initializeTabIdentity();
   bindTerminalVisibilitySync();
+  initMobilePiP();
+  setupVisibilityChangeHandler(true);
   connectInitialSessionTransports();
   connectSettingsWebSocket();
 
@@ -451,11 +457,10 @@ async function init(): Promise<void> {
   setupVisualViewport();
   initTouchController();
   initSmartInput();
-  initMobilePiP();
   initDevSoftKeyboardSimulator();
   initManagerBar();
-  initGitPanel();
-  connectGitWebSocket();
+  gitModule.initGitPanel();
+  gitModule.connectGitWebSocket();
   initCommandsPanel();
   initWebPreview();
   initSessionShareButton();
@@ -481,7 +486,6 @@ async function init(): Promise<void> {
   initDiagnosticsPanel();
   bindHubSettings();
 
-  setupVisibilityChangeHandler(true);
   initPwaInstall();
 
   let serviceWorker: ServiceWorkerContainer | undefined;
@@ -728,7 +732,13 @@ function setupVisibilityChangeHandler(includeSettingsChannel: boolean): void {
     syncMuxTerminalVisibility,
     focusActiveTerminal,
     applyScrollbackProtection,
-    keepTerminalOutputActiveWhileHidden: isMobilePiPEnabled,
+    recoverTerminalPresentationAfterResume: scheduleForegroundResizeRecovery,
+    keepTerminalOutputActiveWhileHidden: isMobilePiPActive,
+    suspendAdditionalTerminalTransport: suspendHubChannelForBrowserBackground,
+    recoverAdditionalTerminalTransport: recoverHubChannelAfterBrowserResume,
+    suspendAppServerControlForBackground: suspendAppServerControlForBrowserBackground,
+    suspendAncillaryTransportForBackground: gitModule.suspendGitWebSocketForBrowserBackground,
+    recoverAncillaryTransportAfterResume: gitModule.recoverGitWebSocketAfterBrowserResume,
     ...(includeSettingsChannel
       ? { recoverAppServerControlAfterResume: recoverAppServerControlAfterBrowserResume }
       : {}),

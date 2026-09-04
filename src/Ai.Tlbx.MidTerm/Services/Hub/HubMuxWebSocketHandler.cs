@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.WebSockets;
 using Ai.Tlbx.MidTerm.Services.WebSockets;
 
@@ -48,7 +49,14 @@ public sealed class HubMuxWebSocketHandler
         try
         {
             await _hubService.ConfigureRemoteWebSocketAsync(machineId, remoteSocket, _shutdownService.Token);
-            var remoteUri = BuildRemoteMuxUri(machine.BaseUrl);
+            var resumeSequence = ulong.TryParse(
+                context.Request.Query["resumeSequence"].ToString(),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var parsedResumeSequence)
+                ? parsedResumeSequence
+                : (ulong?)null;
+            var remoteUri = BuildRemoteMuxUri(machine.BaseUrl, sessionId, resumeSequence);
             await remoteSocket.ConnectAsync(remoteUri, _shutdownService.Token);
         }
         catch (Exception ex)
@@ -67,12 +75,19 @@ public sealed class HubMuxWebSocketHandler
         await TryCloseAsync(localSocket);
     }
 
-    private static Uri BuildRemoteMuxUri(string baseUrl)
+    internal static Uri BuildRemoteMuxUri(string baseUrl, string sessionId, ulong? resumeSequence)
     {
         var builder = new UriBuilder(baseUrl);
         builder.Scheme = builder.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ? "ws" : "wss";
         builder.Path = "/ws/mux";
-        builder.Query = string.Empty;
+        var escapedSessionId = Uri.EscapeDataString(sessionId);
+        var query = $"activeSessionId={escapedSessionId}&visibleSessionIds={escapedSessionId}";
+        if (resumeSequence is > 0)
+        {
+            var resumeCursor = $"{sessionId}:{resumeSequence.Value.ToString(CultureInfo.InvariantCulture)}";
+            query += $"&resumeCursors={Uri.EscapeDataString(resumeCursor)}";
+        }
+        builder.Query = query;
         return builder.Uri;
     }
 

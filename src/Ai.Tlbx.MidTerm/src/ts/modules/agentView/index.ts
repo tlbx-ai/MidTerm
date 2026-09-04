@@ -108,6 +108,7 @@ import {
   getAppServerControlHistoryWindow,
   openAppServerControlHistoryStream,
   recoverAppServerControlConnection,
+  suspendAppServerControlConnectionForBrowserBackground,
   updateAppServerControlHistoryStreamWindow,
   type AppServerControlHistorySnapshot,
 } from '../../api/client';
@@ -1801,6 +1802,13 @@ export function recoverAppServerControlAfterBrowserResume(): void {
     state.streamConnected = false;
     renderCurrentAgentView(sessionId);
   });
+}
+
+export function suspendAppServerControlForBrowserBackground(): void {
+  viewStates.forEach((state) => {
+    state.streamConnected = false;
+  });
+  suspendAppServerControlConnectionForBrowserBackground();
 }
 
 function bindAppServerControlVisualViewportRecovery(): void {

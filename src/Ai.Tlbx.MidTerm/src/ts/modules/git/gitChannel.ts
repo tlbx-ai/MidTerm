@@ -14,6 +14,7 @@ const log = createLogger('gitChannel');
 const gitReconnect = new ReconnectController();
 
 let ws: WebSocket | null = null;
+let browserBackgroundSuspended = false;
 const subscribedSessions = new Set<string>();
 let statusCallback: ((sessionId: string, status: GitStatusResponse) => void) | null = null;
 let reposCallback: ((sessionId: string, repos: GitRepoBinding[]) => void) | null = null;
@@ -70,11 +71,14 @@ export function setGitReposCallback(
 }
 
 export function connectGitWebSocket(): void {
+  if (browserBackgroundSuspended) return;
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
-  ws = new WebSocket(createWsUrl('/ws/git'));
+  const socket = new WebSocket(createWsUrl('/ws/git'));
+  ws = socket;
 
-  ws.onopen = () => {
+  socket.onopen = () => {
+    if (ws !== socket) return;
     gitReconnect.reset();
     log.info(() => 'Git WebSocket connected');
     emitDiag('ws-open', 'connected');
@@ -83,7 +87,8 @@ export function connectGitWebSocket(): void {
     }
   };
 
-  ws.onmessage = (event) => {
+  socket.onmessage = (event) => {
+    if (ws !== socket) return;
     try {
       const msg = JSON.parse(event.data as string) as GitWsMessage;
       if (msg.type === 'status' && msg.status && msg.sessionId) {
@@ -101,19 +106,21 @@ export function connectGitWebSocket(): void {
     }
   };
 
-  ws.onerror = () => {
+  socket.onerror = () => {
+    if (ws !== socket) return;
     log.warn(() => 'Git WebSocket error');
     emitDiag('ws-error', 'connection error');
   };
 
-  ws.onclose = (event) => {
+  socket.onclose = (event) => {
+    if (ws !== socket) return;
     log.info(() => 'Git WebSocket closed');
     emitDiag('ws-close', 'disconnected');
     ws = null;
     if (handleAuthenticatedWebSocketClose(event)) {
       return;
     }
-    if (subscribedSessions.size > 0) {
+    if (!browserBackgroundSuspended && subscribedSessions.size > 0) {
       gitReconnect.schedule(connectGitWebSocket);
     }
   };
@@ -191,6 +198,28 @@ export function disconnectGitWebSocket(): void {
     ws = null;
   }
   log.info(() => 'Git WebSocket disconnected (IDE mode off)');
+}
+
+export function suspendGitWebSocketForBrowserBackground(): void {
+  if (browserBackgroundSuspended) return;
+  browserBackgroundSuspended = true;
+  gitReconnect.cancel();
+  for (const timer of pendingFallbacks.values()) clearTimeout(timer);
+  pendingFallbacks.clear();
+  const socket = ws;
+  ws = null;
+  if (socket) {
+    socket.onopen = null;
+    socket.onmessage = null;
+    socket.onerror = null;
+    socket.onclose = null;
+    socket.close();
+  }
+}
+
+export function recoverGitWebSocketAfterBrowserResume(): void {
+  browserBackgroundSuspended = false;
+  if (subscribedSessions.size > 0) connectGitWebSocket();
 }
 
 export function subscribeToSession(sessionId: string): void {
