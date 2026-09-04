@@ -18,7 +18,7 @@ vi.mock('./runtime', () => ({
 
 vi.mock('../comms/muxChannel', () => ({
   applyOutputFrameToTerminal: mocks.applyOutputFrameToTerminal,
-  getBrowserTransportSnapshot: () => ({ receivedSeq: 42n, renderedSeq: 40n }),
+  getBrowserTransportSnapshot: () => ({ receivedSeq: 45n, submittedSeq: 42n, renderedSeq: 40n }),
 }));
 
 vi.mock('../../utils', () => ({
