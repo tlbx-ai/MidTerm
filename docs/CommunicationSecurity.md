@@ -23,7 +23,8 @@ The unauthenticated API exceptions are deliberately narrow:
 
 Static login/trust assets are also public. Health, version, paths, security status,
 certificate management, and other authentication endpoints require credentials.
-Session cookies and owner-issued API keys grant owner access; share and browser
+Deleting an API key closes its existing WebSocket connections, including connections
+being authenticated during revocation. Session cookies and owner-issued API keys grant owner access; share and browser
 preview credentials grant only their explicit scope. Preview route names and
 Referer headers are not credentials. tlbx authentication headers and cookies must
 not be forwarded to preview applications.

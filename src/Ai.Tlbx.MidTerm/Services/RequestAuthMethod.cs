@@ -10,4 +10,5 @@ public enum RequestAuthMethod
 public readonly record struct RequestAuthentication(
     RequestAuthMethod Method,
     string? SessionTokenId = null,
-    DateTimeOffset? ExpiresAtUtc = null);
+    DateTimeOffset? ExpiresAtUtc = null,
+    string? ApiKeyId = null);

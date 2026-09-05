@@ -588,6 +588,33 @@ public sealed class AuthServiceTests : IDisposable
         return context;
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ApiKeyRevocation_ClosesItsSocketIncludingHandshakeRace(bool revokeBeforeTracking)
+    {
+        if (!IsWindows) return;
+        var settings = _settingsService.Load();
+        settings.PasswordHash = "configured";
+        _settingsService.Save(settings);
+        var key = _apiKeyService.CreateApiKey("socket");
+        var otherKey = _apiKeyService.CreateApiKey("other");
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Authorization = $"Bearer {key.Token}";
+        var authentication = _authService.AuthenticateRequestWithContext(context.Request);
+        Assert.Equal(key.ApiKey.Id, authentication.ApiKeyId);
+        using var socket = new RecordingWebSocket();
+        if (revokeBeforeTracking) _apiKeyService.DeleteApiKey(key.ApiKey.Id);
+        using var lease = _authService.TrackWebSocketAuthentication(authentication, socket);
+        if (!revokeBeforeTracking)
+        {
+            _apiKeyService.DeleteApiKey(otherKey.ApiKey.Id);
+            Assert.Equal(WebSocketState.Open, socket.State);
+            _apiKeyService.DeleteApiKey(key.ApiKey.Id);
+        }
+        Assert.Equal(WebSocketState.Aborted, socket.State);
+    }
+
     private sealed class RecordingWebSocket : WebSocket
     {
         private WebSocketState _state = WebSocketState.Open;

@@ -88,9 +88,9 @@ public sealed class AuthService
         }
 
         var apiKey = ExtractApiKey(request);
-        if (apiKey is not null && _apiKeyService.TryValidateApiKey(apiKey, out _))
+        if (apiKey is not null && _apiKeyService.TryValidateApiKey(apiKey, out var keyInfo))
         {
-            return new RequestAuthentication(RequestAuthMethod.ApiKey);
+            return new RequestAuthentication(RequestAuthMethod.ApiKey, ApiKeyId: keyInfo!.Id);
         }
 
         var sessionToken = request.Cookies[SessionCookieName];
@@ -338,6 +338,9 @@ public sealed class AuthService
 
     public IDisposable TrackWebSocketAuthentication(RequestAuthentication authentication, WebSocket webSocket)
     {
+        if (authentication.Method == RequestAuthMethod.ApiKey && authentication.ApiKeyId is { } apiKeyId)
+            return new ApiKeyWebSocketLease(_apiKeyService, apiKeyId, webSocket);
+
         if (authentication.Method != RequestAuthMethod.SessionCookie ||
             string.IsNullOrWhiteSpace(authentication.SessionTokenId) ||
             authentication.ExpiresAtUtc is null)
@@ -610,6 +613,32 @@ public sealed class AuthService
             _owner.AllSessionTokensInvalidated -= OnAllSessionTokensInvalidated;
             _expiryTimer.Dispose();
         }
+    }
+
+    private sealed class ApiKeyWebSocketLease : IDisposable
+    {
+        private readonly ApiKeyService _keys;
+        private readonly string _id;
+        private readonly WebSocket _socket;
+
+        public ApiKeyWebSocketLease(ApiKeyService keys, string id, WebSocket socket)
+        {
+            _keys = keys;
+            _id = id;
+            _socket = socket;
+            _keys.ApiKeyRevoked += OnRevoked;
+            // Subscribe before checking to cover revocation during the handshake.
+            if (!_keys.IsActive(id)) OnRevoked(id);
+        }
+
+        private void OnRevoked(string id)
+        {
+            if (!string.Equals(id, _id, StringComparison.Ordinal)) return;
+            try { _socket.Abort(); }
+            catch (ObjectDisposedException) { }
+        }
+
+        public void Dispose() => _keys.ApiKeyRevoked -= OnRevoked;
     }
 
     private sealed class NoopDisposable : IDisposable
