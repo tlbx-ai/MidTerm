@@ -20184,7 +20184,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
       max(12px, var(--safe-area-inset-left));
     overflow: auto;
     overscroll-behavior: contain;
-    background: var(--bg-primary, #101116);
+    background: var(--bg-primary);
   }
 
   .smart-input-keyboard-actions {
