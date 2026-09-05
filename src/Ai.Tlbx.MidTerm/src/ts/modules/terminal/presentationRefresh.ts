@@ -7,6 +7,37 @@
 
 import type { TerminalState } from '../../types';
 
+/** Focus within a visible app is not a renderer-loss signal. */
+export function setupTerminalForegroundRecovery(onRecover: () => void): () => void {
+  let wasHidden = document.visibilityState === 'hidden';
+  const recover = () => {
+    if (!wasHidden || document.visibilityState === 'hidden') return;
+    wasHidden = false;
+    onRecover();
+  };
+  const visibilityChanged = () => {
+    if (document.visibilityState === 'hidden') wasHidden = true;
+    else recover();
+  };
+  const pageHidden = () => {
+    wasHidden = true;
+  };
+  const pageShown = (event: PageTransitionEvent) => {
+    if (event.persisted) wasHidden = true;
+    recover();
+  };
+  document.addEventListener('visibilitychange', visibilityChanged);
+  window.addEventListener('pagehide', pageHidden);
+  window.addEventListener('pageshow', pageShown);
+  window.addEventListener('focus', recover);
+  return () => {
+    document.removeEventListener('visibilitychange', visibilityChanged);
+    window.removeEventListener('pagehide', pageHidden);
+    window.removeEventListener('pageshow', pageShown);
+    window.removeEventListener('focus', recover);
+  };
+}
+
 type TerminalWithPrivateCore = TerminalState['terminal'] & {
   _core?: {
     _charSizeService?: { measure: () => void };

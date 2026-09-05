@@ -239,6 +239,7 @@ export function hideWebPreviewDockForDetach(): void {
 
 /** Fully hide the web preview: close dock, unload iframe, clear target, and clean up detach state. */
 export function applyWebPreviewHiddenState(): void {
+  const previousWidth = getWebPreviewDockWidth();
   const activeId = $activeSessionId.get();
   const activePreviewName = getActivePreviewName();
   $webPreviewDocked.set(false);
@@ -255,7 +256,7 @@ export function applyWebPreviewHiddenState(): void {
   }
 
   refreshDockReservations();
-  handleDockLayoutChange();
+  if (previousWidth > 0) handleDockLayoutChange();
 }
 
 /** Set up mouse and touch drag handlers for resizing the web preview dock panel. */

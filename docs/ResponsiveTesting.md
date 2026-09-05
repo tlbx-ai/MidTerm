@@ -102,3 +102,33 @@ viewport. Evidence is in `.dev/keyboard/{geometry,return,safe}.json` and the
 corresponding PNGs. This is browser geometry evidence; Android/iOS native
 keyboard animation and physical rounded corners still require device testing.
 The tlbx preview bridge reported owner-offline, so this check used direct CDP.
+
+## Mobile layout stability follow-up
+
+Normal session reveal now repaints existing terminal contents without clearing
+or remeasuring the renderer. Explicit visual invalidation and real foreground
+recovery retain their repair paths. Closing already closed settings and hiding
+an already hidden web preview no longer trigger terminal work. Automatic fit
+no longer steals focus. Re-selecting the visible session keeps its DOM intact.
+Unchanged size-control snapshots preserve identity; changed ownership updates
+only the affected visible sessions. Hidden terminals do not become visually
+invalid just because a general sizing notification arrived.
+
+Visited WebGL renderers remain alive within the existing six-context budget.
+The visible session and visible layout panes keep priority; least-recently-used
+hidden holders are evicted when a new renderer needs a full budget. No visible
+terminal is hidden or deactivated by this optimization. Ordinary focus does
+not imply renderer loss; visibility/page lifecycle events still trigger recovery.
+
+Evidence in `.dev/layout-stability/`: ten session switches went from 23 full
+renderer refreshes and ten global resize passes to zero of each, retaining one
+fit check for the selected session. Ten repeated selections did no terminal
+work. Twenty genuine touch menu actions verified alternating open/closed state,
+constant 390x724 terminal area, and zero measured terminal work. At 4x CPU
+throttling/DPR 2, 20 switches plus 40 menu actions had frame p95 16.8ms, max
+50ms, and 305136 bytes retained heap growth after GC. Seven test sessions left
+six WebGL holders, preserving the active holder. Widths 390/430/768/769/1024
+still changed canonical columns; font preview changed cell geometry. Focused
+regressions cover snapshot identity, reveal versus repair, actual background
+recovery, focus preservation, and hidden-dock resizing. Physical smartphone
+animation/performance remains outside the desktop CDP measurement boundary.

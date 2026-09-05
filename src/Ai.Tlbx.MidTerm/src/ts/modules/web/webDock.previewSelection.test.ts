@@ -41,7 +41,8 @@ vi.mock('../logging', () => ({
   }),
 }));
 
-import { selectPreferredActivePreview } from './webDock';
+import { applyWebPreviewHiddenState, selectPreferredActivePreview } from './webDock';
+import { autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 
 describe('webDock preferred preview selection', () => {
   const sessionId = 'session-a';
@@ -54,6 +55,35 @@ describe('webDock preferred preview selection', () => {
   afterEach(() => {
     removeSessionState(sessionId);
     $activeSessionId.set(null);
+  });
+
+  it('only resizes when hiding a dock that actually reserved width', () => {
+    let hidden = true;
+    const dock = {
+      offsetWidth: 250,
+      style: {},
+      classList: {
+        contains: () => hidden,
+        add: () => {
+          hidden = true;
+        },
+      },
+    };
+    vi.stubGlobal('document', {
+      getElementById: (id: string) => (id === 'web-preview-dock' ? dock : null),
+      querySelectorAll: () => [],
+      querySelector: () => null,
+    });
+    vi.mocked(autoResizeAllTerminalsImmediate).mockClear();
+    try {
+      applyWebPreviewHiddenState();
+      expect(autoResizeAllTerminalsImmediate).not.toHaveBeenCalled();
+      hidden = false;
+      applyWebPreviewHiddenState();
+      expect(autoResizeAllTerminalsImmediate).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('reuses an existing named preview target instead of opening the empty default', () => {

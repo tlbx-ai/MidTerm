@@ -85,6 +85,7 @@ export function openSettings(): void {
  * Close the settings panel
  */
 export function closeSettings(): void {
+  if (!$settingsOpen.get()) return;
   releaseBackButtonLayer?.();
   releaseBackButtonLayer = null;
 

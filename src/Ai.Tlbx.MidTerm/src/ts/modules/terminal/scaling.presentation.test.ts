@@ -4,6 +4,7 @@ import {
   isTerminalVisible,
   remeasureTerminalCells,
   refreshTerminalRenderer,
+  setupTerminalForegroundRecovery,
 } from './presentationRefresh';
 
 describe('presentationRefresh', () => {
@@ -158,5 +159,37 @@ describe('presentationRefresh', () => {
 
     expect(clearTextureAtlas).toHaveBeenCalledOnce();
     expect(refresh).toHaveBeenCalledWith(0, 23);
+  });
+});
+
+describe('foreground recovery events', () => {
+  it('ignores ordinary focus and initial pageshow, but recovers once after backgrounding', () => {
+    const page = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    const host = new EventTarget();
+    vi.stubGlobal('document', page);
+    vi.stubGlobal('window', host);
+    const recover = vi.fn();
+    const dispose = setupTerminalForegroundRecovery(recover);
+    try {
+      host.dispatchEvent(new Event('focus'));
+      host.dispatchEvent(new Event('pageshow'));
+      expect(recover).not.toHaveBeenCalled();
+      page.visibilityState = 'hidden';
+      page.dispatchEvent(new Event('visibilitychange'));
+      host.dispatchEvent(new Event('focus'));
+      expect(recover).not.toHaveBeenCalled();
+      page.visibilityState = 'visible';
+      page.dispatchEvent(new Event('visibilitychange'));
+      host.dispatchEvent(new Event('focus'));
+      expect(recover).toHaveBeenCalledTimes(1);
+      host.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+      expect(recover).toHaveBeenCalledTimes(2);
+      dispose();
+      host.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+      expect(recover).toHaveBeenCalledTimes(2);
+    } finally {
+      dispose();
+      vi.unstubAllGlobals();
+    }
   });
 });
