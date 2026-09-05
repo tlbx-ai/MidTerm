@@ -424,6 +424,55 @@ const MAX_XTERM_UNPARSED_BYTES = 512 * 1024;
 const XTERM_PARSE_BARRIER_TIMEOUT_MS = 5000;
 const MAX_PRINTABLE_INPUT_COALESCING_MS = 200;
 
+interface TerminalParseDebt {
+  bytes: number;
+  listeners: Set<() => void>;
+}
+// Debt belongs to the actual parser, not a drain call or socket generation.
+// Retired callbacks can release their own parser's bytes, never a replacement's.
+const terminalParseDebt = new WeakMap<TerminalState, TerminalParseDebt>();
+const terminalParseWaits = new Map<string, Set<() => void>>();
+let terminalParseStallHandler: ((sessionId: string, state: TerminalState) => void) | null = null;
+let outputDrainStartedAt: number | null = null;
+let outputDrainYield: Promise<void> | null = null;
+
+export function setTerminalParseStallHandler(
+  handler: (sessionId: string, state: TerminalState) => void,
+): void {
+  terminalParseStallHandler = handler;
+}
+
+function getTerminalParseDebt(state: TerminalState): TerminalParseDebt {
+  let debt = terminalParseDebt.get(state);
+  if (!debt) {
+    debt = { bytes: 0, listeners: new Set() };
+    terminalParseDebt.set(state, debt);
+  }
+  return debt;
+}
+
+function cancelTerminalParseWaits(sessionId?: string): void {
+  if (sessionId !== undefined) {
+    terminalParseWaits.get(sessionId)?.forEach((finish) => {
+      finish();
+    });
+  } else {
+    terminalParseWaits.forEach((waits) => {
+      waits.forEach((finish) => {
+        finish();
+      });
+    });
+  }
+}
+
+function yieldOutputDrains(): Promise<void> {
+  outputDrainYield ??= yieldToMain().then(() => {
+    outputDrainStartedAt = null;
+    outputDrainYield = null;
+  });
+  return outputDrainYield;
+}
+
 const sessionOutputQueues = new Map<string, SessionOutputQueue>();
 const scheduledOutputQueues = new Set<string>();
 const sessionOutputGenerations = new Map<string, number>();
@@ -550,6 +599,7 @@ function isOutputGenerationCurrent(sessionId: string, generation: number): boole
 }
 
 function clearQueuedOutput(sessionId?: string): void {
+  cancelTerminalParseWaits(sessionId);
   if (sessionId !== undefined) {
     sessionOutputGenerations.set(sessionId, nextOutputGeneration++);
     sessionOutputQueues.delete(sessionId);
@@ -708,31 +758,19 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
 
   queue.processing = true;
   let writeBatch: TerminalWriteBatch | null = null;
-  let unparsedTerminalBytes = 0;
   const flushWriteBatch = (): Promise<void> | null => {
     if (!writeBatch) {
       return null;
     }
 
-    unparsedTerminalBytes += writeBatch.bytes;
-    const shouldWaitForXterm = unparsedTerminalBytes >= MAX_XTERM_UNPARSED_BYTES;
-    const latestParseBarrier = deliverTerminalWriteBatch(
-      writeBatch,
-      generation,
-      shouldWaitForXterm,
-    );
+    const latestParseBarrier = deliverTerminalWriteBatch(writeBatch, generation);
     writeBatch = null;
-    if (shouldWaitForXterm) {
-      unparsedTerminalBytes = 0;
-      return latestParseBarrier;
-    }
-    return null;
+    return latestParseBarrier;
   };
 
   try {
-    let sliceStartMs = performance.now();
-
     while (isOutputGenerationCurrent(sessionId, generation)) {
+      outputDrainStartedAt ??= performance.now();
       const item = dequeueOutputFrame(sessionId);
       if (!item) {
         break;
@@ -762,13 +800,12 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
 
       // Heavy output must periodically yield so keyboard interrupts like Ctrl+C
       // can be processed promptly instead of waiting behind a long browser-side drain.
-      if (performance.now() - sliceStartMs >= OUTPUT_DRAIN_BUDGET_MS) {
+      if (performance.now() - outputDrainStartedAt >= OUTPUT_DRAIN_BUDGET_MS) {
         const parseBarrier = flushWriteBatch();
         if (parseBarrier) {
           await parseBarrier;
         }
-        await yieldToMain();
-        sliceStartMs = performance.now();
+        await yieldOutputDrains();
       }
     }
   } finally {
@@ -792,46 +829,70 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
 function deliverTerminalWriteBatch(
   batch: TerminalWriteBatch,
   generation: number,
-  waitForParsed: boolean,
 ): Promise<void> | null {
-  const data = combineTerminalWriteChunks(batch.chunks, batch.bytes);
-  if (!waitForParsed) {
-    writeToTerminal(
-      batch.sessionId,
-      batch.state,
-      batch.sequenceEnd,
-      batch.cols,
-      batch.rows,
-      data,
-      generation,
+  if (!isOutputGenerationCurrent(batch.sessionId, generation)) return null;
+  const debt = getTerminalParseDebt(batch.state);
+  if (debt.bytes + batch.bytes > MAX_XTERM_UNPARSED_BYTES) {
+    return waitForTerminalParser(batch, generation, MAX_XTERM_UNPARSED_BYTES - batch.bytes).then(
+      () => deliverTerminalWriteBatch(batch, generation) ?? undefined,
     );
-    return null;
   }
+  const data = combineTerminalWriteChunks(batch.chunks, batch.bytes);
+  writeToTerminal(
+    batch.sessionId,
+    batch.state,
+    batch.sequenceEnd,
+    batch.cols,
+    batch.rows,
+    data,
+    generation,
+  );
+  return debt.bytes >= MAX_XTERM_UNPARSED_BYTES
+    ? waitForTerminalParser(batch, generation, MAX_XTERM_UNPARSED_BYTES - 1)
+    : null;
+}
 
+function waitForTerminalParser(
+  batch: TerminalWriteBatch,
+  generation: number,
+  limit: number,
+): Promise<void> {
+  const debt = getTerminalParseDebt(batch.state);
   return new Promise((resolve) => {
     let completed = false;
     const finish = (): void => {
       if (completed) return;
       completed = true;
       window.clearTimeout(timeout);
+      debt.listeners.delete(check);
+      const waits = terminalParseWaits.get(batch.sessionId);
+      waits?.delete(finish);
+      if (waits?.size === 0) terminalParseWaits.delete(batch.sessionId);
       resolve();
     };
+    const check = (): void => {
+      if (debt.bytes <= limit || !isOutputGenerationCurrent(batch.sessionId, generation)) finish();
+    };
     const timeout = window.setTimeout(() => {
-      log.warn(
-        () => `xterm parse barrier timed out for ${batch.sessionId}; releasing output worker`,
-      );
+      if (isOutputGenerationCurrent(batch.sessionId, generation)) {
+        log.warn(
+          () =>
+            `xterm parser stalled for ${batch.sessionId}; replacing parser, not releasing byte credit`,
+        );
+        clearQueuedOutput(batch.sessionId);
+        if (terminalParseStallHandler) terminalParseStallHandler(batch.sessionId, batch.state);
+        else restartStalledSessionRecovery(batch.sessionId, 'xterm_parse_stalled');
+      }
       finish();
     }, XTERM_PARSE_BARRIER_TIMEOUT_MS);
-    writeToTerminal(
-      batch.sessionId,
-      batch.state,
-      batch.sequenceEnd,
-      batch.cols,
-      batch.rows,
-      data,
-      generation,
-      finish,
-    );
+    debt.listeners.add(check);
+    let waits = terminalParseWaits.get(batch.sessionId);
+    if (!waits) {
+      waits = new Set();
+      terminalParseWaits.set(batch.sessionId, waits);
+    }
+    waits.add(finish);
+    check();
   });
 }
 
@@ -1023,20 +1084,37 @@ function writeTerminalData(
   generation: number,
   onParsed?: () => void,
 ): void {
-  // xterm already preserves write order internally. We use the callback for
-  // "parsed and visible" notifications only, not as a per-frame flow-control gate.
-  state.terminal.write(data, () => {
-    if (!isOutputGenerationCurrent(sessionId, generation)) {
-      onParsed?.();
-      return;
-    }
+  // xterm preserves write order internally. Its callback acknowledges parsing
+  // (not pixel presentation) and releases the shared parser byte budget.
+  const debt = getTerminalParseDebt(state);
+  debt.bytes += data.length;
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    debt.bytes -= data.length;
+    debt.listeners.forEach((check) => {
+      check();
+    });
+  };
+  try {
+    state.terminal.write(data, () => {
+      release();
+      if (!isOutputGenerationCurrent(sessionId, generation)) {
+        onParsed?.();
+        return;
+      }
 
-    const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
-    snapshot.renderedSeq = maxSequence(snapshot.renderedSeq, sequenceEnd);
-    measureCompletedOutputRtt(sessionId);
-    recordInputTraceOutputParsed(sessionId, sequenceEnd);
-    onParsed?.();
-  });
+      const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
+      snapshot.renderedSeq = maxSequence(snapshot.renderedSeq, sequenceEnd);
+      measureCompletedOutputRtt(sessionId);
+      recordInputTraceOutputParsed(sessionId, sequenceEnd);
+      onParsed?.();
+    });
+  } catch (error) {
+    release();
+    throw error;
+  }
   const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
   snapshot.submittedSeq = maxSequence(snapshot.submittedSeq, sequenceEnd);
 }
@@ -2153,6 +2231,9 @@ export function resetMuxChannelRuntimeForTests(): void {
   syncCompletePending = false;
 
   _sessionBytesCallback = null;
+  terminalParseStallHandler = null;
+  outputDrainStartedAt = null;
+  outputDrainYield = null;
   _suppressHeatCallback = null;
   pongCallback = null;
   lastOutputRtt = null;

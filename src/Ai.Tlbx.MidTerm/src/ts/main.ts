@@ -45,6 +45,7 @@ import {
   resolveLaunchDimensions,
   scheduleForegroundResizeRecovery,
   syncWebglSessionPriority,
+  initTerminalRecovery,
 } from './modules/terminal';
 import {
   getSessionDisplayName,
@@ -350,6 +351,7 @@ async function init(): Promise<void> {
   initAppShellStatePersistence();
   initTrafficIndicator();
   setSessionBytesCallback(recordBytes);
+  initTerminalRecovery();
   setSuppressHeatCallback(suppressAllHeat);
   initHeatIndicator();
   initBadges();

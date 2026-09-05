@@ -593,48 +593,85 @@ public sealed class MuxWebSocketHandler
     {
         var receiveBuffer = new byte[MuxProtocol.MaxFrameSize];
         var shutdownToken = _shutdownService.Token;
-
-        while (ws.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
+        await using var inbound = new MuxInboundDispatcher(ex =>
         {
-            MuxReceiveMessage result;
-            try
-            {
-                result = await ReceiveMuxMessageAsync(ws, receiveBuffer, shutdownToken);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (WebSocketException)
-            {
-                break;
-            }
+            Log.Warn(() => $"[MuxHandler] Input lane failed: {ex.Message}");
+            ws.Abort();
+        }, shutdownToken);
 
-            if (result.TooLarge)
+        try
+        {
+            while (ws.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
             {
+                MuxReceiveMessage result;
                 try
                 {
-                    await ws.CloseOutputAsync(
-                        WebSocketCloseStatus.MessageTooBig,
-                        $"Mux frame exceeds {MuxProtocol.MaxFrameSize} bytes",
-                        shutdownToken);
+                    result = await ReceiveMuxMessageAsync(ws, receiveBuffer, shutdownToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
                 }
                 catch (WebSocketException)
                 {
+                    break;
                 }
-                break;
-            }
 
-            if (result.MessageType == WebSocketMessageType.Close)
+                if (result.TooLarge)
+                {
+                    try
+                    {
+                        await ws.CloseOutputAsync(
+                            WebSocketCloseStatus.MessageTooBig,
+                            $"Mux frame exceeds {MuxProtocol.MaxFrameSize} bytes",
+                            shutdownToken);
+                    }
+                    catch (WebSocketException)
+                    {
+                    }
+                    break;
+                }
+
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    break;
+                }
+
+                if (result.MessageType == WebSocketMessageType.Binary && result.Count >= MuxProtocol.HeaderSize)
+                {
+                    var data = new ReadOnlyMemory<byte>(receiveBuffer, 0, result.Count);
+                    if (!MuxProtocol.TryParseFrame(data.Span, out var type, out var sessionId, out _) ||
+                        (shareAccess is not null && !string.Equals(sessionId, shareAccess.SessionId, StringComparison.Ordinal)))
+                        continue;
+                    if (type is MuxProtocol.TypeTerminalInput or MuxProtocol.TypeInputTraceMarker or MuxProtocol.TypePing)
+                    {
+                        // The receive buffer is reused immediately. Each admitted
+                        // lane owns its bytes until the IPC operation has completed.
+                        if (type == MuxProtocol.TypeTerminalInput)
+                        {
+                            if (shareAccess is not null && !ShareGrantService.CanWrite(shareAccess)) continue;
+                            client.SetActiveSession(sessionId);
+                        }
+                        var owned = data.ToArray();
+                        await inbound.EnqueueAsync($"input:{sessionId}",
+                            ct => ProcessFrameAsync(owned, client, shareAccess, inbound, ct), owned.Length);
+                    }
+                    else
+                    {
+                        await ProcessFrameAsync(data, client, shareAccess, inbound, shutdownToken);
+                    }
+                }
+
+            }
+        }
+        finally
+        {
+            try { await inbound.CompleteAsync(shutdownToken).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested) { }
+            catch (TimeoutException)
             {
-                break;
+                Log.Warn(() => $"[MuxHandler] {clientId}: input/recovery work did not drain within the close deadline");
             }
-
-            if (result.MessageType == WebSocketMessageType.Binary && result.Count >= MuxProtocol.HeaderSize)
-            {
-                await ProcessFrameAsync(new ReadOnlyMemory<byte>(receiveBuffer, 0, result.Count), client, shareAccess);
-            }
-
         }
     }
 
@@ -681,7 +718,9 @@ public sealed class MuxWebSocketHandler
     private async Task ProcessFrameAsync(
         ReadOnlyMemory<byte> data,
         MuxClient client,
-        ShareAccessContext? shareAccess)
+        ShareAccessContext? shareAccess,
+        MuxInboundDispatcher inbound,
+        CancellationToken ct)
     {
         if (!MuxProtocol.TryParseFrame(data.Span, out var type, out var sessionId, out var payload))
         {
@@ -701,13 +740,12 @@ public sealed class MuxWebSocketHandler
                 {
                     return;
                 }
-                client.SetActiveSession(sessionId);
                 var payloadMemory = data.Slice(MuxProtocol.HeaderSize);
                 if (payloadMemory.Length < 20)
                 {
                     Log.Verbose(() => $"[WS-INPUT] {sessionId}: {BitConverter.ToString(payloadMemory.ToArray())}");
                 }
-                await _muxManager.HandleInputAsync(client.Id, sessionId, payloadMemory);
+                await _muxManager.HandleInputAsync(client.Id, sessionId, payloadMemory, ct);
                 break;
 
             case MuxProtocol.TypeResize:
@@ -717,24 +755,22 @@ public sealed class MuxWebSocketHandler
 
             case MuxProtocol.TypeBufferRequest:
                 var bufferRequest = MuxProtocol.ParseBufferRequestOptions(payload);
-                await SendBufferForSessionAsync(
-                    client,
-                    sessionId,
-                    bufferRequest.QuickResume,
-                    bufferRequest.ReplayRows,
-                    bufferRequest.SinceSequence);
+                await inbound.EnqueueAsync($"recovery:{sessionId}", recoveryCt => SendBufferForSessionAsync(
+                    client, sessionId, bufferRequest.QuickResume, bufferRequest.ReplayRows,
+                    bufferRequest.SinceSequence, recoveryCt), mergePriority: bufferRequest.QuickResume ? 0 : 1);
                 break;
 
             case MuxProtocol.TypeActiveSessionHint:
                 client.SetActiveSession(sessionId);
-                await RecoverPausedSessionAsync(client, sessionId);
+                await inbound.EnqueueAsync($"recovery:{sessionId}", recoveryCt => RecoverPausedSessionAsync(client, sessionId, recoveryCt), mergePriority: -1);
                 break;
 
             case MuxProtocol.TypeVisibleSessionsHint:
                 client.SetVisibleSessions(MuxProtocol.ParseVisibleSessionsHintPayload(payload));
                 foreach (var pausedSession in client.GetVisiblePausedSessions().ToArray())
                 {
-                    await RecoverPausedSessionAsync(client, pausedSession.Key);
+                    var pausedId = pausedSession.Key;
+                    await inbound.EnqueueAsync($"recovery:{pausedId}", recoveryCt => RecoverPausedSessionAsync(client, pausedId, recoveryCt), mergePriority: -1);
                 }
                 break;
 
@@ -742,7 +778,8 @@ public sealed class MuxWebSocketHandler
                 client.SetBackgroundSessions(MuxProtocol.ParseBackgroundSessionsHintPayload(payload));
                 foreach (var pausedSession in client.GetBackgroundPausedSessions().ToArray())
                 {
-                    await RecoverPausedSessionAsync(client, pausedSession.Key);
+                    var pausedId = pausedSession.Key;
+                    await inbound.EnqueueAsync($"recovery:{pausedId}", recoveryCt => RecoverPausedSessionAsync(client, pausedId, recoveryCt), mergePriority: -1);
                 }
                 break;
 
@@ -804,7 +841,8 @@ public sealed class MuxWebSocketHandler
         string sessionId,
         bool quickResumeRequested,
         int? replayRows,
-        ulong? sinceSequence)
+        ulong? sinceSequence,
+        CancellationToken ct)
     {
         try
         {
@@ -824,7 +862,7 @@ public sealed class MuxWebSocketHandler
                 quickResume ? TerminalReplayReason.QuickResumeTailReplay : TerminalReplayReason.BufferRefreshTailReplay,
                 sinceSequence,
                 forceTerminalReset: !quickResume,
-                ct: _shutdownService.Token);
+                ct: ct);
         }
         catch (Exception ex)
         {
@@ -832,7 +870,7 @@ public sealed class MuxWebSocketHandler
         }
     }
 
-    private async Task RecoverPausedSessionAsync(MuxClient client, string sessionId)
+    private async Task RecoverPausedSessionAsync(MuxClient client, string sessionId, CancellationToken ct)
     {
         if (!client.TryGetPausedSession(sessionId, out var paused))
         {
@@ -844,7 +882,8 @@ public sealed class MuxWebSocketHandler
             sessionId,
             quickResumeRequested: true,
             replayRows: null,
-            sinceSequence: paused.ResumeSequence);
+            sinceSequence: paused.ResumeSequence,
+            ct: ct);
     }
 
     private int? ResolveReplayMaxBytes(SessionInfo session, int? replayRows, bool quickResume)

@@ -404,6 +404,7 @@ let lastServerRevision = 0;
 let pendingSnapshotKey: string | null = null;
 let persistenceReady = false;
 let syncInFlight = false;
+let lastPersistedSnapshotKey: string | null = null;
 
 function getCurrentLayoutSnapshot(): LayoutSnapshot {
   return {
@@ -429,6 +430,8 @@ function serializeLayoutContent(root: LayoutNode | null, focusedSessionId: strin
  */
 export function saveLayoutToStorage(): void {
   const snapshot = getCurrentLayoutSnapshot();
+  const key = serializeLayoutSnapshot(snapshot);
+  if (key === lastPersistedSnapshotKey) return;
   if (snapshot.root) {
     localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ root: snapshot.root }));
     if (snapshot.focusedSessionId) {
@@ -440,6 +443,7 @@ export function saveLayoutToStorage(): void {
     localStorage.removeItem(LAYOUT_STORAGE_KEY);
     localStorage.removeItem(FOCUSED_STORAGE_KEY);
   }
+  lastPersistedSnapshotKey = key;
 }
 
 /**
@@ -542,13 +546,15 @@ export function applyServerLayoutState(snapshot: LayoutSnapshot | null | undefin
   };
   const nextSnapshotKey = serializeLayoutSnapshot(normalized);
 
+  if (normalizedRevision < previousServerRevision) {
+    return;
+  }
+  // A same-revision broadcast must not undo a local edit. A matching ACK,
+  // however, still retires that edit even though no DOM work is necessary.
   if (
-    shouldIgnoreServerLayoutSnapshot(
-      normalizedRevision,
-      previousServerRevision,
-      currentSnapshotKey,
-      nextSnapshotKey,
-    )
+    pendingSnapshotKey !== null &&
+    normalizedRevision === previousServerRevision &&
+    nextSnapshotKey !== pendingSnapshotKey
   ) {
     return;
   }
@@ -571,21 +577,6 @@ export function applyServerLayoutState(snapshot: LayoutSnapshot | null | undefin
   $layout.set({ root: normalized.root });
 
   applyServerFocusedSessionState(normalized.root, normalized.focusedSessionId);
-}
-
-function shouldIgnoreServerLayoutSnapshot(
-  normalizedRevision: number,
-  previousServerRevision: number,
-  currentSnapshotKey: string,
-  nextSnapshotKey: string,
-): boolean {
-  if (normalizedRevision < previousServerRevision) {
-    return true;
-  }
-  if (pendingSnapshotKey !== null && normalizedRevision === previousServerRevision) {
-    return true;
-  }
-  return nextSnapshotKey === currentSnapshotKey;
 }
 
 function reconcilePendingServerLayoutSnapshot(
@@ -625,6 +616,7 @@ function applyServerFocusedSessionState(
 function clearLayoutStorage(): void {
   localStorage.removeItem(LAYOUT_STORAGE_KEY);
   localStorage.removeItem(FOCUSED_STORAGE_KEY);
+  lastPersistedSnapshotKey = EMPTY_LAYOUT_SNAPSHOT_KEY;
 }
 
 export function markLayoutPersistenceReady(): void {
@@ -660,15 +652,26 @@ function syncLayoutToServer(): void {
     }),
   })
     .then(async (response) => {
-      const serverSnapshot = (await response.json()) as LayoutSnapshot;
-      applyServerLayoutState(serverSnapshot);
-
       if (!response.ok && response.status !== 409) {
         throw new Error(`Layout sync failed with status ${response.status}`);
       }
+      const serverSnapshot = (await response.json()) as LayoutSnapshot;
+      // The server can normalize this edit (for example its focused pane).
+      // Only its own still-current ACK may retire it; never retire a newer edit.
+      if (
+        response.ok &&
+        (serverSnapshot.revision ?? 0) >= lastServerRevision &&
+        pendingSnapshotKey === snapshotKey &&
+        serializeLayoutSnapshot(getCurrentLayoutSnapshot()) === snapshotKey
+      ) {
+        pendingSnapshotKey = null;
+      }
+      applyServerLayoutState(serverSnapshot);
 
       shouldResyncImmediately =
-        pendingSnapshotKey !== null && pendingSnapshotKey !== lastServerSnapshotKey;
+        pendingSnapshotKey !== null &&
+        pendingSnapshotKey !== lastServerSnapshotKey &&
+        (lastServerRevision > (snapshot.revision ?? 0) || pendingSnapshotKey !== snapshotKey);
     })
     .catch(() => {
       // Keep the pending snapshot marker so a later local change can retry it.

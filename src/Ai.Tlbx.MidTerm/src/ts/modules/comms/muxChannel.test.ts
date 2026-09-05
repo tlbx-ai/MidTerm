@@ -15,6 +15,7 @@ import {
   resetMuxChannelRuntimeForTests,
   sendInput,
   setInputLatencyTracingEnabled,
+  setTerminalParseStallHandler,
   suspendMuxForBrowserBackground,
   updateTerminalVisibility,
 } from './muxChannel';
@@ -489,11 +490,13 @@ describe('muxChannel', () => {
     expect(harness.stores.$dataLossDetected.get()).toBeNull();
   });
 
-  it('releases a stuck xterm parse barrier without deadlocking the session worker', async () => {
+  it('recreates a stalled parser without granting fake byte credit or accepting retired callbacks', async () => {
     vi.useFakeTimers();
     const harness = await loadHarness(new Array(64).fill(0));
     const sessionId = 'sess1234';
     const terminal = attachFakeTerminal(harness.sessionTerminals, sessionId);
+    const stalled = vi.fn();
+    setTerminalParseStallHandler(stalled);
     const chunk = 'x'.repeat(32 * 1024);
 
     for (let i = 0; i < 18; i += 1) {
@@ -514,8 +517,75 @@ describe('muxChannel', () => {
     expect(terminal.writeMock).toHaveBeenCalledTimes(8);
 
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(terminal.writeMock).toHaveBeenCalledTimes(9);
+    expect(terminal.writeMock).toHaveBeenCalledTimes(8);
+    expect(stalled).toHaveBeenCalledTimes(1);
+    const cursorBeforeRetiredCallbacks = getBrowserTransportSnapshot(sessionId)?.renderedSeq;
+    terminal.pendingCallbacks.splice(0).forEach((callback) => callback());
+    expect(getBrowserTransportSnapshot(sessionId)?.renderedSeq).toBe(cursorBeforeRetiredCallbacks);
     expect(harness.stores.$dataLossDetected.get()).toBeNull();
+  });
+
+  it('keeps parser debt across separate small drains and releases only acknowledged bytes', async () => {
+    const harness = await loadHarness(new Array(200).fill(0));
+    const terminal = attachFakeTerminal(harness.sessionTerminals, 'sess1234');
+    const chunk = 'x'.repeat(32 * 1024);
+    for (let i = 0; i < 20; i++) {
+      harness.ws.onmessage?.({
+        data: buildSequencedOutputMessage(
+          encodeSessionId,
+          constants.MUX_TYPE_OUTPUT,
+          constants.MUX_HEADER_SIZE,
+          'sess1234',
+          BigInt((i + 1) * chunk.length),
+          chunk,
+        ),
+      } as MessageEvent<ArrayBuffer>);
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    const bytesWritten = () =>
+      terminal.writeMock.mock.calls.reduce((sum, [data]) => sum + data.length, 0);
+    expect(bytesWritten()).toBe(512 * 1024);
+    terminal.pendingCallbacks.shift()!();
+    await Promise.resolve();
+    await Promise.resolve();
+    // Only the acknowledged 32 KiB become available, not the entire budget.
+    expect(bytesWritten()).toBe(544 * 1024);
+    terminal.pendingCallbacks.shift()!();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(bytesWritten()).toBe(576 * 1024);
+  });
+
+  it('gives a replacement parser its own byte budget and ignores retired acknowledgements', async () => {
+    const harness = await loadHarness(new Array(200).fill(0));
+    const sessionId = 'sess1234';
+    const old = attachFakeTerminal(harness.sessionTerminals, sessionId);
+    const send = (sequence: bigint, text: string) =>
+      harness.ws.onmessage?.({
+        data: buildSequencedOutputMessage(
+          encodeSessionId,
+          constants.MUX_TYPE_OUTPUT,
+          constants.MUX_HEADER_SIZE,
+          sessionId,
+          sequence,
+          text,
+        ),
+      } as MessageEvent<ArrayBuffer>);
+    send(512n * 1024n, 'x'.repeat(512 * 1024));
+    await Promise.resolve();
+    await Promise.resolve();
+    forgetMuxSession(sessionId);
+    const replacement = attachFakeTerminal(harness.sessionTerminals, sessionId);
+    send(5n, 'fresh');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(replacement.writeMock).toHaveBeenCalledTimes(1);
+    const before = getBrowserTransportSnapshot(sessionId)?.renderedSeq;
+    old.pendingCallbacks.splice(0).forEach((callback) => callback());
+    expect(getBrowserTransportSnapshot(sessionId)?.renderedSeq).toBe(before);
+    replacement.pendingCallbacks.splice(0).forEach((callback) => callback());
+    expect(getBrowserTransportSnapshot(sessionId)?.renderedSeq).toBe(5n);
   });
 
   it('yields between drain slices so flood output does not monopolize the main thread', async () => {

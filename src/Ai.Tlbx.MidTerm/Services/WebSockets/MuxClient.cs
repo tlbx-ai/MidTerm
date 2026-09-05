@@ -1173,7 +1173,8 @@ public sealed class MuxClient : IAsyncDisposable
                 if (!_writer.TryQueueCopy(
                         frameBuffer.AsSpan(0, frameLength),
                         GetLiveWritePriority(sessionId),
-                        sent))
+                        sent,
+                        sessionId))
                 {
                     MarkTransportDegraded("websocket writer queue full");
                     await Task.Delay(ActiveFlushInterval, _cts.Token).ConfigureAwait(false);
@@ -1212,7 +1213,15 @@ public sealed class MuxClient : IAsyncDisposable
         ReadOnlyMemory<byte> data,
         MuxWritePriority priority)
     {
-        return _writer.SendAsync(data, priority);
+        string? orderingSession = null;
+        if (MuxProtocol.TryParseFrame(data.Span, out var type, out var sessionId, out _) &&
+            type is MuxProtocol.TypeTerminalOutput or MuxProtocol.TypeCompressedOutput or
+                MuxProtocol.TypeRecoveryBegin or MuxProtocol.TypeRecoveryEnd or
+                MuxProtocol.TypeDataLoss or MuxProtocol.TypeForegroundChange or MuxProtocol.TypeInputTraceResult)
+        {
+            orderingSession = sessionId;
+        }
+        return _writer.SendAsync(data, priority, orderingSession);
     }
 
     /// <summary>

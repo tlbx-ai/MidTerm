@@ -114,6 +114,13 @@ import {
 import { handleOsc7Cwd } from '../process';
 import { recordTerminalKeyLog } from '../diagnostics';
 import { getActiveTab } from '../sessionTabs';
+import { setTerminalParseStallHandler } from '../comms/muxChannel';
+
+export function initTerminalRecovery(): void {
+  setTerminalParseStallHandler((id, state) => {
+    recreateTerminalForRecovery(id, state, 'xterm_parse_stalled');
+  });
+}
 
 interface TerminalStartupPaintRecoveryState {
   attempt: number;
@@ -206,7 +213,7 @@ function scheduleTerminalStartupPaintRecovery(
             `Terminal ${sessionId} startup framebuffer remained blank; recreating terminal and replaying`,
         );
         terminalStartupPaintRecreations.add(sessionId);
-        recreateTerminalForStartupRecovery(sessionId, state);
+        recreateTerminalForRecovery(sessionId, state);
         return;
       }
 
@@ -254,7 +261,11 @@ export function ensureTerminalStartupPaintRecovery(sessionId: string, state: Ter
  * the session-local equivalent of the F5 recovery that users previously needed
  * when xterm's empty-write replay barrier stopped invoking callbacks.
  */
-function recreateTerminalForStartupRecovery(sessionId: string, state: TerminalState): void {
+export function recreateTerminalForRecovery(
+  sessionId: string,
+  state: TerminalState,
+  cause = 'startup_terminal_recreated',
+): void {
   if (sessionTerminals.get(sessionId) !== state) return;
 
   const parent = state.container.parentElement;
@@ -280,7 +291,7 @@ function recreateTerminalForStartupRecovery(sessionId: string, state: TerminalSt
   // The explicit bypass is safe only for this fresh parser/renderer. It keeps
   // the replay from entering the stale empty-write barrier again if the server
   // responds just after terminal.open().
-  restartStalledSessionRecovery(sessionId, 'startup_terminal_recreated', true);
+  restartStalledSessionRecovery(sessionId, cause, true);
 }
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import {
