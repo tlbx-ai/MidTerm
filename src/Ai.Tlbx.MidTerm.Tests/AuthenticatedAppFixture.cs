@@ -34,9 +34,21 @@ public sealed class AuthenticatedAppFixture : WebApplicationFactory<Program>
             {
                 foreach (var entry in _previousEnvironment)
                     Environment.SetEnvironmentVariable(entry.Key, entry.Value);
-                // SQLite pools outlive the disposed test host unless explicitly drained.
-                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-                if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
+                // Windows can briefly retain SQLite file handles after host disposal.
+                // Retry cleanup for at most two seconds; persistent failures still fail the test.
+                for (var attempt = 0; ; attempt++)
+                {
+                    Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                    try
+                    {
+                        if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
+                        break;
+                    }
+                    catch (IOException) when (attempt < 20)
+                    {
+                        Thread.Sleep(100);
+                    }
+                }
             }
         }
     }
