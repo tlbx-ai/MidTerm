@@ -6,6 +6,7 @@ public static class Program
 {
     private static readonly HttpClientHandler HttpHandler = new()
     {
+        AllowAutoRedirect = false,
         ServerCertificateCustomValidationCallback =
             HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
     };
@@ -21,9 +22,12 @@ public static class Program
         }
 
         var endpoint = ResolveEndpoint();
-        if (string.IsNullOrWhiteSpace(endpoint))
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var endpointUri)
+            || endpointUri.Scheme != Uri.UriSchemeHttps
+            || !endpointUri.IsLoopback
+            || !string.IsNullOrEmpty(endpointUri.UserInfo))
         {
-            Console.Error.WriteLine("midterm tmux shim: missing endpoint");
+            Console.Error.WriteLine("tlbx tmux shim: an HTTPS loopback endpoint is required");
             return 1;
         }
 

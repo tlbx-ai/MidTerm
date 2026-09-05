@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
+using System.Text;
 using Ai.Tlbx.MidTerm.Models.Browser;
 
 namespace Ai.Tlbx.MidTerm.Services.Browser;
@@ -55,7 +56,8 @@ public sealed class BrowserPreviewRegistry
         if (!_previews.TryGetValue(previewId, out var registered))
             return false;
 
-        if (!registered.PreviewToken.Equals(previewToken, StringComparison.Ordinal))
+        if (!CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(registered.PreviewToken), Encoding.UTF8.GetBytes(previewToken)))
             return false;
 
         preview = new BrowserPreviewRegistration

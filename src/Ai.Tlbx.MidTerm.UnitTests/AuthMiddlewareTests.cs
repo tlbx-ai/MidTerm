@@ -8,17 +8,11 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public class AuthMiddlewareTests
 {
     [Theory]
-    [InlineData("/swagger")]
-    [InlineData("/swagger/index.html")]
-    [InlineData("/swagger/swagger-ui.css")]
-    [InlineData("/swagger/swagger-ui-bundle.js")]
-    [InlineData("/openapi/openapi.json")]
     [InlineData("/api/bootstrap/login")]
     [InlineData("/api/certificate/info")]
     [InlineData("/api/certificate/download/pem")]
     [InlineData("/api/certificate/download/crt")]
     [InlineData("/api/certificate/download/mobileconfig")]
-    [InlineData("/api/certificate/share-packet")]
     [InlineData("/favicon.svg")]
     [InlineData("/favicon.ico")]
     [InlineData("/site.webmanifest")]
@@ -35,6 +29,19 @@ public class AuthMiddlewareTests
     }
 
     [Theory]
+    [InlineData("/swagger")]
+    [InlineData("/swagger/index.html")]
+    [InlineData("/swagger/swagger-ui.css")]
+    [InlineData("/swagger/swagger-ui-bundle.js")]
+    [InlineData("/openapi/openapi.json")]
+    [InlineData("/api/certificate/share-packet")]
+    [InlineData("/api/auth/change-password")]
+    [InlineData("/api/auth/refresh")]
+    [InlineData("/api/auth/future-endpoint")]
+    [InlineData("/api/health")]
+    [InlineData("/api/version")]
+    [InlineData("/api/security/status")]
+    [InlineData("/api/shutdown")]
     [InlineData("/api/state")]
     [InlineData("/api/system")]
     [InlineData("/api/paths")]
@@ -55,6 +62,25 @@ public class AuthMiddlewareTests
     public void IsPublicPath_RemoteControlEndpoints_RemainProtected(string path)
     {
         Assert.False(AuthMiddleware.IsPublicPath(path));
+    }
+
+    [Theory]
+    [InlineData("GET", "/api/bootstrap/login", true)]
+    [InlineData("POST", "/api/bootstrap/login", false)]
+    [InlineData("POST", "/api/auth/login", true)]
+    [InlineData("GET", "/api/auth/login", false)]
+    [InlineData("POST", "/api/auth/change-password", false)]
+    [InlineData("POST", "/api/auth/logout", false)]
+    [InlineData("POST", "/api/auth/future-endpoint", false)]
+    [InlineData("GET", "/api/shutdown", false)]
+    [InlineData("POST", "/api/shutdown", false)]
+    [InlineData("POST", "/api/certificate/info", false)]
+    public void PublicAccess_RequiresAnExplicitMethodAndPath(string method, string path, bool expected)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = method;
+        context.Request.Path = path;
+        Assert.Equal(expected, AuthMiddleware.IsPublicRequest(context.Request));
     }
 
     [Fact]
@@ -87,44 +113,4 @@ public class AuthMiddlewareTests
         Assert.False(allowed);
     }
 
-    [Fact]
-    public void AllowsPreviewOriginProxyRequest_WebPreviewRouteOnPreviewOrigin_ReturnsTrue()
-    {
-        var previewOrigin = new BrowserPreviewOriginService(mainPort: 2000, previewPort: 2001, isEnabled: true);
-        var context = new DefaultHttpContext();
-        context.Request.Host = new HostString("midterm.local", 2001);
-        context.Request.Path = "/webpreview/route-a/";
-
-        var allowed = AuthMiddleware.AllowsPreviewOriginProxyRequest(context.Request, previewOrigin);
-
-        Assert.True(allowed);
-    }
-
-    [Fact]
-    public void AllowsPreviewOriginProxyRequest_LeakedLoginPathWithPreviewReferer_ReturnsTrue()
-    {
-        var previewOrigin = new BrowserPreviewOriginService(mainPort: 2000, previewPort: 2001, isEnabled: true);
-        var context = new DefaultHttpContext();
-        context.Request.Host = new HostString("midterm.local", 2001);
-        context.Request.Path = "/login.html";
-        context.Request.Headers.Referer = "https://midterm.local:2001/webpreview/route-a/";
-
-        var allowed = AuthMiddleware.AllowsPreviewOriginProxyRequest(context.Request, previewOrigin);
-
-        Assert.True(allowed);
-    }
-
-    [Fact]
-    public void AllowsPreviewOriginProxyRequest_MainOriginLeakedPath_ReturnsFalse()
-    {
-        var previewOrigin = new BrowserPreviewOriginService(mainPort: 2000, previewPort: 2001, isEnabled: true);
-        var context = new DefaultHttpContext();
-        context.Request.Host = new HostString("midterm.local", 2000);
-        context.Request.Path = "/login.html";
-        context.Request.Headers.Referer = "https://midterm.local:2001/webpreview/route-a/";
-
-        var allowed = AuthMiddleware.AllowsPreviewOriginProxyRequest(context.Request, previewOrigin);
-
-        Assert.False(allowed);
-    }
 }

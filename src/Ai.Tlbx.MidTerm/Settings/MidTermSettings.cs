@@ -167,7 +167,7 @@ public sealed class MidTermSettings
     public string? RunAsUserSid { get; set; }  // Windows: User SID for token lookup
 
     // Authentication
-    public bool AuthenticationEnabled { get; set; } = false;
+    public bool AuthenticationEnabled { get; set; } = true;
 
     [JsonIgnore]
     public string? PasswordHash { get; set; }

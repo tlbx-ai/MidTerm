@@ -72,14 +72,13 @@ public static class WelcomeScreen
                 break;
         }
 
-        var isNetworkBound = bindAddress != "127.0.0.1" && bindAddress != "localhost";
-        var hasNoPassword = string.IsNullOrEmpty(settings.PasswordHash) || !settings.AuthenticationEnabled;
-        if (isNetworkBound && hasNoPassword)
+        var hasNoPassword = string.IsNullOrEmpty(settings.PasswordHash);
+        if (hasNoPassword)
         {
             Console.WriteLine();
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("  WARNING: Listening on network interface without authentication!");
-            Console.WriteLine("           Set a password in settings to secure access.");
+            Console.WriteLine("  Access locked: no password is configured.");
+            Console.WriteLine("           Run mt --set-password locally to configure access.");
             Console.ResetColor();
         }
 
@@ -106,31 +105,10 @@ public static class WelcomeScreen
         Log.Info(() => $"Mode: {(settingsService.IsRunningAsService ? "Service" : "User")}");
 
         var hasPassword = !string.IsNullOrEmpty(settings.PasswordHash);
-        var authEnabled = settings.AuthenticationEnabled;
-        if (hasPassword && authEnabled)
-        {
-            Log.Info(() => "Authentication: enabled (password configured)");
-        }
-        else if (hasPassword && !authEnabled)
-        {
-            Log.Warn(() => "Authentication: DISABLED (password exists but auth is disabled)");
-        }
-        else if (!hasPassword && authEnabled)
-        {
-            Log.Warn(() => "Authentication: MISCONFIGURED (auth enabled but no password set)");
-        }
+        if (hasPassword)
+            Log.Info(() => "Authentication: required (password configured)");
         else
-        {
-            var isNetworkBound = bindAddress != "127.0.0.1" && bindAddress != "localhost";
-            if (isNetworkBound)
-            {
-                Log.Warn(() => "Authentication: DISABLED - server exposed on network without password!");
-            }
-            else
-            {
-                Log.Info(() => "Authentication: disabled (localhost only)");
-            }
-        }
+            Log.Warn(() => "Authentication: access locked; configure a password locally with mt --set-password");
 
         if (loadedCertificate is not null)
         {

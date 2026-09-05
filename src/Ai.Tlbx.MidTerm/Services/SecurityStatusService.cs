@@ -14,7 +14,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 /// <summary>
 /// Reports current security status (password protection, certificate trust).
 /// This is INFORMATIONAL ONLY - it does not block access on degraded security.
-/// Future: Add EnforceStrictSecurity setting that denies access when warnings exist.
+/// Browser trust is established by the user; a configured certificate does not prove it.
 /// </summary>
 public sealed class SecurityStatusService
 {
@@ -39,13 +39,9 @@ public sealed class SecurityStatusService
 
         var currentSettings = _settingsService.Load();
 
-        if (currentSettings.AuthenticationEnabled)
+        if (string.IsNullOrEmpty(currentSettings.PasswordHash))
         {
-            var hash = secrets.GetSecret(SecretKeys.PasswordHash);
-            if (string.IsNullOrEmpty(hash))
-            {
-                warnings.Add("Authentication enabled but no password hash found - password protection lost");
-            }
+            warnings.Add("No password is configured; control access is locked.");
         }
 
         if (_certInfoService.IsFallbackCertificate)
@@ -55,8 +51,8 @@ public sealed class SecurityStatusService
 
         return new SecurityStatus
         {
-            PasswordProtected = currentSettings.AuthenticationEnabled && !string.IsNullOrEmpty(secrets.GetSecret(SecretKeys.PasswordHash)),
-            CertificateTrusted = !_certInfoService.IsFallbackCertificate,
+            PasswordProtected = !string.IsNullOrEmpty(currentSettings.PasswordHash),
+            CertificateConfigured = _certInfoService.Fingerprint is not null && !_certInfoService.IsFallbackCertificate,
             Warnings = warnings
         };
     }

@@ -6981,30 +6981,6 @@ body::before {
   text-transform: uppercase;
 }
 
-.login-version {
-  margin-top: 24px;
-  text-align: center;
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-  opacity: 0.6;
-}
-
-/* Insider info - black on black, visible only on text selection */
-.login-insider {
-  position: fixed;
-  bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: var(--fs-xs);
-  font-family: var(--font-mono);
-  color: var(--bg-primary);
-  text-align: center;
-  line-height: 1.6;
-  user-select: text;
-  pointer-events: none;
-  white-space: pre-line;
-}
-
 .login-form .form-group {
   margin-bottom: 18px;
 }

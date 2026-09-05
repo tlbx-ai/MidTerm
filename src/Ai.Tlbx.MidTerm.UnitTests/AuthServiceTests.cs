@@ -61,6 +61,38 @@ public sealed class AuthServiceTests : IDisposable
     }
 
     [Fact]
+    public void PasswordOperations_AreBoundedAndReleaseTheirSlot()
+    {
+        if (!IsWindows) return;
+        using (var first = _authService.TryBeginPasswordOperation())
+        {
+            Assert.NotNull(first);
+            using var rejected = _authService.TryBeginPasswordOperation();
+            Assert.Null(rejected);
+        }
+        using var next = _authService.TryBeginPasswordOperation();
+        Assert.NotNull(next);
+    }
+
+    [Theory]
+    [InlineData(14, false)]
+    [InlineData(15, true)]
+    [InlineData(1024, true)]
+    [InlineData(1025, false)]
+    public void NewPasswordPolicy_BoundsLength(int length, bool valid)
+    {
+        Assert.Equal(valid, AuthService.ValidateNewPassword(new string('a', length)) is null);
+    }
+
+    [Fact]
+    public void PasswordHash_UsesCurrentWorkFactorAndIdentifiesLegacyHashes()
+    {
+        Assert.StartsWith("$PBKDF2$600000$", AuthService.HashPasswordStatic("passphrase for this test"), StringComparison.Ordinal);
+        Assert.True(AuthService.NeedsPasswordHashUpgrade("$PBKDF2$100000$salt$hash"));
+        Assert.False(AuthService.NeedsPasswordHashUpgrade("$PBKDF2$600000$salt$hash"));
+    }
+
+    [Fact]
     public void HashPassword_VerifyPassword_RoundTrip()
     {
         if (!IsWindows) return;
@@ -144,6 +176,38 @@ public sealed class AuthServiceTests : IDisposable
         var result = _authService.VerifyPassword("AnyPassword", "");
 
         Assert.False(result);
+    }
+
+    [Fact]
+    public void RateLimit_LoginSequence_AccumulatesFailuresAcrossChecks()
+    {
+        if (!IsWindows) return;
+        const string ip = "192.0.2.10";
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            Assert.False(_authService.IsRateLimited(ip));
+            _authService.RecordFailedAttempt(ip);
+        }
+        Assert.True(_authService.IsRateLimited(ip));
+        _timeProvider.Advance(TimeSpan.FromSeconds(31));
+        Assert.False(_authService.IsRateLimited(ip));
+        _authService.RecordFailedAttempt(ip);
+        Assert.True(_authService.IsRateLimited(ip));
+    }
+
+    [Fact]
+    public void RateLimit_InactiveFailures_ExpireAfterObservationWindow()
+    {
+        if (!IsWindows) return;
+        const string ip = "192.0.2.11";
+        _authService.RecordFailedAttempt(ip);
+        _timeProvider.Advance(TimeSpan.FromMinutes(16));
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            Assert.False(_authService.IsRateLimited(ip));
+            _authService.RecordFailedAttempt(ip);
+        }
+        Assert.False(_authService.IsRateLimited(ip));
     }
 
     [Fact]
@@ -313,6 +377,33 @@ public sealed class AuthServiceTests : IDisposable
     {
         if (!IsWindows) return;
         Assert.False(_authService.ValidateSessionToken("notavalidtoken"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AuthenticateRequest_MissingPassword_NeverGrantsOpenAccess(bool enabled)
+    {
+        if (!IsWindows) return;
+        var settings = _settingsService.Load();
+        settings.AuthenticationEnabled = enabled;
+        settings.PasswordHash = null;
+        _settingsService.Save(settings);
+        var context = new DefaultHttpContext();
+        Assert.Equal(RequestAuthMethod.None, _authService.AuthenticateRequest(context.Request));
+        context.Request.Headers.Cookie = $"{AuthService.SessionCookieName}={_authService.CreateSessionToken()}";
+        Assert.Equal(RequestAuthMethod.None, _authService.AuthenticateRequest(context.Request));
+    }
+
+    [Fact]
+    public void AuthenticateRequest_DisabledFlag_CannotBypassPassword()
+    {
+        if (!IsWindows) return;
+        EnableAuthentication();
+        var settings = _settingsService.Load();
+        settings.AuthenticationEnabled = false;
+        _settingsService.Save(settings);
+        Assert.Equal(RequestAuthMethod.None, _authService.AuthenticateRequest(new DefaultHttpContext().Request));
     }
 
     [Fact]

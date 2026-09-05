@@ -58,6 +58,9 @@ Write-Host "Booting $exeName on port $port (settings: $settingsDir)..." -Foregro
 $env:MIDTERM_SETTINGS_DIR = $settingsDir
 $proc = $null
 try {
+    $probePassword = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+    $probePassword | & $exePath --set-password *> (Join-Path $settingsDir "password-setup.log")
+    if ($LASTEXITCODE -ne 0) { throw "AOT smoke probe password setup failed" }
     $proc = Start-Process -FilePath $exePath -ArgumentList "--port $port --bind 127.0.0.1" `
         -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru -WindowStyle Hidden
 
@@ -68,7 +71,12 @@ try {
             break
         }
         try {
-            $version = Invoke-RestMethod "https://127.0.0.1:$port/api/version" -SkipCertificateCheck -TimeoutSec 3
+            $bootstrap = Invoke-RestMethod "https://127.0.0.1:$port/api/bootstrap/login" -SkipCertificateCheck -TimeoutSec 3
+            if (-not $bootstrap.certificate.fingerprint) { throw "Certificate bootstrap missing" }
+            $loginBody = @{ password = $probePassword } | ConvertTo-Json -Compress
+            $login = Invoke-RestMethod "https://127.0.0.1:$port/api/auth/login" -Method Post -ContentType 'application/json' -Body $loginBody -SessionVariable probeSession -SkipCertificateCheck -TimeoutSec 5
+            if (-not $login.success) { throw "Probe authentication failed" }
+            $version = Invoke-RestMethod "https://127.0.0.1:$port/api/version" -WebSession $probeSession -SkipCertificateCheck -TimeoutSec 3
             break
         } catch {
             Start-Sleep -Milliseconds 750
@@ -85,14 +93,16 @@ try {
     }
     Write-Host "  /api/version -> $version" -ForegroundColor Green
 
+    $anonymous = Invoke-WebRequest "https://127.0.0.1:$port/api/version" -SkipCertificateCheck -SkipHttpErrorCheck -TimeoutSec 5
+    if ([int]$anonymous.StatusCode -ne 401) { throw "AOT smoke probe FAILED: anonymous API access was not denied" }
     $graphsStatus = 0
     try {
-        $response = Invoke-WebRequest "https://127.0.0.1:$port/api/graphs" -SkipCertificateCheck -TimeoutSec 5
+        $response = Invoke-WebRequest "https://127.0.0.1:$port/api/graphs" -WebSession $probeSession -SkipCertificateCheck -TimeoutSec 5
         $graphsStatus = [int]$response.StatusCode
     } catch {
         $graphsStatus = [int]$_.Exception.Response.StatusCode
     }
-    if ($graphsStatus -ne 200 -and $graphsStatus -ne 401) {
+    if ($graphsStatus -ne 200) {
         throw "AOT smoke probe FAILED: /api/graphs returned $graphsStatus"
     }
     Write-Host "  /api/graphs -> $graphsStatus" -ForegroundColor Green

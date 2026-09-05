@@ -7,6 +7,6 @@ namespace Ai.Tlbx.MidTerm.Models.Auth;
 public sealed class SecurityStatus
 {
     public bool PasswordProtected { get; init; }
-    public bool CertificateTrusted { get; init; }
+    public bool CertificateConfigured { get; init; }
     public List<string> Warnings { get; init; } = [];
 }

@@ -90,13 +90,7 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
 
-            <CheckBox
-                android:id="@+id/allow_untrusted_certificate"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="@string/allow_untrusted_certificate"
-                android:textColor="@color/text_primary" />
+
 
             <TextView
                 android:layout_width="match_parent"

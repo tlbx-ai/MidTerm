@@ -640,9 +640,9 @@ function Prompt-Password
             continue
         }
 
-        if ($pwPlain.Length -lt 4)
+        if ($pwPlain.Length -lt 15 -or $pwPlain.Length -gt 1024)
         {
-            Write-Host "  Password must be at least 4 characters." -ForegroundColor Red
+            Write-Host "  Password must be between 15 and 1024 characters." -ForegroundColor Red
             continue
         }
 
@@ -1787,13 +1787,13 @@ function Write-ServiceSettings
     if ($CertPath) { Write-Host "  Certificate: $CertPath" -ForegroundColor Gray }
 }
 
-function Invoke-TlbxHealthRequest
+function Invoke-TlbxBootstrapRequest
 {
     param([string]$Url)
 
     if ($PSVersionTable.PSVersion.Major -ge 6)
     {
-        return Invoke-RestMethod -Uri "$Url/api/health" -TimeoutSec 5 -SkipCertificateCheck -ErrorAction Stop
+        return Invoke-RestMethod -Uri "$Url/api/bootstrap/login" -TimeoutSec 5 -SkipCertificateCheck -ErrorAction Stop
     }
 
     Add-Type @"
@@ -1813,7 +1813,7 @@ public class TlbxInstallerTrustAllCerts {
     try
     {
         [TlbxInstallerTrustAllCerts]::Ignore()
-        return Invoke-RestMethod -Uri "$Url/api/health" -TimeoutSec 5 -ErrorAction Stop
+        return Invoke-RestMethod -Uri "$Url/api/bootstrap/login" -TimeoutSec 5 -ErrorAction Stop
     }
     finally
     {
@@ -1862,8 +1862,8 @@ function Wait-TlbxReady
         [int]$ExpectedProcessId = 0
     )
 
-    $healthUrl = @(Get-TlbxAccessUrls -Port $Port -BindAddress $BindAddress -TailscaleAddresses @())[0]
-    $lastHealth = $null
+    $bootstrapUrl = @(Get-TlbxAccessUrls -Port $Port -BindAddress $BindAddress -TailscaleAddresses @())[0]
+    $lastBootstrap = $null
     $process = $null
     $serviceStatus = if ($AsService) { "Unknown" } else { "Not applicable" }
 
@@ -1878,22 +1878,23 @@ function Wait-TlbxReady
 
         try
         {
-            $lastHealth = Invoke-TlbxHealthRequest -Url $healthUrl
+            $lastBootstrap = Invoke-TlbxBootstrapRequest -Url $bootstrapUrl
         }
         catch
         {
-            $lastHealth = $null
+            $lastBootstrap = $null
         }
 
         $serviceReady = -not $AsService -or $serviceStatus -eq "Running"
-        if ($process -and $serviceReady -and $lastHealth -and $lastHealth.healthy)
+        if ($process -and $serviceReady -and $lastBootstrap -and $lastBootstrap.certificate.fingerprint)
         {
             return [pscustomobject]@{
+                Version = (& $ExecutablePath --version | Out-String).Trim()
                 Ready = $true
                 Process = $process
                 ServiceStatus = $serviceStatus
-                Health = $lastHealth
-                HealthUrl = $healthUrl
+                Bootstrap = $lastBootstrap
+                BootstrapUrl = $bootstrapUrl
             }
         }
 
@@ -1911,8 +1912,8 @@ function Wait-TlbxReady
         Ready = $false
         Process = $process
         ServiceStatus = $serviceStatus
-        Health = $lastHealth
-        HealthUrl = $healthUrl
+        Bootstrap = $lastBootstrap
+        BootstrapUrl = $bootstrapUrl
     }
 }
 
@@ -2153,17 +2154,16 @@ function Install-Tlbx
 
         if ($readiness.Ready)
         {
-            Write-StatusLine "HTTPS" "Reachable and healthy" Green
-            Write-StatusLine "Version" "$($readiness.Health.version)" Gray
+            Write-StatusLine "HTTPS" "Login endpoint ready" Green
+            Write-StatusLine "Version" "$($readiness.Version)" Gray
         }
-        elseif ($readiness.Health)
+        elseif ($readiness.Bootstrap)
         {
-            Write-StatusLine "Health" "Unhealthy" Red
-            if ($readiness.Health.hostError) { Write-StatusLine "Error" "$($readiness.Health.hostError)" Red }
+            Write-StatusLine "Readiness" "Login endpoint responded, but process/service is not ready" Red
         }
         else
         {
-            Write-StatusLine "HTTPS" "Could not connect to $($readiness.HealthUrl)" Red
+            Write-StatusLine "HTTPS" "Could not connect to $($readiness.BootstrapUrl)" Red
         }
 
         if (-not $readiness.Ready)
@@ -2239,12 +2239,12 @@ function Install-Tlbx
 
         if ($readiness.Ready)
         {
-            Write-StatusLine "HTTPS" "Reachable and healthy" Green
-            Write-StatusLine "Version" "$($readiness.Health.version)" Gray
+            Write-StatusLine "HTTPS" "Login endpoint ready" Green
+            Write-StatusLine "Version" "$($readiness.Version)" Gray
         }
         else
         {
-            Write-StatusLine "HTTPS" "Could not connect to $($readiness.HealthUrl)" Red
+            Write-StatusLine "HTTPS" "Could not connect to $($readiness.BootstrapUrl)" Red
             throw "tlbx was installed but the user process did not become reachable. See $userSettingsDir\tlbx-user.stderr.log."
         }
     }

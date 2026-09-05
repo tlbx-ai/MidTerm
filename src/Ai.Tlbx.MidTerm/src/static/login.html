@@ -36,11 +36,28 @@
                 <p class="login-tagline" data-i18n="auth.terminalMultiplexer">Terminal Multiplexer</p>
             </div>
 
+        <div id="cert-info" class="cert-info">
+            <div class="cert-info-header">
+                <span class="cert-info-title" data-i18n="auth.certFingerprint">Certificate Fingerprint</span>
+                <a href="/trust.html" data-i18n="trust.title">Verify certificate</a>
+            </div>
+            <div>SHA-256</div>
+            <div class="cert-fingerprint" id="cert-fingerprint">Loading…</div>
+            <button type="button" id="cert-copy-btn" class="copy-btn" data-i18n="trust.copy">Copy</button>
+            <div class="cert-dates">
+                <span id="cert-valid-from"></span>
+                <span id="cert-valid-until"></span>
+            </div>
+            <div class="cert-hint">
+                Before entering your password, compare the SHA-256 fingerprint in your browser’s certificate viewer with the fingerprint obtained directly from this host or its administrator over a trusted channel. A fingerprint displayed by this page alone does not verify the connection.
+            </div>
+        </div>
+
             <form id="login-form" class="login-form" method="post">
                 <input type="text" name="username" autocomplete="username" tabindex="-1" style="position:absolute;left:-9999px;opacity:0" aria-hidden="true" />
                 <div class="form-group">
                     <label for="password" data-i18n="auth.password">Password</label>
-                    <input type="password" id="password" name="password" required autocomplete="current-password" autofocus />
+                    <input type="password" id="password" name="password" required autocomplete="current-password" />
                 </div>
 
                 <div id="error-message" class="error-message hidden"></div>
@@ -48,27 +65,12 @@
                 <button type="submit" id="login-btn" class="login-btn" data-i18n="auth.login">Login</button>
             </form>
 
-            <div class="login-version" id="login-version"></div>
         </div>
 
-        <div id="cert-info" class="cert-info hidden">
-            <div class="cert-info-header">
-                <span class="cert-info-title" data-i18n="auth.certFingerprint">Certificate Fingerprint</span>
-                <button type="button" id="cert-hide-btn" class="cert-hide-btn" data-i18n-title="auth.certHidePanel" title="Hide this panel">×</button>
-            </div>
-            <div class="cert-fingerprint" id="cert-fingerprint"></div>
-            <div class="cert-dates">
-                <span id="cert-valid-from"></span>
-                <span id="cert-valid-until"></span>
-            </div>
-            <div class="cert-hint">
-                <span data-i18n="auth.certVerifyHint">Verify this matches across devices. See Settings → Security for details.</span>
-            </div>
-        </div>
+
     </div>
 
     <!-- Insider info: visible only when selecting all text (Ctrl+A) -->
-    <div class="login-insider" id="login-insider" aria-hidden="true"></div>
 
     <script src="/js/terminal.min.js?v=__MIDTERM_ASSET_VERSION__"></script>
 </body>

@@ -1,3 +1,4 @@
+using Ai.Tlbx.MidTerm.Startup;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Microsoft.AspNetCore.Http;
@@ -11,6 +12,21 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public class WebPreviewProxyMiddlewareTests
 {
+    [Fact]
+    public async Task ScopedPreview_UnknownRoute_CannotFallThroughToControlEndpoints()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        var nextCalled = false;
+        var middleware = new WebPreviewProxyMiddleware(_ => { nextCalled = true; return Task.CompletedTask; }, service);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/sessions";
+        context.Request.Headers.Referer = "https://host:2001/webpreview/removed-route/";
+        context.Items[PreviewProxyAuthorization.RouteItemKey] = "removed-route";
+        await middleware.InvokeAsync(context);
+        Assert.False(nextCalled);
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+    }
+
     [Fact]
     public void AddForwardedHeaders_UsesUpstreamAuthorityInsteadOfOuterTlbxHost()
     {

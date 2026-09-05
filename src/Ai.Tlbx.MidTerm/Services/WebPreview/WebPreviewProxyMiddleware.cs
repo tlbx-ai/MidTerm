@@ -1,3 +1,4 @@
+using Ai.Tlbx.MidTerm.Startup;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
@@ -1161,6 +1162,11 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (TryParseProxyRoute(path, out var routeKey, out var remainingPath))
         {
+            if (!PreviewProxyAuthorization.AllowsRoute(context, routeKey))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
             if (remainingPath.StartsWith("/_ext", StringComparison.Ordinal))
             {
                 if (context.WebSockets.IsWebSocketRequest)
@@ -1221,6 +1227,11 @@ public sealed partial class WebPreviewProxyMiddleware
             && ShouldProxyWebPreviewApiRequest(context.Request)
             && TryResolvePreviewFromRequest(context.Request, out routeKey, out var apiTargetUri))
         {
+            if (!PreviewProxyAuthorization.AllowsRoute(context, routeKey))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
             if (context.WebSockets.IsWebSocketRequest)
                 await ProxyWebSocketAsync(context, routeKey, apiTargetUri, path.Value ?? "/");
             else
@@ -1238,11 +1249,19 @@ public sealed partial class WebPreviewProxyMiddleware
             if (!TryResolvePreviewFromRequest(context.Request, out routeKey, out var targetUri)
                 || !ShouldProxyPreviewLeak(context.Request, requestPath))
             {
-                await _next(context);
+                if (context.Items.ContainsKey(PreviewProxyAuthorization.RouteItemKey))
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                else
+                    await _next(context);
                 return;
             }
 
             var proxyPath = requestPath;
+            if (!PreviewProxyAuthorization.AllowsRoute(context, routeKey))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
             _service.RememberLeakedPathRoute(routeKey, proxyPath);
             if (context.WebSockets.IsWebSocketRequest)
             {
@@ -1256,6 +1275,11 @@ public sealed partial class WebPreviewProxyMiddleware
             return;
         }
 
+        if (context.Items.ContainsKey(PreviewProxyAuthorization.RouteItemKey))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
         await _next(context);
     }
 
@@ -1930,6 +1954,11 @@ public sealed partial class WebPreviewProxyMiddleware
         }
     }
 
+    internal static bool IsTlbxAuthenticationHeader(HttpRequest request, string headerName) =>
+        RequestAccessContext.IsApiKeyAuthenticated(request.HttpContext)
+        && (headerName.Equals("Authorization", StringComparison.OrdinalIgnoreCase)
+            || headerName.Equals("X-API-Key", StringComparison.OrdinalIgnoreCase));
+
     private void ForwardRequestHeaders(
         HttpRequest source,
         HttpRequestMessage target,
@@ -1939,7 +1968,8 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         foreach (var header in source.Headers)
         {
-            if (BlockedRequestHeaders.Contains(header.Key))
+            if (BlockedRequestHeaders.Contains(header.Key)
+                || IsTlbxAuthenticationHeader(source, header.Key))
                 continue;
 
             if (header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase))
@@ -2595,7 +2625,8 @@ public sealed partial class WebPreviewProxyMiddleware
         // Forward all request headers except blocked ones (same blocklist as HTTP)
         foreach (var header in context.Request.Headers)
         {
-            if (BlockedRequestHeaders.Contains(header.Key))
+            if (BlockedRequestHeaders.Contains(header.Key)
+                || IsTlbxAuthenticationHeader(context.Request, header.Key))
                 continue;
             // Skip WebSocket upgrade headers — ClientWebSocket manages these
             if (header.Key.StartsWith("Sec-WebSocket-", StringComparison.OrdinalIgnoreCase))

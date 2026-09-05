@@ -246,7 +246,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
 
             var authStatus = new AuthStatusResponse
             {
-                AuthenticationEnabled = settings.AuthenticationEnabled,
+                AuthenticationEnabled = true,
                 PasswordSet = !string.IsNullOrEmpty(settings.PasswordHash)
             };
 

@@ -4,8 +4,7 @@ public enum RequestAuthMethod
 {
     None = 0,
     SessionCookie = 1,
-    ApiKey = 2,
-    OpenAccess = 3
+    ApiKey = 2
 }
 
 public readonly record struct RequestAuthentication(

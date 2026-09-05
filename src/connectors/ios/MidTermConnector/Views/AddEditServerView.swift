@@ -6,7 +6,6 @@ struct AddEditServerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
     @State private var address: String
-    @State private var allowUntrustedCertificate: Bool
     @State private var errorMessage: String?
 
     init(server: Server?, onSave: @escaping (Server) -> Void) {
@@ -14,7 +13,6 @@ struct AddEditServerView: View {
         self.onSave = onSave
         _name = State(initialValue: server?.name ?? "")
         _address = State(initialValue: server?.url ?? "")
-        _allowUntrustedCertificate = State(initialValue: server?.allowUntrustedCertificate ?? false)
     }
 
     var body: some View {
@@ -34,8 +32,7 @@ struct AddEditServerView: View {
                 }
 
                 Section("Certificate") {
-                    Toggle("Allow a private or self-signed certificate", isOn: $allowUntrustedCertificate)
-                    Text("Only enable this for an instance you control. A publicly trusted certificate is safer.")
+                    Text("For a private certificate, compare its SHA-256 fingerprint with mt --fingerprint on the host before installing and trusting it in iOS Settings. Invalid certificates are blocked.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -68,7 +65,6 @@ struct AddEditServerView: View {
                 id: existingServer?.id ?? UUID(),
                 name: name,
                 url: address,
-                allowUntrustedCertificate: allowUntrustedCertificate,
                 lastConnected: existingServer?.lastConnected ?? .distantPast,
                 lastRefresh: existingServer?.lastRefresh ?? .distantPast
             )

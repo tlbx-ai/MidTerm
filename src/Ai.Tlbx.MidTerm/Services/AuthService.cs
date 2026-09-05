@@ -11,14 +11,18 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 /// <summary>
 /// Provides authentication services including password hashing, session token management, and rate limiting.
-/// Uses PBKDF2 (100K iterations, SHA256) for password hashing and HMAC-SHA256 for session tokens.
+/// Uses PBKDF2 (600K iterations, SHA256) for password hashing and HMAC-SHA256 for session tokens.
 /// </summary>
 public sealed class AuthService
 {
     public const string SessionCookieName = "mm-session";
     public const string AuthRequiredHeaderName = "X-MidTerm-Auth-Required";
 
-    private const int Iterations = 100_000;
+    private const int Iterations = 600_000;
+    public const int MinimumNewPasswordLength = 15;
+    public const int MaximumPasswordLength = 1024;
+    private int _passwordOperationActive;
+    private static readonly TimeSpan FailedAttemptRetention = TimeSpan.FromMinutes(15);
     private const int SaltSize = 32;
     private const int HashSize = 32;
     public const int SessionTokenValidityDays = 8;
@@ -43,7 +47,8 @@ public sealed class AuthService
         _timeProvider = timeProvider ?? TimeProvider.System;
 
         var settings = _settingsService.Load();
-        var dirty = false;
+        var dirty = !settings.AuthenticationEnabled;
+        settings.AuthenticationEnabled = true;
 
         if (string.IsNullOrEmpty(settings.SessionSecret))
         {
@@ -77,9 +82,15 @@ public sealed class AuthService
     public RequestAuthentication AuthenticateRequestWithContext(HttpRequest request)
     {
         var settings = _settingsService.Load();
-        if (!settings.AuthenticationEnabled || string.IsNullOrEmpty(settings.PasswordHash))
+        if (string.IsNullOrEmpty(settings.PasswordHash))
         {
-            return new RequestAuthentication(RequestAuthMethod.OpenAccess);
+            return new RequestAuthentication(RequestAuthMethod.None);
+        }
+
+        var apiKey = ExtractApiKey(request);
+        if (apiKey is not null && _apiKeyService.TryValidateApiKey(apiKey, out _))
+        {
+            return new RequestAuthentication(RequestAuthMethod.ApiKey);
         }
 
         var sessionToken = request.Cookies[SessionCookieName];
@@ -92,13 +103,37 @@ public sealed class AuthService
                 expiresAtUtc);
         }
 
-        var apiKey = ExtractApiKey(request);
-        if (apiKey is not null && _apiKeyService.TryValidateApiKey(apiKey, out _))
-        {
-            return new RequestAuthentication(RequestAuthMethod.ApiKey);
-        }
-
         return new RequestAuthentication(RequestAuthMethod.None);
+    }
+
+    public IDisposable? TryBeginPasswordOperation()
+    {
+        return Interlocked.CompareExchange(ref _passwordOperationActive, 1, 0) == 0
+            ? new PasswordOperation(this)
+            : null;
+    }
+
+    public static string? ValidateNewPassword(string? password) =>
+        password is null || password.Length < MinimumNewPasswordLength || password.Length > MaximumPasswordLength
+            ? $"Use a password or passphrase between {MinimumNewPasswordLength} and {MaximumPasswordLength} characters."
+            : null;
+
+    public static bool NeedsPasswordHashUpgrade(string storedHash)
+    {
+        var parts = storedHash.Split('$');
+        return parts.Length == 5 && parts[1] == "PBKDF2"
+            && int.TryParse(parts[2], CultureInfo.InvariantCulture, out var iterations)
+            && iterations < Iterations;
+    }
+
+    private sealed class PasswordOperation(AuthService owner) : IDisposable
+    {
+        private AuthService? _owner = owner;
+        public void Dispose()
+        {
+            var current = Interlocked.Exchange(ref _owner, null);
+            if (current is not null) Volatile.Write(ref current._passwordOperationActive, 0);
+        }
     }
 
     /// <summary>
@@ -124,7 +159,7 @@ public sealed class AuthService
 
     public bool VerifyPassword(string password, string? storedHash)
     {
-        if (string.IsNullOrEmpty(storedHash) || string.IsNullOrEmpty(password))
+        if (string.IsNullOrEmpty(storedHash) || string.IsNullOrEmpty(password) || password.Length > MaximumPasswordLength)
         {
             return false;
         }
@@ -328,13 +363,16 @@ public sealed class AuthService
             return false;
         }
 
-        if (_timeProvider.GetUtcNow().DateTime > entry.BlockedUntil)
+        var now = _timeProvider.GetUtcNow().DateTime;
+        // A zero/expired lockout is not an expired failure history. Login checks
+        // this before every attempt, so deleting here used to prevent lockout.
+        if (now - entry.LastFailedAt > FailedAttemptRetention)
         {
-            _rateLimits.TryRemove(ip, out _);
+            _rateLimits.TryRemove(new KeyValuePair<string, RateLimitEntry>(ip, entry));
             return false;
         }
 
-        return true;
+        return now < entry.BlockedUntil;
     }
 
     /// <summary>
@@ -343,6 +381,7 @@ public sealed class AuthService
     public void RecordFailedAttempt(string ip)
     {
         var entry = _rateLimits.GetOrAdd(ip, _ => new RateLimitEntry());
+        entry.LastFailedAt = _timeProvider.GetUtcNow().DateTime;
         var attempts = Interlocked.Increment(ref entry.FailedAttempts);
 
         if (attempts >= 10)
@@ -447,6 +486,13 @@ public sealed class AuthService
     {
         public int FailedAttempts;
         private long _blockedUntilTicks;
+        private long _lastFailedAtTicks;
+
+        public DateTime LastFailedAt
+        {
+            get => new(Interlocked.Read(ref _lastFailedAtTicks));
+            set => Interlocked.Exchange(ref _lastFailedAtTicks, value.Ticks);
+        }
 
         public DateTime BlockedUntil
         {

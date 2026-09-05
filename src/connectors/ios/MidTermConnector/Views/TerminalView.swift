@@ -129,22 +129,6 @@ final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate {
 
     func webView(
         _ webView: WKWebView,
-        didReceive challenge: URLAuthenticationChallenge,
-        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
-    ) {
-        guard server.allowUntrustedCertificate,
-              challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-              challenge.protectionSpace.host.caseInsensitiveCompare(configuredOrigin?.host ?? "") == .orderedSame,
-              challenge.protectionSpace.port == effectivePort(configuredOrigin),
-              let trust = challenge.protectionSpace.serverTrust else {
-            completionHandler(.performDefaultHandling, nil)
-            return
-        }
-        completionHandler(.useCredential, URLCredential(trust: trust))
-    }
-
-    func webView(
-        _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
@@ -172,10 +156,5 @@ final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate {
 
     private func effectivePort(_ components: URLComponents) -> Int {
         components.port ?? (components.scheme?.lowercased() == "https" ? 443 : 80)
-    }
-
-    private func effectivePort(_ components: URLComponents?) -> Int {
-        guard let components else { return -1 }
-        return effectivePort(components)
     }
 }

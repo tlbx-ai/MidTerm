@@ -55,6 +55,7 @@ public sealed class HubService
     public HubMachineInfo UpsertMachine(string? id, HubMachineUpsertRequest request)
     {
         var normalizedUrl = NormalizeBaseUrl(request.BaseUrl);
+        ValidateRemoteUri(normalizedUrl);
         if (string.IsNullOrWhiteSpace(normalizedUrl))
         {
             throw new ArgumentException("Machine URL is required.");
@@ -688,7 +689,7 @@ public sealed class HubService
         socket.Options.RemoteCertificateValidationCallback = (_, certificate, _, sslPolicyErrors) =>
         {
             capturedFingerprint = FormatFingerprint(certificate);
-            return IsRemoteCertificateTrusted(machine, requireTrusted, capturedFingerprint, sslPolicyErrors);
+            return IsRemoteCertificateTrusted(machine, capturedFingerprint, sslPolicyErrors);
         };
 
         await using var preflight = await CreateRemoteContextAsync(machine, requireTrusted, ct);
@@ -772,6 +773,16 @@ public sealed class HubService
     {
         var trimmed = value?.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+    }
+
+    internal static Uri ValidateRemoteUri(string baseUrl)
+    {
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(uri.UserInfo))
+        {
+            throw new ArgumentException("Hub machines require an HTTPS URL without embedded credentials.");
+        }
+        return uri;
     }
 
     private static string NormalizeBaseUrl(string? baseUrl)
@@ -873,19 +884,13 @@ public sealed class HubService
 
     private static bool IsRemoteCertificateTrusted(
         HubMachineSettings machine,
-        bool requireTrusted,
         string? fingerprint,
         SslPolicyErrors sslPolicyErrors)
     {
-        if (!requireTrusted)
-        {
-            return true;
-        }
-
         var pinnedFingerprint = NormalizeFingerprint(machine.PinnedFingerprint);
         if (!string.IsNullOrWhiteSpace(pinnedFingerprint))
         {
-            return !HasPinnedMismatch(pinnedFingerprint, fingerprint);
+            return string.Equals(pinnedFingerprint, NormalizeFingerprint(fingerprint), StringComparison.Ordinal);
         }
 
         return sslPolicyErrors == SslPolicyErrors.None;
@@ -1220,14 +1225,15 @@ public sealed class HubService
         {
             var handler = new HttpClientHandler
             {
-                CookieContainer = new CookieContainer()
+                CookieContainer = new CookieContainer(),
+                AllowAutoRedirect = false
             };
 
             try
             {
                 return new OwnedRemoteHttpClient(
                     handler,
-                    new Uri(baseUrl, UriKind.Absolute),
+                    ValidateRemoteUri(baseUrl),
                     TimeSpan.FromSeconds(10));
             }
             catch

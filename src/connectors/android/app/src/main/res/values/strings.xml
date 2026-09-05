@@ -8,8 +8,7 @@
     <string name="hint_name">Name (optional)</string>
     <string name="hint_url">https://hostname:2000</string>
     <string name="address_hint">Enter an HTTPS URL or host:port. HTTPS is added automatically.</string>
-    <string name="allow_untrusted_certificate">Allow a private or self-signed certificate</string>
-    <string name="certificate_warning">Only enable this for an instance you control. A publicly trusted certificate is safer.</string>
+    <string name="certificate_warning">For a private certificate, compare its SHA-256 fingerprint with mt --fingerprint on the host before installing it into the device trust store. Invalid certificates are blocked.</string>
     <string name="add_and_open">Add and open</string>
     <string name="save_and_open">Save and open</string>
     <string name="persistence_hint">Instance addresses and browser sessions stay on this device. Background refresh is best-effort; the app reconnects when you return.</string>
@@ -21,6 +20,6 @@
     <string name="invalid_address">Enter a valid tlbx address</string>
     <string name="instances">Instances</string>
     <string name="reload">Reload</string>
-    <string name="certificate_rejected">The certificate was rejected. Use a trusted certificate or explicitly allow a private certificate in the instance settings.</string>
+    <string name="certificate_rejected">Certificate rejected. Verify its SHA-256 fingerprint against the host, then install the verified certificate into the device trust store.</string>
     <string name="no_app_for_link">No app can open this link</string>
 </resources>
