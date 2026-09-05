@@ -168,6 +168,7 @@ describe('setupVisualViewport', () => {
   const originalVisualViewport = host.visualViewport;
   const originalInnerHeight = host.innerHeight;
   const originalInnerWidth = host.innerWidth;
+  const originalMatchMedia = (host as unknown as Window).matchMedia;
   const originalScrollTo = host.scrollTo;
 
   beforeEach(() => {
@@ -232,6 +233,12 @@ describe('setupVisualViewport', () => {
       configurable: true,
       value: host,
     });
+    Object.defineProperty(host, 'matchMedia', {
+      configurable: true,
+      value: (query: string) => ({
+        matches: query.includes('max-width') && host.innerWidth <= 768,
+      }),
+    });
     Object.defineProperty(host, 'innerHeight', {
       configurable: true,
       value: 700,
@@ -253,6 +260,7 @@ describe('setupVisualViewport', () => {
   });
 
   afterEach(() => {
+    Object.defineProperty(host, 'matchMedia', { configurable: true, value: originalMatchMedia });
     sessionTerminals.clear();
     dom.terminalsArea = null;
     globalThis.document = originalDocument;
