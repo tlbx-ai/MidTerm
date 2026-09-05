@@ -16,6 +16,7 @@ import {
 } from '../../stores';
 import { updateSettings } from '../../api/client';
 import { icon } from '../../constants';
+import { getSafeViewportBounds } from '../../utils/safeViewport';
 import type { ManagerBarQueueEntry } from '../../types';
 import { enqueueCommandBayAction, removeCommandBayQueueEntry } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
@@ -58,12 +59,6 @@ let overflowActionIds: string[] = [];
 let overflowProxyAnchorEl: HTMLElement | null = null;
 let activeOverflowAnchorEl: HTMLElement | null = null;
 
-interface ViewportBounds {
-  top: number;
-  right: number;
-  bottom: number;
-  left: number;
-}
 let managerBarResizeObserver: ResizeObserver | null = null;
 let overflowLayoutFrameId: number | null = null;
 
@@ -591,7 +586,7 @@ function positionManagerActionMenu(): void {
     return;
   }
 
-  const viewport = getVisualViewportBounds();
+  const viewport = getSafeViewportBounds();
   const viewportPadding = 12;
   const gap = 8;
   const triggerRect = openMenuAnchorEl.getBoundingClientRect();
@@ -622,10 +617,12 @@ function positionManagerOverflowMenu(): void {
     return;
   }
 
-  const viewport = getVisualViewportBounds();
+  const viewport = getSafeViewportBounds();
   const viewportPadding = 12;
   const gap = 8;
   const triggerRect = anchorEl.getBoundingClientRect();
+  overflowPopoverEl.style.maxWidth = `${Math.max(1, viewport.right - viewport.left - 24)}px`;
+  overflowPopoverEl.style.maxHeight = `${Math.max(1, viewport.bottom - viewport.top - 24)}px`;
   const popoverRect = overflowPopoverEl.getBoundingClientRect();
   const availableBelow = viewport.bottom - triggerRect.bottom - viewportPadding - gap;
   const availableAbove = triggerRect.top - viewport.top - viewportPadding - gap;
@@ -645,20 +642,6 @@ function positionManagerOverflowMenu(): void {
 
   overflowPopoverEl.style.left = `${String(Math.round(left))}px`;
   overflowPopoverEl.style.top = `${String(Math.round(top))}px`;
-}
-
-function getVisualViewportBounds(): ViewportBounds {
-  const vv = window.visualViewport;
-  const top = vv?.offsetTop ?? 0;
-  const left = vv?.offsetLeft ?? 0;
-  const width = vv?.width ?? window.innerWidth;
-  const height = vv?.height ?? window.innerHeight;
-  return {
-    top,
-    right: left + width,
-    bottom: top + height,
-    left,
-  };
 }
 
 function resolveCurrentOverflowAnchor(): HTMLElement | null {

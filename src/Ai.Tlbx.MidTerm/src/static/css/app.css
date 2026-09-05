@@ -300,6 +300,12 @@
 
 /* Midnight Harbor Theme Variables */
 :root {
+  /* Real device geometry; overridable in the desktop preview for acceptance. */
+  --safe-area-inset-top: env(safe-area-inset-top, 0px);
+  --safe-area-inset-right: env(safe-area-inset-right, 0px);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-inset-left: env(safe-area-inset-left, 0px);
+
   color-scheme: dark;
 
   /* === BACKGROUNDS (17-point luminance spread) === */
@@ -617,8 +623,8 @@ body.has-app-background {
 @media (min-width: 769px) {
   body {
     box-sizing: border-box;
-    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
-      env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    padding: var(--safe-area-inset-top) var(--safe-area-inset-right) var(--safe-area-inset-bottom)
+      var(--safe-area-inset-left);
   }
 }
 
@@ -681,7 +687,7 @@ body::before {
   }
 }
 
-@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+@media (max-width: 768px) {
   body.hide-app-background-on-mobile::before {
     content: none;
   }
@@ -1121,7 +1127,7 @@ body::before {
   cursor: grabbing;
 }
 
-@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+@media (max-width: 768px) {
   .spaces-tree-space-actions,
   .spaces-tree-workspace-actions {
     opacity: 1;
@@ -3020,7 +3026,7 @@ body::before {
   pointer-events: none !important;
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 769px) {
   .terminal-container.scrollbar-hover:hover .xterm-viewport {
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--text-primary) 25%, transparent) transparent;
@@ -3046,8 +3052,8 @@ body::before {
   }
 }
 
-/* Touch/no-hover fallback: treat "hover" as "always" */
-@media (hover: none), (pointer: coarse) {
+/* Compact layouts keep scrollbars usable without hover. */
+@media (max-width: 768px) {
   .terminal-container.scrollbar-hover .xterm-viewport {
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--text-primary) 25%, transparent) transparent;
@@ -3436,9 +3442,9 @@ body::before {
 
 @media (min-width: 769px) {
   .collapsed-title-bar {
-    top: env(safe-area-inset-top, 0px);
-    left: env(safe-area-inset-left, 0px);
-    right: env(safe-area-inset-right, 0px);
+    top: var(--safe-area-inset-top);
+    left: var(--safe-area-inset-left);
+    right: var(--safe-area-inset-right);
   }
 }
 
@@ -3528,7 +3534,7 @@ body::before {
 /* ============================================================================
    Mobile Responsive Styles
    ============================================================================ */
-@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+@media (max-width: 768px) {
   html,
   body {
     overflow: hidden;
@@ -3544,16 +3550,15 @@ body::before {
   }
 
   .terminal-page {
-    --mobile-safe-top: env(safe-area-inset-top, 0px);
+    --mobile-safe-top: 0px;
+    box-sizing: border-box;
+    padding: var(--safe-area-inset-top) var(--safe-area-inset-right) var(--safe-area-inset-bottom)
+      var(--safe-area-inset-left);
     position: fixed;
     inset: 0;
     width: 100%;
     overflow: hidden;
     overscroll-behavior: none;
-  }
-
-  body.installed-pwa:not(.ios-installable-device) .terminal-page {
-    --mobile-safe-top: 0px;
   }
 
   .main-content,
@@ -3611,6 +3616,9 @@ body::before {
 
   /* Hide sidebar by default on mobile */
   .sidebar {
+    --mobile-safe-top: var(--safe-area-inset-top);
+    padding-left: var(--safe-area-inset-left);
+    padding-bottom: var(--safe-area-inset-bottom);
     position: fixed;
     top: 0;
     bottom: 0;
@@ -3662,8 +3670,6 @@ body::before {
     align-items: center;
     padding: 0;
     padding-top: var(--mobile-safe-top);
-    padding-left: env(safe-area-inset-left, 0);
-    padding-right: env(safe-area-inset-right, 0);
     background: var(--bg-terminal);
     border-bottom: none;
     gap: 0;
@@ -3822,7 +3828,7 @@ body::before {
     gap: 2px;
     width: min(
       280px,
-      calc(100vw - 16px - env(safe-area-inset-left, 0) - env(safe-area-inset-right, 0))
+      calc(100vw - 16px - var(--safe-area-inset-left) - var(--safe-area-inset-right))
     );
     max-height: min(64vh, 420px);
     padding: 6px;
@@ -3988,7 +3994,7 @@ body::before {
     flex: 1;
     min-height: 0;
     overflow: hidden;
-    padding-bottom: env(safe-area-inset-bottom, 0);
+    padding-bottom: 0;
   }
 
   /* Terminal container - minimal padding on mobile */
@@ -4023,7 +4029,7 @@ body::before {
     align-items: stretch;
     width: min(
       320px,
-      calc(100vw - 16px - env(safe-area-inset-left, 0) - env(safe-area-inset-right, 0))
+      calc(100vw - 16px - var(--safe-area-inset-left) - var(--safe-area-inset-right))
     );
     padding: 10px;
     border: 1px solid var(--border-color);
@@ -4288,8 +4294,8 @@ body::before {
 
   .settings-content {
     padding: 8px;
-    padding-top: calc(8px + env(safe-area-inset-top, 0));
-    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
+    padding-top: calc(8px + var(--safe-area-inset-top));
+    padding-bottom: calc(8px + var(--safe-area-inset-bottom));
   }
 
   .settings-panel {
@@ -4374,7 +4380,7 @@ body::before {
 
   /* Connection status - above safe area */
   .connection-status {
-    bottom: calc(8px + env(safe-area-inset-bottom, 0));
+    bottom: calc(8px + var(--safe-area-inset-bottom));
   }
 
   /* Dock panels - full-screen overlay on mobile */
@@ -4745,7 +4751,7 @@ body::before {
   font-size: var(--fs-md);
 }
 
-@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+@media (max-width: 768px) {
   .terminal-container .scaled-overlay {
     inset: auto 12px 12px;
     min-height: 64px;
@@ -6858,8 +6864,8 @@ body::before {
   justify-content: center;
   min-height: 100vh;
   min-height: 100dvh;
-  padding: calc(20px + env(safe-area-inset-top, 0px)) calc(20px + env(safe-area-inset-right, 0px))
-    calc(20px + env(safe-area-inset-bottom, 0px)) calc(20px + env(safe-area-inset-left, 0px));
+  padding: calc(20px + var(--safe-area-inset-top)) calc(20px + var(--safe-area-inset-right))
+    calc(20px + var(--safe-area-inset-bottom)) calc(20px + var(--safe-area-inset-left));
   box-sizing: border-box;
   background: linear-gradient(
     135deg,
@@ -7862,21 +7868,21 @@ body::before {
   }
 
   .session-launcher-overlay > .session-launcher-modal > .session-launcher-content > .modal-header {
-    padding-top: calc(16px + env(safe-area-inset-top, 0px));
-    padding-right: calc(20px + env(safe-area-inset-right, 0px));
-    padding-left: calc(20px + env(safe-area-inset-left, 0px));
+    padding-top: calc(16px + var(--safe-area-inset-top));
+    padding-right: calc(20px + var(--safe-area-inset-right));
+    padding-left: calc(20px + var(--safe-area-inset-left));
   }
 
   .session-launcher-overlay > .session-launcher-modal > .session-launcher-content > .modal-body {
     overflow: hidden;
-    padding-right: calc(20px + env(safe-area-inset-right, 0px));
-    padding-left: calc(20px + env(safe-area-inset-left, 0px));
+    padding-right: calc(20px + var(--safe-area-inset-right));
+    padding-left: calc(20px + var(--safe-area-inset-left));
   }
 
   .session-launcher-overlay > .session-launcher-modal > .session-launcher-content > .modal-footer {
-    padding-right: calc(20px + env(safe-area-inset-right, 0px));
-    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-    padding-left: calc(20px + env(safe-area-inset-left, 0px));
+    padding-right: calc(20px + var(--safe-area-inset-right));
+    padding-bottom: calc(16px + var(--safe-area-inset-bottom));
+    padding-left: calc(20px + var(--safe-area-inset-left));
   }
 
   .session-launcher-body {
@@ -8491,7 +8497,7 @@ body.shared-session-mode .session-tab-bar {
   color: var(--text-primary);
 }
 
-@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+@media (max-width: 768px) {
   .terminal-search {
     top: 52px;
     right: 8px;
@@ -8714,8 +8720,8 @@ body.shared-session-mode .session-tab-bar {
   min-height: 100vh;
   min-height: 100dvh;
   background-color: var(--bg-primary);
-  padding: calc(20px + env(safe-area-inset-top, 0px)) calc(20px + env(safe-area-inset-right, 0px))
-    calc(20px + env(safe-area-inset-bottom, 0px)) calc(20px + env(safe-area-inset-left, 0px));
+  padding: calc(20px + var(--safe-area-inset-top)) calc(20px + var(--safe-area-inset-right))
+    calc(20px + var(--safe-area-inset-bottom)) calc(20px + var(--safe-area-inset-left));
   box-sizing: border-box;
   overflow: auto;
 }
@@ -9997,9 +10003,9 @@ body.shared-session-mode .session-tab-bar {
   flex-shrink: 0;
   flex-direction: column;
   padding: 6px 8px;
-  padding-left: calc(8px + env(safe-area-inset-left, 0px));
-  padding-right: calc(8px + env(safe-area-inset-right, 0px));
-  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(8px + var(--safe-area-inset-left));
+  padding-right: calc(8px + var(--safe-area-inset-right));
+  padding-bottom: calc(6px + var(--safe-area-inset-bottom));
   background: var(--terminal-ui-background, var(--terminal-bg));
   border-top: 1px solid var(--border-color);
   margin-right: 0;
@@ -10231,9 +10237,9 @@ body.shared-session-mode .session-tab-bar {
   background: var(--bg-sidebar);
   border-top: 1px solid var(--border-color);
   padding: 8px;
-  padding-left: calc(8px + env(safe-area-inset-left, 0px));
-  padding-right: calc(8px + env(safe-area-inset-right, 0px));
-  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(8px + var(--safe-area-inset-left));
+  padding-right: calc(8px + var(--safe-area-inset-right));
+  padding-bottom: calc(8px + var(--safe-area-inset-bottom));
   flex-direction: column;
   gap: 8px;
   touch-action: manipulation;
@@ -10245,8 +10251,8 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
 }
 
-/* Hide on devices with precise pointer (keyboard/mouse attached) */
-@media (hover: hover) and (pointer: fine) {
+/* Auxiliary keys follow the same compact layout on every browser. */
+@media (min-width: 769px) {
   .touch-controller {
     display: none !important;
   }
@@ -10359,7 +10365,8 @@ body.shared-session-mode .session-tab-bar {
 
 .touch-popup {
   position: fixed;
-  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  overflow: auto;
+  overscroll-behavior: contain;
   background: var(--bg-elevated-opaque);
   border: 1px solid var(--border-color);
   border-radius: 12px;
@@ -10455,7 +10462,7 @@ body.shared-session-mode .session-tab-bar {
    Keyboard Visible Mode (mobile on-screen keyboard active)
    ========================================================================== */
 
-@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+@media (max-width: 768px) {
   /* Keep critical controls reachable while keyboard is open, but compact them. */
   body.keyboard-visible .mobile-topbar {
     display: flex;
@@ -10483,9 +10490,9 @@ body.shared-session-mode .session-tab-bar {
   body.keyboard-visible .touch-controller {
     display: flex !important;
     padding: 4px 6px;
-    padding-left: calc(6px + env(safe-area-inset-left, 0px));
-    padding-right: calc(6px + env(safe-area-inset-right, 0px));
-    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(6px + var(--safe-area-inset-left));
+    padding-right: calc(6px + var(--safe-area-inset-right));
+    padding-bottom: calc(4px + var(--safe-area-inset-bottom));
     gap: 4px;
   }
 
@@ -10674,7 +10681,7 @@ body.shared-session-mode .session-tab-bar {
   font-variant-numeric: tabular-nums;
 }
 
-@media (pointer: coarse) {
+@media (max-width: 768px) {
   .file-viewer-zoom-btn,
   .file-viewer-zoom-level {
     height: 44px;
@@ -12038,7 +12045,7 @@ body.shared-session-mode .session-tab-bar {
 
 /* Dev Browser dock chrome: touch-sized targets on phones. Placed after the
    base dock rules because media queries do not add specificity. */
-@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+@media (max-width: 768px) {
   .web-preview-dock {
     /* The desktop dock caps at 80% of the workspace; the phone overlay owns
        the whole viewport. */
@@ -12116,7 +12123,7 @@ body.shared-session-mode .session-tab-bar {
   flex-direction: column;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 12px max(12px, env(safe-area-inset-bottom));
+  padding: 12px 12px max(12px, var(--safe-area-inset-bottom));
   box-sizing: border-box;
   border-top: 1px solid color-mix(in srgb, var(--border-color) 82%, var(--text-primary) 18%);
   background: color-mix(in srgb, var(--bg-elevated) 94%, var(--bg-primary) 6%);
@@ -13449,7 +13456,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
     0 6px 14px color-mix(in srgb, var(--agent-history-progress-accent) 14%, transparent);
 }
 
-@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+@media (max-width: 768px) {
   .agent-history-shell {
     gap: 0;
   }
@@ -15753,7 +15760,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   }
 }
 
-@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+@media (max-width: 768px) {
   .agent-history {
     padding-right: 44px;
   }
@@ -15782,7 +15789,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 /* Mobile: maximize terminal viewport and move IDE controls to topbar dropdown */
-@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+@media (max-width: 768px) {
   .mobile-tab-pill {
     min-height: 34px;
     padding: 7px 12px;
@@ -15806,7 +15813,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   }
 }
 
-@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+@media (max-width: 768px) {
   .smart-input-appServerControl-settings {
     flex-wrap: wrap;
     gap: 8px;
@@ -17478,9 +17485,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex-direction: column;
   gap: var(--command-bay-gap);
   padding: 6px;
-  padding-left: calc(6px + env(safe-area-inset-left, 0px));
-  padding-right: calc(6px + env(safe-area-inset-right, 0px));
-  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(6px + var(--safe-area-inset-left));
+  padding-right: calc(6px + var(--safe-area-inset-right));
+  padding-bottom: calc(6px + var(--safe-area-inset-bottom));
   background: transparent;
   pointer-events: auto;
 }
@@ -17510,8 +17517,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   justify-content: flex-end;
   gap: 0;
   overflow: hidden;
-  padding: calc(12px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px))
-    calc(12px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
+  padding: calc(12px + var(--safe-area-inset-top)) calc(12px + var(--safe-area-inset-right))
+    calc(12px + var(--safe-area-inset-bottom)) calc(12px + var(--safe-area-inset-left));
   background: var(--command-bay-background);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -18548,7 +18555,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: none;
 }
 
-@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+@media (max-width: 768px) {
   .adaptive-footer-status.adaptive-footer-status-sheet-open
     .adaptive-footer-status-summary-appServerControl,
   .adaptive-footer-status.adaptive-footer-status-sheet-open
@@ -18827,7 +18834,7 @@ body.keyboard-visible
 
 .adaptive-footer-dock[data-device='mobile'] .smart-input-row {
   flex-wrap: nowrap;
-  align-items: stretch;
+  align-items: flex-end;
 }
 
 .adaptive-footer-context-toggle {
@@ -18994,7 +19001,7 @@ body.keyboard-visible
   .adaptive-footer-primary
   > .smart-input-docked.visible {
   max-height: none;
-  height: min(50dvh, 440px);
+  height: 100%;
 }
 
 body.keyboard-visible
@@ -19015,15 +19022,12 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   display: flex !important;
 }
 
-@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+@media (max-width: 768px) {
   .adaptive-footer-dock {
     --command-bay-control-height-mobile: 44px;
     --command-bay-control-height: var(--command-bay-control-height-mobile);
     --command-bay-gap: 4px;
-    padding: 2px;
-    padding-left: calc(2px + env(safe-area-inset-left, 0px));
-    padding-right: calc(2px + env(safe-area-inset-right, 0px));
-    padding-bottom: calc(2px + env(safe-area-inset-bottom, 0px));
+    padding: 6px;
     background: transparent;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -19055,7 +19059,13 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     width: 100%;
     min-width: 0;
     max-width: none;
-    max-height: min(46dvh, 320px);
+    max-height: min(
+      60dvh,
+      calc(
+        var(--midterm-visual-viewport-height, 100dvh) - 112px - var(--safe-area-inset-top) -
+          var(--safe-area-inset-bottom)
+      )
+    );
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -19067,7 +19077,30 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 
   .smart-input-tools-surface .smart-input-tool-button {
     min-height: var(--command-bay-control-height);
-    padding: 0 9px;
+    padding: 0 8px;
+    gap: 8px;
+  }
+
+  .smart-input-tools-surface .smart-input-tool-icon {
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+  }
+
+  .smart-input-tools-surface .smart-input-tool-label {
+    font-size: 13px;
+    line-height: 1.3;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .touch-popup-key,
+  .touch-key-alt,
+  .manager-bar-overflow-item,
+  .manager-bar-overflow-item-menu {
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .smart-input-mobile-touch-host {
@@ -19097,12 +19130,15 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   .smart-input-mobile-touch-host .touch-controller.embedded .touch-bar-main {
     display: grid;
     width: 100%;
-    grid-template-columns: repeat(auto-fit, minmax(38px, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--command-bay-gap);
   }
 
   .smart-input-mobile-touch-host .touch-controller.embedded .touch-group {
-    display: contents;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(44px, 1fr);
+    gap: var(--command-bay-gap);
   }
 
   .smart-input-mobile-touch-host .touch-controller.embedded .touch-key {
@@ -19124,6 +19160,13 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 
   .smart-input-attachment-chip {
     max-width: 100%;
+    padding-right: 0;
+  }
+
+  .smart-input-attachment-remove {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
   }
 
   .smart-input-textarea {
@@ -19146,8 +19189,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   }
 
   .adaptive-footer-dock[data-composer-expanded='true'] {
-    padding: calc(12px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px))
-      calc(12px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
+    padding: 12px;
   }
 
   .adaptive-footer-dock[data-composer-expanded='true'] .adaptive-footer-primary {
@@ -19155,7 +19197,30 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   }
 
   .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px 44px;
+    grid-template-rows: minmax(0, 1fr) 44px;
     align-items: stretch;
+  }
+
+  .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-editor {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-send-btn {
+    grid-column: 2;
+  }
+
+  .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-tools-toggle {
+    grid-column: 3;
+  }
+
+  .adaptive-footer-dock[data-composer-expanded='true']
+    .smart-input-row.smart-input-row-tools-open
+    .smart-input-tools-surface:not([hidden]) {
+    bottom: calc(44px + var(--command-bay-gap));
+    max-height: calc(100% - 52px);
   }
 
   .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-attachments {

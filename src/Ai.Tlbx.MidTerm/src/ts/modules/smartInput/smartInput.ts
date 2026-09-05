@@ -1708,9 +1708,6 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 
   renderPinnedToolsForSession(layoutState.activeSessionId ?? null);
-  if (layoutState.appServerControlActive && layoutState.isMobile && inlineToolHost) {
-    inlineToolHost.hidden = true;
-  }
   toolsToggleBtn?.removeAttribute('hidden');
   syncMobileAuxiliaryTools(layoutState);
   setToolsPanelOpen(toolsPanelOpen);
@@ -2052,7 +2049,8 @@ function renderPinnedToolsForSession(sessionId: string | null): void {
     return;
   }
   inlineToolHost.replaceChildren();
-  if (!sessionId) {
+  // Compact layouts keep every tool in the panel, preserving room for the prompt.
+  if (!sessionId || isMobileViewport()) {
     inlineToolHost.hidden = true;
     return;
   }

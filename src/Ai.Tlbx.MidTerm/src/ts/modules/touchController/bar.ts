@@ -7,13 +7,9 @@
 import { CSS_CLASSES, SELECTORS } from './constants';
 import { initModifiers, clearModifiers } from './modifiers';
 import { initEvents, teardownEvents } from './events';
-import { initPopups, closePopup } from './popups';
+import { initPopups, closePopup, destroyPopups } from './popups';
 import { initGestures, teardownGestures } from './gestures';
-import {
-  shouldShowTouchController,
-  setupPointerDetection,
-  teardownPointerDetection,
-} from './detection';
+import { shouldShowTouchController } from './detection';
 import { rescaleAllTerminals } from '../terminal/scaling';
 import { $currentSettings } from '../../stores';
 
@@ -37,8 +33,6 @@ export function initTouchController(): void {
   initEvents(controllerElement);
   initPopups();
   initGestures();
-
-  setupPointerDetection(handlePointerChange);
 
   updateVisibility();
 
@@ -72,8 +66,7 @@ export function destroyTouchController(): void {
 
   teardownEvents();
   teardownGestures();
-  closePopup();
-  teardownPointerDetection();
+  destroyPopups();
   window.removeEventListener('resize', handleResize);
   if (unsubscribeSettings) {
     unsubscribeSettings();
@@ -156,17 +149,6 @@ export function restoreTouchController(): void {
   updateVisibility();
   const showBtn = document.getElementById('btn-show-touchbar');
   if (showBtn) showBtn.classList.add('hidden');
-}
-
-function handlePointerChange(hasPrecisePointer: boolean): void {
-  if (hasPrecisePointer) {
-    userDismissed = false;
-    hideTouchController();
-    const showBtn = document.getElementById('btn-show-touchbar');
-    if (showBtn) showBtn.classList.add('hidden');
-  } else {
-    updateVisibility();
-  }
 }
 
 function handleResize(): void {

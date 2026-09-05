@@ -6,7 +6,7 @@ import {
   setSessionNotes as apiSetSessionNotes,
   type HistoryPatchRequest,
 } from '../../api/client';
-import { icon, MOBILE_BREAKPOINT, MOBILE_TOUCH_BREAKPOINT } from '../../constants';
+import { icon, MOBILE_BREAKPOINT } from '../../constants';
 import { dom } from '../../state';
 import {
   $activeSessionId,
@@ -1375,14 +1375,7 @@ let mobileSessionActionPositionFrameId: number | null = null;
  * Session action dropdowns are only used on mobile layouts.
  */
 function isMobileSessionMenuEnabled(): boolean {
-  if (window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches) {
-    return true;
-  }
-
-  return (
-    window.matchMedia('(hover: none) and (pointer: coarse)').matches &&
-    window.innerWidth <= MOBILE_TOUCH_BREAKPOINT
-  );
+  return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches;
 }
 
 /**

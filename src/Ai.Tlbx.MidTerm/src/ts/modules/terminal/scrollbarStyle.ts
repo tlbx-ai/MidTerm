@@ -9,8 +9,8 @@ type ScrollbarContainer = {
   };
 };
 
-export function isHoverCapable(): boolean {
-  return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+export function usesDesktopScrollbarLayout(): boolean {
+  return window.matchMedia('(min-width: 769px)').matches;
 }
 
 export function normalizeScrollbarStyle(value: string | null | undefined): ScrollbarStyleSetting {
@@ -20,7 +20,7 @@ export function normalizeScrollbarStyle(value: string | null | undefined): Scrol
 
 export function resolveEffectiveScrollbarStyle(
   requestedStyle: ScrollbarStyleSetting,
-  hoverCapable: boolean = isHoverCapable(),
+  hoverCapable: boolean = usesDesktopScrollbarLayout(),
 ): ScrollbarStyleSetting {
   if (requestedStyle === 'hover' && !hoverCapable) {
     return 'always';
@@ -31,7 +31,7 @@ export function resolveEffectiveScrollbarStyle(
 export function applyTerminalScrollbarStyleClass(
   container: ScrollbarContainer,
   requestedStyle: ScrollbarStyleSetting,
-  hoverCapable: boolean = isHoverCapable(),
+  hoverCapable: boolean = usesDesktopScrollbarLayout(),
 ): ScrollbarStyleSetting {
   const effectiveStyle = resolveEffectiveScrollbarStyle(requestedStyle, hoverCapable);
   container.classList.remove(...SCROLLBAR_STYLE_CLASSES);
