@@ -1503,15 +1503,9 @@ function createDockedDOM(): void {
       event.stopPropagation();
       suppressNextToolsToggleClick = true;
       setToolsPanelOpen(!toolsPanelOpen);
-
-      const preserveComposerFocus =
-        activeTextarea === document.activeElement ||
-        document.body.classList.contains('keyboard-visible');
-      if (preserveComposerFocus) {
-        requestAnimationFrame(() => {
-          activeTextarea?.focus({ preventScroll: true });
-        });
-      }
+      // Preventing the pointer default keeps the current input focused. Moving
+      // focus to the composer here dismisses/reopens mobile keyboards when the
+      // user was typing directly into the terminal.
     },
     onToolsToggleClick: (event) => {
       event.preventDefault();

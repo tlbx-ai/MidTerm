@@ -1,4 +1,4 @@
-import { $activeSessionId, $stateWsConnected } from '../../stores';
+import { $activeSessionId, $connectionStatus, $stateWsConnected } from '../../stores';
 import { MOBILE_PIP_ACTIVE_CHANGED_EVENT } from '../../constants';
 import { connectStateWebSocket, reportBrowserActivity } from './stateChannel';
 import {
@@ -25,6 +25,7 @@ interface BrowserLifecycleRecoveryOptions {
 const LONG_BACKGROUND_TRANSPORT_RESET_MS = 5000;
 const FOREGROUND_RECOVERY_COALESCE_MS = 250;
 const FOREGROUND_HEARTBEAT_INTERVAL_MS = 1000;
+const DISCONNECTED_RECOVERY_INTERVAL_MS = 15000;
 
 export function hasSuspendedForegroundEventLoop(
   lastHeartbeatAtMs: number,
@@ -43,6 +44,7 @@ export function setupBrowserLifecycleRecovery(
   let lastForegroundHeartbeatAtMs = Date.now();
   let resumeFromBackgroundPending = hiddenAtMs !== null;
   let backgroundLifecycleApplied = false;
+  let disconnectedAtMs: number | null = null;
 
   const recoverRealtimeAfterBrowserResume = (
     forceReconnect: boolean,
@@ -149,6 +151,12 @@ export function setupBrowserLifecycleRecovery(
     scheduleForegroundRecovery();
   };
 
+  const handleOnline = (): void => {
+    if (isDocumentHidden()) return;
+    forceTransportReconnect = true;
+    scheduleForegroundRecovery();
+  };
+
   const handleBlur = (): void => {
     reportBrowserActivity(false);
   };
@@ -188,6 +196,7 @@ export function setupBrowserLifecycleRecovery(
 
   document.addEventListener('visibilitychange', handleVisibilityChange);
   window.addEventListener('focus', handleFocus);
+  window.addEventListener('online', handleOnline);
   window.addEventListener('blur', handleBlur);
   window.addEventListener('pagehide', handlePageHide);
   window.addEventListener('pageshow', handlePageShow);
@@ -212,12 +221,29 @@ export function setupBrowserLifecycleRecovery(
     lastForegroundHeartbeatAtMs = now;
 
     if (isDocumentHidden()) {
+      disconnectedAtMs = null;
       enterBrowserBackground();
       return;
     }
     if (resumeFromBackgroundPending) {
       scheduleForegroundRecovery();
       return;
+    }
+    // A resumed WebSocket handshake can remain CONNECTING without onclose.
+    // Give normal backoff/handshakes time, but never leave the visible app stuck.
+    if ($connectionStatus.get() === 'connected') {
+      disconnectedAtMs = null;
+    } else {
+      disconnectedAtMs ??= now;
+      if (now - disconnectedAtMs >= DISCONNECTED_RECOVERY_INTERVAL_MS) {
+        disconnectedAtMs = now;
+        connectStateWebSocket();
+        recoverVisibleTerminalsAfterBrowserResume(
+          $activeSessionId.get(),
+          options.getVisibleTerminalSessionIds(),
+          { forceReconnect: true },
+        );
+      }
     }
     if (!hasSuspendedForegroundEventLoop(previousHeartbeatAtMs, now)) {
       return;
@@ -232,6 +258,7 @@ export function setupBrowserLifecycleRecovery(
     globalThis.clearInterval(heartbeatTimer);
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('focus', handleFocus);
+    window.removeEventListener('online', handleOnline);
     window.removeEventListener('blur', handleBlur);
     window.removeEventListener('pagehide', handlePageHide);
     window.removeEventListener('pageshow', handlePageShow);

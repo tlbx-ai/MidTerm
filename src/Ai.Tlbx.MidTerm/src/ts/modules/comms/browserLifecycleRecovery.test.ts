@@ -6,9 +6,11 @@ const mocks = vi.hoisted(() => ({
   recoverVisibleTerminalsAfterBrowserResume: vi.fn(),
   suspendMuxForBrowserBackground: vi.fn(),
   stateWsConnected: true,
+  connectionStatus: 'connected',
 }));
 
 vi.mock('../../stores', () => ({
+  $connectionStatus: { get: () => mocks.connectionStatus },
   $activeSessionId: { get: () => 'sess1234' },
   $stateWsConnected: { get: () => mocks.stateWsConnected },
 }));
@@ -37,6 +39,7 @@ describe('browserLifecycleRecovery', () => {
     vi.setSystemTime(new Date('2026-08-10T00:00:00Z'));
     vi.clearAllMocks();
     mocks.stateWsConnected = true;
+    mocks.connectionStatus = 'connected';
     fakeDocument = Object.assign(new EventTarget(), {
       visibilityState: 'visible' as DocumentVisibilityState,
     });
@@ -359,5 +362,48 @@ describe('browserLifecycleRecovery', () => {
 
     expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).not.toHaveBeenCalled();
+  });
+  it('retries a stalled foreground handshake without renderer or focus churn', () => {
+    mocks.connectionStatus = 'disconnected';
+    const options = setup();
+    vi.advanceTimersByTime(15000);
+    expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1000);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
+      'sess1234',
+      ['sess1234'],
+      { forceReconnect: true },
+    );
+    expect(options.focusActiveTerminal).not.toHaveBeenCalled();
+    expect(options.recoverTerminalPresentationAfterResume).not.toHaveBeenCalled();
+    mocks.connectionStatus = 'connected';
+    vi.advanceTimersByTime(30000);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    options.dispose();
+  });
+
+  it('retries immediately when the network returns and removes the online listener', () => {
+    const options = setup();
+    emitWindow('online');
+    vi.advanceTimersByTime(0);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    options.dispose();
+    emitWindow('online');
+    vi.advanceTimersByTime(1000);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+  });
+  it('bounds retries for a partially connected app and stays suspended while hidden', () => {
+    mocks.connectionStatus = 'reconnecting';
+    const options = setup();
+    vi.advanceTimersByTime(31000);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(2);
+    setVisibility('hidden');
+    emitDocument('visibilitychange');
+    vi.advanceTimersByTime(60000);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(2);
+    options.dispose();
+    vi.advanceTimersByTime(30000);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(2);
   });
 });

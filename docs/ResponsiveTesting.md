@@ -132,3 +132,21 @@ still changed canonical columns; font preview changed cell geometry. Focused
 regressions cover snapshot identity, reveal versus repair, actual background
 recovery, focus preservation, and hidden-dock resizing. Physical smartphone
 animation/performance remains outside the desktop CDP measurement boundary.
+
+
+### PWA disconnected recovery and tools-menu focus
+
+The foreground heartbeat retries state/mux connections that remain disconnected or
+partially connected for 15 seconds, including handshakes that never deliver a close
+event. Successful connection resets that deadline; hidden documents do not retry.
+The browser's online event triggers immediate recovery. Watchdog retries do not
+refocus inputs or rebuild terminal presentation.
+
+Opening the mobile tools menu preserves the currently focused input, including the
+terminal input proxy. It must not redirect keyboard focus into the composer.
+
+Verified with a real hidden tab and frozen event loop followed by foreground
+recovery, and real WebSocket handshakes stalled on a local TCP listener: the badge
+changed from Server disconnected to connected without reloading. Eight CDP touch
+actions across composer and terminal input retained focus and terminal geometry.
+These browser checks do not prove physical Android OSK behavior or file-picker UI.
