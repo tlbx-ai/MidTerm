@@ -1,3 +1,4 @@
+using SkiaSharp;
 using System.Net.WebSockets;
 using System.Net.Http.Json;
 using System.Collections.Concurrent;
@@ -58,14 +59,17 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
         var oldPath = Path.Combine(service.GetDirectory(), "app-background.png");
         await using (var png = File.Create(oldPath))
         {
-            new StbImageWriteSharp.ImageWriter().WritePng(new byte[4096 * 16 * 3], 4096, 16,
-                StbImageWriteSharp.ColorComponents.RedGreenBlue, png);
+            using var bitmap = new SKBitmap(4096, 16);
+            bitmap.Erase(SKColors.Black);
+            using var source = SKImage.FromBitmap(bitmap);
+            using var data = source.Encode(SKEncodedImageFormat.Png, 100);
+            data.SaveTo(png);
         }
 
         using var response = await _client.GetAsync("/api/settings/background-image?v=123");
         response.EnsureSuccessStatusCode();
-        Assert.Equal("image/jpeg", response.Content.Headers.ContentType?.MediaType);
-        var image = StbImageSharp.ImageResult.FromMemory(await response.Content.ReadAsByteArrayAsync());
+        Assert.Equal("image/webp", response.Content.Headers.ContentType?.MediaType);
+        using var image = SKBitmap.Decode(await response.Content.ReadAsByteArrayAsync());
         Assert.Equal(2048, image.Width);
         Assert.Equal(8, image.Height);
         Assert.False(File.Exists(oldPath));
@@ -75,11 +79,14 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
     }
 
     [Fact]
-    public async Task BackgroundUpload_ServesNormalizedJpegAndRejectsInvalidReplacement()
+    public async Task BackgroundUpload_ServesNormalizedWebpAndRejectsInvalidReplacement()
     {
         using var png = new MemoryStream();
-        new StbImageWriteSharp.ImageWriter().WritePng(new byte[4096 * 16 * 3], 4096, 16,
-            StbImageWriteSharp.ColorComponents.RedGreenBlue, png);
+        using var bitmap = new SKBitmap(4096, 16);
+        bitmap.Erase(SKColors.Black);
+        using var sourceImage = SKImage.FromBitmap(bitmap);
+        using var data = sourceImage.Encode(SKEncodedImageFormat.Png, 100);
+        data.SaveTo(png);
         using var form = new MultipartFormDataContent();
         using var content = new ByteArrayContent(png.ToArray());
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
@@ -88,9 +95,9 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
         uploaded.EnsureSuccessStatusCode();
         using var response = await _client.GetAsync("/api/settings/background-image");
         response.EnsureSuccessStatusCode();
-        Assert.Equal("image/jpeg", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("image/webp", response.Content.Headers.ContentType?.MediaType);
         var bytes = await response.Content.ReadAsByteArrayAsync();
-        var image = StbImageSharp.ImageResult.FromMemory(bytes);
+        using var image = SKBitmap.Decode(bytes);
         Assert.Equal(2048, image.Width);
         Assert.Equal(8, image.Height);
 

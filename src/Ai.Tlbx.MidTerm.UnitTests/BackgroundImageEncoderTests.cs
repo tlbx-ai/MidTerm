@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using Ai.Tlbx.MidTerm.Services;
-using StbImageSharp;
-using StbImageWriteSharp;
+using SkiaSharp;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -10,18 +9,16 @@ public sealed class BackgroundImageEncoderTests
 {
     internal static byte[] CreatePng(int width, int height, byte alpha = 255)
     {
-        var pixels = new byte[width * height * 4];
-        for (var i = 0; i < pixels.Length; i += 4)
-        {
-            pixels[i] = 240;
-            pixels[i + 1] = 120;
-            pixels[i + 2] = 60;
-            pixels[i + 3] = alpha;
-        }
-        using var output = new MemoryStream();
-        new ImageWriter().WritePng(pixels, width, height,
-            StbImageWriteSharp.ColorComponents.RedGreenBlueAlpha, output);
-        return output.ToArray();
+        return CreateImage(width, height, SKEncodedImageFormat.Png, alpha);
+    }
+
+    internal static byte[] CreateImage(int width, int height, SKEncodedImageFormat format, byte alpha = 255)
+    {
+        using var bitmap = new SKBitmap(width, height);
+        bitmap.Erase(new SKColor(240, 120, 60, alpha));
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(format, 95);
+        return data.ToArray();
     }
 
     [Theory]
@@ -30,16 +27,13 @@ public sealed class BackgroundImageEncoderTests
     [InlineData(65, 33, 65, 33)]
     public void Encode_PreservesAspectRatioWithoutUpscaling(int width, int height, int expectedWidth, int expectedHeight)
     {
-        var jpeg = BackgroundImageEncoder.Encode(CreatePng(width, height));
-        Assert.Equal(255, jpeg[0]);
-        Assert.Equal(216, jpeg[1]);
-        var image = ImageResult.FromMemory(jpeg);
+        var webp = BackgroundImageEncoder.Encode(CreatePng(width, height));
+        Assert.True(webp.AsSpan(0, 4).SequenceEqual("RIFF"u8));
+        Assert.True(webp.AsSpan(8, 4).SequenceEqual("WEBP"u8));
+        using var image = SKBitmap.Decode(webp);
         Assert.Equal(expectedWidth, image.Width);
         Assert.Equal(expectedHeight, image.Height);
-        // JPEG luminance DC quantizer: quality 85 scales the standard value 16 to 5.
-        var dqt = jpeg.AsSpan().IndexOf(new byte[] { 255, 219 });
-        Assert.True(dqt >= 0);
-        Assert.Equal(5, jpeg[dqt + 5]);
+
     }
 
     [Theory]
@@ -47,9 +41,8 @@ public sealed class BackgroundImageEncoderTests
     [InlineData(128, 120)]
     public void Encode_CompositesTransparencyOnBlack(byte alpha, int expectedRed)
     {
-        var image = ImageResult.FromMemory(BackgroundImageEncoder.Encode(CreatePng(16, 16, alpha)),
-            StbImageSharp.ColorComponents.RedGreenBlue);
-        Assert.InRange(image.Data[0], expectedRed - 3, expectedRed + 3);
+        using var image = SKBitmap.Decode(BackgroundImageEncoder.Encode(CreatePng(16, 16, alpha)));
+        Assert.InRange((int)image.GetPixel(8, 8).Red, expectedRed - 3, expectedRed + 3);
     }
 
     [Fact]
@@ -61,18 +54,46 @@ public sealed class BackgroundImageEncoderTests
         Assert.Throws<ArgumentException>(() => BackgroundImageEncoder.Encode(png));
     }
 
-    [Fact]
-    public void Encode_AppliesExifRotationAndRemovesMetadata()
+    [Theory]
+    [InlineData(1, 8, 8)]
+    [InlineData(2, 55, 8)]
+    [InlineData(3, 55, 23)]
+    [InlineData(4, 8, 23)]
+    [InlineData(5, 8, 8)]
+    [InlineData(6, 23, 8)]
+    [InlineData(7, 23, 55)]
+    [InlineData(8, 8, 55)]
+    public void Encode_AppliesExifOrientationAndRemovesMetadata(byte orientation, int redX, int redY)
     {
-        var jpeg = BackgroundImageEncoder.Encode(CreatePng(32, 16));
-        // APP1 / little-endian TIFF, IFD0 orientation = 6 (90 degrees clockwise).
+        using var bitmap = new SKBitmap(64, 32);
+        bitmap.Erase(SKColors.Blue);
+        using (var canvas = new SKCanvas(bitmap))
+        using (var paint = new SKPaint { Color = SKColors.Red })
+        {
+            canvas.DrawRect(0, 0, 16, 16, paint);
+        }
+        using var source = SKImage.FromBitmap(bitmap);
+        using var data = source.Encode(SKEncodedImageFormat.Jpeg, 100);
+        var jpeg = data.ToArray();
+        // APP1 / little-endian TIFF, IFD0 orientation.
         byte[] exif = [255, 225, 0, 34, 69, 120, 105, 102, 0, 0,
             73, 73, 42, 0, 8, 0, 0, 0, 1, 0, 18, 1, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0];
+        exif[28] = orientation;
         byte[] withExif = [.. jpeg.AsSpan(0, 2), .. exif, .. jpeg.AsSpan(2)];
         var normalized = BackgroundImageEncoder.Encode(withExif);
-        var image = ImageResult.FromMemory(normalized);
-        Assert.Equal(16, image.Width);
-        Assert.Equal(32, image.Height);
+        using var image = SKBitmap.Decode(normalized);
+        Assert.Equal(orientation >= 5 ? 32 : 64, image.Width);
+        Assert.Equal(orientation >= 5 ? 64 : 32, image.Height);
+        Assert.True(image.GetPixel(redX, redY).Red > 220);
+        Assert.True(image.GetPixel(redX, redY).Blue < 35);
         Assert.Equal(-1, normalized.AsSpan().IndexOf("Exif"u8));
+    }
+
+    [Fact]
+    public void Encode_AcceptsWebpUploads()
+    {
+        using var image = SKBitmap.Decode(BackgroundImageEncoder.Encode(CreateImage(33, 17, SKEncodedImageFormat.Webp)));
+        Assert.Equal(33, image.Width);
+        Assert.Equal(17, image.Height);
     }
 }

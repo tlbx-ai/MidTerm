@@ -13,6 +13,7 @@
     <PublishAot>true</PublishAot>
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <SqlitePclRawVersion>2.1.12</SqlitePclRawVersion>
+    <SkiaSharpVersion>4.151.2</SkiaSharpVersion>
     <RuntimeIdentifiers>win-x64;win-x86;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
   </PropertyGroup>
 
@@ -77,10 +78,8 @@
        conditions RID-less, so putting these in a RID-conditional group has no effect. -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
-    <PackageReference Include="StbImageSharp" Version="2.30.16" />
-    <PackageReference Include="StbImageWriteSharp" Version="1.16.7" />
-    <PackageReference Include="StbImageResizeSharp" Version="0.97.1" />
-    <PackageReference Include="MetadataExtractor" Version="2.9.3" />
+    <PackageReference Include="SkiaSharp" Version="$(SkiaSharpVersion)" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="$(SkiaSharpVersion)" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="$(SqlitePclRawVersion)" />
   </ItemGroup>
 
@@ -98,6 +97,25 @@
   </ItemGroup>
   <Target Name="VerifySqliteNativeEmbed" BeforeTargets="PrepareForBuild" Condition="'$(RuntimeIdentifier)' != ''">
     <Error Text="SQLite native library not found for embedding: $(_SqliteNativeLibPath)" Condition="!Exists('$(_SqliteNativeLibPath)')" />
+  </Target>
+
+  <!-- Bundle the image codec too: release archives and updates carry mt alone. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <_SkiaNativePackage Condition="$(RuntimeIdentifier.StartsWith('win'))">skiasharp.nativeassets.win32</_SkiaNativePackage>
+    <_SkiaNativePackage Condition="$(RuntimeIdentifier.StartsWith('linux'))">skiasharp.nativeassets.linux.nodependencies</_SkiaNativePackage>
+    <_SkiaNativePackage Condition="$(RuntimeIdentifier.StartsWith('osx'))">skiasharp.nativeassets.macos</_SkiaNativePackage>
+    <_SkiaNativeRid>$(RuntimeIdentifier)</_SkiaNativeRid>
+    <_SkiaNativeRid Condition="$(RuntimeIdentifier.StartsWith('osx'))">osx</_SkiaNativeRid>
+    <_SkiaNativeFileName Condition="$(RuntimeIdentifier.StartsWith('win'))">libSkiaSharp.dll</_SkiaNativeFileName>
+    <_SkiaNativeFileName Condition="$(RuntimeIdentifier.StartsWith('linux'))">libSkiaSharp.so</_SkiaNativeFileName>
+    <_SkiaNativeFileName Condition="$(RuntimeIdentifier.StartsWith('osx'))">libSkiaSharp.dylib</_SkiaNativeFileName>
+    <_SkiaNativeLibPath>$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))$(_SkiaNativePackage)/$(SkiaSharpVersion)/runtimes/$(_SkiaNativeRid)/native/$(_SkiaNativeFileName)</_SkiaNativeLibPath>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' != '' And Exists('$(_SkiaNativeLibPath)')">
+    <EmbeddedResource Include="$(_SkiaNativeLibPath)" LogicalName="tlbx.native.$(_SkiaNativeFileName)" />
+  </ItemGroup>
+  <Target Name="VerifySkiaNativeEmbed" BeforeTargets="PrepareForBuild" Condition="'$(RuntimeIdentifier)' != ''">
+    <Error Text="Skia native library not found for embedding: $(_SkiaNativeLibPath)" Condition="!Exists('$(_SkiaNativeLibPath)')" />
   </Target>
 
   <!-- Windows-specific: CsWin32 for ConPTY P/Invoke -->

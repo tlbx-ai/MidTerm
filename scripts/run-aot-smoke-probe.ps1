@@ -50,6 +50,11 @@ if (-not (Test-Path $exePath)) {
 
 $settingsDir = Join-Path ([System.IO.Path]::GetTempPath()) ("mt-aot-probe-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $settingsDir | Out-Null
+# Exercise exactly what the release archive/updater installs: mt without native sidecars.
+$standaloneDir = Join-Path $settingsDir 'standalone'
+New-Item -ItemType Directory -Path $standaloneDir | Out-Null
+Copy-Item -LiteralPath $exePath -Destination (Join-Path $standaloneDir $exeName)
+$exePath = Join-Path $standaloneDir $exeName
 $stdoutLog = Join-Path $settingsDir "probe-stdout.log"
 $stderrLog = Join-Path $settingsDir "probe-stderr.log"
 $port = Get-Random -Minimum 21000 -Maximum 29000
@@ -61,6 +66,20 @@ try {
     $probePassword = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
     $probePassword | & $exePath --set-password *> (Join-Path $settingsDir "password-setup.log")
     if ($LASTEXITCODE -ne 0) { throw "AOT smoke probe password setup failed" }
+    $backgroundDir = Join-Path $settingsDir 'backgrounds'
+    New-Item -ItemType Directory -Path $backgroundDir | Out-Null
+    # Tiny RGB PNG, two pixels. Real codec execution catches AOT/native loading failures.
+    $pngBytes = [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGP4zwAE/wEHAAH/4iOeWQAAAABJRU5ErkJggg==')
+    $oldBackground = Join-Path $backgroundDir 'app-background.png'
+    [IO.File]::WriteAllBytes($oldBackground, $pngBytes)
+    $settingsPath = Join-Path $settingsDir 'settings.json'
+    $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json -AsHashtable
+    $settings.backgroundImageFileName = 'app-background.png'
+    $settings.backgroundImageRevision = 123
+    $settings.backgroundImageEnabled = $false
+    $settings.uiTransparency = 10
+    $settings.terminalTransparency = 35
+    $settings | ConvertTo-Json -Depth 64 | Set-Content $settingsPath
     $proc = Start-Process -FilePath $exePath -ArgumentList "--port $port --bind 127.0.0.1" `
         -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru -WindowStyle Hidden
 
@@ -112,6 +131,34 @@ try {
         throw "AOT smoke probe FAILED: SQLite database was not created at $dbPath"
     }
     Write-Host "  action-graphs.db created ($((Get-Item $dbPath).Length) bytes)" -ForegroundColor Green
+
+    $backgroundUrl = "https://127.0.0.1:$port/api/settings/background-image"
+    $webpPath = Join-Path $settingsDir 'migrated.webp'
+    $background = Invoke-WebRequest "$($backgroundUrl)?v=123&encoding=2" -WebSession $probeSession -SkipCertificateCheck -TimeoutSec 10 -OutFile $webpPath -PassThru
+    $webp = [IO.File]::ReadAllBytes($webpPath)
+    if ($background.Headers['Content-Type'] -ne 'image/webp' -or $webp.Length -lt 16 -or
+        [Text.Encoding]::ASCII.GetString($webp, 0, 4) -ne 'RIFF' -or
+        [Text.Encoding]::ASCII.GetString($webp, 8, 4) -ne 'WEBP') {
+        throw 'AOT smoke probe FAILED: stored background was not converted to WebP'
+    }
+    $after = Invoke-RestMethod "https://127.0.0.1:$port/api/settings" -WebSession $probeSession -SkipCertificateCheck -TimeoutSec 5
+    if ($after.backgroundImageFileName -ne 'app-background-v2.webp' -or (Test-Path $oldBackground) -or
+        $after.backgroundImageRevision -le 123 -or $after.backgroundImageEnabled -or
+        $after.uiTransparency -ne 10 -or $after.terminalTransparency -ne 35) {
+        throw 'AOT smoke probe FAILED: background migration did not preserve preferences or remove the old file'
+    }
+    $form = [Net.Http.MultipartFormDataContent]::new()
+    try {
+        $content = [Net.Http.ByteArrayContent]::new($webp)
+        $content.Headers.ContentType = [Net.Http.Headers.MediaTypeHeaderValue]::new('image/webp')
+        $form.Add($content, 'file', 'upload.webp')
+        $body = $form.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+        $upload = Invoke-RestMethod $backgroundUrl -Method Post -Body $body -ContentType $form.Headers.ContentType.ToString() -WebSession $probeSession -SkipCertificateCheck -TimeoutSec 10
+    } finally {
+        $form.Dispose()
+    }
+    if ($upload.fileName -ne 'app-background-v2.webp') { throw 'AOT smoke probe FAILED: WebP upload failed' }
+    Write-Host '  background migration and upload -> WebP (bundled native codec)' -ForegroundColor Green
     Write-Host "AOT smoke probe PASSED." -ForegroundColor Green
 }
 finally {
@@ -121,5 +168,8 @@ finally {
         $proc.WaitForExit(5000) | Out-Null
     }
     Start-Sleep -Milliseconds 500
+    $artifactDir = Join-Path $RepoRoot '.dev/aot-smoke'
+    New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+    Get-ChildItem -LiteralPath $settingsDir -Filter '*.log' | Copy-Item -Destination $artifactDir -Force
     try { Remove-Item -LiteralPath $settingsDir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
 }

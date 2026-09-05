@@ -425,7 +425,7 @@
   "settings.appearance.backgroundUpload": "Upload Image",
   "settings.appearance.backgroundRemove": "Remove",
   "settings.appearance.backgroundNone": "No image uploaded",
-  "settings.appearance.backgroundHint": "PNG or JPG, up to 10 MB / 64 megapixels. Saved as JPEG at 85% quality, up to 2048 pixels on the longest side.",
+  "settings.appearance.backgroundHint": "PNG, JPG or WebP, up to 10 MB / 64 megapixels. Saved as WebP at 85% quality, up to 2048 pixels on the longest side.",
   "settings.appearance.backgroundEnabled": "Show Background Image",
   "settings.appearance.backgroundHideOnMobile": "Hide Background On Mobile",
   "settings.appearance.backgroundKenBurns": "Animated Ken Burns",

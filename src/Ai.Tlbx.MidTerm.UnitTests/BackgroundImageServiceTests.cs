@@ -3,6 +3,7 @@ using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
 using Microsoft.AspNetCore.Http;
 using Xunit;
+using SkiaSharp;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
@@ -137,7 +138,7 @@ public sealed class BackgroundImageServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SaveAsync_NormalizesToJpegAndInvalidReplacementPreservesImage()
+    public async Task SaveAsync_NormalizesToWebpAndInvalidReplacementPreservesImage()
     {
         var settingsService = new SettingsService(_tempDir);
         var service = new BackgroundImageService(settingsService);
@@ -146,10 +147,10 @@ public sealed class BackgroundImageServiceTests : IDisposable
         {
             Headers = new HeaderDictionary(), ContentType = "image/png"
         });
-        Assert.Equal("app-background-v1.jpg", result.FileName);
+        Assert.Equal("app-background-v2.webp", result.FileName);
         var path = service.GetCurrentImagePath(settingsService.Load())!;
         var saved = await File.ReadAllBytesAsync(path);
-        var decoded = StbImageSharp.ImageResult.FromMemory(saved);
+        using var decoded = SKBitmap.Decode(saved);
         Assert.Equal(2048, decoded.Width);
         Assert.Equal(512, decoded.Height);
         using var invalid = new MemoryStream(new byte[] { 1, 2, 3 });
@@ -164,30 +165,27 @@ public sealed class BackgroundImageServiceTests : IDisposable
     }
 
     [Theory]
-    [InlineData(".png")]
-    [InlineData(".jpg")]
-    public async Task GetNormalizedImagePathAsync_MigratesOldImageOnceAndPreservesPreferences(string extension)
+    [InlineData("app-background.png")]
+    [InlineData("app-background.jpg")]
+    [InlineData("app-background-v1.jpg")]
+    public async Task GetNormalizedImagePathAsync_MigratesOldImageOnceAndPreservesPreferences(string fileName)
     {
         var settingsService = new SettingsService(_tempDir);
         var service = new BackgroundImageService(settingsService);
         settingsService.Save(new MidTermSettings
         {
-            BackgroundImageFileName = "app-background" + extension,
+            BackgroundImageFileName = fileName,
             BackgroundImageRevision = 123,
             BackgroundImageEnabled = false,
             UiTransparency = 10,
             TerminalTransparency = 35
         });
         Directory.CreateDirectory(service.GetDirectory());
-        var oldPath = Path.Combine(service.GetDirectory(), "app-background" + extension);
+        var oldPath = Path.Combine(service.GetDirectory(), fileName);
         var pixels = BackgroundImageEncoderTests.CreatePng(4096, 32);
-        if (extension == ".jpg")
+        if (fileName.EndsWith(".jpg", StringComparison.Ordinal))
         {
-            var image = StbImageSharp.ImageResult.FromMemory(pixels, StbImageSharp.ColorComponents.RedGreenBlue);
-            using var jpeg = new MemoryStream();
-            new StbImageWriteSharp.ImageWriter().WriteJpg(image.Data, image.Width, image.Height,
-                StbImageWriteSharp.ColorComponents.RedGreenBlue, jpeg, 95);
-            pixels = jpeg.ToArray();
+            pixels = BackgroundImageEncoderTests.CreateImage(4096, 32, SKEncodedImageFormat.Jpeg);
         }
         await File.WriteAllBytesAsync(oldPath, pixels);
 
@@ -195,8 +193,9 @@ public sealed class BackgroundImageServiceTests : IDisposable
         var path = Assert.IsType<string>(paths[0]);
         Assert.All(paths, value => Assert.Equal(path, value));
         Assert.False(File.Exists(oldPath));
+        Assert.Equal("app-background-v2.webp", Path.GetFileName(path));
         var bytes = await File.ReadAllBytesAsync(path);
-        var decoded = StbImageSharp.ImageResult.FromMemory(bytes);
+        using var decoded = SKBitmap.Decode(bytes);
         Assert.Equal(2048, decoded.Width);
         Assert.Equal(16, decoded.Height);
         var settings = settingsService.Load();

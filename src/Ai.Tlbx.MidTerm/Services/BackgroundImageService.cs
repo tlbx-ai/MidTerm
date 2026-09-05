@@ -10,19 +10,21 @@ public sealed class BackgroundImageService
     {
         ".png",
         ".jpg",
-        ".jpeg"
+        ".jpeg",
+        ".webp"
     };
 
     private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "image/png",
-        "image/jpeg"
+        "image/jpeg",
+        "image/webp"
     };
 
     private const long MaxUploadBytes = 10 * 1024 * 1024;
     private const int MinimumBackgroundImageTransparency = 50;
     // The filename records the encoding policy so older installations migrate once.
-    private const string NormalizedFileName = "app-background-v1.jpg";
+    private const string NormalizedFileName = "app-background-v2.webp";
     // Bound peak decode memory across simultaneous uploads and serialize replacements.
     private static readonly SemaphoreSlim UploadLock = new(1, 1);
     private readonly SettingsService _settingsService;
@@ -31,6 +33,7 @@ public sealed class BackgroundImageService
     public BackgroundImageService(SettingsService settingsService)
     {
         _settingsService = settingsService;
+        SkiaNativeLoader.EnsureLoaded(settingsService.SettingsDirectory);
     }
 
     public string GetDirectory()
@@ -98,8 +101,8 @@ public sealed class BackgroundImageService
                 {
                     throw new ArgumentException("Stored background image exceeds the 10 MB limit.");
                 }
-                var jpeg = BackgroundImageEncoder.Encode(await File.ReadAllBytesAsync(path));
-                await StoreNormalizedAsync(jpeg, settings);
+                var webp = BackgroundImageEncoder.Encode(await File.ReadAllBytesAsync(path));
+                await StoreNormalizedAsync(webp, settings);
                 return GetCurrentImagePath(settings);
             }
             catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
@@ -130,12 +133,12 @@ public sealed class BackgroundImageService
         var extension = Path.GetExtension(file.FileName);
         if (string.IsNullOrWhiteSpace(extension) || !AllowedExtensions.Contains(extension))
         {
-            throw new ArgumentException("Only PNG and JPG images are supported.");
+            throw new ArgumentException("Only PNG, JPG and WebP images are supported.");
         }
 
         if (!string.IsNullOrWhiteSpace(file.ContentType) && !AllowedContentTypes.Contains(file.ContentType))
         {
-            throw new ArgumentException("Only PNG and JPG images are supported.");
+            throw new ArgumentException("Only PNG, JPG and WebP images are supported.");
         }
 
         await UploadLock.WaitAsync();
@@ -154,17 +157,18 @@ public sealed class BackgroundImageService
         await using var upload = file.OpenReadStream();
         using var input = new MemoryStream();
         await upload.CopyToAsync(input);
-        var jpeg = BackgroundImageEncoder.Encode(input.ToArray());
+        var webp = BackgroundImageEncoder.Encode(input.ToArray());
         var settings = _settingsService.Load();
         settings.BackgroundImageEnabled = true;
         EnsureMinimumBackgroundImageTransparency(settings);
-        await StoreNormalizedAsync(jpeg, settings);
+        await StoreNormalizedAsync(webp, settings);
         _failedMigrationPath = null;
         return GetInfo(settings);
     }
 
-    private async Task StoreNormalizedAsync(byte[] jpeg, MidTermSettings settings)
+    private async Task StoreNormalizedAsync(byte[] webp, MidTermSettings settings)
     {
+        var previousPath = GetCurrentImagePath(settings);
         var directory = GetDirectory();
         Directory.CreateDirectory(directory);
 
@@ -173,7 +177,7 @@ public sealed class BackgroundImageService
 
         try
         {
-            await File.WriteAllBytesAsync(tempPath, jpeg);
+            await File.WriteAllBytesAsync(tempPath, webp);
             File.Move(tempPath, finalPath, overwrite: true);
         }
         finally
@@ -189,7 +193,12 @@ public sealed class BackgroundImageService
         _settingsService.Save(settings);
 
         // Switch settings only after the new file exists, then discard superseded local files.
-        foreach (var existingPath in Directory.EnumerateFiles(directory, "app-background.*"))
+        var superseded = Directory.EnumerateFiles(directory, "app-background.*");
+        if (previousPath is not null && string.Equals(Path.GetDirectoryName(previousPath), directory, StringComparison.OrdinalIgnoreCase))
+        {
+            superseded = superseded.Append(previousPath).Distinct(StringComparer.OrdinalIgnoreCase);
+        }
+        foreach (var existingPath in superseded)
         {
             if (!string.Equals(existingPath, finalPath, StringComparison.OrdinalIgnoreCase))
             {

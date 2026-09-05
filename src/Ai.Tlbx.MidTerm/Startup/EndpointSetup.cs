@@ -728,15 +728,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
                 return Results.NotFound();
             }
 
-            var extension = Path.GetExtension(imagePath).ToLowerInvariant();
-            var contentType = extension switch
-            {
-                ".png" => "image/png",
-                ".jpg" or ".jpeg" => "image/jpeg",
-                _ => "application/octet-stream"
-            };
-
-            return Results.File(imagePath, contentType, enableRangeProcessing: false);
+            return Results.File(imagePath, "image/webp", enableRangeProcessing: false);
         });
 
         app.MapPost("/api/settings/background-image", async (IFormFile file, BackgroundImageService backgroundImageService) =>
