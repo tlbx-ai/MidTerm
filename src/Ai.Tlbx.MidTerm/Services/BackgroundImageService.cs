@@ -21,9 +21,12 @@ public sealed class BackgroundImageService
 
     private const long MaxUploadBytes = 10 * 1024 * 1024;
     private const int MinimumBackgroundImageTransparency = 50;
+    // The filename records the encoding policy so older installations migrate once.
+    private const string NormalizedFileName = "app-background-v1.jpg";
     // Bound peak decode memory across simultaneous uploads and serialize replacements.
     private static readonly SemaphoreSlim UploadLock = new(1, 1);
     private readonly SettingsService _settingsService;
+    private string? _failedMigrationPath;
 
     public BackgroundImageService(SettingsService settingsService)
     {
@@ -70,6 +73,48 @@ public sealed class BackgroundImageService
         };
     }
 
+    public async Task<string?> GetNormalizedImagePathAsync()
+    {
+        await UploadLock.WaitAsync();
+        try
+        {
+            var settings = _settingsService.Load();
+            var path = GetCurrentImagePath(settings);
+            if (path is null || settings.BackgroundImageFileName == NormalizedFileName)
+            {
+                return path;
+            }
+
+            // Do not repeatedly decode a broken old image on every browser request.
+            // Keep the source intact; replacing the wallpaper or restarting permits recovery.
+            if (path == _failedMigrationPath)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (new FileInfo(path).Length > MaxUploadBytes)
+                {
+                    throw new ArgumentException("Stored background image exceeds the 10 MB limit.");
+                }
+                var jpeg = BackgroundImageEncoder.Encode(await File.ReadAllBytesAsync(path));
+                await StoreNormalizedAsync(jpeg, settings);
+                return GetCurrentImagePath(settings);
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+            {
+                _failedMigrationPath = path;
+                Log.Warn(() => $"Could not normalize stored background image; original retained and background not served: {ex.Message}");
+                return null;
+            }
+        }
+        finally
+        {
+            UploadLock.Release();
+        }
+    }
+
     public async Task<BackgroundImageInfoResponse> SaveAsync(IFormFile file)
     {
         if (file is null || file.Length == 0)
@@ -111,12 +156,20 @@ public sealed class BackgroundImageService
         await upload.CopyToAsync(input);
         var jpeg = BackgroundImageEncoder.Encode(input.ToArray());
         var settings = _settingsService.Load();
+        settings.BackgroundImageEnabled = true;
+        EnsureMinimumBackgroundImageTransparency(settings);
+        await StoreNormalizedAsync(jpeg, settings);
+        _failedMigrationPath = null;
+        return GetInfo(settings);
+    }
+
+    private async Task StoreNormalizedAsync(byte[] jpeg, MidTermSettings settings)
+    {
         var directory = GetDirectory();
         Directory.CreateDirectory(directory);
 
-        const string fileName = "app-background.jpg";
         var tempPath = Path.Combine(directory, $"{Guid.NewGuid():N}.tmp");
-        var finalPath = Path.Combine(directory, fileName);
+        var finalPath = Path.Combine(directory, NormalizedFileName);
 
         try
         {
@@ -131,24 +184,41 @@ public sealed class BackgroundImageService
             }
         }
 
+        settings.BackgroundImageFileName = NormalizedFileName;
+        settings.BackgroundImageRevision = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), settings.BackgroundImageRevision + 1);
+        _settingsService.Save(settings);
+
+        // Switch settings only after the new file exists, then discard superseded local files.
         foreach (var existingPath in Directory.EnumerateFiles(directory, "app-background.*"))
         {
             if (!string.Equals(existingPath, finalPath, StringComparison.OrdinalIgnoreCase))
             {
-                File.Delete(existingPath);
+                try
+                {
+                    File.Delete(existingPath);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Log.Warn(() => $"Normalized background saved; could not remove superseded image: {ex.Message}");
+                }
             }
         }
-
-        settings.BackgroundImageFileName = fileName;
-        settings.BackgroundImageEnabled = true;
-        settings.BackgroundImageRevision = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        EnsureMinimumBackgroundImageTransparency(settings);
-        _settingsService.Save(settings);
-
-        return GetInfo(settings);
     }
 
-    public BackgroundImageInfoResponse Delete()
+    public async Task<BackgroundImageInfoResponse> DeleteAsync()
+    {
+        await UploadLock.WaitAsync();
+        try
+        {
+            return DeleteCurrentImage();
+        }
+        finally
+        {
+            UploadLock.Release();
+        }
+    }
+
+    private BackgroundImageInfoResponse DeleteCurrentImage()
     {
         var settings = _settingsService.Load();
         var path = GetCurrentImagePath(settings);

@@ -46,6 +46,35 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
     }
 
     [Fact]
+    public async Task BackgroundGet_MigratesPreviouslyConfiguredImage()
+    {
+        var settingsService = _factory.Services.GetRequiredService<SettingsService>();
+        var service = _factory.Services.GetRequiredService<BackgroundImageService>();
+        var settings = settingsService.Load();
+        settings.BackgroundImageFileName = "app-background.png";
+        settings.BackgroundImageRevision = 123;
+        settingsService.Save(settings);
+        Directory.CreateDirectory(service.GetDirectory());
+        var oldPath = Path.Combine(service.GetDirectory(), "app-background.png");
+        await using (var png = File.Create(oldPath))
+        {
+            new StbImageWriteSharp.ImageWriter().WritePng(new byte[4096 * 16 * 3], 4096, 16,
+                StbImageWriteSharp.ColorComponents.RedGreenBlue, png);
+        }
+
+        using var response = await _client.GetAsync("/api/settings/background-image?v=123");
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("image/jpeg", response.Content.Headers.ContentType?.MediaType);
+        var image = StbImageSharp.ImageResult.FromMemory(await response.Content.ReadAsByteArrayAsync());
+        Assert.Equal(2048, image.Width);
+        Assert.Equal(8, image.Height);
+        Assert.False(File.Exists(oldPath));
+        Assert.True(settingsService.Load().BackgroundImageRevision > 123);
+        using var deleted = await _client.DeleteAsync("/api/settings/background-image");
+        deleted.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
     public async Task BackgroundUpload_ServesNormalizedJpegAndRejectsInvalidReplacement()
     {
         using var png = new MemoryStream();

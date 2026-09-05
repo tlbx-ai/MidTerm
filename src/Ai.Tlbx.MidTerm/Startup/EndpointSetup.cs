@@ -720,10 +720,9 @@ Start-Service -Name $serviceName -ErrorAction Stop
             return Results.Json(publicSettings, AppJsonContext.Default.MidTermSettingsPublic);
         });
 
-        app.MapGet("/api/settings/background-image", (BackgroundImageService backgroundImageService) =>
+        app.MapGet("/api/settings/background-image", async (BackgroundImageService backgroundImageService) =>
         {
-            var settings = settingsService.Load();
-            var imagePath = backgroundImageService.GetCurrentImagePath(settings);
+            var imagePath = await backgroundImageService.GetNormalizedImagePathAsync();
             if (imagePath is null)
             {
                 return Results.NotFound();
@@ -758,11 +757,11 @@ Start-Service -Name $serviceName -ErrorAction Stop
             }
         }).DisableAntiforgery();
 
-        app.MapDelete("/api/settings/background-image", (BackgroundImageService backgroundImageService) =>
+        app.MapDelete("/api/settings/background-image", async (BackgroundImageService backgroundImageService) =>
         {
             try
             {
-                var info = backgroundImageService.Delete();
+                var info = await backgroundImageService.DeleteAsync();
                 return Results.Json(info, AppJsonContext.Default.BackgroundImageInfoResponse);
             }
             catch (Exception ex)

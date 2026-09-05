@@ -146,7 +146,7 @@ public sealed class BackgroundImageServiceTests : IDisposable
         {
             Headers = new HeaderDictionary(), ContentType = "image/png"
         });
-        Assert.Equal("app-background.jpg", result.FileName);
+        Assert.Equal("app-background-v1.jpg", result.FileName);
         var path = service.GetCurrentImagePath(settingsService.Load())!;
         var saved = await File.ReadAllBytesAsync(path);
         var decoded = StbImageSharp.ImageResult.FromMemory(saved);
@@ -160,6 +160,75 @@ public sealed class BackgroundImageServiceTests : IDisposable
             }));
         Assert.Equal(saved, await File.ReadAllBytesAsync(path));
         Assert.Equal(result.Revision, settingsService.Load().BackgroundImageRevision);
+        Assert.Single(Directory.GetFiles(service.GetDirectory()));
+    }
+
+    [Theory]
+    [InlineData(".png")]
+    [InlineData(".jpg")]
+    public async Task GetNormalizedImagePathAsync_MigratesOldImageOnceAndPreservesPreferences(string extension)
+    {
+        var settingsService = new SettingsService(_tempDir);
+        var service = new BackgroundImageService(settingsService);
+        settingsService.Save(new MidTermSettings
+        {
+            BackgroundImageFileName = "app-background" + extension,
+            BackgroundImageRevision = 123,
+            BackgroundImageEnabled = false,
+            UiTransparency = 10,
+            TerminalTransparency = 35
+        });
+        Directory.CreateDirectory(service.GetDirectory());
+        var oldPath = Path.Combine(service.GetDirectory(), "app-background" + extension);
+        var pixels = BackgroundImageEncoderTests.CreatePng(4096, 32);
+        if (extension == ".jpg")
+        {
+            var image = StbImageSharp.ImageResult.FromMemory(pixels, StbImageSharp.ColorComponents.RedGreenBlue);
+            using var jpeg = new MemoryStream();
+            new StbImageWriteSharp.ImageWriter().WriteJpg(image.Data, image.Width, image.Height,
+                StbImageWriteSharp.ColorComponents.RedGreenBlue, jpeg, 95);
+            pixels = jpeg.ToArray();
+        }
+        await File.WriteAllBytesAsync(oldPath, pixels);
+
+        var paths = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => service.GetNormalizedImagePathAsync()));
+        var path = Assert.IsType<string>(paths[0]);
+        Assert.All(paths, value => Assert.Equal(path, value));
+        Assert.False(File.Exists(oldPath));
+        var bytes = await File.ReadAllBytesAsync(path);
+        var decoded = StbImageSharp.ImageResult.FromMemory(bytes);
+        Assert.Equal(2048, decoded.Width);
+        Assert.Equal(16, decoded.Height);
+        var settings = settingsService.Load();
+        Assert.False(settings.BackgroundImageEnabled);
+        Assert.Equal(10, settings.UiTransparency);
+        Assert.Equal(35, settings.TerminalTransparency);
+        Assert.True(settings.BackgroundImageRevision > 123);
+
+        // A fresh service represents a restart. Neither bytes nor revision may change.
+        var restartedService = new BackgroundImageService(settingsService);
+        Assert.Equal(path, await restartedService.GetNormalizedImagePathAsync());
+        Assert.Equal(bytes, await File.ReadAllBytesAsync(path));
+        Assert.Equal(settings.BackgroundImageRevision, settingsService.Load().BackgroundImageRevision);
+    }
+
+    [Fact]
+    public async Task GetNormalizedImagePathAsync_BrokenLegacyImageIsRetainedButNotServed()
+    {
+        var settingsService = new SettingsService(_tempDir);
+        settingsService.Save(new MidTermSettings
+        {
+            BackgroundImageFileName = "app-background.png", BackgroundImageRevision = 123
+        });
+        var service = new BackgroundImageService(settingsService);
+        Directory.CreateDirectory(service.GetDirectory());
+        var path = Path.Combine(service.GetDirectory(), "app-background.png");
+        byte[] original = [1, 2, 3];
+        await File.WriteAllBytesAsync(path, original);
+        Assert.Null(await service.GetNormalizedImagePathAsync());
+        Assert.Null(await service.GetNormalizedImagePathAsync());
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
+        Assert.Equal(123, settingsService.Load().BackgroundImageRevision);
         Assert.Single(Directory.GetFiles(service.GetDirectory()));
     }
 }

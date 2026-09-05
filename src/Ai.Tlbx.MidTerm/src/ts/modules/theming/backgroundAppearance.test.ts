@@ -307,7 +307,7 @@ describe('backgroundAppearance', () => {
     );
 
     expect(rootStyle.getPropertyValue('--app-background-image')).toBe(
-      'url("/api/settings/background-image?v=12")',
+      'url("/api/settings/background-image?v=12&encoding=1")',
     );
     expect(rootStyle.getPropertyValue('--app-background-size')).toBe('cover');
     expect(rootStyle.getPropertyValue('--app-background-transform')).toBe(
