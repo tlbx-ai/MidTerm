@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const focusSpy = vi.fn();
-const refreshTerminalPresentationSpy = vi.fn();
+const revealTerminalPresentationSpy = vi.fn();
 const applyTerminalScalingSyncSpy = vi.fn();
 const fitSessionToScreenSpy = vi.fn();
 let isMainBrowser = false;
@@ -116,7 +116,7 @@ vi.mock('../terminal/scaling', () => ({
   applyTerminalScalingSync: applyTerminalScalingSyncSpy,
   fitSessionToScreen: fitSessionToScreenSpy,
   fitTerminalToContainer: vi.fn(),
-  refreshTerminalPresentation: refreshTerminalPresentationSpy,
+  revealTerminalPresentation: revealTerminalPresentationSpy,
 }));
 
 let destroySessionWrapper: typeof import('./tabManager').destroySessionWrapper;
@@ -148,7 +148,7 @@ describe('tabManager', () => {
 
   beforeEach(() => {
     focusSpy.mockReset();
-    refreshTerminalPresentationSpy.mockReset();
+    revealTerminalPresentationSpy.mockReset();
     applyTerminalScalingSyncSpy.mockReset();
     fitSessionToScreenSpy.mockReset();
     isMainBrowser = false;
@@ -204,7 +204,7 @@ describe('tabManager', () => {
 
     expect(getActiveTab('s1')).toBe('terminal');
     expect(wrapper.wrapper.dataset.activeTab).toBe('terminal');
-    expect(refreshTerminalPresentationSpy).toHaveBeenCalledWith('s1', expect.anything());
+    expect(revealTerminalPresentationSpy).toHaveBeenCalledWith('s1', expect.anything());
     expect(applyTerminalScalingSyncSpy).toHaveBeenCalledWith(expect.anything());
     expect(fitSessionToScreenSpy).not.toHaveBeenCalled();
     expect(focusSpy).toHaveBeenCalledTimes(1);
