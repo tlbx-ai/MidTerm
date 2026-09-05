@@ -47,6 +47,14 @@
         "resolved": "3.1.5",
         "contentHash": "tKi7dSTwP4m5m9eXPM2Ime4Kn7xNf4x4zT9sdLO/G4hZVnQCRiMTWoSZqI/pYTVeI27oPPqHBKYI/DjJ9GsYgA=="
       },
+      "MetadataExtractor": {
+        "type": "Transitive",
+        "resolved": "2.9.3",
+        "contentHash": "7dBcqlPC2Zc/bsZtXnv8nCWe5h5WsLHszzHtxnpcsVy4MwlD3KQ3wVNoiYBm0a3rzt5hRwAosPvLPhlXrV5lyg==",
+        "dependencies": {
+          "XmpCore": "6.1.10.1"
+        }
+      },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
         "resolved": "18.8.1",
@@ -123,6 +131,21 @@
           "SQLitePCLRaw.core": "2.1.12"
         }
       },
+      "StbImageResizeSharp": {
+        "type": "Transitive",
+        "resolved": "0.97.1",
+        "contentHash": "8C4/jE57PU9H0PXlwLVg+kYCxW78JAUrb3ANhM9zhXoAvZZsIY382G21lQ4xskIvj04j43yX7CYAMu6w0OH9sg=="
+      },
+      "StbImageSharp": {
+        "type": "Transitive",
+        "resolved": "2.30.16",
+        "contentHash": "qg1i+NHihXVKLKYacGKrauhSQIGL31eBWcTC4Vc7jnGmBFj87LkRuCdXB5aDZisWMRnB6x2mcfwYXQxMWEG/lw=="
+      },
+      "StbImageWriteSharp": {
+        "type": "Transitive",
+        "resolved": "1.16.7",
+        "contentHash": "NF9kOxi0iS9VunklnRKgOpAWC2knCGKRjdy7RT6XAqYNyb7LQfyPHPdl4l1fJw7TFYKrGQzQOmK1XpBONC2MoA=="
+      },
       "System.Security.Cryptography.ProtectedData": {
         "type": "Transitive",
         "resolved": "10.0.10",
@@ -132,6 +155,11 @@
         "type": "Transitive",
         "resolved": "10.0.10",
         "contentHash": "9tI/EtlMimwJn9EEtbqFrVqGCD98VfVdnW6UekC7/YHO5Ky/LMUfXibBv9+AV8g9u7uim20oHgiOqzaeEWAhqg=="
+      },
+      "XmpCore": {
+        "type": "Transitive",
+        "resolved": "6.1.10.1",
+        "contentHash": "/Tp2/e39e7z8hLtS4TXt0FNNZHbf5yNFfHS0/59soXlgOzZlyRZivvzWpvujyaWkTWWgecp/1nHxkuc5vntn7A=="
       },
       "xunit.abstractions": {
         "type": "Transitive",
@@ -180,9 +208,13 @@
         "type": "Project",
         "dependencies": {
           "Ai.Tlbx.MidTerm.Common": "[4.0.1, )",
+          "MetadataExtractor": "[2.9.3, )",
           "Microsoft.Data.Sqlite": "[10.0.10, )",
           "Microsoft.Extensions.Hosting.WindowsServices": "[10.0.10, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[2.1.12, )",
+          "StbImageResizeSharp": "[0.97.1, )",
+          "StbImageSharp": "[2.30.16, )",
+          "StbImageWriteSharp": "[1.16.7, )",
           "System.Security.Cryptography.ProtectedData": "[10.0.10, )"
         }
       },

@@ -97,7 +97,7 @@ public sealed class BackgroundImageServiceTests : IDisposable
             TerminalCellBackgroundTransparency = 10
         });
         var service = new BackgroundImageService(settingsService);
-        await using var stream = new MemoryStream([1, 2, 3]);
+        await using var stream = new MemoryStream(BackgroundImageEncoderTests.CreatePng(16, 8));
         var file = new FormFile(stream, 0, stream.Length, "file", "wallpaper.png")
         {
             Headers = new HeaderDictionary(),
@@ -122,7 +122,7 @@ public sealed class BackgroundImageServiceTests : IDisposable
             TerminalTransparency = 70
         });
         var service = new BackgroundImageService(settingsService);
-        await using var stream = new MemoryStream([1, 2, 3]);
+        await using var stream = new MemoryStream(BackgroundImageEncoderTests.CreatePng(16, 8));
         var file = new FormFile(stream, 0, stream.Length, "file", "wallpaper.jpg")
         {
             Headers = new HeaderDictionary(),
@@ -134,5 +134,32 @@ public sealed class BackgroundImageServiceTests : IDisposable
         var settings = settingsService.Load();
         Assert.Equal(60, settings.UiTransparency);
         Assert.Equal(70, settings.TerminalTransparency);
+    }
+
+    [Fact]
+    public async Task SaveAsync_NormalizesToJpegAndInvalidReplacementPreservesImage()
+    {
+        var settingsService = new SettingsService(_tempDir);
+        var service = new BackgroundImageService(settingsService);
+        using var input = new MemoryStream(BackgroundImageEncoderTests.CreatePng(4096, 1024));
+        var result = await service.SaveAsync(new FormFile(input, 0, input.Length, "file", "large.png")
+        {
+            Headers = new HeaderDictionary(), ContentType = "image/png"
+        });
+        Assert.Equal("app-background.jpg", result.FileName);
+        var path = service.GetCurrentImagePath(settingsService.Load())!;
+        var saved = await File.ReadAllBytesAsync(path);
+        var decoded = StbImageSharp.ImageResult.FromMemory(saved);
+        Assert.Equal(2048, decoded.Width);
+        Assert.Equal(512, decoded.Height);
+        using var invalid = new MemoryStream(new byte[] { 1, 2, 3 });
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SaveAsync(
+            new FormFile(invalid, 0, invalid.Length, "file", "broken.png")
+            {
+                Headers = new HeaderDictionary(), ContentType = "image/png"
+            }));
+        Assert.Equal(saved, await File.ReadAllBytesAsync(path));
+        Assert.Equal(result.Revision, settingsService.Load().BackgroundImageRevision);
+        Assert.Single(Directory.GetFiles(service.GetDirectory()));
     }
 }

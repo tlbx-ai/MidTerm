@@ -46,6 +46,36 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
     }
 
     [Fact]
+    public async Task BackgroundUpload_ServesNormalizedJpegAndRejectsInvalidReplacement()
+    {
+        using var png = new MemoryStream();
+        new StbImageWriteSharp.ImageWriter().WritePng(new byte[4096 * 16 * 3], 4096, 16,
+            StbImageWriteSharp.ColorComponents.RedGreenBlue, png);
+        using var form = new MultipartFormDataContent();
+        using var content = new ByteArrayContent(png.ToArray());
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+        form.Add(content, "file", "large.png");
+        using var uploaded = await _client.PostAsync("/api/settings/background-image", form);
+        uploaded.EnsureSuccessStatusCode();
+        using var response = await _client.GetAsync("/api/settings/background-image");
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("image/jpeg", response.Content.Headers.ContentType?.MediaType);
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        var image = StbImageSharp.ImageResult.FromMemory(bytes);
+        Assert.Equal(2048, image.Width);
+        Assert.Equal(8, image.Height);
+
+        using var invalid = new MultipartFormDataContent();
+        using var invalidContent = new ByteArrayContent([1, 2, 3]);
+        invalid.Add(invalidContent, "file", "broken.png");
+        using var rejected = await _client.PostAsync("/api/settings/background-image", invalid);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, rejected.StatusCode);
+        Assert.Equal(bytes, await _client.GetByteArrayAsync("/api/settings/background-image"));
+        using var deleted = await _client.DeleteAsync("/api/settings/background-image");
+        deleted.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
     public async Task AnonymousClient_CannotAccessControlApi()
     {
         using var anonymous = _factory.CreateClient(new WebApplicationFactoryClientOptions

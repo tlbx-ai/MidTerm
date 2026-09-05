@@ -21,6 +21,8 @@ public sealed class BackgroundImageService
 
     private const long MaxUploadBytes = 10 * 1024 * 1024;
     private const int MinimumBackgroundImageTransparency = 50;
+    // Bound peak decode memory across simultaneous uploads and serialize replacements.
+    private static readonly SemaphoreSlim UploadLock = new(1, 1);
     private readonly SettingsService _settingsService;
 
     public BackgroundImageService(SettingsService settingsService)
@@ -91,20 +93,42 @@ public sealed class BackgroundImageService
             throw new ArgumentException("Only PNG and JPG images are supported.");
         }
 
+        await UploadLock.WaitAsync();
+        try
+        {
+            return await SaveNormalizedAsync(file);
+        }
+        finally
+        {
+            UploadLock.Release();
+        }
+    }
+
+    private async Task<BackgroundImageInfoResponse> SaveNormalizedAsync(IFormFile file)
+    {
+        await using var upload = file.OpenReadStream();
+        using var input = new MemoryStream();
+        await upload.CopyToAsync(input);
+        var jpeg = BackgroundImageEncoder.Encode(input.ToArray());
         var settings = _settingsService.Load();
         var directory = GetDirectory();
         Directory.CreateDirectory(directory);
 
-        var normalizedExtension = extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
-            ? ".jpg"
-            : extension.ToLowerInvariant();
-        var fileName = "app-background" + normalizedExtension;
+        const string fileName = "app-background.jpg";
         var tempPath = Path.Combine(directory, $"{Guid.NewGuid():N}.tmp");
         var finalPath = Path.Combine(directory, fileName);
 
-        await using (var stream = File.Create(tempPath))
+        try
         {
-            await file.CopyToAsync(stream);
+            await File.WriteAllBytesAsync(tempPath, jpeg);
+            File.Move(tempPath, finalPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
         }
 
         foreach (var existingPath in Directory.EnumerateFiles(directory, "app-background.*"))
@@ -114,8 +138,6 @@ public sealed class BackgroundImageService
                 File.Delete(existingPath);
             }
         }
-
-        File.Move(tempPath, finalPath, overwrite: true);
 
         settings.BackgroundImageFileName = fileName;
         settings.BackgroundImageEnabled = true;

@@ -22,3 +22,21 @@ https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk
 Copyright Anthropic PBC. All rights reserved.
 Use is subject to Anthropic's legal agreements documented at
 https://code.claude.com/docs/en/legal-and-compliance.
+
+================================================================================
+Background image normalization
+================================================================================
+StbImageSharp 2.30.16: https://github.com/StbSharp/StbImageSharp
+StbImageWriteSharp 1.16.7: https://github.com/StbSharp/StbImageWriteSharp
+StbImageResizeSharp 0.97.1: https://github.com/StbSharp/StbImageResizeSharp
+The StbSharp projects are public-domain C# ports of Sean Barrett's stb libraries.
+
+MetadataExtractor 2.9.3: https://github.com/drewnoakes/metadata-extractor-dotnet
+Copyright 2002-2019 Drew Noakes and contributors
+Copyright 2014 Imazen LLC (initial conversion from Java to C#)
+Licensed under Apache License 2.0; see APACHE-2.0.txt.
+
+XmpCore 6.1.10.1: https://github.com/drewnoakes/xmp-core-dotnet
+Copyright 2006-2007 Adobe Systems Incorporated. All rights reserved.
+Ported by Yakov Danila and Nathanael Jones; maintained by Drew Noakes and contributors.
+Licensed under the BSD license of Adobe's XMP SDK; see THIRD-PARTY-LICENSES.txt.
