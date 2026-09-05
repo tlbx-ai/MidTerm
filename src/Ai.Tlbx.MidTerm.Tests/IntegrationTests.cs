@@ -23,19 +23,38 @@ using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Settings;
 namespace Ai.Tlbx.MidTerm.Tests;
 
-public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime, IDisposable
+public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, IAsyncLifetime, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
     private bool _disposed;
+    private string _sessionCookie = "";
 
-    public IntegrationTests(WebApplicationFactory<Program> factory)
+    public IntegrationTests(AuthenticatedAppFixture factory)
     {
         _factory = factory;
-        _client = _factory.CreateClient();
+        _client = _factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
     }
 
-    public Task InitializeAsync() => Task.CompletedTask;
+    public async Task InitializeAsync()
+    {
+        using var response = await _client.PostAsJsonAsync("/api/auth/login",
+            new LoginRequest { Password = AuthenticatedAppFixture.Password }, AppJsonContext.Default.LoginRequest);
+        response.EnsureSuccessStatusCode();
+        _sessionCookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];
+        _client.DefaultRequestHeaders.Add("Cookie", _sessionCookie);
+    }
+
+    [Fact]
+    public async Task AnonymousClient_CannotAccessControlApi()
+    {
+        using var anonymous = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"), HandleCookies = false, AllowAutoRedirect = false
+        });
+        using var response = await anonymous.GetAsync("/api/version");
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, response.StatusCode);
+    }
 
     public async Task DisposeAsync()
     {
@@ -388,6 +407,7 @@ public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Progr
     private async Task<WebSocket> ConnectWebSocketAsync(string path)
     {
         var wsClient = _factory.Server.CreateWebSocketClient();
+        wsClient.ConfigureRequest = request => request.Headers.Cookie = _sessionCookie;
         var uri = new Uri(_factory.Server.BaseAddress, path);
         var wsUri = new UriBuilder(uri) { Scheme = uri.Scheme == "https" ? "wss" : "ws" }.Uri;
 
@@ -458,3 +478,4 @@ public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Progr
         return (T)property.GetValue(instance)!;
     }
 }
+
