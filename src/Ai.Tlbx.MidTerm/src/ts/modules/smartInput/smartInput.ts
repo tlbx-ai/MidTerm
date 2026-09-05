@@ -8,6 +8,12 @@
  */
 
 import {
+  KEYBOARD_REPLACEMENT_CHANGED,
+  openKeyboardReplacement,
+  closeKeyboardReplacement,
+  returnToNativeKeyboard,
+} from '../terminal/keyboardReplacement';
+import {
   $actionGraphsOpen,
   $currentSettings,
   $activeSessionId,
@@ -162,7 +168,7 @@ let appServerControlPlanSelect: HTMLSelectElement | null = null;
 let appServerControlPermissionSelect: HTMLSelectElement | null = null;
 let appServerControlSettingsSummaryBtn: HTMLButtonElement | null = null;
 let autoSendEnabled = localStorage.getItem('smartinput-autosend') === 'true';
-let keysExpanded = localStorage.getItem('smartinput-keys-expanded') === 'true';
+let keysExpanded = false;
 let isRecording = false;
 let pendingMicPinSessionId: string | null = null;
 let lastSessionId: string | null = null;
@@ -199,7 +205,12 @@ let appServerControlResumeConversationHandler:
 
 function setTouchKeysExpanded(expanded: boolean): void {
   keysExpanded = expanded;
-  localStorage.setItem('smartinput-keys-expanded', String(expanded));
+  if (expanded) {
+    setToolsPanelOpen(false);
+    openKeyboardReplacement();
+  } else {
+    closeKeyboardReplacement();
+  }
   if (!expanded) {
     closeTouchControllerPopup();
     touchControllerEl?.classList.remove('visible');
@@ -1538,7 +1549,39 @@ function createDockedDOM(): void {
   mobileTouchControllerHost = document.createElement('div');
   mobileTouchControllerHost.className = 'smart-input-mobile-touch-host';
   mobileTouchControllerHost.hidden = true;
-  toolsPanel.appendChild(mobileTouchControllerHost);
+  document.body.appendChild(mobileTouchControllerHost);
+  const keyboardActions = document.createElement('div');
+  keyboardActions.className = 'smart-input-keyboard-actions';
+  const nativeKeyboardButton = document.createElement('button');
+  nativeKeyboardButton.type = 'button';
+  nativeKeyboardButton.textContent = 'ABC';
+  nativeKeyboardButton.addEventListener('click', () => {
+    returnToNativeKeyboard();
+    activeTextarea?.focus({ preventScroll: true });
+  });
+  const closeKeyboardButton = document.createElement('button');
+  closeKeyboardButton.type = 'button';
+  closeKeyboardButton.textContent = '\u2304';
+  closeKeyboardButton.setAttribute('aria-label', t('smartInput.keysHide'));
+  closeKeyboardButton.addEventListener('click', () => {
+    setTouchKeysExpanded(false);
+  });
+  keyboardActions.append(nativeKeyboardButton, closeKeyboardButton);
+  mobileTouchControllerHost.appendChild(keyboardActions);
+  window.addEventListener(KEYBOARD_REPLACEMENT_CHANGED, () => {
+    if (!document.body.classList.contains('keyboard-replacement')) {
+      keysExpanded = false;
+      closeTouchControllerPopup();
+      syncSmartInputVisibility();
+    }
+  });
+  activeTextarea.addEventListener('focus', () => {
+    if (keysExpanded) {
+      returnToNativeKeyboard();
+      keysExpanded = false;
+      closeTouchControllerPopup();
+    }
+  });
 
   touchControllerEl ??= document.getElementById('touch-controller');
   if (touchControllerEl && touchControllerEl.parentElement !== footerContextHost) {
@@ -1713,11 +1756,22 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
   setToolsPanelOpen(toolsPanelOpen);
 }
 
+function syncKeyboardReplacementAvailability(layoutState: AdaptiveFooterLayoutState): void {
+  if (!layoutState.touchControlsAvailable && keysExpanded) {
+    keysExpanded = false;
+    closeKeyboardReplacement();
+    closeTouchControllerPopup();
+  }
+  if (mobileTouchControllerHost)
+    mobileTouchControllerHost.hidden = !layoutState.touchControlsExpanded;
+}
+
 function syncContextRow(layoutState: AdaptiveFooterLayoutState): void {
   if (!footerContextHost) {
     return;
   }
 
+  syncKeyboardReplacementAvailability(layoutState);
   if (layoutState.isMobile) {
     footerContextHost.hidden = true;
     if (touchControllerEl && mobileTouchControllerHost) {

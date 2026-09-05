@@ -170,8 +170,10 @@ describe('setupVisualViewport', () => {
   const originalInnerWidth = host.innerWidth;
   const originalMatchMedia = (host as unknown as Window).matchMedia;
   const originalScrollTo = host.scrollTo;
+  const originalAddEventListener = host.addEventListener;
 
   beforeEach(() => {
+    host.addEventListener = vi.fn();
     sessionTerminals.clear();
     vi.mocked(sendResize).mockReset();
     mocks.remeasureTerminalCells.mockClear();
@@ -260,6 +262,7 @@ describe('setupVisualViewport', () => {
   });
 
   afterEach(() => {
+    host.addEventListener = originalAddEventListener;
     Object.defineProperty(host, 'matchMedia', { configurable: true, value: originalMatchMedia });
     sessionTerminals.clear();
     dom.terminalsArea = null;
@@ -447,16 +450,15 @@ describe('setupVisualViewport', () => {
 
     expect(appEl.style.top).toBe('12px');
     expect(appEl.style.bottom).toBe('auto');
-    expect(appEl.style.height).toBe('482px');
-    expect(appEl.style.maxHeight).toBe('482px');
-    expect(documentElement.style.height).toBe('482px');
-    expect(documentElement.style.maxHeight).toBe('482px');
-    expect(documentElement.style['--midterm-visual-viewport-height']).toBe('482px');
+    expect(appEl.style.height).toBe('500px');
+    expect(appEl.style.maxHeight).toBe('500px');
+    expect(documentElement.style.height).toBe('500px');
+    expect(documentElement.style.maxHeight).toBe('500px');
+    expect(documentElement.style['--midterm-visual-viewport-height']).toBe('500px');
     expect(documentElement.style['--midterm-visual-viewport-offset-top']).toBe('12px');
-    expect(documentElement.style['--midterm-soft-keyboard-bottom-guard']).toBe('18px');
     expect(documentElement.style['--midterm-soft-keyboard-height']).toBe('200px');
-    expect(body.style.height).toBe('482px');
-    expect(body.style.maxHeight).toBe('482px');
+    expect(body.style.height).toBe('500px');
+    expect(body.style.maxHeight).toBe('500px');
     expect(bodyClasses.has('keyboard-visible')).toBe(true);
     expect(host.scrollTo).toHaveBeenCalledWith(0, 0);
   });

@@ -20152,3 +20152,108 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 .ag-editor-error.hidden {
   display: none;
 }
+
+/* The native and special-key keyboards share the space below the composer. */
+.smart-input-mobile-touch-host {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .terminal-page {
+    padding-bottom: max(24px, var(--safe-area-inset-bottom));
+  }
+
+  body.keyboard-visible .terminal-page {
+    padding-bottom: 0;
+  }
+
+  body.keyboard-replacement .smart-input-mobile-touch-host:not([hidden]) {
+    position: fixed;
+    z-index: 1200;
+    top: calc(
+      var(--midterm-visual-viewport-offset-top, 0px) + var(--midterm-visual-viewport-height)
+    );
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    height: var(--midterm-keyboard-panel-height, 0px);
+    margin: 0;
+    padding: 0 max(12px, var(--safe-area-inset-right)) max(24px, var(--safe-area-inset-bottom))
+      max(12px, var(--safe-area-inset-left));
+    overflow: auto;
+    overscroll-behavior: contain;
+    background: var(--bg-primary, #101116);
+  }
+
+  .smart-input-keyboard-actions {
+    display: flex;
+    justify-content: space-between;
+    flex: 0 0 auto;
+  }
+
+  .smart-input-keyboard-actions button {
+    min-width: 44px;
+    min-height: 44px;
+    border: 0;
+    color: var(--text-primary);
+    background: transparent;
+    font-size: 18px;
+  }
+
+  .smart-input-mobile-touch-host .touch-controller.embedded {
+    flex: 0 0 auto;
+  }
+
+  .smart-input-mobile-touch-host .touch-popup-docked {
+    position: static;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 8px 0 0;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+    background: none;
+  }
+
+  .smart-input-mobile-touch-host .touch-popup-group-keys {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 768px) {
+  body.keyboard-replacement .smart-input-mobile-touch-host {
+    --command-bay-gap: 6px;
+  }
+
+  body.keyboard-replacement .smart-input-mobile-touch-host .touch-popup-key {
+    min-width: 44px;
+    min-height: 44px;
+    width: auto;
+  }
+
+  .smart-input-mobile-touch-host:has(.touch-popup:not([hidden])) .touch-modifiers,
+  .smart-input-mobile-touch-host:has(.touch-popup:not([hidden])) .touch-arrows {
+    display: none;
+  }
+
+  .smart-input-mobile-touch-host .touch-popup-grouped:not([hidden]) {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+    align-content: start;
+    gap: 6px;
+  }
+
+  .smart-input-mobile-touch-host .touch-popup-group,
+  .smart-input-mobile-touch-host .touch-popup-group-keys {
+    display: contents;
+  }
+
+  .smart-input-mobile-touch-host .touch-popup-group-label {
+    display: none;
+  }
+}

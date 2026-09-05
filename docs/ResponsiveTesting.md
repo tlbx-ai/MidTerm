@@ -74,3 +74,31 @@ During this run, resetting a self-preview rotated the host-scoped client cookie
 and invalidated its former preview-owner ID. Reclaiming the current browser ID
 restored control. This is a separate preview identity follow-up; ordinary width
 changes worked without a reset.
+
+## Keyboard replacement follow-up
+
+The special-key keyboard now occupies its own surface below the composer.
+Opening it captures the current visual viewport boundary before blurring the
+native input. As the OS keyboard closes, that boundary stays fixed and the
+custom surface takes the released space. ABC retains the boundary until the
+returning native keyboard reaches it; the dismiss control releases it entirely.
+Opening without an OS keyboard reserves up to 320px (45% in short viewports).
+Width changes discard the old orientation's reservation. The open state is
+transient, never restored from local storage.
+
+Category keys render inside this surface and remain open after input. Opening
+a category replaces the modifier/arrow rows with the selected keys. The key
+area scrolls when needed; no symbol popup covers the terminal. The old extra
+10-24px OSK bottom guard is removed. With no keyboard, the shell protects the
+bottom controls with max(24px, reported safe inset). The replacement keyboard
+owns that inset while open; it is not repeated above the OS keyboard.
+
+Validation: 13 focused viewport/transition tests pass. Direct source Chrome at
+390x844, DPR 2, simulated visual viewport heights 500/550/650/844 measured zero
+terminal top/bottom/height drift on replacement and on the ABC return. A real
+symbol click reached the disposable PTY and left the category open. Insets
+24/16/34/16 placed the composer at x22..368 and y760..804, inside the 390x844
+viewport. Evidence is in `.dev/keyboard/{geometry,return,safe}.json` and the
+corresponding PNGs. This is browser geometry evidence; Android/iOS native
+keyboard animation and physical rounded corners still require device testing.
+The tlbx preview bridge reported owner-offline, so this check used direct CDP.

@@ -159,6 +159,20 @@ function openPopup(popupId: string): void {
 }
 
 function positionPopup(popup: HTMLElement, trigger: HTMLElement): void {
+  const keyboardHost = document.querySelector<HTMLElement>('.smart-input-mobile-touch-host');
+  if (document.body.classList.contains('keyboard-replacement') && keyboardHost) {
+    keyboardHost.appendChild(popup);
+    popup.classList.add('touch-popup-docked');
+    popup.style.removeProperty('top');
+    popup.style.removeProperty('left');
+    popup.style.removeProperty('max-width');
+    popup.style.removeProperty('max-height');
+    return;
+  }
+  if (popup.classList.contains('touch-popup-docked')) {
+    document.body.appendChild(popup);
+    popup.classList.remove('touch-popup-docked');
+  }
   const viewport = getSafeViewportBounds();
   const gap = 8;
   popup.style.maxWidth = `${Math.max(1, viewport.right - viewport.left - gap * 2)}px`;
@@ -240,7 +254,7 @@ function handlePopupKeyClick(e: MouseEvent): void {
   const key = btn.dataset.key;
   if (key) {
     sendKey(key);
-    closePopup();
+    if (!document.body.classList.contains('keyboard-replacement')) closePopup();
   }
 }
 
@@ -250,7 +264,7 @@ function handlePopupKeyTouch(e: TouchEvent): void {
   const key = btn.dataset.key;
   if (key) {
     sendKey(key);
-    closePopup();
+    if (!document.body.classList.contains('keyboard-replacement')) closePopup();
   }
 }
 
