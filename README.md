@@ -9,7 +9,7 @@
   ·
   <a href="#install"><strong>Install</strong></a>
   ·
-  <a href="#agent-cli-ergonomics"><strong>Agent ergonomics</strong></a>
+  <a href="#working-with-coding-agents"><strong>Coding agents</strong></a>
   ·
   <a href="#private-remote-access"><strong>Remote access</strong></a>
   ·
@@ -26,17 +26,15 @@
 
 # Persistent terminals and coding agents in any browser.
 
-tlbx is a self-hosted browser control station for remote AI coding agents. Run terminal-native tools in persistent PTY sessions or connect ACP-capable agents through structured Agent Controller sessions—on the machines that own your repos, credentials, and tools. Supervise both from any desktop, tablet, or phone browser.
+tlbx lets you use your computer's terminals and coding agents from a browser. Install it on your Windows, macOS or Linux machine, then open it from your desktop, tablet or phone. Your tools keep running when you close the browser or switch devices, as long as the host stays awake and online.
 
-> **tlbx is the new name of MidTerm.** Existing installs update in place. The `mt`, `mthost`, and `mtagenthost` executables, service identities, settings, session data, and release asset names remain compatible.
+Run Codex, Claude Code, OpenCode, your usual shell, tests and dev servers in separate sessions. See files, Git changes and your app preview beside the work. tlbx is free and open source; your agent provider's usual charges still apply.
 
-The browser is the control surface, not the runtime: close it, change devices, or travel, and the agents, PTYs, tests, and servers keep running. Terminal and Agent Controller sessions share one sidebar, repository context, files, browser tooling, and access boundary.
-
-Technical guides: **[Agent Controller](https://tlbx.ai/agent-controller)** · **[remote coding agents](https://tlbx.ai/remote-coding-agents)** · **[coding-agent web terminal](https://tlbx.ai/coding-agent-web-terminal)** · **[features](https://tlbx.ai/features)** · **[architecture](https://tlbx.ai/architecture)** · **[install](https://tlbx.ai/install)**
+**[Install tlbx](#install)** · **[Explore the features](https://tlbx.ai/features)** · **[How it works](https://tlbx.ai/architecture)**
 
 ## Product screenshots
 
-Structured Agent Controller history and normal terminal sessions stay adjacent in one tlbx workspace.
+Follow agent conversations, review changes and check the running app in one browser tab.
 
 <p align="center">
   <img src="docs/marketing/readme/agent-controller.webp" alt="A tlbx Agent Controller session showing structured agent history, a read-only tool call and a concise assistant response beside normal terminal sessions" width="100%">
@@ -58,42 +56,40 @@ Structured Agent Controller history and normal terminal sessions stay adjacent i
 
 | Session type | Use it for | What tlbx renders |
 | ------------ | ---------- | ----------------- |
-| **Terminal Session** | Any shell, CLI, TUI, test watcher, server, or terminal-native agent | A real persistent PTY with server-side scrollback |
-| **Agent Controller Session** | ACP-capable agents | Canonical turns, tools, diffs, questions, approvals, reasoning, and provider controls |
+| **Terminal Session** | Shells, command-line agents, editors, tests and servers | Your usual terminal, with output retained on the host |
+| **Agent Controller Session** | Supported coding agents | A conversation view with tool calls, code changes, questions and approval buttons |
 
-Terminal sessions remain universal. Agent Controller is a prominent second surface for compatible agents, not a replacement for the terminal and never a mode inferred from terminal output.
+Choose the session type when you launch a tool. Both share the sidebar, files, Git view and app preview. [See supported agents](https://tlbx.ai/agent-controller).
 
 ## Any shell, any terminal app
 
-tlbx is a general terminal first. Run **pwsh, bash, or zsh** on Windows, macOS, and Linux hosts—and any program that speaks to a real PTY: `btop`, `vim`, `lazygit`, database shells, build watchers. Split sessions into tmux-style pane layouts and keep them all in one browser tab.
+Use **PowerShell, bash or zsh**, and terminal apps such as `btop`, `vim`, `lazygit` and database shells. Split sessions into panes to watch a build, edit files and run commands side by side.
 
 <p align="center">
   <img src="docs/marketing/readme/any-terminal.webp" alt="btop system monitor running full-screen in a tlbx terminal session, with CPU, memory, disk, network and process panels" width="100%">
 </p>
 
-## Agent CLI ergonomics
+## Working with coding agents
 
-tlbx runs any terminal-native tool in a real PTY, but it is shaped around long-running coding agents:
+Keep several agents running and make their work easier to follow:
 
-- **Run many:** split, reorder, bookmark, and revisit independent agent, shell, test, and server sessions.
-- **Paste screenshots normally:** `Ctrl+V` / `Cmd+V` uploads the image to the host and inserts its path. Structured agent sessions stage it as an attachment.
-- **Compose real prompts:** multiline input, per-session drafts, files, drag-and-drop, camera capture, reusable actions, and scheduled follow-ups.
-- **Reuse exact inputs:** each session's **History** top-bar menu (`Alt+H` for the active session) keeps direct Enter-submitted text, multiline prompts, pastes, images, and files replayable in place.
-- **Let agents operate tlbx:** generated `mt` helpers expose history, capabilities, direct multi-session dispatch, ordered events, and the control plane as stable JSON.
-- **Verify the result:** open the app beside the agent; inspect DOM, console/proxy logs, responsive layouts, and screenshots.
-- **Leave and return:** sessions survive browser disconnects, device changes, and travel.
+- **Organize sessions:** name, split, reorder and bookmark agents, shells and servers.
+- **Send screenshots:** `Ctrl+V` / `Cmd+V` uploads an image and gives the terminal its file path. Agent Controller adds it as an attachment.
+- **Write longer prompts:** use multiline input, saved drafts, file attachments and scheduled follow-ups.
+- **Reuse input:** open **History** (`Alt+H`) to resend commands, prompts, images or files.
+- **Let agents use the workspace:** the `mt` helpers let them send prompts, read terminal output and inspect or control the app preview.
+- **Check the result:** open your app beside the agent, try different window sizes and inspect screenshots or browser logs.
+- **Continue elsewhere:** reconnect to the same work from another browser.
 
-For agents that implement the open [Agent Client Protocol (ACP)](https://agentclientprotocol.com/), tlbx provides a structured Agent Controller surface instead of interpreting terminal output. tlbx 10.9.0 includes built-in launch definitions for **Codex**, **Grok Build**, **OpenCode**, **Gemini CLI**, and **GitHub Copilot CLI**, plus validated local definitions through `acp-agents.json`. Codex, Grok Build, and Copilot CLI have completed end-to-end turns in current validation; Gemini still depends on valid local Google credentials, while OpenCode assistant output depends on its selected provider. Claude Code remains available through its terminal-native CLI and is not advertised as a verified ACP-v1 built-in.
+Agent Controller has built-in launch options for **Codex**, **Grok Build**, **OpenCode**, **Gemini CLI** and **GitHub Copilot CLI**. Features depend on the agent and its configured provider. You can add compatible [ACP](https://agentclientprotocol.com/) agents through `acp-agents.json`. **Claude Code** runs in a normal terminal session.
 
-## Not SSH in a browser
+## Access your working machines
 
-SSH opens a shell connection. tlbx reopens the machine's living context: agents, terminals, files, Git, notes, logs, and app previews.
-
-Run one independent tlbx instance per host. Open your home workstation, office laptop, or server as adjacent tabs. Bring LAN, VPN, or reverse-tunnel connectivity; tlbx becomes the working interface.
+Install tlbx on each workstation or server you want to use. Open them in separate browser tabs, or connect them through tlbx's Hub. Each machine keeps its own files, tools and sessions.
 
 ## Install
 
-The native installer configures the service, password-protected HTTPS, and updates.
+Run one command on the machine where your tools should run. The installer sets up tlbx with password-protected HTTPS and updates.
 
 **macOS / Linux**
 
@@ -107,44 +103,42 @@ curl -fsSL https://get.tlbx.ai/install.sh | bash
 irm https://get.tlbx.ai/install.ps1 | iex
 ```
 
-The installer starts tlbx, waits until its process and HTTPS health endpoint are ready, and then prints clickable localhost and available Tailscale URLs for the configured port. Choose service mode for a host that should survive logouts and reboots; user mode needs no administrator access.
+Open the address printed by the installer. Choose service mode to start tlbx automatically after login or reboot; user mode needs no administrator access. Running programs still require the host to stay awake.
 
 These commands install the current stable release. Add `--dev` on macOS/Linux or `-Dev` on Windows only when you explicitly want the prerelease channel.
 
 ## Private remote access
 
-tlbx is not a VPN or hosted relay. You choose the network path.
+Connect your host and client devices through a trusted LAN or a private VPN such as [Tailscale](https://tailscale.com/). Then open the host's private tlbx address in your browser.
 
-**Recommended default:** put the tlbx host and your client devices in the same [Tailscale](https://tailscale.com/) tailnet—or use an equivalent WireGuard mesh VPN—and open tlbx through its private address instead of exposing it publicly.
-
-This is a strong security baseline: tailnet traffic is end-to-end encrypted, and [grants/ACLs](https://tailscale.com/docs/features/access-control) can restrict which identities and devices reach the host. Keep tlbx's HTTPS/password authentication enabled, use least-privilege rules, and keep both products updated.
+Keep HTTPS and password authentication enabled. Restrict network access to the people and devices that need it, and keep tlbx and your VPN updated.
 
 Cloudflare Tunnel, nginx/Caddy, LAN, and other private-network setups also work.
 
 > [!IMPORTANT]
-> tlbx has no repository-hosting cloud. Repos, credentials, tools, and processes stay on each host. Agent-provider traffic remains subject to that provider's configuration and terms.
+> Repositories, credentials and processes stay on your host. Coding agents may send data to their model provider according to their configuration and terms.
 
-## System boundary
+## Where things run
 
 | Part          | Behavior                                                                                   |
 | ------------- | ------------------------------------------------------------------------------------------ |
-| **Host**      | One independent tlbx instance exposes one machine                                       |
-| **Execution** | `mthost` owns real PTYs; `mtagenthost` owns provider-backed Agent Controller runtimes    |
-| **Client**    | Any authorized browser; several hosts can sit in adjacent tabs                             |
-| **Lifetime**  | Browser connections are transient; agents, shells, tests, and servers persist              |
-| **Context**   | Working directory, scrollback, Git, files, notes, logs, and previews stay with the session |
+| **Host**      | Your workstation or server runs tlbx and your tools |
+| **Execution** | `mthost` runs terminals; `mtagenthost` runs Agent Controller sessions |
+| **Client**    | A browser on your desktop, tablet or phone |
+| **Lifetime**  | Sessions keep running when the browser disconnects, while the host stays awake |
+| **Context**   | Files, Git changes, retained output, notes and previews belong to the session |
 
-Structured agent controls are runtime-dependent. Every terminal-native tool still works through its real PTY.
+Closing a browser keeps sessions running. Shutting down the host stops its processes.
 
-## Trial fallback
+## Quick local trial
 
-For an ephemeral loopback trial:
+For a temporary local session:
 
 ```bash
 npx @tlbx-ai/midterm
 ```
 
-The launcher downloads the stable native binary and opens a browser. Use the native installer for persistent remote operation.
+The launcher downloads the stable native binary and opens a browser. Use the native installer above for a service you can return to. The npm launcher is published separately and may lag behind native releases.
 
 ## Architecture and source
 
@@ -154,7 +148,9 @@ browser anywhere
    └── HTTPS / WebSocket ──► tlbx on office laptop ─────► agents / repos / apps
 ```
 
-tlbx uses .NET 10 Native AOT, TypeScript, and xterm.js.
+tlbx uses .NET 10 Native AOT, TypeScript and xterm.js.
+
+Previously named **MidTerm**. Existing installations update in place; executable names such as `mt`, `mthost` and `mtagenthost` remain compatible.
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Feature guide](docs/FEATURES.md)
