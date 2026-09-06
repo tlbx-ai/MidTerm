@@ -1303,7 +1303,6 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
     actions.appendChild(undockButton);
   }
 
-
   const renameButton = document.createElement('button');
   renameButton.className = 'session-rename';
   renameButton.setAttribute('role', 'menuitem');
