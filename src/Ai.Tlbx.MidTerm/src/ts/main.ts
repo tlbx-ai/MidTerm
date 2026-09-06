@@ -679,9 +679,6 @@ function registerCallbacks(): void {
     onSelect: selectSession,
     onDelete: deleteSession,
     onRename: startInlineRename,
-    onRepairDisplay: (sessionId: string) => {
-      void repairSessionDisplay(sessionId);
-    },
     onToggleAgentControl: toggleAgentControl,
     onPinToHistory: (sessionId: string) => {
       void pinSessionToHistory(sessionId);
@@ -795,7 +792,6 @@ const {
   enableMidtermFeatures,
   pinSessionToHistory,
   promptRenameSession,
-  repairSessionDisplay,
   renameSession,
   selectSession,
   startInlineRename,
