@@ -11,22 +11,25 @@ const mocks = vi.hoisted(() => ({
   renderUpdatePanel: vi.fn(),
   handleHiddenSessionClosed: vi.fn(),
   closeOverlay: vi.fn(),
-  detachPreview: vi.fn(),
+  detachPreview: vi.fn().mockResolvedValue({ success: true }),
   dockBack: vi.fn(),
   isDetachedOpenForSession: vi.fn(() => false),
   setDetachedPreviewViewport: vi.fn(() => false),
   setViewportSize: vi.fn(),
   openWebPreviewDock: vi.fn(),
-  setWebPreviewTarget: vi.fn(),
+  getWebPreviewTarget: vi.fn(),
+  applySessionViewportToFrame: vi.fn(() => true),
   getSessionPreview: vi.fn(() => null),
   getSessionSelectedPreviewName: vi.fn(() => 'default'),
   setSessionMode: vi.fn(),
+  setSessionViewport: vi.fn(),
   setSessionSelectedPreviewName: vi.fn((_sessionId: string, previewName?: string | null) =>
     previewName?.trim() ? previewName.trim() : 'default',
   ),
   upsertSessionPreview: vi.fn(),
   syncActiveWebPreview: vi.fn().mockResolvedValue(undefined),
   syncBackgroundWebPreview: vi.fn().mockResolvedValue(undefined),
+  closePreviewFromServer: vi.fn().mockResolvedValue(undefined),
   isSessionInLayout: vi.fn(() => false),
   restoreLayoutFromStorage: vi.fn(),
   applyServerLayoutState: vi.fn(),
@@ -106,18 +109,24 @@ vi.mock('../web/webDock', () => ({
 }));
 
 vi.mock('../web/webApi', () => ({
-  setWebPreviewTarget: mocks.setWebPreviewTarget,
+  getWebPreviewTarget: mocks.getWebPreviewTarget,
+}));
+
+vi.mock('../web/webViewport', () => ({
+  applySessionViewportToFrame: mocks.applySessionViewportToFrame,
 }));
 
 vi.mock('../web/webSessionState', () => ({
   getSessionPreview: mocks.getSessionPreview,
   getSessionSelectedPreviewName: mocks.getSessionSelectedPreviewName,
   setSessionMode: mocks.setSessionMode,
+  setSessionViewport: mocks.setSessionViewport,
   setSessionSelectedPreviewName: mocks.setSessionSelectedPreviewName,
   upsertSessionPreview: mocks.upsertSessionPreview,
 }));
 
 vi.mock('../web', () => ({
+  closePreviewFromServer: mocks.closePreviewFromServer,
   syncActiveWebPreview: mocks.syncActiveWebPreview,
   syncBackgroundWebPreview: mocks.syncBackgroundWebPreview,
 }));
@@ -209,6 +218,10 @@ async function loadHarness() {
       previewName?.trim() ? previewName.trim() : 'default',
   );
   mocks.syncActiveWebPreview.mockResolvedValue(undefined);
+  mocks.syncBackgroundWebPreview.mockResolvedValue(undefined);
+  mocks.closePreviewFromServer.mockResolvedValue(undefined);
+  mocks.detachPreview.mockResolvedValue({ success: true });
+  mocks.applySessionViewportToFrame.mockReturnValue(true);
   mocks.checkVersionAndReload.mockResolvedValue(false);
 
   resetStateChannelRuntimeForTests();
@@ -262,7 +275,7 @@ describe('stateChannel browser-ui handling', () => {
 
   it('does not switch sessions when opening a preview for a background session', async () => {
     const { stores, ws } = await loadHarness();
-    mocks.setWebPreviewTarget.mockResolvedValue({
+    mocks.getWebPreviewTarget.mockResolvedValue({
       sessionId: 'agent5678',
       previewName: 'default',
       routeKey: 'route-1',
@@ -281,19 +294,16 @@ describe('stateChannel browser-ui handling', () => {
       }),
     } as MessageEvent<string>);
 
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() =>
+      expect(mocks.syncBackgroundWebPreview).toHaveBeenCalledWith('agent5678', 'default'),
+    );
 
     expect(mocks.selectSession).not.toHaveBeenCalled();
     expect(stores.$activeSessionId.get()).toBe('user1234');
     expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
     expect(mocks.syncActiveWebPreview).not.toHaveBeenCalled();
     expect(mocks.syncBackgroundWebPreview).toHaveBeenCalledWith('agent5678', 'default');
-    expect(mocks.setWebPreviewTarget).toHaveBeenCalledWith(
-      'agent5678',
-      'default',
-      'http://localhost:3000',
-    );
+    expect(mocks.getWebPreviewTarget).toHaveBeenCalledWith('agent5678', 'default');
     expect(mocks.checkVersionAndReload).toHaveBeenCalledTimes(1);
     expect(mocks.checkVersionAndReload).toHaveBeenCalledWith({
       forceReloadOnMismatch: true,
@@ -305,6 +315,153 @@ describe('stateChannel browser-ui handling', () => {
       url: 'http://localhost:3000',
       active: true,
       targetRevision: 1,
+    });
+  });
+
+  it('rejects an obsolete open command without mutating or rendering the newer target', async () => {
+    const { ws } = await loadHarness();
+    mocks.getWebPreviewTarget.mockResolvedValue({
+      sessionId: 'agent5678',
+      previewName: 'default',
+      routeKey: 'route-1',
+      url: 'http://localhost:3001/',
+      active: true,
+      targetRevision: 2,
+    });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'browser-ui',
+        command: 'open',
+        requestId: 'open-1',
+        sessionId: 'agent5678',
+        previewName: 'default',
+        url: 'http://localhost:3000',
+        targetRevision: 1,
+      }),
+    } as MessageEvent<string>);
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    expect(mocks.upsertSessionPreview).not.toHaveBeenCalled();
+    expect(mocks.syncBackgroundWebPreview).not.toHaveBeenCalled();
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      requestId: 'open-1',
+      command: 'open',
+      success: false,
+    });
+  });
+
+  it('serializes an in-flight open before a later close for the same preview', async () => {
+    const { ws } = await loadHarness();
+    let resolveTarget!: (value: {
+      sessionId: string;
+      previewName: string;
+      routeKey: string;
+      url: string;
+      active: boolean;
+      targetRevision: number;
+    }) => void;
+    mocks.getWebPreviewTarget.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveTarget = resolve;
+      }),
+    );
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'browser-ui',
+        command: 'open',
+        sessionId: 'agent5678',
+        previewName: 'default',
+        url: 'http://localhost:3000',
+        targetRevision: 1,
+      }),
+    } as MessageEvent<string>);
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'browser-ui',
+        command: 'close',
+        sessionId: 'agent5678',
+        previewName: 'default',
+      }),
+    } as MessageEvent<string>);
+
+    await vi.waitFor(() => expect(mocks.getWebPreviewTarget).toHaveBeenCalledTimes(1));
+    expect(mocks.closePreviewFromServer).not.toHaveBeenCalled();
+
+    resolveTarget({
+      sessionId: 'agent5678',
+      previewName: 'default',
+      routeKey: 'route-1',
+      url: 'http://localhost:3000/',
+      active: true,
+      targetRevision: 1,
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.closePreviewFromServer).toHaveBeenCalledWith('agent5678', 'default'),
+    );
+  });
+
+  it('stores and applies a viewport for a background preview without activating it', async () => {
+    const { stores, ws } = await loadHarness();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'browser-ui',
+        command: 'viewport',
+        requestId: 'viewport-1',
+        sessionId: 'agent5678',
+        previewName: 'default',
+        width: 390,
+        height: 844,
+      }),
+    } as MessageEvent<string>);
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    expect(mocks.setSessionViewport).toHaveBeenCalledWith('agent5678', 'default', 390, 844);
+    expect(mocks.syncBackgroundWebPreview).toHaveBeenCalledWith('agent5678', 'default');
+    expect(mocks.applySessionViewportToFrame).toHaveBeenCalledWith('agent5678', 'default');
+    expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
+    expect(mocks.selectSession).not.toHaveBeenCalled();
+    expect(stores.$activeSessionId.get()).toBe('user1234');
+  });
+
+  it('reports a blocked detach and does not claim detached state', async () => {
+    const { ws } = await loadHarness();
+    mocks.detachPreview.mockResolvedValue({
+      success: false,
+      error: 'The browser blocked the detached preview window.',
+    });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'browser-ui',
+        command: 'detach',
+        requestId: 'detach-1',
+        sessionId: 'agent5678',
+        previewName: 'default',
+      }),
+    } as MessageEvent<string>);
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    expect(mocks.detachPreview).toHaveBeenCalledWith('agent5678', 'default', {
+      suppressFocus: true,
+    });
+    expect(mocks.setSessionMode).not.toHaveBeenCalled();
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      requestId: 'detach-1',
+      command: 'detach',
+      success: false,
     });
   });
 
@@ -383,14 +540,14 @@ describe('stateChannel browser-ui handling', () => {
     expect(mocks.checkVersionAndReload).toHaveBeenCalledWith({
       forceReloadOnMismatch: true,
     });
-    expect(mocks.setWebPreviewTarget).not.toHaveBeenCalled();
+    expect(mocks.getWebPreviewTarget).not.toHaveBeenCalled();
     expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
     expect(mocks.selectSession).not.toHaveBeenCalled();
   });
 
   it('does not switch sessions when browser open explicitly disables activation', async () => {
     const { stores, ws } = await loadHarness();
-    mocks.setWebPreviewTarget.mockResolvedValue({
+    mocks.getWebPreviewTarget.mockResolvedValue({
       sessionId: 'agent5678',
       previewName: 'default',
       routeKey: 'route-1',
@@ -410,8 +567,9 @@ describe('stateChannel browser-ui handling', () => {
       }),
     } as MessageEvent<string>);
 
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() =>
+      expect(mocks.syncBackgroundWebPreview).toHaveBeenCalledWith('agent5678', 'default'),
+    );
 
     expect(mocks.selectSession).not.toHaveBeenCalled();
     expect(stores.$activeSessionId.get()).toBe('user1234');
@@ -568,7 +726,7 @@ describe('stateChannel browser-ui handling', () => {
 
   it('activates the target session when browser open explicitly requests it', async () => {
     const { stores, ws } = await loadHarness();
-    mocks.setWebPreviewTarget.mockResolvedValue({
+    mocks.getWebPreviewTarget.mockResolvedValue({
       sessionId: 'agent5678',
       previewName: 'default',
       routeKey: 'route-1',
@@ -591,8 +749,11 @@ describe('stateChannel browser-ui handling', () => {
       }),
     } as MessageEvent<string>);
 
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() =>
+      expect(mocks.selectSession).toHaveBeenCalledWith('agent5678', {
+        closeSettingsPanel: false,
+      }),
+    );
 
     expect(mocks.selectSession).toHaveBeenCalledWith('agent5678', {
       closeSettingsPanel: false,

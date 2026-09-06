@@ -31,7 +31,7 @@ import {
   applyTerminalScalingSync,
   fitSessionToScreen,
   fitTerminalToContainer,
-  refreshTerminalPresentation,
+  revealTerminalPresentation,
 } from '../terminal/scaling';
 import { t } from '../i18n';
 import { getAgentSurfaceLabel, resolveSessionSurfaceMode } from '../sessionSurface';
@@ -355,7 +355,7 @@ export function switchTab(
     const termState = sessionTerminals.get(sessionId);
     if (termState) {
       requestAnimationFrame(() => {
-        refreshTerminalPresentation(sessionId, termState);
+        revealTerminalPresentation(sessionId, termState);
 
         if (isSessionInLayout(sessionId)) {
           const terminalPanel = termState.container.parentElement;

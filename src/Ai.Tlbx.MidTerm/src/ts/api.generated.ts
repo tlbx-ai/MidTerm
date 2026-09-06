@@ -4627,7 +4627,7 @@ export interface components {
     ScrollbarStyleSetting: 'off' | 'hover' | 'always';
     SecurityStatus: {
       passwordProtected: boolean;
-      certificateTrusted: boolean;
+      certificateConfigured: boolean;
       warnings: string[];
     };
     SessionActivityHeatSample: {

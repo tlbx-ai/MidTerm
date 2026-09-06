@@ -40,12 +40,14 @@ import {
   setDetachedPreviewViewport,
 } from '../web/webDetach';
 import { setViewportSize, openWebPreviewDock } from '../web/webDock';
-import { setWebPreviewTarget } from '../web/webApi';
+import { getWebPreviewTarget } from '../web/webApi';
+import { applySessionViewportToFrame } from '../web/webViewport';
 import {
   getSessionPreview,
   getSessionSelectedPreviewName,
   setSessionMode,
   setSessionSelectedPreviewName,
+  setSessionViewport,
   upsertSessionPreview,
 } from '../web/webSessionState';
 import { closePreviewFromServer, syncActiveWebPreview, syncBackgroundWebPreview } from '../web';
@@ -93,6 +95,7 @@ interface BrowserUiMessage {
   deviceAction?: string;
   deviceProfile?: string;
   requestId?: string;
+  targetRevision?: number;
   deltaY?: number;
   steps?: number;
 }
@@ -158,6 +161,7 @@ const pendingCommands = new Map<
     timeout: number;
   }
 >();
+const browserUiCommandQueues = new Map<string, Promise<void>>();
 
 function rejectPendingCommands(reason: string): void {
   pendingCommands.forEach((command, id) => {
@@ -296,7 +300,7 @@ function handleTmuxFocusMessage(data: TmuxFocusMessage): void {
 
 function handleDirectStateMessage(data: StateWsMessage): data is DirectStateMessage {
   if (data.type === 'browser-ui') {
-    void handleBrowserUiCommand(data);
+    enqueueBrowserUiCommand(data);
     return true;
   }
 
@@ -313,6 +317,18 @@ function handleDirectStateMessage(data: StateWsMessage): data is DirectStateMess
   }
 
   return false;
+}
+
+function enqueueBrowserUiCommand(msg: BrowserUiMessage): void {
+  const key = `${msg.sessionId ?? 'active'}::${msg.previewName ?? 'default'}`;
+  const previous = browserUiCommandQueues.get(key) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(() => handleBrowserUiCommand(msg));
+  browserUiCommandQueues.set(key, current);
+  void current.finally(() => {
+    if (browserUiCommandQueues.get(key) === current) {
+      browserUiCommandQueues.delete(key);
+    }
+  });
 }
 
 function handleMainBrowserStatus(data: MainBrowserStatusMessage): void {
@@ -743,54 +759,95 @@ export async function sendCommand<T = unknown>(
 async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
   if (isEmbeddedWebPreviewContext() && msg.command === 'detach') {
     log.verbose(() => `Ignoring browser detach command inside embedded preview`);
+    await reportBrowserUiCommandResult(
+      msg,
+      false,
+      'Detach must be handled by the top-level tlbx window.',
+    );
     return;
   }
 
   const reloadRequested = await checkVersionAndReload({ forceReloadOnMismatch: true });
   if (reloadRequested) {
-    log.info(() => `Browser UI command deferred until frontend reload: ${msg.command}`);
+    log.info(
+      () => `Browser UI command rejected because a frontend reload is required: ${msg.command}`,
+    );
+    await reportBrowserUiCommandResult(
+      msg,
+      false,
+      'The tlbx frontend is reloading to match the server. Retry the browser command.',
+    );
     return;
   }
 
-  switch (msg.command) {
-    case 'detach':
-      handleDetachBrowserUiCommand(msg);
-      break;
-    case 'dock':
-      handleDockBrowserUiCommand(msg);
-      break;
-    case 'viewport':
-      handleViewportBrowserUiCommand(msg);
-      break;
-    case 'open':
-      handleOpenBrowserUiCommand(msg);
-      break;
-    case 'close':
-      if (msg.sessionId) {
-        await closePreviewFromServer(msg.sessionId, msg.previewName);
-      }
-      break;
-    case 'mobile-device':
-      if (msg.deviceAction) {
-        void import('../web/mobileDeviceController')
-          .then(({ controlMobileDevice }) =>
-            controlMobileDevice(
-              msg.deviceAction as MobileDeviceAction,
-              msg.sessionId,
-              msg.previewName,
-              msg.deviceProfile,
-            ),
-          )
-          .catch((error: unknown) => {
-            log.warn(() => `Mobile device command failed: ${String(error)}`);
-          });
-      }
-      break;
-    case 'agent-wheel':
-      await handleAgentWheelBrowserUiCommand(msg);
-      break;
-    default:
-      log.warn(() => `Unknown browser-ui command: ${msg.command}`);
+  try {
+    let result: { success: boolean; error?: string } = { success: true };
+    switch (msg.command) {
+      case 'detach':
+        result = await handleDetachBrowserUiCommand(msg);
+        break;
+      case 'dock':
+        result = handleDockBrowserUiCommand(msg);
+        break;
+      case 'viewport':
+        result = await handleViewportBrowserUiCommand(msg);
+        break;
+      case 'open':
+        result = await handleOpenBrowserUiCommand(msg);
+        break;
+      case 'close':
+        if (msg.sessionId) {
+          await closePreviewFromServer(msg.sessionId, msg.previewName);
+        }
+        break;
+      case 'mobile-device':
+        if (msg.deviceAction) {
+          void import('../web/mobileDeviceController')
+            .then(({ controlMobileDevice }) =>
+              controlMobileDevice(
+                msg.deviceAction as MobileDeviceAction,
+                msg.sessionId,
+                msg.previewName,
+                msg.deviceProfile,
+              ),
+            )
+            .catch((error: unknown) => {
+              log.warn(() => `Mobile device command failed: ${String(error)}`);
+            });
+        }
+        break;
+      case 'agent-wheel':
+        await handleAgentWheelBrowserUiCommand(msg);
+        return;
+      default:
+        result = { success: false, error: `Unknown browser-ui command: ${msg.command}` };
+        log.warn(() => result.error ?? 'Unknown browser-ui command');
+    }
+
+    await reportBrowserUiCommandResult(msg, result.success, result.error);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.warn(() => `Browser UI command failed: ${message}`);
+    await reportBrowserUiCommandResult(msg, false, message);
+  }
+}
+
+async function reportBrowserUiCommandResult(
+  msg: BrowserUiMessage,
+  success: boolean,
+  error?: string,
+): Promise<void> {
+  if (!msg.requestId) {
+    return;
+  }
+
+  const response = await fetch('/api/browser/ui-result', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId: msg.requestId, command: msg.command, success, error }),
+  });
+  if (!response.ok) {
+    log.warn(() => `Browser UI result delivery failed: HTTP ${response.status}`);
   }
 }
 
@@ -829,20 +886,21 @@ async function handleAgentWheelBrowserUiCommand(msg: BrowserUiMessage): Promise<
   }
 }
 
-function handleDetachBrowserUiCommand(msg: BrowserUiMessage): void {
+async function handleDetachBrowserUiCommand(
+  msg: BrowserUiMessage,
+): Promise<{ success: boolean; error?: string }> {
   const target = resolveBrowserUiTarget(msg);
   if (!target) {
-    return;
+    return { success: false, error: 'No browser preview target could be resolved.' };
   }
 
-  setSessionMode(target.sessionId, target.previewName, 'detached');
-  void detachPreview(target.sessionId, target.previewName);
+  return detachPreview(target.sessionId, target.previewName, { suppressFocus: true });
 }
 
-function handleDockBrowserUiCommand(msg: BrowserUiMessage): void {
+function handleDockBrowserUiCommand(msg: BrowserUiMessage): { success: boolean; error?: string } {
   const target = resolveBrowserUiTarget(msg);
   if (!target) {
-    return;
+    return { success: false, error: 'No browser preview target could be resolved.' };
   }
 
   setSessionMode(target.sessionId, target.previewName, 'docked');
@@ -850,34 +908,36 @@ function handleDockBrowserUiCommand(msg: BrowserUiMessage): void {
   if ($activeSessionId.get() === target.sessionId) {
     void syncActiveWebPreview();
   }
+  return { success: true };
 }
 
-function handleViewportBrowserUiCommand(msg: BrowserUiMessage): void {
+async function handleViewportBrowserUiCommand(
+  msg: BrowserUiMessage,
+): Promise<{ success: boolean; error?: string }> {
   const target = resolveBrowserUiTarget(msg);
   if (!target) {
-    return;
+    return { success: false, error: 'No browser preview target could be resolved.' };
   }
 
-  if (
-    applyDetachedPreviewViewport(
-      target.sessionId,
-      target.previewName,
-      msg.width ?? 0,
-      msg.height ?? 0,
-    )
-  ) {
-    return;
+  const width = msg.width ?? 0;
+  const height = msg.height ?? 0;
+  setSessionViewport(target.sessionId, target.previewName, width, height);
+
+  if (applyDetachedPreviewViewport(target.sessionId, target.previewName, width, height)) {
+    return { success: true };
   }
 
   setSessionMode(target.sessionId, target.previewName, 'docked');
   if ($activeSessionId.get() !== target.sessionId) {
-    return;
+    await syncBackgroundWebPreview(target.sessionId, target.previewName);
+    applySessionViewportToFrame(target.sessionId, target.previewName);
+    return { success: true };
   }
 
   openWebPreviewDock();
-  void syncActiveWebPreview().finally(() => {
-    setViewportSize(msg.width ?? 0, msg.height ?? 0);
-  });
+  await syncActiveWebPreview();
+  setViewportSize(width, height);
+  return { success: true };
 }
 
 function applyDetachedPreviewViewport(
@@ -894,18 +954,19 @@ function applyDetachedPreviewViewport(
   );
 }
 
-function handleOpenBrowserUiCommand(msg: BrowserUiMessage): void {
+async function handleOpenBrowserUiCommand(
+  msg: BrowserUiMessage,
+): Promise<{ success: boolean; error?: string }> {
   const target = resolveBrowserUiTarget(msg);
   if (!target || !msg.url) {
-    return;
+    return { success: false, error: 'The browser open command is missing its target or URL.' };
   }
 
-  setSessionMode(target.sessionId, target.previewName, 'docked');
-  void handleBrowserOpen(
+  return handleBrowserOpen(
     target.sessionId,
     target.previewName,
-    msg.url,
     msg.activateSession === true,
+    msg.targetRevision,
   );
 }
 
@@ -928,12 +989,21 @@ function resolveBrowserUiTarget(
 async function handleBrowserOpen(
   sessionId: string,
   previewName: string,
-  url: string,
   activateSession = false,
-): Promise<void> {
-  const result = await setWebPreviewTarget(sessionId, previewName, url);
+  expectedTargetRevision?: number,
+): Promise<{ success: boolean; error?: string }> {
+  const result = await getWebPreviewTarget(sessionId, previewName);
   if (!result?.active) {
-    return;
+    return {
+      success: false,
+      error: 'The browser target was closed before the open command completed.',
+    };
+  }
+  if (expectedTargetRevision !== undefined && result.targetRevision !== expectedTargetRevision) {
+    return {
+      success: false,
+      error: 'A newer browser target replaced this open command before it completed.',
+    };
   }
 
   upsertSessionPreview(result);
@@ -944,11 +1014,12 @@ async function handleBrowserOpen(
   }
   if ($activeSessionId.get() !== sessionId) {
     await syncBackgroundWebPreview(sessionId, previewName);
-    return;
+    return { success: true };
   }
-  $webPreviewUrl.set(url);
+  $webPreviewUrl.set(result.url ?? '');
   openWebPreviewDock();
   await syncActiveWebPreview();
+  return { success: true };
 }
 
 /**
@@ -1150,6 +1221,7 @@ export function resetStateChannelRuntimeForTests(): void {
     clearTimeout(cmd.timeout);
   });
   pendingCommands.clear();
+  browserUiCommandQueues.clear();
   pendingDocks.length = 0;
   layoutHydrated = false;
   stateWsHasConnected = false;

@@ -13,6 +13,7 @@
  *   TLBX_PROBE_BACKGROUND_MS=300000
  *   TLBX_PROBE_WARMUP_MS=30000
  *   TLBX_PROBE_BACKGROUND_MODE=tab|minimize
+ *   TLBX_PROBE_VIEWPORT=390x800
  *   TLBX_PROBE_PROFILE_DIR=C:\path\to\dedicated-profile
  *   TLBX_PROBE_TRACE=true|false
  */
@@ -33,6 +34,12 @@ const backgroundCommand = process.env.TLBX_PROBE_BACKGROUND_COMMAND || "";
 const expectedTerminalText = process.env.TLBX_PROBE_EXPECT_TERMINAL_TEXT || "";
 const traceEnabled = process.env.TLBX_PROBE_TRACE !== "false";
 const backgroundMode = process.env.TLBX_PROBE_BACKGROUND_MODE || "tab";
+const viewportMatch = /^(\d+)x(\d+)$/.exec(
+  process.env.TLBX_PROBE_VIEWPORT || "",
+);
+const emulatedViewport = viewportMatch
+  ? { width: Number(viewportMatch[1]), height: Number(viewportMatch[2]) }
+  : null;
 if (!["tab", "minimize"].includes(backgroundMode)) {
   throw new Error(
     `TLBX_PROBE_BACKGROUND_MODE must be "tab" or "minimize", got ${backgroundMode}.`,
@@ -1030,6 +1037,21 @@ try {
     client.send("Runtime.enable"),
     client.send("Network.enable"),
   ]);
+  if (emulatedViewport) {
+    await Promise.all([
+      client.send("Emulation.setDeviceMetricsOverride", {
+        ...emulatedViewport,
+        screenWidth: emulatedViewport.width,
+        screenHeight: emulatedViewport.height,
+        deviceScaleFactor: 3,
+        mobile: true,
+      }),
+      client.send("Emulation.setTouchEmulationEnabled", {
+        enabled: true,
+        maxTouchPoints: 5,
+      }),
+    ]);
+  }
   for (const cookie of parseCookies(cookieHeader)) {
     const result = await client.send("Network.setCookie", cookie);
     if (result.success === false) {
@@ -1146,6 +1168,21 @@ try {
     client.send("Page.enable"),
     client.send("Runtime.enable"),
   ]);
+  if (emulatedViewport) {
+    await Promise.all([
+      client.send("Emulation.setDeviceMetricsOverride", {
+        ...emulatedViewport,
+        screenWidth: emulatedViewport.width,
+        screenHeight: emulatedViewport.height,
+        deviceScaleFactor: 3,
+        mobile: true,
+      }),
+      client.send("Emulation.setTouchEmulationEnabled", {
+        enabled: true,
+        maxTouchPoints: 5,
+      }),
+    ]);
+  }
   try {
     immediateReactivationState = await evaluate(
       client,
@@ -1314,6 +1351,7 @@ const summary = {
   profileDir,
   warmupMs,
   backgroundMode,
+  emulatedViewport,
   backgroundMs,
   processSampleMs,
   traceEnabled,

@@ -30,6 +30,7 @@ import {
   isTerminalVisible,
   remeasureTerminalCells,
   refreshTerminalRenderer,
+  setupTerminalForegroundRecovery,
 } from './presentationRefresh';
 import { ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT } from '../smartInput/layout';
 import { isTerminalViewingScrollback } from './scrollback';
@@ -64,7 +65,6 @@ import { commitTerminalPresentationDom } from './terminalPresentationCommit';
 import {
   isMobileTerminalViewport,
   observeMobileVerticalViewportChange,
-  rememberCurrentMobileViewportSnapshot,
   setMobileVerticalStability,
   shouldPreserveMobileTerminalRows,
   syncMobileVerticalStableTerminals,
@@ -112,6 +112,16 @@ export function refreshTerminalPresentation(
     refreshTerminalRenderer(currentState);
   });
 }
+export function revealTerminalPresentation(sessionId: string, state: TerminalState): void {
+  if (state.pendingVisualRefresh) {
+    refreshTerminalPresentation(sessionId, state);
+    return;
+  }
+  if (state.opened && isTerminalVisible(state)) {
+    state.terminal.refresh(0, Math.max(0, state.terminal.rows - 1));
+  }
+}
+
 function getDockPanelWidth(): number {
   let total = 0;
   for (const id of ['git-dock', 'commands-dock', 'file-viewer-dock', 'web-preview-dock']) {
@@ -656,10 +666,6 @@ function resizeTerminalToFit(
   }
 }
 
-function isSoftKeyboardVisible(): boolean {
-  return document.body.classList.contains('keyboard-visible');
-}
-
 function fitSessionToScreenInternal(sessionId: string, retriesRemaining: number): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
@@ -713,9 +719,6 @@ function fitSessionToScreenInternal(sessionId: string, retriesRemaining: number)
     rowsToApply,
     state,
   );
-  if (!isSoftKeyboardVisible()) {
-    terminalManager.focusActiveTerminal();
-  }
 }
 
 /**
@@ -763,7 +766,6 @@ function fitTerminalToContainerInternal(
  */
 export function applyTerminalScalingSync(state: TerminalState): void {
   if (!state.opened || !isTerminalVisible(state)) {
-    state.pendingVisualRefresh = true;
     return;
   }
 
@@ -998,7 +1000,7 @@ function autoResizeAllTerminalsInternal(): void {
   syncMobileVerticalStableTerminals();
 
   sessionTerminals.forEach((state, sessionId) => {
-    if (!state.opened) return;
+    if (!state.opened || !isTerminalVisible(state)) return;
 
     if (!hasTerminalSizeControl(sessionId)) {
       applyTerminalScaling(sessionId, state);
@@ -1331,28 +1333,29 @@ export function setupResizeObserver(): void {
     scheduleFooterReserveResize();
   });
 
-  const handleForegroundRecovery = () => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-      return;
-    }
+  setupTerminalForegroundRecovery(() => {
     scheduleForegroundResizeRecovery();
     claimEligibleVisibleTerminalSizes(true);
-  };
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      handleForegroundRecovery();
-    }
   });
-  window.addEventListener('focus', handleForegroundRecovery);
-  window.addEventListener('pageshow', handleForegroundRecovery);
 
   ensureTerminalContainerResizeObserver();
-  $terminalSizeControls.subscribe(() => {
+  let previousControls = $terminalSizeControls.get();
+  $terminalSizeControls.subscribe((controls) => {
+    const changedIds = Object.keys(controls).filter((id) => controls[id] !== previousControls[id]);
+    previousControls = controls;
+    if (changedIds.length === 0) return;
     requestAnimationFrame(() => {
-      rememberCurrentMobileViewportSnapshot();
-      ensureTerminalContainerResizeObserver();
-      autoResizeAllTerminalsImmediate();
+      for (const sessionId of changedIds) {
+        const state = sessionTerminals.get(sessionId);
+        if (!state?.opened || !isTerminalVisible(state)) continue;
+        if (hasTerminalSizeControl(sessionId)) {
+          const pane = state.container.closest<HTMLElement>('.layout-leaf');
+          if (pane) fitTerminalToContainer(sessionId, pane);
+          else fitSessionToScreen(sessionId);
+        } else {
+          applyTerminalScaling(sessionId, state);
+        }
+      }
       claimEligibleVisibleTerminalSizes();
     });
   });

@@ -110,7 +110,7 @@ public sealed partial class MidTermSettingsPublic
     public string? RunAsUserSid { get; set; }
 
     // Authentication
-    public bool AuthenticationEnabled { get; set; } = false;
+    public bool AuthenticationEnabled { get; set; } = true;
 
     // HTTPS
     public string? CertificatePath { get; set; }

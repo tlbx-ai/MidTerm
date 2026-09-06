@@ -130,7 +130,7 @@ public sealed partial class MidTermSettingsPublic
             Language = settings.Language,
             RunAsUser = settings.RunAsUser,
             RunAsUserSid = settings.RunAsUserSid,
-            AuthenticationEnabled = settings.AuthenticationEnabled,
+            AuthenticationEnabled = true,
             CertificatePath = settings.CertificatePath,
             HubMachines = settings.HubMachines
                 .Select(machine => new HubMachineInfo

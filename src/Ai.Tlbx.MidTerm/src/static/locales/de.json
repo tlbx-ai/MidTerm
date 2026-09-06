@@ -143,7 +143,7 @@
   "settings.appearance.backgroundUpload": "Bild hochladen",
   "settings.appearance.backgroundRemove": "Entfernen",
   "settings.appearance.backgroundNone": "Kein Bild hochgeladen",
-  "settings.appearance.backgroundHint": "Lädt ein PNG oder JPG hoch und speichert es neben den tlbx-Protokollen.",
+  "settings.appearance.backgroundHint": "PNG, JPG oder WebP, bis 10 MB / 64 Megapixel. Wird als WebP mit 85 % Qualität und maximal 2048 Pixeln an der längsten Seite gespeichert.",
   "settings.appearance.backgroundEnabled": "Hintergrundbild anzeigen",
   "settings.appearance.backgroundKenBurns": "Animierter Ken-Burns-Effekt",
   "settings.appearance.backgroundKenBurnsZoom": "Ken-Burns-Zoom",

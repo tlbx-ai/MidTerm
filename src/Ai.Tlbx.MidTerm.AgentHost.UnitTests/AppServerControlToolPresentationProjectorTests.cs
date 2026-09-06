@@ -40,6 +40,32 @@ public sealed class AppServerControlToolPresentationProjectorTests
     }
 
     [Fact]
+    public void FromCodex_IgnoresNullNumericFieldsWhileToolIsRunning()
+    {
+        using var document = JsonDocument.Parse(
+            """
+            {
+              "item": {
+                "type": "commandExecution",
+                "command": "dotnet run",
+                "exitCode": null,
+                "resultCount": null
+              }
+            }
+            """);
+
+        var presentation = AppServerControlToolPresentationProjector.FromCodex(
+            "command_execution",
+            "in_progress",
+            "Command started",
+            document.RootElement);
+
+        Assert.Equal("dotnet run", presentation.Subject);
+        Assert.Null(presentation.ExitCode);
+        Assert.Null(presentation.ResultCount);
+    }
+
+    [Fact]
     public void FromClaude_UsesStructuredToolIdentityAndPath()
     {
         using var document = JsonDocument.Parse("""{"file_path":"Q:\\repos\\tlbx\\README.md"}""");

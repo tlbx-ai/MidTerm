@@ -1366,6 +1366,7 @@ function setStatusIndicatorMessage(severity: 'info' | 'warn' | 'error', message:
 }
 
 async function refreshBrowserPreviewStatus(): Promise<void> {
+  if (document.visibilityState !== 'visible') return;
   const dock = document.getElementById('web-preview-dock');
   if (dock?.classList.contains('hidden')) {
     return;

@@ -475,7 +475,22 @@ function publishTerminalSizeControls(): void {
   terminalSizeControlSources.forEach((statuses) => {
     Object.assign(combined, statuses);
   });
-  $terminalSizeControls.set(combined);
+  const previous = $terminalSizeControls.get();
+  let changed = Object.keys(previous).length !== Object.keys(combined).length;
+  for (const [sessionId, status] of Object.entries(combined)) {
+    const oldStatus = previous[sessionId];
+    const keys = Object.keys(status) as (keyof TerminalSizeControlStatus)[];
+    if (
+      oldStatus &&
+      Object.keys(oldStatus).length === keys.length &&
+      keys.every((key) => oldStatus[key] === status[key])
+    ) {
+      combined[sessionId] = oldStatus;
+    } else {
+      changed = true;
+    }
+  }
+  if (changed) $terminalSizeControls.set(combined);
 }
 
 export function setTerminalSizeControls(statuses: TerminalSizeControlStatus[]): void {

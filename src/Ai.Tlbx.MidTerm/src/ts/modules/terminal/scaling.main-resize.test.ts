@@ -4,6 +4,7 @@ import { $activeSessionId, $currentSettings, $isMainBrowser, $sessions } from '.
 import { dom, sessionTerminals } from '../../state';
 import {
   applyTerminalScaling,
+  revealTerminalPresentation,
   fitSessionToScreen,
   scheduleForegroundResizeRecovery,
 } from './scaling';
@@ -241,6 +242,19 @@ describe('fitSessionToScreen', () => {
     vi.clearAllMocks();
   });
 
+  it('reveals an unchanged terminal without clearing or remeasuring its renderer', () => {
+    const harness = createFitHarness();
+    const repaint = vi.fn();
+    const state = { ...harness.state, terminal: { ...harness.terminal, refresh: repaint } };
+    revealTerminalPresentation('s1', state as never);
+    expect(repaint).toHaveBeenCalledWith(0, harness.terminal.rows - 1);
+    expect(mocks.refreshTerminalRenderer).not.toHaveBeenCalled();
+    expect(mocks.remeasureTerminalCells).not.toHaveBeenCalled();
+    state.pendingVisualRefresh = true;
+    revealTerminalPresentation('s1', state as never);
+    expect(mocks.refreshTerminalRenderer).toHaveBeenCalledTimes(1);
+  });
+
   it('fits the main-browser viewport without forcing a renderer refresh when cell metrics exist', () => {
     const harness = createFitHarness();
     sessionTerminals.set('s1', harness.state as never);
@@ -250,7 +264,7 @@ describe('fitSessionToScreen', () => {
     expect(mocks.remeasureTerminalCells).not.toHaveBeenCalled();
     expect(harness.terminal.resize).not.toHaveBeenCalled();
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
-    expect(focusActiveTerminal).toHaveBeenCalledTimes(1);
+    expect(focusActiveTerminal).not.toHaveBeenCalled();
   });
 
   it('does not reclaim terminal focus while the soft keyboard is visible', () => {

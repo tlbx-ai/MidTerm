@@ -1,8 +1,6 @@
-using System.Net;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Share;
-using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -32,28 +30,46 @@ public static class AuthMiddleware
                 RequestAccessContext.SetShareAccess(context, shareAccess);
             }
 
-            if (!authSettings.AuthenticationEnabled || string.IsNullOrEmpty(authSettings.PasswordHash))
+            // Preview ports are a separate capability surface. A route name or
+            // Referer alone is never proof of access to a private preview.
+            if (path.StartsWith("/webpreview/", StringComparison.OrdinalIgnoreCase)
+                || (previewOriginService.IsPreviewRequest(context)
+                    && WebPreviewProxyMiddleware.ShouldProxyPreviewLeak(context.Request, path)))
             {
-                RequestAccessContext.SetFullUser(context, true);
+                var scopedAccess = !string.IsNullOrEmpty(authSettings.PasswordHash)
+                    && PreviewProxyAuthorization.TryAuthorize(context, previewRegistry);
+                var method = authService.AuthenticateRequest(context.Request);
+                RequestAccessContext.SetApiKeyAuthenticated(context, method == RequestAuthMethod.ApiKey);
+                var fullAccess = method != RequestAuthMethod.None && RequestOriginPolicy.Allows(context.Request);
+                if (!scopedAccess && !fullAccess)
+                {
+                    AuthService.MarkAuthenticationRequired(context.Response);
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    return;
+                }
+                RequestAccessContext.SetFullUser(context, fullAccess && !scopedAccess);
                 await next();
                 return;
             }
 
-            if (IsPublicPath(path))
+            if (!RequestOriginPolicy.Allows(context.Request)
+                && !AllowsBrowserPreviewWebSocket(context.Request, previewRegistry))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            if (IsPublicRequest(context.Request))
             {
                 await next();
                 return;
             }
 
-            if (path == "/api/shutdown" && IsLoopback(context))
+            if (string.IsNullOrEmpty(authSettings.PasswordHash))
             {
-                await next();
-                return;
-            }
-
-            if (AllowsPreviewOriginProxyRequest(context.Request, previewOriginService))
-            {
-                await next();
+                AuthService.MarkAuthenticationRequired(context.Response);
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                await context.Response.WriteAsync("Set a password locally with mt --set-password before using tlbx.", context.RequestAborted);
                 return;
             }
 
@@ -80,13 +96,14 @@ public static class AuthMiddleware
             if (authentication.Method != RequestAuthMethod.None)
             {
                 RequestAccessContext.SetFullUser(context, true);
+                RequestAccessContext.SetApiKeyAuthenticated(context, authentication.Method == RequestAuthMethod.ApiKey);
                 if (authentication.Method == RequestAuthMethod.SessionCookie && !context.WebSockets.IsWebSocketRequest)
                 {
                     var freshToken = authService.RenewSessionToken(authentication.SessionTokenId!);
                     context.Response.Cookies.Append(
                         AuthService.SessionCookieName,
                         freshToken,
-                        GetSessionCookieOptions(settingsService));
+                        GetSessionCookieOptions());
                 }
                 await next();
                 return;
@@ -121,34 +138,24 @@ public static class AuthMiddleware
             out _);
     }
 
-    internal static bool AllowsPreviewOriginProxyRequest(
-        HttpRequest request,
-        BrowserPreviewOriginService? previewOriginService)
-    {
-        if (previewOriginService is null
-            || !previewOriginService.IsEnabled
-            || request.Host.Port != previewOriginService.PreviewPort)
-        {
-            return false;
-        }
-
-        var path = request.Path.Value ?? "/";
-        return path.StartsWith("/webpreview/", StringComparison.OrdinalIgnoreCase)
-            || WebPreviewProxyMiddleware.ShouldProxyPreviewLeak(request, path);
-    }
-
-    private static CookieOptions GetSessionCookieOptions(SettingsService settingsService) => new()
+    private static CookieOptions GetSessionCookieOptions() => new()
     {
         HttpOnly = true,
-        // Sandboxed previews use an opaque origin, so their subresource requests only
-        // carry the auth cookie when dev mode intentionally relaxes SameSite.
-        SameSite = UpdateService.IsDevEnvironment || settingsService.Load().DevMode
-            ? SameSiteMode.None
-            : SameSiteMode.Lax,
+        // Preview access uses a separate route-scoped credential.
+        SameSite = SameSiteMode.Lax,
         Secure = true,
         Path = "/",
         MaxAge = AuthService.SessionTokenValidity
     };
+
+    internal static bool IsPublicRequest(HttpRequest request)
+    {
+        var path = request.Path.Value ?? "";
+        return (HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method))
+            ? IsPublicPath(path)
+            : HttpMethods.IsPost(request.Method)
+              && (path == "/api/auth/login" || path == "/api/share/claim");
+    }
 
     internal static bool IsPublicPath(string path)
     {
@@ -158,20 +165,11 @@ public static class AuthMiddleware
                path.StartsWith("/shared/", StringComparison.Ordinal) ||
                path == "/trust" ||
                path == "/trust.html" ||
-               path == "/swagger" ||
-               path.StartsWith("/swagger/", StringComparison.Ordinal) ||
-               path.StartsWith("/openapi/", StringComparison.Ordinal) ||
-               path == "/api/health" ||
-               path == "/api/version" ||
                path == "/api/bootstrap/login" ||
-               path == "/api/security/status" ||
-               path == "/api/share/claim" ||
                path == "/api/certificate/info" ||
                path == "/api/certificate/download/pem" ||
                path == "/api/certificate/download/crt" ||
                path == "/api/certificate/download/mobileconfig" ||
-               path == "/api/certificate/share-packet" ||
-               path.StartsWith("/api/auth/", StringComparison.Ordinal) ||
                path.StartsWith("/css/", StringComparison.Ordinal) ||
                path.StartsWith("/js/", StringComparison.Ordinal) ||
                path.StartsWith("/fonts/", StringComparison.Ordinal) ||
@@ -194,9 +192,4 @@ public static class AuthMiddleware
                path == "/ws/share/mux";
     }
 
-    private static bool IsLoopback(HttpContext context)
-    {
-        var remoteIp = context.Connection.RemoteIpAddress;
-        return remoteIp is not null && IPAddress.IsLoopback(remoteIp);
-    }
 }

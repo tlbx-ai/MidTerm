@@ -4,7 +4,6 @@ struct Server: Codable, Identifiable, Equatable {
     let id: UUID
     var name: String
     var url: String
-    var allowUntrustedCertificate: Bool
     var lastConnected: Date
     var lastRefresh: Date
 
@@ -12,7 +11,6 @@ struct Server: Codable, Identifiable, Equatable {
         id: UUID = UUID(),
         name: String,
         url: String,
-        allowUntrustedCertificate: Bool = false,
         lastConnected: Date = .distantPast,
         lastRefresh: Date = .distantPast
     ) throws {
@@ -22,13 +20,12 @@ struct Server: Codable, Identifiable, Equatable {
             ? Server.defaultName(for: normalizedURL)
             : name.trimmingCharacters(in: .whitespacesAndNewlines)
         self.url = normalizedURL
-        self.allowUntrustedCertificate = allowUntrustedCertificate
         self.lastConnected = lastConnected
         self.lastRefresh = lastRefresh
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, url, allowUntrustedCertificate, lastConnected, lastRefresh
+        case id, name, url, lastConnected, lastRefresh
     }
 
     init(from decoder: Decoder) throws {
@@ -38,7 +35,6 @@ struct Server: Codable, Identifiable, Equatable {
         name = try values.decodeIfPresent(String.self, forKey: .name)
             .flatMap { $0.isEmpty ? nil : $0 } ?? Server.defaultName(for: normalizedURL)
         url = normalizedURL
-        allowUntrustedCertificate = try values.decodeIfPresent(Bool.self, forKey: .allowUntrustedCertificate) ?? false
         lastConnected = try values.decodeIfPresent(Date.self, forKey: .lastConnected) ?? .distantPast
         lastRefresh = try values.decodeIfPresent(Date.self, forKey: .lastRefresh) ?? .distantPast
     }

@@ -521,7 +521,26 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                     break;
                 }
 
-                HandleCodexLine(line);
+                try
+                {
+                    HandleCodexLine(line);
+                }
+                catch (Exception ex)
+                {
+                    // Provider schemas can add nullable or differently typed fields between
+                    // Codex releases. One presentation failure must not stop the JSON-RPC
+                    // reader and strand an otherwise healthy turn in the running state.
+                    try
+                    {
+                        EmitRuntimeMessage(
+                            "runtime.warning",
+                            "A Codex App Server message could not be projected; the stream remains active.",
+                            ex.Message);
+                    }
+                    catch
+                    {
+                    }
+                }
             }
         }
         catch (OperationCanceledException)

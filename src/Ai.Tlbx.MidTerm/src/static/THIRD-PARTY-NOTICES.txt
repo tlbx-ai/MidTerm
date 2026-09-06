@@ -22,3 +22,13 @@ https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk
 Copyright Anthropic PBC. All rights reserved.
 Use is subject to Anthropic's legal agreements documented at
 https://code.claude.com/docs/en/legal-and-compliance.
+
+================================================================================
+Background image normalization
+================================================================================
+SkiaSharp 4.151.2: https://github.com/mono/SkiaSharp
+SkiaSharp.NativeAssets.Win32, SkiaSharp.NativeAssets.macOS and
+SkiaSharp.NativeAssets.Linux.NoDependencies 4.151.2.
+SkiaSharp is MIT licensed; its native Skia build includes permissively licensed
+image codecs including libwebp. Full upstream notices and licenses are reproduced
+in THIRD-PARTY-LICENSES.txt.

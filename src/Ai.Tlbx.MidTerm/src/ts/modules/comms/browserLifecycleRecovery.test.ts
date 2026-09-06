@@ -6,9 +6,11 @@ const mocks = vi.hoisted(() => ({
   recoverVisibleTerminalsAfterBrowserResume: vi.fn(),
   suspendMuxForBrowserBackground: vi.fn(),
   stateWsConnected: true,
+  connectionStatus: 'connected',
 }));
 
 vi.mock('../../stores', () => ({
+  $connectionStatus: { get: () => mocks.connectionStatus },
   $activeSessionId: { get: () => 'sess1234' },
   $stateWsConnected: { get: () => mocks.stateWsConnected },
 }));
@@ -37,6 +39,7 @@ describe('browserLifecycleRecovery', () => {
     vi.setSystemTime(new Date('2026-08-10T00:00:00Z'));
     vi.clearAllMocks();
     mocks.stateWsConnected = true;
+    mocks.connectionStatus = 'connected';
     fakeDocument = Object.assign(new EventTarget(), {
       visibilityState: 'visible' as DocumentVisibilityState,
     });
@@ -57,13 +60,23 @@ describe('browserLifecycleRecovery', () => {
     });
   }
 
-  function setup(keepTerminalOutputActiveWhileHidden = false) {
+  function setup(keepTerminalOutputActiveWhileHidden: boolean | (() => boolean) = false) {
     const options = {
       getVisibleTerminalSessionIds: vi.fn(() => ['sess1234']),
       syncMuxTerminalVisibility: vi.fn(),
       focusActiveTerminal: vi.fn(),
       applyScrollbackProtection: vi.fn(),
-      keepTerminalOutputActiveWhileHidden: vi.fn(() => keepTerminalOutputActiveWhileHidden),
+      recoverTerminalPresentationAfterResume: vi.fn(),
+      keepTerminalOutputActiveWhileHidden: vi.fn(() =>
+        typeof keepTerminalOutputActiveWhileHidden === 'function'
+          ? keepTerminalOutputActiveWhileHidden()
+          : keepTerminalOutputActiveWhileHidden,
+      ),
+      suspendAdditionalTerminalTransport: vi.fn(),
+      recoverAdditionalTerminalTransport: vi.fn(),
+      suspendAppServerControlForBackground: vi.fn(),
+      suspendAncillaryTransportForBackground: vi.fn(),
+      recoverAncillaryTransportAfterResume: vi.fn(),
       reconnectSettingsAfterLongResume: vi.fn(),
       recoverAppServerControlAfterResume: vi.fn(),
     };
@@ -87,6 +100,9 @@ describe('browserLifecycleRecovery', () => {
 
     expect(mocks.reportBrowserActivity).toHaveBeenCalledTimes(1);
     expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(1);
+    expect(options.suspendAdditionalTerminalTransport).toHaveBeenCalledTimes(1);
+    expect(options.suspendAppServerControlForBackground).toHaveBeenCalledTimes(1);
+    expect(options.suspendAncillaryTransportForBackground).toHaveBeenCalledTimes(1);
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).not.toHaveBeenCalled();
     expect(options.syncMuxTerminalVisibility).not.toHaveBeenCalled();
   });
@@ -109,6 +125,8 @@ describe('browserLifecycleRecovery', () => {
     expect(options.syncMuxTerminalVisibility).toHaveBeenCalledTimes(1);
     expect(options.focusActiveTerminal).toHaveBeenCalledTimes(1);
     expect(options.applyScrollbackProtection).toHaveBeenCalledTimes(1);
+    expect(options.recoverTerminalPresentationAfterResume).toHaveBeenCalledTimes(1);
+    expect(options.recoverAdditionalTerminalTransport).toHaveBeenCalledTimes(1);
   });
 
   it('replaces stale-open core transports once after a long background interval', () => {
@@ -127,6 +145,7 @@ describe('browserLifecycleRecovery', () => {
     expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
     expect(options.reconnectSettingsAfterLongResume).toHaveBeenCalledTimes(1);
     expect(options.recoverAppServerControlAfterResume).toHaveBeenCalledTimes(1);
+    expect(options.recoverAncillaryTransportAfterResume).toHaveBeenCalledTimes(1);
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledTimes(1);
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
       'sess1234',
@@ -159,6 +178,52 @@ describe('browserLifecycleRecovery', () => {
     );
   });
 
+  it('applies backpressure immediately when initialized in an already hidden document', () => {
+    setVisibility('hidden');
+    const options = setup();
+
+    expect(mocks.reportBrowserActivity).toHaveBeenCalledWith(false);
+    expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(1);
+    expect(options.suspendAdditionalTerminalTransport).toHaveBeenCalledTimes(1);
+
+    emitWindow('pagehide');
+    emitDocument('freeze');
+    vi.advanceTimersByTime(1000);
+    expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(1);
+
+    setVisibility('visible');
+    emitDocument('resume');
+    vi.advanceTimersByTime(0);
+
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
+      'sess1234',
+      ['sess1234'],
+      { forceReconnect: true },
+    );
+    expect(options.recoverTerminalPresentationAfterResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('suspends on pagehide when visibilitychange is missing', () => {
+    const options = setup();
+
+    emitWindow('pagehide');
+
+    expect(mocks.reportBrowserActivity).toHaveBeenCalledWith(false);
+    expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(1);
+
+    emitWindow('pageshow');
+    vi.advanceTimersByTime(0);
+
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
+      'sess1234',
+      ['sess1234'],
+      { forceReconnect: true },
+    );
+    expect(options.recoverTerminalPresentationAfterResume).toHaveBeenCalledTimes(1);
+  });
+
   it('coalesces duplicate foreground events without hiding the document first', () => {
     const options = setup();
 
@@ -169,6 +234,44 @@ describe('browserLifecycleRecovery', () => {
 
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledTimes(1);
     expect(options.focusActiveTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  it('never coalesces away a new background resume within the foreground debounce window', () => {
+    const options = setup();
+    emitWindow('focus');
+    vi.advanceTimersByTime(0);
+
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      vi.advanceTimersByTime(10);
+      setVisibility('hidden');
+      emitDocument('visibilitychange');
+      vi.advanceTimersByTime(10);
+      setVisibility('visible');
+      emitDocument('visibilitychange');
+      emitWindow('focus');
+      vi.advanceTimersByTime(0);
+    }
+
+    expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(3);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(3);
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledTimes(4);
+    expect(options.recoverTerminalPresentationAfterResume).toHaveBeenCalledTimes(4);
+  });
+
+  it('recovers a pending suspension on the foreground heartbeat when resume events are missing', () => {
+    setup();
+    setVisibility('hidden');
+    emitDocument('visibilitychange');
+    vi.advanceTimersByTime(10);
+    setVisibility('visible');
+    vi.advanceTimersByTime(1100);
+
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
+      'sess1234',
+      ['sess1234'],
+      { forceReconnect: true },
+    );
   });
 
   it('does not classify a visible window blur as a browser suspension', () => {
@@ -204,12 +307,37 @@ describe('browserLifecycleRecovery', () => {
   });
 
   it('keeps hidden terminal output active for mobile PiP', () => {
-    setup(true);
+    const options = setup(true);
     setVisibility('hidden');
 
     emitDocument('visibilitychange');
 
     expect(mocks.suspendMuxForBrowserBackground).not.toHaveBeenCalled();
+    expect(options.suspendAppServerControlForBackground).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps output active only while a real mobile PiP window exists', () => {
+    let pipActive = false;
+    const options = setup(() => pipActive);
+    setVisibility('hidden');
+    emitDocument('visibilitychange');
+
+    expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(1);
+
+    pipActive = true;
+    emitWindow('tlbx:mobile-pip-active-changed');
+
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
+      'sess1234',
+      ['sess1234'],
+      { forceReconnect: true },
+    );
+
+    pipActive = false;
+    emitWindow('tlbx:mobile-pip-active-changed');
+    expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(2);
+    expect(options.recoverAdditionalTerminalTransport).toHaveBeenCalledTimes(1);
+    expect(options.suspendAdditionalTerminalTransport).toHaveBeenCalledTimes(2);
   });
 
   it('reconnects state immediately when its store already reports a disconnect', () => {
@@ -234,5 +362,48 @@ describe('browserLifecycleRecovery', () => {
 
     expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).not.toHaveBeenCalled();
+  });
+  it('retries a stalled foreground handshake without renderer or focus churn', () => {
+    mocks.connectionStatus = 'disconnected';
+    const options = setup();
+    vi.advanceTimersByTime(15000);
+    expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1000);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
+      'sess1234',
+      ['sess1234'],
+      { forceReconnect: true },
+    );
+    expect(options.focusActiveTerminal).not.toHaveBeenCalled();
+    expect(options.recoverTerminalPresentationAfterResume).not.toHaveBeenCalled();
+    mocks.connectionStatus = 'connected';
+    vi.advanceTimersByTime(30000);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    options.dispose();
+  });
+
+  it('retries immediately when the network returns and removes the online listener', () => {
+    const options = setup();
+    emitWindow('online');
+    vi.advanceTimersByTime(0);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    options.dispose();
+    emitWindow('online');
+    vi.advanceTimersByTime(1000);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+  });
+  it('bounds retries for a partially connected app and stays suspended while hidden', () => {
+    mocks.connectionStatus = 'reconnecting';
+    const options = setup();
+    vi.advanceTimersByTime(31000);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(2);
+    setVisibility('hidden');
+    emitDocument('visibilitychange');
+    vi.advanceTimersByTime(60000);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(2);
+    options.dispose();
+    vi.advanceTimersByTime(30000);
+    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(2);
   });
 });

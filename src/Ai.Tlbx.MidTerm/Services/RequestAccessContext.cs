@@ -17,6 +17,14 @@ public static class RequestAccessContext
     private const string FullUserItemKey = "__midterm_full_user";
     private const string ShareAccessItemKey = "__midterm_share_access";
 
+    private const string ApiKeyAuthenticatedItemKey = "tlbx.api-key-authenticated";
+
+    public static void SetApiKeyAuthenticated(HttpContext context, bool authenticated) =>
+        context.Items[ApiKeyAuthenticatedItemKey] = authenticated;
+
+    public static bool IsApiKeyAuthenticated(HttpContext context) =>
+        context.Items.TryGetValue(ApiKeyAuthenticatedItemKey, out var value) && value is true;
+
     public static void SetFullUser(HttpContext context, bool value)
     {
         context.Items[FullUserItemKey] = value;

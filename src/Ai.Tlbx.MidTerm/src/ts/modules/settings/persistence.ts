@@ -79,7 +79,7 @@ let settingsSaveArmed = false;
 type TerminalFontWeight = NonNullable<ITerminalOptions['fontWeight']>;
 
 const MAX_BACKGROUND_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
-const ALLOWED_BACKGROUND_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
+const ALLOWED_BACKGROUND_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const MIN_BACKGROUND_IMAGE_UPLOAD_TRANSPARENCY = 50;
 const DEFAULT_BOX_DRAWING_SCALE = 1;
 const DEFAULT_BOX_DRAWING_STYLE = 'classic';
@@ -1378,7 +1378,7 @@ function validateAgentEnvironmentInputs(): boolean {
 function validateBackgroundImageFile(file: File): string | null {
   const extension = file.name.slice(Math.max(0, file.name.lastIndexOf('.'))).toLowerCase();
   if (!ALLOWED_BACKGROUND_IMAGE_EXTENSIONS.has(extension)) {
-    return 'Only PNG and JPG images are supported.';
+    return 'Only PNG, JPG and WebP images are supported.';
   }
 
   if (file.size > MAX_BACKGROUND_IMAGE_UPLOAD_BYTES) {

@@ -158,4 +158,132 @@ describe('layoutStore server sync', () => {
       ],
     });
   });
+
+  it.each([1, 2])(
+    'settles an identical layout ACK at revision %i without resending',
+    async (revision) => {
+      const { stores, layoutStore } = await loadHarness();
+      layoutStore.applyServerLayoutState({ revision: 1, root: null, focusedSessionId: null });
+      mocks.fetch.mockImplementation(async (_url, init) => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ ...JSON.parse(init.body), revision }),
+      }));
+      layoutStore.initLayoutPersistence();
+      layoutStore.markLayoutPersistenceReady();
+      stores.$layout.set({ root: buildHorizontalLayout() });
+      stores.$focusedSessionId.set('session-b');
+      await vi.advanceTimersByTimeAsync(100);
+      expect(mocks.fetch).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('remembers revisions even when the server layout already matches locally', async () => {
+    const { stores, layoutStore } = await loadHarness();
+    layoutStore.applyServerLayoutState({ revision: 27, root: null, focusedSessionId: null });
+    layoutStore.initLayoutPersistence();
+    layoutStore.markLayoutPersistenceReady();
+    stores.$layout.set({ root: buildHorizontalLayout() });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(JSON.parse(mocks.fetch.mock.calls[0]![1].body).revision).toBe(27);
+  });
+
+  it('accepts canonical normalization of the acknowledged edit', async () => {
+    const { stores, layoutStore } = await loadHarness();
+    const root = buildHorizontalLayout();
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ revision: 1, root, focusedSessionId: 'session-a' }),
+    });
+    layoutStore.initLayoutPersistence();
+    layoutStore.markLayoutPersistenceReady();
+    stores.$layout.set({ root });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(stores.$focusedSessionId.get()).toBe('session-a');
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends the newer local edit after a delayed older ACK, using the acknowledged revision', async () => {
+    const { stores, layoutStore } = await loadHarness();
+    let acknowledge!: (value: unknown) => void;
+    mocks.fetch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    mocks.fetch.mockImplementation(async (_url, init) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ...JSON.parse(init.body), revision: 2 }),
+    }));
+    layoutStore.initLayoutPersistence();
+    layoutStore.markLayoutPersistenceReady();
+    stores.$layout.set({ root: buildHorizontalLayout() });
+    await vi.advanceTimersByTimeAsync(1);
+    const old = JSON.parse(mocks.fetch.mock.calls[0]![1].body);
+    stores.$layout.set({ root: buildVerticalLayout() });
+    acknowledge({ ok: true, status: 200, json: async () => ({ ...old, revision: 1 }) });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(mocks.fetch.mock.calls[1]![1].body)).toMatchObject({
+      revision: 1,
+      root: buildVerticalLayout(),
+    });
+    expect(stores.$layout.get().root).toEqual(buildVerticalLayout());
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('rebases a conflict once when the server revision advances', async () => {
+    const { stores, layoutStore } = await loadHarness();
+    layoutStore.applyServerLayoutState({ revision: 1, root: null, focusedSessionId: null });
+    mocks.fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      json: async () => ({ revision: 2, root: buildVerticalLayout(), focusedSessionId: null }),
+    });
+    mocks.fetch.mockImplementation(async (_url, init) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ...JSON.parse(init.body), revision: 3 }),
+    }));
+    layoutStore.initLayoutPersistence();
+    layoutStore.markLayoutPersistenceReady();
+    stores.$layout.set({ root: buildHorizontalLayout() });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(mocks.fetch.mock.calls[1]![1].body)).toMatchObject({
+      revision: 2,
+      root: buildHorizontalLayout(),
+    });
+  });
+
+  it('does not spin on an unchanged conflict response', async () => {
+    const { stores, layoutStore } = await loadHarness();
+    layoutStore.applyServerLayoutState({ revision: 1, root: null, focusedSessionId: null });
+    mocks.fetch.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ revision: 1, root: null, focusedSessionId: null }),
+    });
+    layoutStore.initLayoutPersistence();
+    layoutStore.markLayoutPersistenceReady();
+    stores.$layout.set({ root: buildHorizontalLayout() });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not rewrite unchanged local storage', async () => {
+    const { stores, layoutStore } = await loadHarness();
+    stores.$layout.set({ root: buildHorizontalLayout() });
+    stores.$focusedSessionId.set('session-a');
+    layoutStore.saveLayoutToStorage();
+    vi.mocked(localStorage.setItem).mockClear();
+    layoutStore.saveLayoutToStorage();
+    expect(localStorage.setItem).not.toHaveBeenCalled();
+  });
 });

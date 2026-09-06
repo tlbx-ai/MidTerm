@@ -55,6 +55,9 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("_MCURL --fail-with-body -sSk -H", shell, StringComparison.Ordinal);
         Assert.Contains("_MCURL --fail-with-body -sSk -b", shell, StringComparison.Ordinal);
         Assert.Contains("Treat it like a local session secret", shell, StringComparison.Ordinal);
+        Assert.Contains("${MT_BASE_URL:-}", shell, StringComparison.Ordinal);
+        Assert.Contains("${MT_PORT:-}", shell, StringComparison.Ordinal);
+        Assert.Contains("${MT_TOKEN:-}", shell, StringComparison.Ordinal);
 
         Assert.Contains("set MT_API_KEY", powershell, StringComparison.Ordinal);
         Assert.Contains("$env:MT_API_KEY", powershell, StringComparison.Ordinal);
@@ -64,6 +67,9 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("if ($exitCode -ne 0)", powershell, StringComparison.Ordinal);
         Assert.Contains("throw \"tlbx API request failed (curl exit $exitCode): $detail\"", powershell, StringComparison.Ordinal);
         Assert.Contains("Treat it like a local session secret", powershell, StringComparison.Ordinal);
+        Assert.Contains("$env:MT_BASE_URL", powershell, StringComparison.Ordinal);
+        Assert.Contains("$env:MT_PORT", powershell, StringComparison.Ordinal);
+        Assert.Contains("$env:MT_TOKEN", powershell, StringComparison.Ordinal);
     }
 
     [Fact]

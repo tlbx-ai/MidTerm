@@ -46,6 +46,8 @@ Write-Host "Starting tlbx service..." -ForegroundColor Gray
 Start-Service MidTerm
 Start-Sleep 2
 
-$version = Invoke-RestMethod -Uri 'https://localhost:2000/api/version' -SkipCertificateCheck -ErrorAction SilentlyContinue
+$bootstrap = Invoke-RestMethod -Uri 'https://localhost:2000/api/bootstrap/login' -SkipCertificateCheck
+if (-not $bootstrap.certificate.fingerprint) { throw 'Deployed login endpoint did not report a certificate.' }
+$version = & (Join-Path $Dest 'mt.exe') --version
 Write-Host ""
 Write-Host "Deployed: $version" -ForegroundColor Green

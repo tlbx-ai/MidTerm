@@ -7,7 +7,7 @@ namespace Ai.Tlbx.MidTerm.OpenApi.Stubs;
 public sealed class StubSecurityHandler : ISecurityHandler
 {
     public IResult GetSecurityStatus() =>
-        Results.Json(new SecurityStatus { PasswordProtected = true, CertificateTrusted = true });
+        Results.Json(new SecurityStatus { PasswordProtected = true, CertificateConfigured = true });
 
     public IResult GetApiKeys() =>
         Results.Json(new ApiKeyListResponse

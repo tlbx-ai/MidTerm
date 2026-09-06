@@ -4,7 +4,6 @@
  * Handles platform detection, certificate download, and UI interactions.
  */
 
-import { escapeHtml } from '../utils';
 import { t, initI18n } from './i18n';
 
 export async function initTrustPage(): Promise<void> {
@@ -113,18 +112,18 @@ function bindDownload(id: string, url: string): void {
 
 async function loadCertificateInfo(): Promise<void> {
   try {
-    const { getSharePacket } = await import('../api/client');
-    const { data, response } = await getSharePacket();
-    if (!response.ok || !data) return;
+    const { getCertificateInfo } = await import('../api/client');
+    const { data, response } = await getCertificateInfo();
+    if (!response.ok || !data?.fingerprint) throw new Error('Certificate unavailable');
 
     const info = data;
 
     // Display fingerprint
     const fpEl = document.getElementById('fingerprint');
-    if (fpEl) fpEl.textContent = info.certificate.fingerprint;
+    if (fpEl) fpEl.textContent = data.fingerprint.match(/.{1,2}/g)?.join(':') ?? '';
 
     // Display validity
-    const validUntil = info.certificate.notAfter ? new Date(info.certificate.notAfter) : null;
+    const validUntil = info.notAfter ? new Date(info.notAfter) : null;
     const validEl = document.getElementById('cert-valid-until');
     if (validEl && validUntil) {
       validEl.textContent =
@@ -134,24 +133,6 @@ async function loadCertificateInfo(): Promise<void> {
           month: 'long',
           day: 'numeric',
         });
-    }
-
-    // Display trusted addresses from certificate SANs
-    const endpointsList = document.getElementById('endpoints-list');
-    if (endpointsList) {
-      const allAddresses = [...info.certificate.dnsNames, ...info.certificate.ipAddresses];
-      if (allAddresses.length > 0) {
-        endpointsList.innerHTML = allAddresses
-          .map(
-            (addr: string) =>
-              `<div class="endpoint-item">
-                <span class="endpoint-addr">${escapeHtml(addr)}</span>
-              </div>`,
-          )
-          .join('');
-      } else {
-        endpointsList.innerHTML = `<p>${t('trust.noAddresses')}</p>`;
-      }
     }
   } catch {
     const fpEl = document.getElementById('fingerprint');

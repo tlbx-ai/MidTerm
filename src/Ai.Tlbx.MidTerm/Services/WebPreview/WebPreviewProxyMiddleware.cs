@@ -1,5 +1,7 @@
+using Ai.Tlbx.MidTerm.Startup;
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -1160,6 +1162,11 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (TryParseProxyRoute(path, out var routeKey, out var remainingPath))
         {
+            if (!PreviewProxyAuthorization.AllowsRoute(context, routeKey))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
             if (remainingPath.StartsWith("/_ext", StringComparison.Ordinal))
             {
                 if (context.WebSockets.IsWebSocketRequest)
@@ -1220,6 +1227,11 @@ public sealed partial class WebPreviewProxyMiddleware
             && ShouldProxyWebPreviewApiRequest(context.Request)
             && TryResolvePreviewFromRequest(context.Request, out routeKey, out var apiTargetUri))
         {
+            if (!PreviewProxyAuthorization.AllowsRoute(context, routeKey))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
             if (context.WebSockets.IsWebSocketRequest)
                 await ProxyWebSocketAsync(context, routeKey, apiTargetUri, path.Value ?? "/");
             else
@@ -1237,11 +1249,19 @@ public sealed partial class WebPreviewProxyMiddleware
             if (!TryResolvePreviewFromRequest(context.Request, out routeKey, out var targetUri)
                 || !ShouldProxyPreviewLeak(context.Request, requestPath))
             {
-                await _next(context);
+                if (context.Items.ContainsKey(PreviewProxyAuthorization.RouteItemKey))
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                else
+                    await _next(context);
                 return;
             }
 
             var proxyPath = requestPath;
+            if (!PreviewProxyAuthorization.AllowsRoute(context, routeKey))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
             _service.RememberLeakedPathRoute(routeKey, proxyPath);
             if (context.WebSockets.IsWebSocketRequest)
             {
@@ -1255,6 +1275,11 @@ public sealed partial class WebPreviewProxyMiddleware
             return;
         }
 
+        if (context.Items.ContainsKey(PreviewProxyAuthorization.RouteItemKey))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
         await _next(context);
     }
 
@@ -1485,10 +1510,7 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var msg = new HttpRequestMessage(method, url);
             ForwardRequestHeaders(context.Request, msg, routeKey, targetUri, upstreamOrigin);
-            msg.Headers.TryAddWithoutValidation("X-Forwarded-For",
-                context.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1");
-            msg.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
-            msg.Headers.TryAddWithoutValidation("X-Forwarded-Host", context.Request.Host.ToString());
+            AddForwardedHeaders(msg, context.Connection.RemoteIpAddress);
             if (_service.IsSelfTarget(msg.RequestUri!))
             {
                 msg.Headers.TryAddWithoutValidation(
@@ -1656,7 +1678,19 @@ public sealed partial class WebPreviewProxyMiddleware
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
         var targetOrigin = targetUri.GetLeftPart(UriPartial.Authority);
         var originScript = $"<script>window.__mtTargetOrigin=\"{targetOrigin}\";</script>";
-        html = HeadTagRegex().Replace(html, $"$0<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix), 1);
+        var redirectedProxyPath = BuildRedirectedProxyPath(
+            routePrefix,
+            targetUri,
+            finalUrl,
+            context.Request.Path.Value ?? "/",
+            context.Request.QueryString.Value);
+        var redirectPathScript = redirectedProxyPath is null
+            ? ""
+            : $"<script>history.replaceState(history.state,\"\",\"{JsonEncodedText.Encode(redirectedProxyPath)}\");</script>";
+        html = HeadTagRegex().Replace(
+            html,
+            $"$0<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix) + redirectPathScript,
+            1);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");
@@ -1674,6 +1708,37 @@ public sealed partial class WebPreviewProxyMiddleware
         var lastSlash = path.LastIndexOf('/');
         var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
         return routePrefix + directory;
+    }
+
+    internal static string? BuildRedirectedProxyPath(
+        string routePrefix,
+        Uri targetUri,
+        string? finalUrl,
+        string requestPath,
+        string? requestQuery)
+    {
+        if (string.IsNullOrWhiteSpace(finalUrl)
+            || !Uri.TryCreate(finalUrl, UriKind.Absolute, out var finalUri)
+            || !finalUri.Authority.Equals(targetUri.Authority, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var upstreamRequestPath = TryParseProxyRoute(requestPath, out _, out var remainingPath)
+            ? remainingPath
+            : requestPath;
+        var initialUrl = BuildUpstreamUrlFromPath(
+            targetUri,
+            BuildUpstreamPath(targetUri, upstreamRequestPath),
+            StripPreviewBootstrapQuery(requestQuery));
+
+        if (Uri.TryCreate(initialUrl, UriKind.Absolute, out var initialUri)
+            && initialUri.AbsoluteUri.Equals(finalUri.AbsoluteUri, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return routePrefix + finalUri.PathAndQuery + finalUri.Fragment;
     }
 
     internal static string BuildInjectedBaseHref(string routePrefix, string? finalUrl, string? originalBaseHref, string html)
@@ -1889,6 +1954,11 @@ public sealed partial class WebPreviewProxyMiddleware
         }
     }
 
+    internal static bool IsTlbxAuthenticationHeader(HttpRequest request, string headerName) =>
+        RequestAccessContext.IsApiKeyAuthenticated(request.HttpContext)
+        && (headerName.Equals("Authorization", StringComparison.OrdinalIgnoreCase)
+            || headerName.Equals("X-API-Key", StringComparison.OrdinalIgnoreCase));
+
     private void ForwardRequestHeaders(
         HttpRequest source,
         HttpRequestMessage target,
@@ -1898,7 +1968,8 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         foreach (var header in source.Headers)
         {
-            if (BlockedRequestHeaders.Contains(header.Key))
+            if (BlockedRequestHeaders.Contains(header.Key)
+                || IsTlbxAuthenticationHeader(source, header.Key))
                 continue;
 
             if (header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase))
@@ -1916,6 +1987,18 @@ public sealed partial class WebPreviewProxyMiddleware
             target.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
         }
 
+    }
+
+    internal static void AddForwardedHeaders(HttpRequestMessage target, IPAddress? remoteAddress)
+    {
+        var targetUri = target.RequestUri
+            ?? throw new InvalidOperationException("A web preview upstream request must have a target URI.");
+
+        target.Headers.TryAddWithoutValidation(
+            "X-Forwarded-For",
+            remoteAddress?.ToString() ?? IPAddress.Loopback.ToString());
+        target.Headers.TryAddWithoutValidation("X-Forwarded-Proto", targetUri.Scheme);
+        target.Headers.TryAddWithoutValidation("X-Forwarded-Host", targetUri.Authority);
     }
 
     internal string RewriteRefererForUpstream(string refererValue, string currentRouteKey, Uri currentTargetUri)
@@ -2542,7 +2625,8 @@ public sealed partial class WebPreviewProxyMiddleware
         // Forward all request headers except blocked ones (same blocklist as HTTP)
         foreach (var header in context.Request.Headers)
         {
-            if (BlockedRequestHeaders.Contains(header.Key))
+            if (BlockedRequestHeaders.Contains(header.Key)
+                || IsTlbxAuthenticationHeader(context.Request, header.Key))
                 continue;
             // Skip WebSocket upgrade headers — ClientWebSocket manages these
             if (header.Key.StartsWith("Sec-WebSocket-", StringComparison.OrdinalIgnoreCase))

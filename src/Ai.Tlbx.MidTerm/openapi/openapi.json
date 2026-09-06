@@ -6079,7 +6079,7 @@
       "SecurityStatus": {
         "required": [
           "passwordProtected",
-          "certificateTrusted",
+          "certificateConfigured",
           "warnings"
         ],
         "type": "object",
@@ -6087,7 +6087,7 @@
           "passwordProtected": {
             "type": "boolean"
           },
-          "certificateTrusted": {
+          "certificateConfigured": {
             "type": "boolean"
           },
           "warnings": {

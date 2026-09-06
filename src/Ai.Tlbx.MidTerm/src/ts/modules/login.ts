@@ -7,7 +7,6 @@
 import { login, getBootstrapLogin } from '../api/client';
 import { t, initI18n } from './i18n';
 
-const CERT_HIDDEN_KEY = 'mt-cert-info-hidden';
 const AUTH_RETURN_URL_KEY = 'midterm-auth-return-url';
 
 export async function initLoginPage(): Promise<void> {
@@ -22,26 +21,27 @@ export async function initLoginPage(): Promise<void> {
   await initI18n();
 
   // Load version and insider info
-  void loadVersionAndPaths();
 
   form.addEventListener('submit', (e) => {
     void handleLoginSubmit(e, passwordInput, errorDiv, loginBtn);
   });
 
-  // Certificate TOFU display
+  // Keep verification reachable even if an older version hid the panel.
   const certInfoDiv = document.getElementById('cert-info');
-  const certHideBtn = document.getElementById('cert-hide-btn');
-
-  if (certInfoDiv && certHideBtn) {
-    if (localStorage.getItem(CERT_HIDDEN_KEY) !== 'true') {
-      void loadCertificateInfo(certInfoDiv);
-    }
-
-    certHideBtn.addEventListener('click', () => {
-      localStorage.setItem(CERT_HIDDEN_KEY, 'true');
-      certInfoDiv.classList.add('hidden');
-    });
-  }
+  if (certInfoDiv) void loadCertificateInfo(certInfoDiv);
+  const copyButton = document.getElementById('cert-copy-btn');
+  copyButton?.addEventListener('click', () => {
+    const fingerprint = document.getElementById('cert-fingerprint')?.textContent ?? '';
+    if (!/^(?:[0-9A-F]{2}:){31}[0-9A-F]{2}$/i.test(fingerprint)) return;
+    void navigator.clipboard.writeText(fingerprint).then(
+      () => {
+        copyButton.textContent = t('trust.copied');
+      },
+      () => {
+        copyButton.textContent = t('trust.copy');
+      },
+    );
+  });
 }
 
 async function handleLoginSubmit(
@@ -102,7 +102,7 @@ function showError(errorDiv: HTMLElement, msg: string): void {
 async function loadCertificateInfo(certInfoDiv: HTMLElement): Promise<void> {
   try {
     const { data } = await getBootstrapLogin();
-    if (!data?.certificate?.fingerprint) return;
+    if (!data?.certificate?.fingerprint) throw new Error('Certificate unavailable');
 
     // Format fingerprint with colons every 2 chars
     const fp = data.certificate.fingerprint.match(/.{1,2}/g)?.join(':') ?? '';
@@ -125,37 +125,7 @@ async function loadCertificateInfo(certInfoDiv: HTMLElement): Promise<void> {
 
     certInfoDiv.classList.remove('hidden');
   } catch {
-    // Silently fail - this is optional info
-  }
-}
-
-async function loadVersionAndPaths(): Promise<void> {
-  const versionEl = document.getElementById('login-version');
-  const insiderEl = document.getElementById('login-insider');
-
-  // Fetch version (public endpoint)
-  try {
-    const versionRes = await fetch('/api/version');
-    if (versionRes.ok) {
-      const version = await versionRes.text();
-      if (versionEl) versionEl.textContent = `v${version}`;
-    }
-  } catch {
-    // Silently fail
-  }
-
-  // Fetch paths for insider info (may require auth, that's ok)
-  try {
-    const pathsRes = await fetch('/api/paths');
-    if (pathsRes.ok && insiderEl) {
-      const paths = (await pathsRes.json()) as { settingsFile?: string; logDirectory?: string };
-      const lines = [
-        `settings: ${paths.settingsFile || 'n/a'}`,
-        `logs: ${paths.logDirectory || 'n/a'}`,
-      ];
-      insiderEl.textContent = lines.join('\n');
-    }
-  } catch {
-    // Silently fail - insider info is optional
+    const fingerprint = document.getElementById('cert-fingerprint');
+    if (fingerprint) fingerprint.textContent = t('trust.errorLoading');
   }
 }

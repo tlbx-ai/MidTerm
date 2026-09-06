@@ -8,7 +8,6 @@ data class Server(
     val id: String = UUID.randomUUID().toString(),
     var name: String,
     var url: String,
-    var allowUntrustedCertificate: Boolean = false,
     var lastConnected: Long = 0,
     var lastRefresh: Long = 0
 ) {
@@ -16,7 +15,6 @@ data class Server(
         put("id", id)
         put("name", name)
         put("url", url)
-        put("allowUntrustedCertificate", allowUntrustedCertificate)
         put("lastConnected", lastConnected)
         put("lastRefresh", lastRefresh)
     }
@@ -28,7 +26,6 @@ data class Server(
                 id = json.optString("id").ifBlank { UUID.randomUUID().toString() },
                 name = json.optString("name").ifBlank { defaultName(normalizedUrl) },
                 url = normalizedUrl,
-                allowUntrustedCertificate = json.optBoolean("allowUntrustedCertificate", false),
                 lastConnected = json.optLong("lastConnected", 0),
                 lastRefresh = json.optLong("lastRefresh", 0)
             )

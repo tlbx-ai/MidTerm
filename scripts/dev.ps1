@@ -54,8 +54,8 @@ $script:currentAgentHostPath = $null
 
 function Test-StableSupervisor {
     try {
-        $version = Invoke-RestMethod `
-            -Uri "https://localhost:2000/api/version" `
+        $bootstrap = Invoke-RestMethod `
+            -Uri "https://localhost:2000/api/bootstrap/login" `
             -SkipCertificateCheck `
             -TimeoutSec 5
     }
@@ -63,11 +63,11 @@ function Test-StableSupervisor {
         throw "The stable tlbx supervisor on https://localhost:2000 is not healthy. Refusing to start a source instance while supervision is unavailable."
     }
 
-    if ([string]::IsNullOrWhiteSpace([string]$version)) {
-        throw "The stable tlbx supervisor returned no version. Refusing to start the source instance."
+    if ([string]::IsNullOrWhiteSpace([string]$bootstrap.certificate.fingerprint)) {
+        throw "The stable tlbx supervisor returned no certificate bootstrap. Refusing to start the source instance."
     }
 
-    return [string]$version
+    return "login endpoint ready"
 }
 
 function Resolve-TailnetIPv4 {

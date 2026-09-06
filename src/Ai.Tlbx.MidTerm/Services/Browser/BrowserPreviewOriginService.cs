@@ -52,7 +52,7 @@ public sealed class BrowserPreviewOriginService
 
     public bool IsPreviewRequest(HttpContext context)
     {
-        return IsEnabled && context.Request.Host.Port == PreviewPort;
+        return IsEnabled && context.Connection.LocalPort == PreviewPort;
     }
 
     public bool ShouldBlockPath(string path)

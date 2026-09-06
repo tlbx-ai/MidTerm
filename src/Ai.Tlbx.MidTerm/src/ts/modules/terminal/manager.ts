@@ -114,6 +114,13 @@ import {
 import { handleOsc7Cwd } from '../process';
 import { recordTerminalKeyLog } from '../diagnostics';
 import { getActiveTab } from '../sessionTabs';
+import { setTerminalParseStallHandler } from '../comms/muxChannel';
+
+export function initTerminalRecovery(): void {
+  setTerminalParseStallHandler((id, state) => {
+    recreateTerminalForRecovery(id, state, 'xterm_parse_stalled');
+  });
+}
 
 interface TerminalStartupPaintRecoveryState {
   attempt: number;
@@ -206,7 +213,7 @@ function scheduleTerminalStartupPaintRecovery(
             `Terminal ${sessionId} startup framebuffer remained blank; recreating terminal and replaying`,
         );
         terminalStartupPaintRecreations.add(sessionId);
-        recreateTerminalForStartupRecovery(sessionId, state);
+        recreateTerminalForRecovery(sessionId, state);
         return;
       }
 
@@ -254,7 +261,11 @@ export function ensureTerminalStartupPaintRecovery(sessionId: string, state: Ter
  * the session-local equivalent of the F5 recovery that users previously needed
  * when xterm's empty-write replay barrier stopped invoking callbacks.
  */
-function recreateTerminalForStartupRecovery(sessionId: string, state: TerminalState): void {
+export function recreateTerminalForRecovery(
+  sessionId: string,
+  state: TerminalState,
+  cause = 'startup_terminal_recreated',
+): void {
   if (sessionTerminals.get(sessionId) !== state) return;
 
   const parent = state.container.parentElement;
@@ -280,7 +291,7 @@ function recreateTerminalForStartupRecovery(sessionId: string, state: TerminalSt
   // The explicit bypass is safe only for this fresh parser/renderer. It keeps
   // the replay from entering the stale empty-write barrier again if the server
   // responds just after terminal.open().
-  restartStalledSessionRecovery(sessionId, 'startup_terminal_recreated', true);
+  restartStalledSessionRecovery(sessionId, cause, true);
 }
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import {
@@ -912,15 +923,6 @@ function hasWebglPriority(sessionId: string, state: TerminalState): boolean {
   );
 }
 
-function enforceManagedWebglLimit(): void {
-  for (const sessionId of [...terminalsWithWebgl]) {
-    const state = sessionTerminals.get(sessionId);
-    if (state && isWebglOwnershipManaged(state) && !hasWebglPriority(sessionId, state)) {
-      detachWebglAddon(sessionId, state);
-    }
-  }
-}
-
 function evictWebglContextForPrioritySession(): boolean {
   for (const candidateId of terminalsWithWebgl) {
     const candidate = sessionTerminals.get(candidateId);
@@ -1079,18 +1081,12 @@ export function syncWebglSessionPriority(prioritySessionIds: readonly string[]):
     return;
   }
 
-  // A hidden tab retains its xterm buffer, but it must not retain a GPU
-  // renderer. Xterm 6.1/WebGL 0.20 makes each preserved context materially
-  // expensive, so keeping one per previously visited tab multiplies Chrome's
-  // private memory without producing a visible pixel. Keep WebGL on the active
-  // session and visible layout panes so sustained output remains GPU-backed;
-  // switching exposes the preserved canvas immediately and transfers renderer
-  // ownership without recreating the terminal or its buffer.
-  for (const sessionId of [...terminalsWithWebgl]) {
-    const state = sessionTerminals.get(sessionId);
-    if (state && isWebglOwnershipManaged(state) && !hasWebglPriority(sessionId, state)) {
-      detachWebglAddon(sessionId, state);
-    }
+  // Retain visited renderers within MAX_WEBGL_CONTEXTS. Destroying a renderer
+  // on every tab switch reallocates its canvases and causes a visible repaint.
+  // Existing eviction gives visible sessions priority and removes the least
+  // recently used hidden holder only when a new context needs the budget.
+  for (const sessionId of prioritySessionIds) {
+    if (terminalsWithWebgl.delete(sessionId)) terminalsWithWebgl.add(sessionId);
   }
 
   webglPrioritySessionIds.forEach((sessionId) => {
@@ -1372,7 +1368,6 @@ export function createTerminalForSession(
   };
 
   sessionTerminals.set(sessionId, state);
-  enforceManagedWebglLimit();
 
   // Wait for fonts to be ready before opening terminal
   // This ensures xterm.js measures the correct font for canvas rendering

@@ -4,6 +4,7 @@ import { dom } from '../../state';
 import {
   syncSidebarActiveSessionState,
   syncSidebarSessionDisplayText,
+  syncSidebarSessionStructuralClasses,
 } from './spacesTreeSidebarDisplay';
 
 vi.mock('./sessionList', () => ({
@@ -30,6 +31,42 @@ afterEach(() => {
 });
 
 describe('spaces tree sidebar display sync', () => {
+  it('updates structural classes without clearing transient menu and drag state', () => {
+    const classes = new Set(['menu-open', 'menu-open-up', 'dragging']);
+    const item = {
+      classList: {
+        add: (...names: string[]) => names.forEach((name) => classes.add(name)),
+        toggle: (name: string, enabled: boolean) => {
+          if (enabled) {
+            classes.add(name);
+          } else {
+            classes.delete(name);
+          }
+        },
+      },
+    };
+
+    syncSidebarSessionStructuralClasses(item as unknown as HTMLElement, {
+      active: true,
+      reorderable: false,
+      child: true,
+      inLayout: false,
+    });
+
+    expect(classes).toEqual(
+      new Set([
+        'session-item',
+        'two-line',
+        'spaces-tree-session-item',
+        'active',
+        'tmux-child',
+        'menu-open',
+        'menu-open-up',
+        'dragging',
+      ]),
+    );
+  });
+
   it('updates a terminal-title-only row without replacing the sidebar tree', () => {
     const title = { textContent: 'old title' };
     const titleRow = {};

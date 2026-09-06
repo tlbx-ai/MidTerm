@@ -102,7 +102,8 @@ interface RgbColor {
 }
 
 export function getBackgroundImageUrl(revision: number): string {
-  return `/api/settings/background-image?v=${encodeURIComponent(`${revision}`)}`;
+  // Bypass pre-normalization browser caches so existing images reach the migration endpoint.
+  return `/api/settings/background-image?v=${encodeURIComponent(`${revision}`)}&encoding=2`;
 }
 
 export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void {

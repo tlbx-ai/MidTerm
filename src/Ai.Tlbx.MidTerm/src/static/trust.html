@@ -36,8 +36,10 @@
                 <button type="button" class="copy-btn" id="copy-fingerprint" title="Copy to clipboard" data-i18n="trust.copy">Copy</button>
             </div>
             <div class="trust-hint">
-                <strong>Security check:</strong> Compare this fingerprint with the one shown during installation
-                or on your original trusted device. If they match, this connection is authentic.
+                <strong>Security check:</strong> Run <code>mt --fingerprint</code> directly on the tlbx host, or obtain its fingerprint
+                from the administrator over a trusted channel. Compare that trusted value with
+                the SHA-256 fingerprint in your browser’s certificate viewer before entering a password.
+                The value displayed by this page is server-reported and cannot authenticate this connection by itself.
             </div>
         </section>
 
@@ -77,7 +79,7 @@
                         <li>Open <strong>Settings &rarr; Security &rarr; Encryption & credentials</strong></li>
                         <li>Tap <strong>Install a certificate &rarr; CA certificate</strong></li>
                         <li>Select the downloaded <code>tlbx.crt</code> file</li>
-                        <li>Verify the fingerprint shown matches the one above</li>
+                        <li>Verify the fingerprint against the value obtained directly from the host or a trusted administrator</li>
                     </ol>
                     <p class="install-note">Note: Menu names vary by Android version and manufacturer.</p>
                 </div>
@@ -130,7 +132,7 @@ sudo update-ca-certificates</code>
                 <li>Click the <strong>padlock icon</strong> in your browser's address bar</li>
                 <li>Click <strong>Certificate</strong> or <strong>Connection is secure</strong></li>
                 <li>Find the <strong>SHA-256 fingerprint</strong></li>
-                <li>Compare it with the fingerprint shown above</li>
+                <li>Compare it with the fingerprint obtained directly from the host or a trusted administrator</li>
             </ol>
             <div class="warning-box">
                 <strong>Security Warning:</strong> Never enter passwords or sensitive information
@@ -139,16 +141,7 @@ sudo update-ca-certificates</code>
             </div>
         </section>
 
-        <!-- Connection info -->
-        <section class="trust-section endpoints-section">
-            <h2 data-i18n="trust.trustedAddresses">Trusted Addresses in Certificate</h2>
-            <div id="endpoints-list" class="endpoints-list">
-                <p>Loading...</p>
-            </div>
-            <div class="cert-validity">
-                <span id="cert-valid-until"></span>
-            </div>
-        </section>
+
 
         <div class="trust-footer">
             <a href="/" class="back-link" data-i18n="trust.backTotlbx">&larr; Back to tlbx</a>

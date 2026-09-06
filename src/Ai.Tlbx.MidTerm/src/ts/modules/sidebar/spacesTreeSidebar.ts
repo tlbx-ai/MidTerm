@@ -6,7 +6,7 @@ import {
   setSessionNotes as apiSetSessionNotes,
   type HistoryPatchRequest,
 } from '../../api/client';
-import { icon, MOBILE_BREAKPOINT, MOBILE_TOUCH_BREAKPOINT } from '../../constants';
+import { icon, MOBILE_BREAKPOINT } from '../../constants';
 import { dom } from '../../state';
 import {
   $activeSessionId,
@@ -67,12 +67,12 @@ import {
   createSpaceChevron,
   createTextSpan,
 } from './spacesTreeSidebarElements';
+import { syncSidebarSessionStructuralClasses } from './spacesTreeSidebarDisplay';
 
 export interface SessionListCallbacks {
   onSelect: (sessionId: string, options?: SessionSelectionOptions) => void;
   onDelete: (sessionId: string) => void;
   onRename: (sessionId: string) => void;
-  onRepairDisplay: (sessionId: string) => void;
   onToggleAgentControl: (sessionId: string) => void;
   onPinToHistory: (sessionId: string) => void;
   onEnableMidtermFeatures?: (sessionId: string) => void;
@@ -233,7 +233,7 @@ export function renderSessionList(): void {
     void refreshSidebarSpacesTree();
   }
 
-  closePopovers();
+  closeSpacesTreePopovers();
   renderSidebarTree();
 }
 
@@ -350,6 +350,15 @@ function renderSidebarTree(): void {
     patch: patchSidebarRootNode,
     destroy: destroySidebarTreeNode,
   });
+
+  const openMobileMenuItem = host.querySelector<HTMLElement>('.session-item.menu-open');
+  if (openMobileMenuItem) {
+    if (isMobileSessionMenuEnabled()) {
+      queueMobileSessionActionMenuPosition(openMobileMenuItem);
+    } else {
+      closeMobileSessionActionMenu();
+    }
+  }
 }
 
 function getSidebarRootItems(): SidebarRootItem[] {
@@ -1139,24 +1148,18 @@ function configureSidebarSessionNode(
   isReorderable: boolean,
 ): void {
   const isChild = !!entry.session.parentSessionId;
-  const classNames = ['session-item', 'two-line', 'spaces-tree-session-item'];
-  if (entry.id === $activeSessionId.get()) {
-    classNames.push('active');
-  }
-  if (isReorderable) {
-    classNames.push('spaces-tree-session-item-reorderable');
-  }
+  syncSidebarSessionStructuralClasses(item, {
+    active: entry.id === $activeSessionId.get(),
+    reorderable: isReorderable,
+    child: isChild,
+    inLayout: isSessionInLayout(entry.id),
+  });
+
   if (isChild) {
-    classNames.push('tmux-child');
     item.dataset.parentId = entry.session.parentSessionId ?? '';
   } else {
     delete item.dataset.parentId;
   }
-  if (isSessionInLayout(entry.id)) {
-    classNames.push('in-layout');
-  }
-
-  item.className = classNames.join(' ');
   item.dataset.sessionId = entry.id;
   item.dataset.controlMode = getSessionControlMode(entry.session);
   if (reorderScope) {
@@ -1216,33 +1219,9 @@ function getSidebarSessionActionsSignature(entry: SidebarSessionRef): string {
     t(isSessionNotesExpanded(entry.id) ? 'session.collapseNotes' : 'session.expandNotes'),
     isSessionInLayout(entry.id),
     t('session.removeFromLayout'),
-    entry.machineId === null && !entry.session.appServerControlOnly,
-    t('session.repairDisplay'),
     t('session.rename'),
     t('session.close'),
   ].join('\u001f');
-}
-
-function appendRepairDisplayAction(actions: HTMLDivElement, entry: SidebarSessionRef): void {
-  if (entry.machineId !== null || entry.session.appServerControlOnly) {
-    return;
-  }
-
-  const repairButton = document.createElement('button');
-  repairButton.className = 'session-repair-display';
-  repairButton.setAttribute('role', 'menuitem');
-  repairButton.title = t('session.repairDisplay');
-  repairButton.setAttribute('aria-label', t('session.repairDisplay'));
-  repairButton.innerHTML = `
-    <span class="session-action-icon text-icon" aria-hidden="true">↻</span>
-    <span class="session-action-label">${escapeHtml(t('session.repairDisplay'))}</span>
-  `;
-  repairButton.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    callbacks?.onRepairDisplay(entry.id);
-  });
-  actions.appendChild(repairButton);
 }
 
 function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessionRef): void {
@@ -1324,8 +1303,6 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
     actions.appendChild(undockButton);
   }
 
-  appendRepairDisplayAction(actions, entry);
-
   const renameButton = document.createElement('button');
   renameButton.className = 'session-rename';
   renameButton.setAttribute('role', 'menuitem');
@@ -1365,25 +1342,24 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
 // =============================================================================
 
 let mobileSessionActionBackdrop: HTMLDivElement | null = null;
+let mobileSessionActionPositionFrameId: number | null = null;
 
 /**
  * Session action dropdowns are only used on mobile layouts.
  */
 function isMobileSessionMenuEnabled(): boolean {
-  if (window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches) {
-    return true;
-  }
-
-  return (
-    window.matchMedia('(hover: none) and (pointer: coarse)').matches &&
-    window.innerWidth <= MOBILE_TOUCH_BREAKPOINT
-  );
+  return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches;
 }
 
 /**
  * Close any open mobile session action menus.
  */
 export function closeMobileSessionActionMenu(): void {
+  if (mobileSessionActionPositionFrameId !== null) {
+    window.cancelAnimationFrame(mobileSessionActionPositionFrameId);
+    mobileSessionActionPositionFrameId = null;
+  }
+
   document.querySelectorAll<HTMLElement>('.session-item.menu-open').forEach((el) => {
     el.classList.remove('menu-open');
     el.classList.remove('menu-open-up');
@@ -1402,6 +1378,19 @@ export function closeMobileSessionActionMenu(): void {
     mobileSessionActionBackdrop.remove();
     mobileSessionActionBackdrop = null;
   }
+}
+
+function queueMobileSessionActionMenuPosition(item: HTMLElement): void {
+  if (mobileSessionActionPositionFrameId !== null) {
+    window.cancelAnimationFrame(mobileSessionActionPositionFrameId);
+  }
+
+  mobileSessionActionPositionFrameId = window.requestAnimationFrame(() => {
+    mobileSessionActionPositionFrameId = null;
+    if (item.isConnected && item.classList.contains('menu-open')) {
+      positionMobileSessionActionMenu(item);
+    }
+  });
 }
 
 function showMobileSessionActionBackdrop(): void {
@@ -1491,9 +1480,7 @@ function createSidebarSessionMenuButton(
       item.classList.add('menu-open');
       menuBtn.setAttribute('aria-expanded', 'true');
       showMobileSessionActionBackdrop();
-      requestAnimationFrame(() => {
-        positionMobileSessionActionMenu(item);
-      });
+      queueMobileSessionActionMenuPosition(item);
     }
   });
   return menuBtn;
@@ -2176,9 +2163,13 @@ function positionPopover(popover: HTMLElement, trigger: HTMLElement): void {
   popover.style.left = `${Math.round(left)}px`;
 }
 
-function closePopovers(): void {
+function closeSpacesTreePopovers(): void {
   actionPopoverEl?.classList.add('hidden');
   chooserPopoverEl?.classList.add('hidden');
+}
+
+function closePopovers(): void {
+  closeSpacesTreePopovers();
   closeMobileSessionActionMenu();
 }
 

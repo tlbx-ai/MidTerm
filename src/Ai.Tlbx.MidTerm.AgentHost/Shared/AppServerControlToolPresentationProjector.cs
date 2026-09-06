@@ -456,6 +456,7 @@ public static class AppServerControlToolPresentationProjector
         {
             if (value.ValueKind == JsonValueKind.Object &&
                 value.TryGetProperty(name, out var property) &&
+                property.ValueKind == JsonValueKind.Number &&
                 property.TryGetInt32(out var result))
             {
                 return result;

@@ -474,14 +474,14 @@ function buildHistoryActionToken(entry: AppServerControlHistoryEntry): string {
 }
 
 function resolveHistoryProgressThumbHeightPx(host: HTMLDivElement): number {
-  const coarsePointer =
+  const compactViewport =
     typeof window !== 'undefined' &&
     typeof window.matchMedia === 'function' &&
-    window.matchMedia('(pointer: coarse)').matches;
-  const minPx = coarsePointer
+    window.matchMedia('(max-width: 768px)').matches;
+  const minPx = compactViewport
     ? HISTORY_PROGRESS_THUMB_TOUCH_MIN_PX
     : HISTORY_PROGRESS_THUMB_DESKTOP_MIN_PX;
-  const maxPx = coarsePointer
+  const maxPx = compactViewport
     ? HISTORY_PROGRESS_THUMB_TOUCH_MAX_PX
     : HISTORY_PROGRESS_THUMB_DESKTOP_MAX_PX;
   return Math.max(

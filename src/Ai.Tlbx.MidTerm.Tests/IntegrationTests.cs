@@ -1,3 +1,4 @@
+using SkiaSharp;
 using System.Net.WebSockets;
 using System.Net.Http.Json;
 using System.Collections.Concurrent;
@@ -23,19 +24,103 @@ using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Settings;
 namespace Ai.Tlbx.MidTerm.Tests;
 
-public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime, IDisposable
+public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, IAsyncLifetime, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
     private bool _disposed;
+    private string _sessionCookie = "";
 
-    public IntegrationTests(WebApplicationFactory<Program> factory)
+    public IntegrationTests(AuthenticatedAppFixture factory)
     {
         _factory = factory;
-        _client = _factory.CreateClient();
+        _client = _factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
     }
 
-    public Task InitializeAsync() => Task.CompletedTask;
+    public async Task InitializeAsync()
+    {
+        using var response = await _client.PostAsJsonAsync("/api/auth/login",
+            new LoginRequest { Password = AuthenticatedAppFixture.Password }, AppJsonContext.Default.LoginRequest);
+        response.EnsureSuccessStatusCode();
+        _sessionCookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];
+        _client.DefaultRequestHeaders.Add("Cookie", _sessionCookie);
+    }
+
+    [Fact]
+    public async Task BackgroundGet_MigratesPreviouslyConfiguredImage()
+    {
+        var settingsService = _factory.Services.GetRequiredService<SettingsService>();
+        var service = _factory.Services.GetRequiredService<BackgroundImageService>();
+        var settings = settingsService.Load();
+        settings.BackgroundImageFileName = "app-background.png";
+        settings.BackgroundImageRevision = 123;
+        settingsService.Save(settings);
+        Directory.CreateDirectory(service.GetDirectory());
+        var oldPath = Path.Combine(service.GetDirectory(), "app-background.png");
+        await using (var png = File.Create(oldPath))
+        {
+            using var bitmap = new SKBitmap(4096, 16);
+            bitmap.Erase(SKColors.Black);
+            using var source = SKImage.FromBitmap(bitmap);
+            using var data = source.Encode(SKEncodedImageFormat.Png, 100);
+            data.SaveTo(png);
+        }
+
+        using var response = await _client.GetAsync("/api/settings/background-image?v=123");
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("image/webp", response.Content.Headers.ContentType?.MediaType);
+        using var image = SKBitmap.Decode(await response.Content.ReadAsByteArrayAsync());
+        Assert.Equal(2048, image.Width);
+        Assert.Equal(8, image.Height);
+        Assert.False(File.Exists(oldPath));
+        Assert.True(settingsService.Load().BackgroundImageRevision > 123);
+        using var deleted = await _client.DeleteAsync("/api/settings/background-image");
+        deleted.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task BackgroundUpload_ServesNormalizedWebpAndRejectsInvalidReplacement()
+    {
+        using var png = new MemoryStream();
+        using var bitmap = new SKBitmap(4096, 16);
+        bitmap.Erase(SKColors.Black);
+        using var sourceImage = SKImage.FromBitmap(bitmap);
+        using var data = sourceImage.Encode(SKEncodedImageFormat.Png, 100);
+        data.SaveTo(png);
+        using var form = new MultipartFormDataContent();
+        using var content = new ByteArrayContent(png.ToArray());
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+        form.Add(content, "file", "large.png");
+        using var uploaded = await _client.PostAsync("/api/settings/background-image", form);
+        uploaded.EnsureSuccessStatusCode();
+        using var response = await _client.GetAsync("/api/settings/background-image");
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("image/webp", response.Content.Headers.ContentType?.MediaType);
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        using var image = SKBitmap.Decode(bytes);
+        Assert.Equal(2048, image.Width);
+        Assert.Equal(8, image.Height);
+
+        using var invalid = new MultipartFormDataContent();
+        using var invalidContent = new ByteArrayContent([1, 2, 3]);
+        invalid.Add(invalidContent, "file", "broken.png");
+        using var rejected = await _client.PostAsync("/api/settings/background-image", invalid);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, rejected.StatusCode);
+        Assert.Equal(bytes, await _client.GetByteArrayAsync("/api/settings/background-image"));
+        using var deleted = await _client.DeleteAsync("/api/settings/background-image");
+        deleted.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task AnonymousClient_CannotAccessControlApi()
+    {
+        using var anonymous = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"), HandleCookies = false, AllowAutoRedirect = false
+        });
+        using var response = await anonymous.GetAsync("/api/version");
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, response.StatusCode);
+    }
 
     public async Task DisposeAsync()
     {
@@ -388,6 +473,7 @@ public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Progr
     private async Task<WebSocket> ConnectWebSocketAsync(string path)
     {
         var wsClient = _factory.Server.CreateWebSocketClient();
+        wsClient.ConfigureRequest = request => request.Headers.Cookie = _sessionCookie;
         var uri = new Uri(_factory.Server.BaseAddress, path);
         var wsUri = new UriBuilder(uri) { Scheme = uri.Scheme == "https" ? "wss" : "ws" }.Uri;
 
@@ -458,3 +544,4 @@ public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Progr
         return (T)property.GetValue(instance)!;
     }
 }
+

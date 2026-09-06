@@ -307,7 +307,7 @@ describe('backgroundAppearance', () => {
     );
 
     expect(rootStyle.getPropertyValue('--app-background-image')).toBe(
-      'url("/api/settings/background-image?v=12")',
+      'url("/api/settings/background-image?v=12&encoding=2")',
     );
     expect(rootStyle.getPropertyValue('--app-background-size')).toBe('cover');
     expect(rootStyle.getPropertyValue('--app-background-transform')).toBe(
@@ -490,7 +490,7 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--app-background-animation')).toBe('none');
   });
 
-  it('keeps background image on narrow desktop frames with fine pointer', () => {
+  it('uses compact presentation on narrow desktop frames with fine pointer', () => {
     Object.assign(globalThis.window, {
       matchMedia: (query: string) => ({
         matches: query.includes('max-width'),
@@ -507,11 +507,9 @@ describe('backgroundAppearance', () => {
       }),
     );
 
-    expect(rootStyle.getPropertyValue('--app-background-image')).toBe(
-      'url("/api/settings/background-image?v=12")',
-    );
-    expect(bodyClassList.contains('has-app-background')).toBe(true);
-    expect(bodyClassList.contains('hide-app-background-on-mobile')).toBe(false);
+    expect(rootStyle.getPropertyValue('--app-background-image')).toBe('none');
+    expect(bodyClassList.contains('has-app-background')).toBe(false);
+    expect(bodyClassList.contains('hide-app-background-on-mobile')).toBe(true);
   });
 
   it('suppresses the background image on coarse pointer mobile when the mobile wallpaper toggle is enabled', () => {

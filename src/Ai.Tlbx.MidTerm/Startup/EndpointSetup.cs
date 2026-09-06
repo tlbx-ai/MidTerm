@@ -246,7 +246,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
 
             var authStatus = new AuthStatusResponse
             {
-                AuthenticationEnabled = settings.AuthenticationEnabled,
+                AuthenticationEnabled = true,
                 PasswordSet = !string.IsNullOrEmpty(settings.PasswordHash)
             };
 
@@ -720,24 +720,15 @@ Start-Service -Name $serviceName -ErrorAction Stop
             return Results.Json(publicSettings, AppJsonContext.Default.MidTermSettingsPublic);
         });
 
-        app.MapGet("/api/settings/background-image", (BackgroundImageService backgroundImageService) =>
+        app.MapGet("/api/settings/background-image", async (BackgroundImageService backgroundImageService) =>
         {
-            var settings = settingsService.Load();
-            var imagePath = backgroundImageService.GetCurrentImagePath(settings);
+            var imagePath = await backgroundImageService.GetNormalizedImagePathAsync();
             if (imagePath is null)
             {
                 return Results.NotFound();
             }
 
-            var extension = Path.GetExtension(imagePath).ToLowerInvariant();
-            var contentType = extension switch
-            {
-                ".png" => "image/png",
-                ".jpg" or ".jpeg" => "image/jpeg",
-                _ => "application/octet-stream"
-            };
-
-            return Results.File(imagePath, contentType, enableRangeProcessing: false);
+            return Results.File(imagePath, "image/webp", enableRangeProcessing: false);
         });
 
         app.MapPost("/api/settings/background-image", async (IFormFile file, BackgroundImageService backgroundImageService) =>
@@ -758,11 +749,11 @@ Start-Service -Name $serviceName -ErrorAction Stop
             }
         }).DisableAntiforgery();
 
-        app.MapDelete("/api/settings/background-image", (BackgroundImageService backgroundImageService) =>
+        app.MapDelete("/api/settings/background-image", async (BackgroundImageService backgroundImageService) =>
         {
             try
             {
-                var info = backgroundImageService.Delete();
+                var info = await backgroundImageService.DeleteAsync();
                 return Results.Json(info, AppJsonContext.Default.BackgroundImageInfoResponse);
             }
             catch (Exception ex)

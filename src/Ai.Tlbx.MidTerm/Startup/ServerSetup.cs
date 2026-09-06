@@ -443,6 +443,12 @@ public static class ServerSetup
             await next();
         });
 
+        // Enable upgrade detection before authentication and preview authorization.
+        app.UseWebSockets(new WebSocketOptions
+        {
+            KeepAliveInterval = TimeSpan.FromSeconds(30)
+        });
+
         // Auth middleware must run BEFORE static files so unauthenticated users get redirected to login
         AuthMiddleware.ConfigureAuthMiddleware(
             app,
@@ -451,13 +457,6 @@ public static class ServerSetup
             shareGrantService,
             previewOriginService,
             previewRegistry);
-
-        // WebSockets must be enabled before the web preview proxy middleware so that
-        // context.WebSockets.IsWebSocketRequest is true for proxied WebSocket upgrades
-        app.UseWebSockets(new WebSocketOptions
-        {
-            KeepAliveInterval = TimeSpan.FromSeconds(30)
-        });
 
         // Web preview reverse proxy — after auth, before security headers (short-circuits for /webpreview/*)
         app.UseMiddleware<WebPreviewProxyMiddleware>();

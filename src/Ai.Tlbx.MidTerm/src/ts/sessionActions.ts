@@ -1,3 +1,4 @@
+import { isTerminalVisible } from './modules/terminal/presentationRefresh';
 import { createLogger } from './modules/logging';
 import { suppressAllHeat } from './modules/sidebar';
 import { closeSettings } from './modules/settings';
@@ -7,7 +8,7 @@ import {
   fitSessionToScreen,
   isTerminalViewingScrollback,
   pasteToTerminal,
-  refreshTerminalPresentation,
+  revealTerminalPresentation,
   scrollToBottom,
   applyTerminalScalingSync,
   ensureTerminalStartupPaintRecovery,
@@ -136,6 +137,22 @@ function revealStandaloneTerminal(
   if (isNewlyCreated) ensureTerminalStartupPaintRecovery(sessionId, state);
 }
 
+function focusAlreadyVisibleSession(sessionId: string, focusTerminal: boolean): boolean {
+  const existing = sessionTerminals.get(sessionId);
+  if ($activeSessionId.get() !== sessionId || !existing?.opened || !isTerminalVisible(existing))
+    return false;
+  if (focusTerminal) existing.terminal.focus();
+  return true;
+}
+
+function hideStandaloneTerminalContainers(): void {
+  sessionTerminals.forEach((state, id) => {
+    if (!isSessionInLayout(id)) {
+      state.container.classList.add('hidden');
+    }
+  });
+}
+
 export function createSessionActionHandlers({
   animateBookmarkSaveSuccess,
   buildAppServerControlHistoryDedupeKey,
@@ -143,14 +160,6 @@ export function createSessionActionHandlers({
   getBookmarkSurfaceType,
   isAppServerControlOnlySession,
 }: SessionActionsDeps) {
-  function hideStandaloneTerminalContainers(): void {
-    sessionTerminals.forEach((state, id) => {
-      if (!isSessionInLayout(id)) {
-        state.container.classList.add('hidden');
-      }
-    });
-  }
-
   function syncStandaloneSessionWrapper(sessionId: string): void {
     dom.terminalsArea?.querySelectorAll('.session-wrapper').forEach((wrapper) => {
       (wrapper as HTMLElement).classList.toggle(
@@ -186,7 +195,7 @@ export function createSessionActionHandlers({
 
     attachHubChannel(sessionId);
     requestAnimationFrame(() => {
-      refreshTerminalPresentation(sessionId, state);
+      revealTerminalPresentation(sessionId, state);
       if (focusTerminal) {
         state.terminal.focus();
       }
@@ -221,6 +230,7 @@ export function createSessionActionHandlers({
   }
 
   function selectStandaloneSession(sessionId: string, focusTerminal: boolean): void {
+    if (focusAlreadyVisibleSession(sessionId, focusTerminal)) return;
     hideStandaloneTerminalContainers();
     $activeSessionId.set(sessionId);
     suppressAllHeat(1500);
@@ -254,7 +264,7 @@ export function createSessionActionHandlers({
 
     requestAnimationFrame(() => {
       if (state) {
-        refreshTerminalPresentation(sessionId, state);
+        revealTerminalPresentation(sessionId, state);
         if (activeTab === 'terminal') {
           if (hasTerminalSizeControl(sessionId)) {
             fitSessionToScreen(sessionId);

@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using Ai.Tlbx.MidTerm.Common.Identity;
 using System.Text;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
@@ -81,6 +84,53 @@ public static class CliCommands
         if (args.Contains("--help", StringComparer.Ordinal) || args.Contains("-h", StringComparer.Ordinal))
         {
             PrintHelp();
+            return true;
+        }
+
+        if (args.Contains("--set-password", StringComparer.Ordinal))
+        {
+            Console.Error.Write("New password: ");
+            var password = Console.IsInputRedirected ? Console.ReadLine() ?? "" : ReadPasswordMasked();
+            var passwordError = AuthService.ValidateNewPassword(password);
+            if (passwordError is not null)
+            {
+                Console.Error.WriteLine(passwordError);
+                Environment.ExitCode = 1;
+                return true;
+            }
+
+            var settingsService = new SettingsService();
+            var settings = settingsService.Load();
+            settings.PasswordHash = AuthService.HashPasswordStatic(password);
+            settings.AuthenticationEnabled = true;
+            settings.SessionSecret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+            settingsService.Save(settings);
+            Console.WriteLine("Password saved. Restart any running tlbx instance to close existing connections.");
+            return true;
+        }
+
+        if (args.Contains("--fingerprint", StringComparer.Ordinal))
+        {
+            var settingsService = new SettingsService();
+            var settings = settingsService.Load();
+            var path = settings.CertificatePath ?? Path.Combine(
+                settingsService.SettingsDirectory,
+                TlbxProductIdentity.GetCertificateFileName(settingsService.SettingsDirectory));
+            try
+            {
+                using var certificate = path.EndsWith(".pfx", StringComparison.OrdinalIgnoreCase)
+                    || path.EndsWith(".p12", StringComparison.OrdinalIgnoreCase)
+                    ? X509CertificateLoader.LoadPkcs12FromFile(path, settings.CertificatePassword, X509KeyStorageFlags.EphemeralKeySet)
+                    : X509CertificateLoader.LoadCertificateFromFile(path);
+                Console.WriteLine("Configured HTTPS certificate SHA-256:");
+                Console.WriteLine(BitConverter.ToString(certificate.GetCertHash(HashAlgorithmName.SHA256)).Replace('-', ':'));
+                Console.WriteLine("Compare with the browser certificate viewer before entering your password.");
+            }
+            catch (Exception ex) when (ex is IOException or CryptographicException or UnauthorizedAccessException)
+            {
+                Console.Error.WriteLine($"Could not read the configured certificate: {ex.Message}");
+                Environment.ExitCode = 1;
+            }
             return true;
         }
 
@@ -424,6 +474,8 @@ public static class CliCommands
         Console.WriteLine("  --bind <address>    Set bind address (default: 0.0.0.0)");
         Console.WriteLine("  --version, -v       Show version");
         Console.WriteLine("  --help, -h          Show this help");
+        Console.WriteLine("  --set-password      Set/reset the password locally (masked prompt or stdin)");
+        Console.WriteLine("  --fingerprint       Show the configured HTTPS certificate SHA-256");
         Console.WriteLine("  --hash-password     Hash a password (reads from stdin)");
         Console.WriteLine("  --write-secret <k>  Store secret (reads value from stdin)");
         Console.WriteLine("                      Keys: password_hash, session_secret, certificate_password");
@@ -433,10 +485,8 @@ public static class CliCommands
         Console.WriteLine("Password Recovery:");
         Console.WriteLine("  If you forget your password:");
         Console.WriteLine("  1. Stop the tlbx service");
-        Console.WriteLine("  2. Edit settings.json (location shown on startup)");
-        Console.WriteLine("  3. Set \"authenticationEnabled\" to false");
-        Console.WriteLine("  4. Restart tlbx");
-        Console.WriteLine("  5. Set new password in Settings > Security");
+        Console.WriteLine("  2. Run mt --set-password with the same settings directory/service identity");
+        Console.WriteLine("  3. Restart tlbx; existing login sessions are invalidated");
         Console.WriteLine();
         Console.WriteLine("Settings locations:");
         Console.WriteLine("  Service: %ProgramData%\\MidTerm\\settings.json (Windows)");

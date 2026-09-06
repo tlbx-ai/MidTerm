@@ -2,6 +2,7 @@ import type { TerminalState } from '../../types';
 
 export interface ResumeCursorSnapshot {
   receivedSeq: bigint;
+  submittedSeq: bigint;
   renderedSeq: bigint;
 }
 
@@ -10,10 +11,10 @@ export function getResumeSequence(snapshot: ResumeCursorSnapshot | undefined): b
     return null;
   }
 
-  // receivedSeq means the bytes have been handed to xterm. RecoveryBegin places
-  // a write barrier behind them, so resuming here avoids replaying xterm's own
-  // pending WriteBuffer while still excluding frames in tlbx's decode queue.
-  return snapshot.receivedSeq !== 0n ? snapshot.receivedSeq : snapshot.renderedSeq;
+  // Decoded bytes can still belong to an unsent tlbx batch. Only bytes handed
+  // to xterm survive retiring that batch. RecoveryBegin drains xterm's writes
+  // before continuing from this cursor, without replaying its pending bytes.
+  return snapshot.submittedSeq;
 }
 
 export function getRenderedResumeSequence(

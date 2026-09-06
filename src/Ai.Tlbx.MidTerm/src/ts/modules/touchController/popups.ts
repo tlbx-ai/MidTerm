@@ -6,6 +6,7 @@
  */
 
 import { $activeSessionId } from '../../stores';
+import { getSafeViewportBounds } from '../../utils/safeViewport';
 import { sendInput } from '../comms';
 import { KEY_SEQUENCES, KEY_LABELS } from './constants';
 
@@ -76,6 +77,21 @@ let outsideTapHandler: ((e: TouchEvent | MouseEvent) => void) | null = null;
 
 export function initPopups(): void {
   renderAllPopups();
+  window.addEventListener('resize', repositionActivePopup);
+  window.visualViewport?.addEventListener('resize', repositionActivePopup);
+}
+
+export function destroyPopups(): void {
+  closePopup();
+  window.removeEventListener('resize', repositionActivePopup);
+  window.visualViewport?.removeEventListener('resize', repositionActivePopup);
+}
+
+function repositionActivePopup(): void {
+  if (!activePopup) return;
+  const popup = document.getElementById(`touch-popup-${activePopup}`);
+  const trigger = document.querySelector<HTMLElement>(`[data-popup="${activePopup}"]`);
+  if (popup && trigger) positionPopup(popup, trigger);
 }
 
 export function togglePopup(popupId: string): void {
@@ -143,13 +159,40 @@ function openPopup(popupId: string): void {
 }
 
 function positionPopup(popup: HTMLElement, trigger: HTMLElement): void {
+  const keyboardHost = document.querySelector<HTMLElement>('.smart-input-mobile-touch-host');
+  if (document.body.classList.contains('keyboard-replacement') && keyboardHost) {
+    keyboardHost.appendChild(popup);
+    popup.classList.add('touch-popup-docked');
+    popup.style.removeProperty('top');
+    popup.style.removeProperty('left');
+    popup.style.removeProperty('max-width');
+    popup.style.removeProperty('max-height');
+    return;
+  }
+  if (popup.classList.contains('touch-popup-docked')) {
+    document.body.appendChild(popup);
+    popup.classList.remove('touch-popup-docked');
+  }
+  const viewport = getSafeViewportBounds();
+  const gap = 8;
+  popup.style.maxWidth = `${Math.max(1, viewport.right - viewport.left - gap * 2)}px`;
+  popup.style.maxHeight = `${Math.max(1, viewport.bottom - viewport.top - gap * 2)}px`;
+  popup.style.bottom = 'auto';
   const triggerRect = trigger.getBoundingClientRect();
   const popupRect = popup.getBoundingClientRect();
-
-  let left = triggerRect.left + triggerRect.width / 2 - popupRect.width / 2;
-  left = Math.max(8, Math.min(left, window.innerWidth - popupRect.width - 8));
-
+  const left = Math.max(
+    viewport.left + gap,
+    Math.min(
+      triggerRect.left + triggerRect.width / 2 - popupRect.width / 2,
+      viewport.right - popupRect.width - gap,
+    ),
+  );
+  const top = Math.max(
+    viewport.top + gap,
+    Math.min(triggerRect.top - popupRect.height - gap, viewport.bottom - popupRect.height - gap),
+  );
   popup.style.left = `${left}px`;
+  popup.style.top = `${top}px`;
 }
 
 function renderAllPopups(): void {
@@ -211,7 +254,7 @@ function handlePopupKeyClick(e: MouseEvent): void {
   const key = btn.dataset.key;
   if (key) {
     sendKey(key);
-    closePopup();
+    if (!document.body.classList.contains('keyboard-replacement')) closePopup();
   }
 }
 
@@ -221,7 +264,7 @@ function handlePopupKeyTouch(e: TouchEvent): void {
   const key = btn.dataset.key;
   if (key) {
     sendKey(key);
-    closePopup();
+    if (!document.body.classList.contains('keyboard-replacement')) closePopup();
   }
 }
 

@@ -1,5 +1,8 @@
 # Security policy
 
+For certificate verification, authentication requirements, and local password
+recovery, see [Communication security](docs/CommunicationSecurity.md).
+
 ## Report a vulnerability privately
 
 Use GitHub's private vulnerability reporting form:

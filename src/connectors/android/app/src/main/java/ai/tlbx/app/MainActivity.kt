@@ -6,7 +6,6 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -17,7 +16,6 @@ class MainActivity : Activity() {
     private lateinit var store: ServerStore
     private lateinit var nameInput: EditText
     private lateinit var addressInput: EditText
-    private lateinit var certificateInput: CheckBox
     private lateinit var serverList: LinearLayout
     private lateinit var saveButton: Button
     private lateinit var cancelButton: Button
@@ -31,7 +29,6 @@ class MainActivity : Activity() {
         store = ServerStore(this)
         nameInput = findViewById(R.id.edit_name)
         addressInput = findViewById(R.id.edit_url)
-        certificateInput = findViewById(R.id.allow_untrusted_certificate)
         serverList = findViewById(R.id.server_list)
         saveButton = findViewById(R.id.btn_save)
         cancelButton = findViewById(R.id.btn_cancel)
@@ -91,7 +88,6 @@ class MainActivity : Activity() {
         editingId = server.id
         nameInput.setText(server.name)
         addressInput.setText(server.url)
-        certificateInput.isChecked = server.allowUntrustedCertificate
         saveButton.setText(R.string.save_and_open)
         cancelButton.visibility = View.VISIBLE
         addressInput.requestFocus()
@@ -101,7 +97,6 @@ class MainActivity : Activity() {
         editingId = null
         nameInput.text.clear()
         addressInput.text.clear()
-        certificateInput.isChecked = false
         saveButton.setText(R.string.add_and_open)
         cancelButton.visibility = View.GONE
     }
@@ -118,7 +113,6 @@ class MainActivity : Activity() {
             id = existing?.id ?: java.util.UUID.randomUUID().toString(),
             name = nameInput.text.toString().trim().ifBlank { Server.defaultName(normalizedUrl) },
             url = normalizedUrl,
-            allowUntrustedCertificate = certificateInput.isChecked,
             lastConnected = existing?.lastConnected ?: 0,
             lastRefresh = existing?.lastRefresh ?: 0
         )

@@ -19,6 +19,8 @@ public sealed class ApiKeyService
     private readonly TimeProvider _timeProvider;
     private readonly Lock _lock = new();
 
+    internal event Action<string>? ApiKeyRevoked;
+
     public ApiKeyService(SettingsService settingsService, TimeProvider? timeProvider = null)
     {
         _settingsService = settingsService;
@@ -78,23 +80,24 @@ public sealed class ApiKeyService
 
     public bool DeleteApiKey(string id)
     {
+        var trimmedId = id?.Trim();
+        if (string.IsNullOrEmpty(trimmedId)) return false;
         lock (_lock)
         {
-            var trimmedId = id?.Trim();
-            if (string.IsNullOrEmpty(trimmedId))
-            {
-                return false;
-            }
-
             var records = LoadRecordsOrThrow();
-            var removed = records.RemoveAll(x => string.Equals(x.Id, trimmedId, StringComparison.Ordinal));
-            if (removed == 0)
-            {
+            if (records.RemoveAll(entry => string.Equals(entry.Id, trimmedId, StringComparison.Ordinal)) == 0)
                 return false;
-            }
-
             SaveRecords(records);
-            return true;
+        }
+        ApiKeyRevoked?.Invoke(trimmedId);
+        return true;
+    }
+
+    internal bool IsActive(string id)
+    {
+        lock (_lock)
+        {
+            return LoadRecordsOrThrow().Any(entry => string.Equals(entry.Id, id, StringComparison.Ordinal));
         }
     }
 

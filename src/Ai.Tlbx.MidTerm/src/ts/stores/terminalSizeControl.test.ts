@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { TerminalSizeControlStatus } from '../types';
 import {
+  $terminalSizeControls,
   getTerminalSizeControl,
   removeTerminalSizeControlSource,
   setTerminalSizeControl,
@@ -24,6 +25,19 @@ function status(epoch: number, isOwner: boolean): TerminalSizeControlStatus {
 describe('terminal size-control projection', () => {
   afterEach(() => {
     removeTerminalSizeControlSource(source);
+  });
+
+  it('keeps unchanged snapshots and unaffected sessions stable', () => {
+    const second = { ...status(9, false), sessionId: 'hub:race-test:session-2' };
+    setTerminalSizeControlsForSource(source, [status(9, false), second]);
+    const before = $terminalSizeControls.get();
+    setTerminalSizeControlsForSource(source, [{ ...status(9, false) }, { ...second }]);
+    expect($terminalSizeControls.get()).toBe(before);
+    setTerminalSizeControlsForSource(source, [status(10, true), { ...second }]);
+    expect($terminalSizeControls.get()).not.toBe(before);
+    expect($terminalSizeControls.get()[second.sessionId]).toBe(before[second.sessionId]);
+    setTerminalSizeControlsForSource(source, [status(10, true)]);
+    expect($terminalSizeControls.get()[second.sessionId]).toBeUndefined();
   });
 
   it('does not let a delayed command response regress an authoritative epoch', () => {

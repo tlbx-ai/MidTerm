@@ -1,7 +1,7 @@
 package ai.tlbx.app
 
-import android.app.Activity
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Bitmap
@@ -91,15 +91,10 @@ class TerminalActivity : Activity() {
                 if (!pageFailed) store.markConnected(server.id)
             }
 
-            @SuppressLint("WebViewClientOnReceivedSslError")
             override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
-                if (server.allowUntrustedCertificate && sameOrigin(error.url, server.url)) {
-                    handler.proceed()
-                } else {
-                    handler.cancel()
-                    pageFailed = true
-                    Toast.makeText(this@TerminalActivity, R.string.certificate_rejected, Toast.LENGTH_LONG).show()
-                }
+                handler.cancel()
+                pageFailed = true
+                Toast.makeText(this@TerminalActivity, R.string.certificate_rejected, Toast.LENGTH_LONG).show()
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {

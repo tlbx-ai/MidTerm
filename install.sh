@@ -1105,8 +1105,8 @@ prompt_password() {
             continue
         fi
 
-        if [ ${#password} -lt 4 ]; then
-            echo -e "  ${RED}Password must be at least 4 characters.${NC}"
+        if [ ${#password} -lt 15 ] || [ ${#password} -gt 1024 ]; then
+            echo -e "  ${RED}Password must be between 15 and 1024 characters.${NC}"
             attempt=$((attempt + 1))
             continue
         fi
@@ -1777,24 +1777,24 @@ get_service_pid() {
     fi
 }
 
-request_health() {
+request_bootstrap() {
     local url="$1"
     if command_exists curl; then
-        curl -fsSk --max-time 5 "$url/api/health" 2>/dev/null
+        curl -fsSk --max-time 5 "$url/api/bootstrap/login" 2>/dev/null
     else
-        wget -qO- --timeout=5 --no-check-certificate "$url/api/health" 2>/dev/null
+        wget -qO- --timeout=5 --no-check-certificate "$url/api/bootstrap/login" 2>/dev/null
     fi
 }
 
 READY_PID=""
-READY_HEALTH_RESPONSE=""
+READY_BOOTSTRAP_RESPONSE=""
 READY_VERSION=""
 READY_URL=""
 wait_tlbx_ready() {
     local port="$1" bind_address="$2" service_mode="$3" expected_pid="${4:-}"
-    local attempt service_ready process_ready health_response current_pid
+    local attempt service_ready process_ready bootstrap_response current_pid
     READY_PID=""
-    READY_HEALTH_RESPONSE=""
+    READY_BOOTSTRAP_RESPONSE=""
     READY_VERSION=""
     READY_URL="$(get_primary_access_url "$port" "$bind_address")"
 
@@ -1812,12 +1812,12 @@ wait_tlbx_ready() {
             READY_PID="$current_pid"
         fi
 
-        health_response="$(request_health "$READY_URL" || true)"
-        READY_HEALTH_RESPONSE="$health_response"
+        bootstrap_response="$(request_bootstrap "$READY_URL" || true)"
+        READY_BOOTSTRAP_RESPONSE="$bootstrap_response"
         if [ "$service_ready" = true ] && [ "$process_ready" = true ] && \
-           echo "$health_response" | grep -q '"healthy"[[:space:]]*:[[:space:]]*true'; then
-            READY_VERSION="$(echo "$health_response" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')"
-            log "Process $READY_PID and health endpoint $READY_URL are ready"
+           echo "$bootstrap_response" | grep -q '"fingerprint"[[:space:]]*:[[:space:]]*"[A-Fa-f0-9]\{64\}"'; then
+            READY_VERSION="" # Version details require authentication; readiness uses only certificate bootstrap.
+            log "Process $READY_PID and login bootstrap endpoint $READY_URL are ready"
             return 0
         fi
 
@@ -1827,7 +1827,7 @@ wait_tlbx_ready() {
         [ "$attempt" -eq 15 ] || sleep 1
     done
 
-    log "Process/health readiness failed for $READY_URL after 15 attempts" "ERROR"
+    log "Process/login readiness failed for $READY_URL after 15 attempts" "ERROR"
     return 1
 }
 

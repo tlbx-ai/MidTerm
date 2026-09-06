@@ -28,6 +28,7 @@ import {
   listSessionPreviews,
   setActiveMode,
   setSessionSelectedPreviewName,
+  setSessionViewport,
 } from './webSessionState';
 
 const log = createLogger('webDock');
@@ -238,6 +239,7 @@ export function hideWebPreviewDockForDetach(): void {
 
 /** Fully hide the web preview: close dock, unload iframe, clear target, and clean up detach state. */
 export function applyWebPreviewHiddenState(): void {
+  const previousWidth = getWebPreviewDockWidth();
   const activeId = $activeSessionId.get();
   const activePreviewName = getActivePreviewName();
   $webPreviewDocked.set(false);
@@ -254,7 +256,7 @@ export function applyWebPreviewHiddenState(): void {
   }
 
   refreshDockReservations();
-  handleDockLayoutChange();
+  if (previousWidth > 0) handleDockLayoutChange();
 }
 
 /** Set up mouse and touch drag handlers for resizing the web preview dock panel. */
@@ -361,6 +363,11 @@ export function setViewportSize(width: number, height: number): void {
   const body = document.querySelector<HTMLElement>('.web-preview-dock-body');
   const badge = document.getElementById('web-preview-viewport-badge');
   if (!iframe || !body) return;
+
+  const activeSessionId = $activeSessionId.get();
+  if (activeSessionId) {
+    setSessionViewport(activeSessionId, getActivePreviewName(), width, height);
+  }
 
   if (width <= 0 && height <= 0) {
     $webPreviewViewport.set(null);

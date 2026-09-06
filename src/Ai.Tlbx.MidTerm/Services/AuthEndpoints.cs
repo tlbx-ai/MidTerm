@@ -1,20 +1,16 @@
 using System.Globalization;
 using Ai.Tlbx.MidTerm.Models.Auth;
-using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
 public static class AuthEndpoints
 {
-    private static CookieOptions GetSessionCookieOptions(SettingsService settingsService) => new()
+    private static CookieOptions GetSessionCookieOptions() => new()
     {
         HttpOnly = true,
-        // Sandboxed previews use an opaque origin, so their subresource requests only
-        // carry the auth cookie when dev mode intentionally relaxes SameSite.
-        SameSite = UpdateService.IsDevEnvironment || settingsService.Load().DevMode
-            ? SameSiteMode.None
-            : SameSiteMode.Lax,
+        // Preview access uses a separate route-scoped credential.
+        SameSite = SameSiteMode.Lax,
         Secure = true,
         Path = "/",
         MaxAge = AuthService.SessionTokenValidity
@@ -25,6 +21,9 @@ public static class AuthEndpoints
         app.MapPost("/api/auth/login", (LoginRequest request, HttpContext ctx) =>
         {
             var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            using var passwordOperation = authService.TryBeginPasswordOperation();
+            if (passwordOperation is null) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+
 
             if (authService.IsRateLimited(ip))
             {
@@ -39,10 +38,10 @@ public static class AuthEndpoints
                     statusCode: 429);
             }
 
-            if (string.IsNullOrEmpty(request.Password))
+            if (string.IsNullOrEmpty(request.Password) || request.Password.Length > AuthService.MaximumPasswordLength)
             {
                 return Results.Json(
-                    new AuthResponse { Success = false, Error = "Password required" },
+                    new AuthResponse { Success = false, Error = "Password required (maximum 1024 characters)" },
                     AppJsonContext.Default.AuthResponse,
                     statusCode: 400);
             }
@@ -57,12 +56,17 @@ public static class AuthEndpoints
                     statusCode: 401);
             }
 
+            if (AuthService.NeedsPasswordHashUpgrade(loginSettings.PasswordHash!))
+            {
+                loginSettings.PasswordHash = authService.HashPassword(request.Password);
+                settingsService.Save(loginSettings);
+            }
             authService.ResetAttempts(ip);
             var token = authService.CreateSessionToken();
             ctx.Response.Cookies.Append(
                 AuthService.SessionCookieName,
                 token,
-                GetSessionCookieOptions(settingsService));
+                GetSessionCookieOptions());
 
             return Results.Json(new AuthResponse { Success = true }, AppJsonContext.Default.AuthResponse);
         });
@@ -70,7 +74,7 @@ public static class AuthEndpoints
         app.MapPost("/api/auth/logout", (HttpContext ctx) =>
         {
             authService.RevokeSessionToken(ctx.Request.Cookies[AuthService.SessionCookieName]);
-            ctx.Response.Cookies.Delete(AuthService.SessionCookieName, GetSessionCookieOptions(settingsService));
+            ctx.Response.Cookies.Delete(AuthService.SessionCookieName, GetSessionCookieOptions());
             return Results.Ok();
         });
 
@@ -88,7 +92,7 @@ public static class AuthEndpoints
                 ctx.Response.Cookies.Append(
                     AuthService.SessionCookieName,
                     authService.RenewSessionToken(authentication.SessionTokenId!),
-                    GetSessionCookieOptions(settingsService));
+                    GetSessionCookieOptions());
             }
 
             return Results.NoContent();
@@ -96,27 +100,27 @@ public static class AuthEndpoints
 
         app.MapPost("/api/auth/change-password", (ChangePasswordRequest request, HttpContext ctx) =>
         {
-            if (string.IsNullOrEmpty(request.NewPassword))
+            using var passwordOperation = authService.TryBeginPasswordOperation();
+            if (passwordOperation is null) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            if (authService.IsRateLimited(ip)) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+
+            var passwordError = AuthService.ValidateNewPassword(request.NewPassword);
+            if (passwordError is not null)
             {
-                return Results.Json(
-                    new AuthResponse { Success = false, Error = "New password required" },
-                    AppJsonContext.Default.AuthResponse,
-                    statusCode: 400);
+                return Results.Json(new AuthResponse { Success = false, Error = passwordError },
+                    AppJsonContext.Default.AuthResponse, statusCode: 400);
             }
 
             var pwSettings = settingsService.Load();
-
-            if (!string.IsNullOrEmpty(pwSettings.PasswordHash))
+            if (string.IsNullOrEmpty(request.CurrentPassword)
+                || !authService.VerifyPassword(request.CurrentPassword, pwSettings.PasswordHash))
             {
-                if (string.IsNullOrEmpty(request.CurrentPassword) ||
-                    !authService.VerifyPassword(request.CurrentPassword, pwSettings.PasswordHash))
-                {
-                    return Results.Json(
-                        new AuthResponse { Success = false, Error = "Current password is incorrect" },
-                        AppJsonContext.Default.AuthResponse,
-                        statusCode: 401);
-                }
+                authService.RecordFailedAttempt(ip);
+                return Results.Json(new AuthResponse { Success = false, Error = "Current password is incorrect" },
+                    AppJsonContext.Default.AuthResponse, statusCode: 401);
             }
+            authService.ResetAttempts(ip);
 
             pwSettings.PasswordHash = authService.HashPassword(request.NewPassword);
             pwSettings.AuthenticationEnabled = true;
@@ -127,7 +131,7 @@ public static class AuthEndpoints
             ctx.Response.Cookies.Append(
                 AuthService.SessionCookieName,
                 token,
-                GetSessionCookieOptions(settingsService));
+                GetSessionCookieOptions());
 
             return Results.Json(new AuthResponse { Success = true }, AppJsonContext.Default.AuthResponse);
         });
@@ -137,7 +141,7 @@ public static class AuthEndpoints
             var statusSettings = settingsService.Load();
             return Results.Json(new AuthStatusResponse
             {
-                AuthenticationEnabled = statusSettings.AuthenticationEnabled,
+                AuthenticationEnabled = true,
                 PasswordSet = !string.IsNullOrEmpty(statusSettings.PasswordHash)
             }, AppJsonContext.Default.AuthStatusResponse);
         });

@@ -8,6 +8,59 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class PrioritizedWebSocketWriterTests
 {
     [Fact]
+    public async Task Writer_PreservesSessionOrderAcrossFocusChangesAndRecoveryBarriers()
+    {
+        using var socket = new GateWebSocket();
+        await using var writer = new PrioritizedWebSocketWriter(socket, static (_, _) => { });
+        var first = writer.SendAsync(new byte[] { 0 }, MuxWritePriority.Control).AsTask();
+        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        var old = writer.SendAsync(new byte[] { 1 }, MuxWritePriority.BackgroundLive, "session-a").AsTask();
+        var active = writer.SendAsync(new byte[] { 2 }, MuxWritePriority.ActiveLive, "session-a").AsTask();
+        var begin = writer.SendAsync(new byte[] { 3 }, MuxWritePriority.Control, "session-a").AsTask();
+        var replay = writer.SendAsync(new byte[] { 4 }, MuxWritePriority.Recovery, "session-a").AsTask();
+        var end = writer.SendAsync(new byte[] { 5 }, MuxWritePriority.Control, "session-a").AsTask();
+        var peer = writer.SendAsync(new byte[] { 9 }, MuxWritePriority.ActiveLive, "session-b").AsTask();
+        socket.ReleaseFirstSend();
+        Assert.All(await Task.WhenAll(first, old, active, begin, replay, end, peer), Assert.True);
+        Assert.Equal(new byte[] { 0, 9, 1, 2, 3, 4, 5 }, socket.CompletedFrames);
+    }
+
+    [Fact]
+    public async Task Writer_GivesLowerPrioritySessionBoundedProgress()
+    {
+        using var socket = new GateWebSocket();
+        await using var writer = new PrioritizedWebSocketWriter(socket, static (_, _) => { });
+        var sends = new List<Task<bool>> { writer.SendAsync(new byte[] { 0 }, MuxWritePriority.Control).AsTask() };
+        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        sends.Add(writer.SendAsync(new byte[] { 9 }, MuxWritePriority.BackgroundLive, "slow").AsTask());
+        for (var i = 0; i < 100; i++)
+            sends.Add(writer.SendAsync(new byte[] { 1 }, MuxWritePriority.ActiveLive, "active").AsTask());
+        socket.ReleaseFirstSend();
+        Assert.All(await Task.WhenAll(sends), Assert.True);
+        Assert.InRange(Array.IndexOf(socket.CompletedFrames.ToArray(), (byte)9), 1, PrioritizedWebSocketWriter.PriorityBurstLimit + 1);
+    }
+
+    [Fact]
+    public async Task Writer_FailedSendRejectsLaterWorkAndCompletesOwnedBuffersExactlyOnce()
+    {
+        using var socket = new GateWebSocket { FailSend = true };
+        var writer = new PrioritizedWebSocketWriter(socket, static (_, _) => { });
+        var completed = new ConcurrentBag<bool>();
+        var first = writer.SendAsync(new byte[] { 0 }, MuxWritePriority.Control).AsTask();
+        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        for (var i = 0; i < 20; i++)
+            Assert.True(writer.TryQueueCopy(new byte[] { 1 }, MuxWritePriority.ActiveLive, completed.Add, "session"));
+        socket.ReleaseFirstSend();
+        Assert.False(await first);
+#pragma warning disable IDISP016 // Exercise explicit shutdown and late enqueue after the failure path.
+        await writer.DisposeAsync();
+        Assert.Equal(20, completed.Count);
+        Assert.All(completed, Assert.False);
+        Assert.False(writer.TryQueueCopy(new byte[] { 2 }, MuxWritePriority.Control));
+#pragma warning restore IDISP016
+    }
+
+    [Fact]
     public async Task Writer_SerializesFramesAndHonorsPriorityBetweenSends()
     {
         using var socket = new GateWebSocket();
@@ -95,6 +148,7 @@ public sealed class PrioritizedWebSocketWriterTests
 
     private sealed class GateWebSocket : WebSocket
     {
+        public bool FailSend { get; init; }
         private readonly TaskCompletionSource _firstSendStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _releaseFirstSend = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _sendCount;
@@ -124,6 +178,7 @@ public sealed class PrioritizedWebSocketWriterTests
                 _firstSendStarted.TrySetResult();
                 await _releaseFirstSend.Task.WaitAsync(cancellationToken);
             }
+            if (FailSend) throw new WebSocketException();
             CompletedFrames.Enqueue(buffer[0]);
         }
     }
