@@ -81,6 +81,7 @@ import { bindAuthEvents } from './modules/auth';
 import { fetchBootstrap, getBootstrapData } from './modules/bootstrap';
 import {
   checkForUpdates,
+  applyFullUpdate,
   showChangelog,
   closeChangelog,
   disableChangelogAfterUpdate,
@@ -1315,6 +1316,7 @@ function bindEvents(): void {
 
   bindClick('update-btn', handlePrimaryUpdateAction);
   bindClick('btn-check-updates', checkForUpdates);
+  bindClick('btn-full-update', () => void applyFullUpdate());
   bindClick('btn-apply-update', handlePrimaryUpdateAction);
   bindClick('btn-show-changelog', () => {
     showChangelog();

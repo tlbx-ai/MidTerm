@@ -319,6 +319,8 @@ if ($isPtyBreaking) {
 $versionJson.web = $newVersion
 if ($isPtyBreaking) {
     $versionJson.pty = $newVersion
+    # Older updaters use this floor for web-only releases that follow this refresh.
+    $versionJson.minCompatiblePty = $newVersion
     if ($versionJson.PSObject.Properties["webOnly"]) {
         $versionJson.PSObject.Properties.Remove("webOnly")
     }

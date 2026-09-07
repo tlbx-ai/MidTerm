@@ -364,6 +364,8 @@
   "trust.securityWarning": "在验证指纹匹配之前，切勿输入密码或敏感信息。如果浏览器在之前正常工作后显示证书警告，请在继续之前重新验证指纹。",
   "trust.errorLoading": "加载证书信息时出错",
   "update.checking": "检查中...",
+  "update.fullUpdate": "完整更新",
+  "update.fullUpdateConfirm": "安装所选通道的最新版本（包括所有运行时组件）？即使已是最新版本也可执行。服务器以及所有终端和代理会话将重新启动；部分会话可能需要手动恢复。",
   "update.updating": "更新中...",
   "update.restarting": "重启中...",
   "update.failed": "检查更新失败",

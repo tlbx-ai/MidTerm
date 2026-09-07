@@ -963,6 +963,8 @@
   "fileBrowser.failedToLoad": "Failed to load file",
   "fileBrowser.download": "Download",
   "update.checking": "Checking...",
+  "update.fullUpdate": "Full Update",
+  "update.fullUpdateConfirm": "Install the latest release in the selected channel, including all runtime components? This also works when you are already up to date. The server and all terminal and agent sessions will restart; some sessions may need to be resumed manually.",
   "update.updating": "Updating...",
   "update.restarting": "Restarting...",
   "update.failed": "Failed to check for updates",

@@ -361,6 +361,8 @@
   "trust.securityWarning": "Nunca ingreses contraseñas o información confidencial hasta que hayas verificado que la huella digital coincide. Si tu navegador muestra una advertencia de certificado después de haber funcionado anteriormente, vuelve a verificar la huella digital antes de continuar.",
   "trust.errorLoading": "Error al cargar la información del certificado",
   "update.checking": "Verificando...",
+  "update.fullUpdate": "Actualización completa",
+  "update.fullUpdateConfirm": "¿Instalar la última versión del canal seleccionado, incluidos todos los componentes de ejecución? También funciona si ya estás al día. El servidor y todas las sesiones de terminal y agentes se reiniciarán; algunas sesiones podrían requerir reanudación manual.",
   "update.updating": "Actualizando...",
   "update.restarting": "Reiniciando...",
   "update.failed": "Error al buscar actualizaciones",

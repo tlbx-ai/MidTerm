@@ -9,6 +9,7 @@ import type { UpdateInfo, UpdateResult, UpdateType } from '../../api/types';
 import { $frontendRefreshState, $updateInfo, $currentSettings } from '../../stores';
 import { createLogger } from '../logging';
 import { escapeHtml } from '../../utils';
+import { showAlert, showConfirm } from '../../utils/dialog';
 import { t } from '../i18n';
 import {
   applyUpdate as apiApplyUpdate,
@@ -288,6 +289,38 @@ export function applyUpdate(): void {
       }
       log.error(() => `Update error: ${String(e)}`);
     });
+}
+
+/** Reinstall the newest release in the selected channel, including both host runtimes. */
+export async function applyFullUpdate(): Promise<void> {
+  const btn = document.getElementById('btn-full-update') as HTMLButtonElement | null;
+  if (btn?.disabled) return;
+  if (btn) btn.disabled = true;
+
+  try {
+    const confirmed = await showConfirm(t('update.fullUpdateConfirm'), {
+      title: t('update.fullUpdate'),
+      confirmLabel: t('sidebar.updateRestart'),
+    });
+    if (!confirmed) return;
+
+    if (btn) btn.textContent = t('update.updating');
+    const { response } = await apiApplyUpdate(undefined, true);
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    setPendingChangelogFlag();
+    waitForServerAndReload('full');
+  } catch (error: unknown) {
+    log.error(() => `Full update failed: ${String(error)}`);
+    await showAlert(t('update.failed'), { details: String(error) });
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = t('update.fullUpdate');
+    }
+  }
 }
 
 /**

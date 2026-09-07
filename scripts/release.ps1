@@ -383,6 +383,7 @@ if ($isPtyBreaking) {
 $versionJson.web = $newVersion
 if ($isPtyBreaking) {
     $versionJson.pty = $newVersion
+    $versionJson.minCompatiblePty = $newVersion
     # Remove webOnly flag for low-level runtime refreshes.
     if ($versionJson.PSObject.Properties["webOnly"]) {
         $versionJson.PSObject.Properties.Remove("webOnly")

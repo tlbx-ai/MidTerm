@@ -361,6 +361,8 @@
   "trust.securityWarning": "N'entrez jamais de mots de passe ou d'informations sensibles tant que vous n'avez pas vérifié que l'empreinte correspond. Si votre navigateur affiche un avertissement de certificat après avoir fonctionné précédemment, revérifiez l'empreinte avant de continuer.",
   "trust.errorLoading": "Erreur lors du chargement des informations du certificat",
   "update.checking": "Vérification...",
+  "update.fullUpdate": "Mise à jour complète",
+  "update.fullUpdateConfirm": "Installer la dernière version du canal sélectionné, avec tous les composants d’exécution ? Cela fonctionne même si vous êtes déjà à jour. Le serveur et toutes les sessions de terminal et d’agents redémarreront ; certaines sessions devront peut-être être reprises manuellement.",
   "update.updating": "Mise à jour...",
   "update.restarting": "Redémarrage...",
   "update.failed": "Échec de la vérification des mises à jour",

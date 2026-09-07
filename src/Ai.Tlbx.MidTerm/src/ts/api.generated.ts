@@ -3793,6 +3793,7 @@ export interface paths {
       parameters: {
         query?: {
           source?: string;
+          forceFull?: boolean;
         };
         header?: never;
         path?: never;

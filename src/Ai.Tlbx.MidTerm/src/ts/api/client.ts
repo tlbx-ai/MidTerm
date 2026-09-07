@@ -945,9 +945,12 @@ export async function checkUpdate(): ClientGetResult<'/api/update/check'> {
   return client.GET('/api/update/check');
 }
 
-export async function applyUpdate(source?: string): ClientPostResult<'/api/update/apply'> {
+export async function applyUpdate(
+  source?: string,
+  forceFull = false,
+): ClientPostResult<'/api/update/apply'> {
   return client.POST('/api/update/apply', {
-    params: { query: source ? { source } : {} },
+    params: { query: { ...(source ? { source } : {}), ...(forceFull ? { forceFull } : {}) } },
   });
 }
 

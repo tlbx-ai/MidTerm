@@ -361,6 +361,8 @@
   "trust.securityWarning": "Nunca insira senhas ou informações sensíveis até verificar que a impressão digital corresponde. Se seu navegador mostrar um aviso de certificado após ter funcionado anteriormente, verifique novamente a impressão digital antes de prosseguir.",
   "trust.errorLoading": "Erro ao carregar informações do certificado",
   "update.checking": "Verificando...",
+  "update.fullUpdate": "Atualização completa",
+  "update.fullUpdateConfirm": "Instalar a versão mais recente do canal selecionado, incluindo todos os componentes de execução? Isso também funciona se você já estiver atualizado. O servidor e todas as sessões de terminal e agentes serão reiniciados; algumas sessões poderão precisar ser retomadas manualmente.",
   "update.updating": "Atualizando...",
   "update.restarting": "Reiniciando...",
   "update.failed": "Falha ao verificar atualizações",

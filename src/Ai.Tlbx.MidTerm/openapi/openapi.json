@@ -3015,6 +3015,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "forceFull",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
           }
         ],
         "responses": {
