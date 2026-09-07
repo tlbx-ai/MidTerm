@@ -11406,15 +11406,11 @@ body.shared-session-mode .session-tab-bar {
 .web-preview-tab-strip {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 6px;
   min-height: 40px;
-  padding: 6px 8px 0;
+  padding: 4px 6px 0;
   border-bottom: 1px solid var(--border-color);
-  background: linear-gradient(
-    180deg,
-    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)),
-    var(--web-preview-pane-background, var(--workspace-pane-background))
-  );
+  background: var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background));
 }
 
 .web-preview-tabs {
@@ -11432,18 +11428,15 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-tab-shell {
-  border: 1px solid var(--border-color);
-  border-bottom-color: transparent;
-  background: color-mix(
-    in srgb,
-    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 92%,
-    var(--command-bay-ui-reactive-surface, var(--btn-secondary))
-  );
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--command-bay-muted, var(--text-secondary));
-  border-radius: 8px 8px 0 0;
+  border-radius: 6px 6px 0 0;
   display: inline-flex;
   align-items: stretch;
-  min-width: 0;
+  min-width: 88px;
+  max-width: 220px;
+  flex: 0 0 auto;
   position: relative;
   top: 1px;
   transition:
@@ -11461,18 +11454,11 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-tab-shell.active {
-  border-color: var(--accent-gold);
-  border-bottom-color: var(
-    --web-preview-pane-chrome-background,
-    var(--workspace-pane-chrome-background)
-  );
-  background: color-mix(
-    in srgb,
-    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 78%,
-    var(--accent-gold-10)
-  );
+  border-color: var(--border-color);
+  border-bottom-color: var(--text-accent);
+  background: var(--web-preview-pane-background, var(--workspace-pane-background));
   color: var(--command-bay-text, var(--text-primary));
-  box-shadow: inset 0 1px 0 var(--accent-gold-25);
+  box-shadow: inset 0 -1px 0 var(--text-accent);
 }
 
 .web-preview-tab-shell.detached {
@@ -11487,8 +11473,8 @@ body.shared-session-mode .session-tab-bar {
   border: 0;
   background: transparent;
   color: inherit;
-  padding: 7px 10px 8px 12px;
-  font-size: var(--command-bay-font-size, var(--fs-sm));
+  padding: 8px 8px 8px 10px;
+  font-size: var(--fs-sm);
   line-height: 1.3;
   cursor: pointer;
   white-space: nowrap;
@@ -11538,9 +11524,9 @@ body.shared-session-mode .session-tab-bar {
   min-width: 30px;
   height: 30px;
   padding: 0 8px;
-  border: 1px solid var(--command-bay-border, transparent);
-  border-radius: var(--command-bay-pill-radius, 8px);
-  background: var(--command-bay-ui-reactive-surface, var(--btn-secondary));
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
   color: var(--command-bay-action-ink, var(--text-secondary));
   cursor: pointer;
   font-family: var(--font-ui);
@@ -11559,8 +11545,9 @@ body.shared-session-mode .session-tab-bar {
 .web-preview-dock-url-bar .btn-icon > svg,
 .web-preview-detached-placeholder .btn-icon > svg {
   display: block;
-  width: 21px;
-  height: 21px;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
 }
 
 .web-preview-dock-actions .btn-icon:hover,
@@ -11598,11 +11585,14 @@ body.shared-session-mode .session-tab-bar {
 
 .web-preview-dock-url-bar input {
   flex: 1;
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
   background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  padding: 4px 8px;
+  border-radius: 6px;
+  padding: 6px 10px;
   font-size: var(--fs-sm);
   font-family: var(--font-mono);
   outline: none;
@@ -11610,6 +11600,7 @@ body.shared-session-mode .session-tab-bar {
 
 .web-preview-dock-url-bar input:focus {
   border-color: var(--text-accent);
+  box-shadow: 0 0 0 1px var(--text-accent);
 }
 
 .web-preview-dock-url-bar .btn-icon {
