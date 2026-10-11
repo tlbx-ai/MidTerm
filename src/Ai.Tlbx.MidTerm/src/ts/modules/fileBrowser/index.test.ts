@@ -111,6 +111,7 @@ describe('fileBrowser', () => {
       'session-1',
       expect.any(Function),
       expect.any(Function),
+      expect.any(Function),
     );
     expect(clearPreviewMock).toHaveBeenCalledWith(previewContainer);
     expect(setCwdMock).toHaveBeenCalledWith('Q:\\repos\\MidTerm');

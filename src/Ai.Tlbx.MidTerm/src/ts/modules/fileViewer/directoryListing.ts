@@ -4,6 +4,8 @@ import { FileSelectionSurface } from './selectionSurface';
 import { createSelectionToolbar } from './selectionToolbar';
 import { getFileIcon, formatSize, joinPath } from './rendering';
 import { t } from '../i18n';
+import { FileActions } from './fileActions';
+import type { OperationResult } from './operationsApi';
 
 export class DirectoryListing {
   public readonly root = document.createElement('div');
@@ -11,11 +13,13 @@ export class DirectoryListing {
   private entries = new Map<string, DirectoryEntry>();
   private list = document.createElement('div');
   private toolbar: ReturnType<typeof createSelectionToolbar>;
+  private actions: FileActions;
 
   public constructor(
     public readonly path: string,
     sessionId: string | null,
     private open: (path: string) => void,
+    changed: (result: OperationResult) => Promise<void>,
   ) {
     this.root.className = 'file-directory-listing';
     this.list.className = 'file-list';
@@ -26,6 +30,7 @@ export class DirectoryListing {
       () => [...this.list.querySelectorAll<HTMLElement>('.file-list-item')],
       () => {
         this.toolbar.update();
+        this.actions.update();
       },
       open,
     );
@@ -39,6 +44,26 @@ export class DirectoryListing {
       () => sessionId,
     );
     this.root.append(this.toolbar.root, this.list);
+    this.actions = new FileActions({
+      owner: this.root,
+      sessionId: () => sessionId,
+      directory: () => path,
+      selected: () =>
+        [...this.surface.selection.paths].map((path) => ({
+          path,
+          isDirectory: this.entries.get(path)?.isDirectory ?? true,
+        })),
+      changed,
+      select: (paths) => {
+        this.surface.selection.restore(paths);
+        this.surface.update();
+      },
+    });
+    this.actions.attach(this.toolbar.root);
+  }
+
+  public dispose(): void {
+    this.actions.dispose();
   }
 
   public render(entries: DirectoryEntry[], filtered: boolean): void {
@@ -78,6 +103,10 @@ export class DirectoryListing {
       if (event.ctrlKey || event.metaKey || event.shiftKey) return;
       const path = row.dataset.path;
       if (path) this.open(path);
+    });
+    row.addEventListener('contextmenu', (event) => {
+      if (!this.surface.selection.paths.has(row.dataset.path ?? '')) this.surface.choose(row);
+      this.actions.showContext(event);
     });
     return row;
   }

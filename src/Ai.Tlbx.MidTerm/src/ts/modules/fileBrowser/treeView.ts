@@ -12,6 +12,8 @@ import { getFileIcon, formatSize } from '../fileViewer/rendering';
 import { reconcileKeyedChildren } from '../../utils/domReconcile';
 import { FileSelectionSurface } from '../fileViewer/selectionSurface';
 import { createSelectionToolbar } from '../fileViewer/selectionToolbar';
+import { FileActions } from '../fileViewer/fileActions';
+import type { OperationResult } from '../fileViewer/operationsApi';
 
 interface TreeState {
   rootPath: string;
@@ -23,6 +25,7 @@ interface TreeState {
   container: HTMLElement;
   rowsRoot: HTMLElement;
   surface: FileSelectionSurface;
+  actions: FileActions;
   selectionRequest: number;
   rootRequest: number;
   excludedCount: number;
@@ -61,11 +64,17 @@ export function setTreeSelection(sessionId: string, path: string): void {
   renderTree(state);
 }
 
+export function getTreeEntry(sessionId: string, path: string): FileTreeEntry | undefined {
+  const state = treeStates.get(sessionId);
+  return state ? findEntry(state, path) : undefined;
+}
+
 export function createTreeView(
   container: HTMLElement,
   sessionId: string,
   onFileSelect: TreeState['onFileSelect'],
   onDirectoryOpen?: TreeState['onDirectoryOpen'],
+  onOperationChanged: (result: OperationResult) => Promise<void> = async () => {},
 ): void {
   const rowsRoot = document.createElement('div');
   rowsRoot.setAttribute('role', 'tree');
@@ -78,6 +87,7 @@ export function createTreeView(
       ),
     () => {
       toolbar.update();
+      actions.update();
     },
     (path) => {
       openSelectedPath(state, path);
@@ -95,6 +105,21 @@ export function createTreeView(
     () => sessionId,
   );
   container.replaceChildren(toolbar.root, rowsRoot);
+  const actions = new FileActions({
+    owner: container,
+    sessionId: () => sessionId,
+    directory: () => state.rootPath,
+    selected: () =>
+      [...surface.selection.paths].map((path) => ({
+        path,
+        isDirectory: findEntry(state, path)?.isDirectory ?? true,
+      })),
+    changed: onOperationChanged,
+    select: (paths) => {
+      surface.selection.restore(paths);
+      surface.update();
+    },
+  });
   const state: TreeState = {
     rootPath: '',
     sessionId,
@@ -105,6 +130,7 @@ export function createTreeView(
     container,
     rowsRoot,
     surface,
+    actions,
     selectionRequest: 0,
     rootRequest: 0,
     excludedCount: 0,
@@ -113,6 +139,7 @@ export function createTreeView(
     onDirectoryOpen,
   };
   treeStates.set(sessionId, state);
+  actions.attach(toolbar.root);
   surface.update();
 }
 
@@ -189,6 +216,7 @@ export async function applyTreeVisibility(
 export function destroyTreeView(sessionId: string): void {
   const state = treeStates.get(sessionId);
   if (state) {
+    state.actions.dispose();
     state.selectionRequest++;
     state.rootRequest++;
   }
@@ -276,6 +304,10 @@ function createTreeNode(state: TreeState): HTMLElement {
     if (event.ctrlKey || event.metaKey || event.shiftKey) return;
     event.preventDefault();
     state.onDirectoryOpen?.(entry);
+  });
+  node.addEventListener('contextmenu', (event) => {
+    if (!state.surface.selection.paths.has(node.dataset.path ?? '')) state.surface.choose(node);
+    state.actions.showContext(event);
   });
 
   const wrapper = document.createElement('div');

@@ -123,6 +123,28 @@ export function releaseFileEdits(owner: HTMLElement): void {
   activeEdits.delete(owner);
 }
 
+export function filePathAffected(path: string, changed: string[]): boolean {
+  const normalize = (value: string): string =>
+    /^[a-z]:[\\/]|^\\\\/i.test(value) ? value.replace(/\\/g, '/').toLowerCase() : value;
+  const current = normalize(path);
+  return changed.some((value) => {
+    const selected = normalize(value).replace(/\/$/, '');
+    return current === selected || current.startsWith(selected + '/');
+  });
+}
+
+export async function confirmFileMutation(sessionId: string, paths: string[]): Promise<boolean> {
+  for (const [owner, edit] of activeEdits) {
+    if (
+      editSessions.get(edit) === sessionId &&
+      filePathAffected(edit.path, paths) &&
+      !(await confirmFileNavigation(owner))
+    )
+      return false;
+  }
+  return true;
+}
+
 export function confirmFileNavigation(owner: HTMLElement): Promise<boolean> {
   const edit = activeEdits.get(owner);
   if (!edit?.dirty) return Promise.resolve(true);

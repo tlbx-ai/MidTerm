@@ -132,7 +132,8 @@ try {
   await preview.locator('.preview-editor-btn').click();
   assert.equal(await preview.locator('textarea').inputValue(), content.replaceAll('\r\n', '\n'));
   assert.equal(await preview.locator('textarea').evaluate(e => e.readOnly), false);
-  await preview.locator('textarea').fill('Saved complete UTF-16 document\n');
+  // Use actual keyboard editing; locator.fill stalls on this large textarea in the current Chrome/Playwright setup.
+  await preview.locator('textarea').click(); await page.keyboard.press('Control+a'); await page.keyboard.type('Saved complete UTF-16 document\n');
   await preview.locator('.preview-save-btn').click();
   await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'saved');
   const savedBytes = fs.readFileSync(path.join(fixtures, 'unicode.txt'));

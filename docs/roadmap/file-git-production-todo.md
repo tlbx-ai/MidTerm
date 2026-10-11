@@ -514,6 +514,30 @@ Unix-native Rename/Volume-Semantik und weitere Plattformakzeptanz bleiben vor
 Release zu prüfen. UI/Kontextmenüs, Clipboard, Konflikte/Recovery und die gesamte
 Browserabnahme sind weiterhin nicht implementiert/abgenommen.
 
+**UI-Zwischenstand (2026-10-11):** Gemeinsame echte Aktionen in Baum,
+Ordner-Modal und Dock: Create/Rename/Duplicate/Move/Delete, internes Copy/Cut/
+Paste, Rechtsklick, F2/Del/Ctrl-C/X/V, klare Konfliktentscheidungen, Recovery-
+Auswahl nach Namen/Datum und Undo. Keine internen Recovery-IDs im Bedienablauf.
+Neue Controls sind in allen zehn Sprachen beschriftet. Betroffene offene Entwürfe
+werden vor Rename/Move/Delete/Replace entschieden; Savefehler verhindern die
+Mutation. Auswahl folgt dem neuen Namen; Late-Response-Nachbearbeitung prüft
+Ort/Sitzung erneut. Partialfehler bleiben nach Konflikt-Retry erhalten und Cut-
+Clipboard behält nur fehlgeschlagene Quellen. Undo-Cancel erhält die Möglichkeit
+zur Wiederherstellung. Client-Acknowledgements prüfen Command-ID/Action/Items;
+verlorene Antworten werden über echte Receipts gelesen und nicht blind erneut
+als POST gesendet. 17 neue reale Browserfälle einschließlich 390px Touch und
+Modal/Dock bestehen, ebenso alle 118 vorherigen Fälle (135 insgesamt).
+684 Frontendtests plus Kitty, Typecheck, ESLint, Stylelint und Diffcheck bestehen.
+Evidenz: `task-21-ui-final`, `task-21-ui-undo-conflict`,
+`task-21-regression-{selection,edit}`, `task-21-large-keyboard`,
+`task-21-final-{mobile,directory,navigation,visibility,refresh}` und
+`task-21-unit/ui-final-tests.*`. Große UTF-16-Eingabe: Playwright locator.fill
+lief trotz sichtbarem/editierbarem Editor reproduzierbar ins Timeout; echte
+Klick/Ctrl-A/Tastatureingabe und BOM/CRLF-Diskprüfung bestehen. Als Harness-Gap
+vermerkt; keine Reparatur des Editors aus diesem Befund behauptet. Punkt 21
+bleibt wegen der bereits genannten Native-/Plattform-/Recovery-Lifecycle-
+Restprüfungen offen; das vollständige Phasenrelease bleibt ausstehend.
+
 ### 22. [ ] Dateiansicht, Sortierung, Filter und Metadaten vervollständigen
 
 **Befund (mittel, Erwartungslücke):** Nur Ordner-zuerst/Namen/Größen; kein Datum,

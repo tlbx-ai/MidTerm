@@ -196,6 +196,7 @@ function bindModalFileActions(viewer: HTMLElement): void {
 }
 
 function resetEditState(): void {
+  directoryListing?.dispose();
   directoryListing = null;
   releaseDirectoryVisibility?.();
   releaseDirectoryVisibility = null;
@@ -679,9 +680,18 @@ function renderDirectoryListing(
     directoryListing?.path === basePath && directoryListing.root.parentElement === container;
   if (!reused) {
     const sessionId = currentSessionId;
-    directoryListing = new DirectoryListing(basePath, sessionId, (path) => {
-      void openFile(path, null, beginFileOpen(sessionId));
-    });
+    directoryListing = new DirectoryListing(
+      basePath,
+      sessionId,
+      (path) => {
+        void openFile(path, null, beginFileOpen(sessionId));
+      },
+      async () => {
+        const load = viewerLoad;
+        if (load?.path === basePath && load.sessionId === sessionId && load.isActive())
+          await renderDirectory(load);
+      },
+    );
     container.replaceChildren(directoryListing.root);
     const visit = navigationHistory.current;
     if (visit?.path === basePath) {

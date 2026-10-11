@@ -15,10 +15,11 @@ import {
   destroyTreeView,
   getTreeSelection,
   setTreeSelection,
+  getTreeEntry,
 } from './treeView';
 import { renderPreview, clearPreview } from './filePreview';
 import { $activeSessionId, $processStates } from '../../stores';
-import { confirmFileNavigation } from '../fileViewer/editState';
+import { confirmFileNavigation, filePathAffected } from '../fileViewer/editState';
 import { beginFileOpen, isFileOpenCurrent } from '../fileViewer/loadState';
 import { t } from '../i18n';
 import { BrowserNavigation } from './navigation';
@@ -116,9 +117,31 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
       });
       return true;
     };
-    createTreeView(treeContainer, sessionId, selectFile, (entry) => {
-      void navigators.get(sessionId)?.navigate(entry.fullPath);
-    });
+    createTreeView(
+      treeContainer,
+      sessionId,
+      selectFile,
+      (entry) => {
+        void navigators.get(sessionId)?.navigate(entry.fullPath);
+      },
+      async (result) => {
+        const path = previewContainer.dataset.selectedPath;
+        await navigators.get(sessionId)?.refresh();
+        if (previewContainer.dataset.selectedPath !== path) return;
+        if (!path || !['rename', 'move', 'delete'].includes(result.action)) return;
+        const changed = result.items.find(
+          (item) => item.success && item.sourcePath && filePathAffected(path, [item.sourcePath]),
+        );
+        if (!changed) return;
+        clearPreview(previewContainer);
+        delete previewContainer.dataset.selectedPath;
+        const entry = changed.path ? getTreeEntry(sessionId, changed.path) : undefined;
+        if (entry && !entry.isDirectory) {
+          setTreeSelection(sessionId, entry.fullPath);
+          await selectFile(entry);
+        } else if (browser) browser.dataset.filePane = 'tree';
+      },
+    );
 
     if (browser) {
       const navigation = new BrowserNavigation(sessionId, {
