@@ -10,6 +10,7 @@ import { onTabActivated, onTabDeactivated } from '../sessionTabs';
 import { addProcessStateListener } from '../process';
 import {
   applyTreeRoot,
+  applyTreeVisibility,
   createTreeView,
   destroyTreeView,
   getTreeSelection,
@@ -115,6 +116,7 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
 
     if (browser) {
       const navigation = new BrowserNavigation(sessionId, {
+        refilter: (path, data) => applyTreeVisibility(sessionId, path, data),
         confirm: () => confirmFileNavigation(previewContainer),
         file: async (entry) => {
           if (!(await selectFile(entry))) return false;

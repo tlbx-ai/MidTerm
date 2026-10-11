@@ -7,6 +7,7 @@
 import type { FileTreeEntry, FileTreeResponse } from './treeApi';
 import { fetchTree } from './treeApi';
 import { t } from '../i18n';
+import { getFileVisibility } from '../fileViewer/visibility';
 import { getFileIcon, formatSize } from '../fileViewer/rendering';
 
 interface TreeState {
@@ -18,6 +19,7 @@ interface TreeState {
   container: HTMLElement;
   selectionRequest: number;
   rootRequest: number;
+  excludedCount: number;
   savedRoots: Map<string, { expanded: Set<string>; selected: string | null; scroll: number }>;
   onFileSelect: (entry: FileTreeEntry) => boolean | Promise<boolean>;
   onDirectoryOpen: ((entry: FileTreeEntry) => void) | undefined;
@@ -57,6 +59,7 @@ export function createTreeView(
     container,
     selectionRequest: 0,
     rootRequest: 0,
+    excludedCount: 0,
     savedRoots: new Map(),
     onFileSelect,
     onDirectoryOpen,
@@ -96,8 +99,41 @@ export function applyTreeRoot(sessionId: string, rootPath: string, data: FileTre
   state.expandedPaths = new Set(saved?.expanded ?? []);
   state.selectedPath = saved?.selected ?? null;
   state.treeData.set(rootPath, data.entries);
+  state.excludedCount = data.visibility.excludedCount;
   renderTree(state);
   state.container.scrollTop = saved?.scroll ?? 0;
+}
+
+export async function applyTreeVisibility(
+  sessionId: string,
+  rootPath: string,
+  data: FileTreeResponse,
+): Promise<void> {
+  const state = treeStates.get(sessionId);
+  if (!state || state.rootPath !== rootPath) return;
+  const request = ++state.rootRequest;
+  const scroll = state.container.scrollTop;
+  const preferences = getFileVisibility();
+  const loaded = new Map<string, FileTreeEntry[]>([[rootPath, data.entries]]);
+  const expanded = [...state.expandedPaths];
+  for (let index = 0; index < expanded.length; index += 4) {
+    const pages = await Promise.all(
+      expanded
+        .slice(index, index + 4)
+        .map(async (path) => ({ path, data: await fetchTree(path, sessionId) })),
+    );
+    if (
+      state.rootRequest !== request ||
+      state.rootPath !== rootPath ||
+      getFileVisibility() !== preferences
+    )
+      return;
+    for (const page of pages) if (page.data) loaded.set(page.path, page.data.entries);
+  }
+  state.treeData = loaded;
+  state.excludedCount = data.visibility.excludedCount;
+  renderTree(state);
+  state.container.scrollTop = scroll;
 }
 
 export function destroyTreeView(sessionId: string): void {
@@ -113,6 +149,10 @@ function renderTree(state: TreeState): void {
   state.container.innerHTML = '';
   const entries = state.treeData.get(state.rootPath);
   if (!entries) return;
+  if (entries.length === 0) {
+    state.container.innerHTML = `<div class="tree-empty" role="status">${t(state.excludedCount ? 'fileBrowser.allFiltered' : 'fileViewer.emptyDirectory')}</div>`;
+    return;
+  }
 
   const fragment = document.createDocumentFragment();
   for (const entry of sortEntries(entries)) {
@@ -157,6 +197,7 @@ function createTreeNode(state: TreeState, entry: FileTreeEntry, depth: number): 
   node.appendChild(expand);
   node.appendChild(icon);
   node.appendChild(name);
+  appendVisibilityBadge(node, entry);
 
   if (entry.gitStatus) {
     const badge = document.createElement('span');
@@ -214,6 +255,19 @@ async function selectFile(
     selected.classList.remove('selected');
   });
   node.classList.add('selected');
+}
+
+function appendVisibilityBadge(node: HTMLElement, entry: FileTreeEntry): void {
+  if (!entry.isIgnored && !entry.isHidden) return;
+  const visibility = document.createElement('span');
+  visibility.className = 'file-visibility-badge';
+  visibility.textContent = [
+    entry.isHidden ? t('fileBrowser.hidden') : '',
+    entry.isIgnored ? t('fileBrowser.ignored') : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+  node.appendChild(visibility);
 }
 
 async function toggleExpand(state: TreeState, entry: FileTreeEntry): Promise<void> {

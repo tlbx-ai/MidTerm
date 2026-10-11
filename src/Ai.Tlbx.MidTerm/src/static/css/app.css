@@ -16081,6 +16081,46 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: var(--error-color, #ef6b6b);
 }
 
+.file-visibility-controls {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 6px 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.file-visibility-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  cursor: pointer;
+}
+
+.file-visibility-badge {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+.file-directory-filter-error {
+  padding: 8px 12px;
+  color: var(--error-color, #ef6b6b);
+}
+
+.file-viewer-body > .file-visibility-controls,
+.file-viewer-dock-body > .file-visibility-controls {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--workspace-pane-chrome-background);
+}
+
 .file-browser-tree {
   width: 280px;
   flex-shrink: 0;

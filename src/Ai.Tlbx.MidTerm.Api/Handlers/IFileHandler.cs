@@ -15,7 +15,7 @@ public interface IFileHandler
 {
     IResult RegisterPaths(FileRegisterRequest request);
     Task<IResult> CheckPathsAsync(FileCheckRequest request, string? sessionId);
-    IResult ListDirectory(string path, string? sessionId);
+    IResult ListDirectory(string path, string? sessionId, bool showHidden, bool showIgnored);
     Task<IResult> GetNavigationAsync(string path, string? sessionId);
     IResult ViewFile(string path, string? sessionId);
     IResult DownloadFile(string path, string? sessionId);

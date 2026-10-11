@@ -20,7 +20,7 @@ public class StubFileHandler : IFileHandler
     public Task<IResult> CheckPathsAsync(FileCheckRequest request, string? sessionId) =>
         Task.FromResult<IResult>(Results.Json(new FileCheckResponse()));
 
-    public IResult ListDirectory(string path, string? sessionId) =>
+    public IResult ListDirectory(string path, string? sessionId, bool showHidden, bool showIgnored) =>
         Results.Json(new DirectoryListResponse { Path = path });
 
     public Task<IResult> GetNavigationAsync(string path, string? sessionId) =>

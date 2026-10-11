@@ -2271,6 +2271,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "showHidden",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "showIgnored",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
           }
         ],
         "responses": {
@@ -5005,7 +5021,9 @@
           "isDirectory",
           "size",
           "modified",
-          "mimeType"
+          "mimeType",
+          "isHidden",
+          "isIgnored"
         ],
         "type": "object",
         "properties": {
@@ -5034,13 +5052,20 @@
               "null",
               "string"
             ]
+          },
+          "isHidden": {
+            "type": "boolean"
+          },
+          "isIgnored": {
+            "type": "boolean"
           }
         }
       },
       "DirectoryListResponse": {
         "required": [
           "path",
-          "entries"
+          "entries",
+          "visibility"
         ],
         "type": "object",
         "properties": {
@@ -5052,6 +5077,9 @@
             "items": {
               "$ref": "#/components/schemas/DirectoryEntry"
             }
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/FileVisibilitySummary"
           }
         }
       },
@@ -5452,7 +5480,10 @@
           "size",
           "mimeType",
           "isText",
-          "gitStatus"
+          "gitStatus",
+          "modified",
+          "isHidden",
+          "isIgnored"
         ],
         "type": "object",
         "properties": {
@@ -5489,6 +5520,19 @@
               "null",
               "string"
             ]
+          },
+          "modified": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "isHidden": {
+            "type": "boolean"
+          },
+          "isIgnored": {
+            "type": "boolean"
           }
         }
       },
@@ -5500,6 +5544,46 @@
         "properties": {
           "path": {
             "type": "string"
+          }
+        }
+      },
+      "FileVisibilitySummary": {
+        "required": [
+          "totalCount",
+          "shownCount",
+          "hiddenCount",
+          "ignoredCount",
+          "excludedCount",
+          "isGitRepo",
+          "ignoreAvailable"
+        ],
+        "type": "object",
+        "properties": {
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "shownCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hiddenCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "ignoredCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "excludedCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isGitRepo": {
+            "type": "boolean"
+          },
+          "ignoreAvailable": {
+            "type": "boolean"
           }
         }
       },

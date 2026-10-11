@@ -50,7 +50,7 @@ try {
   const wrapper = page.locator(`.session-wrapper[data-session-id="${session}"]`);
   const files = wrapper.locator('.session-tab[data-tab="files"]'), terminal = wrapper.locator('.session-tab[data-tab="terminal"]');
   await files.click();
-  const nav = wrapper.locator('.file-browser-navigation'), address = nav.locator('input');
+  const nav = wrapper.locator('.file-browser-navigation'), address = nav.locator('.file-browser-address-form input');
   const tree = wrapper.locator('.file-browser-tree'), preview = wrapper.locator('.file-browser-preview');
   const dialog = page.locator('.file-unsaved-overlay'), editor = preview.locator('textarea');
   const waitPath = async target => page.waitForFunction(({ id, target }) => {

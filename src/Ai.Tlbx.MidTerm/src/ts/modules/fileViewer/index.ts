@@ -52,6 +52,7 @@ import { createFileSaveStatus } from './saveStatus';
 import { createDocumentNotice } from './documentNotice';
 import { FileNavigationHistory, type FileNavigationSnapshot } from './navigationHistory';
 import type { Schemas } from '../../api/types';
+import { createFileVisibilityControls, getFileVisibility } from './visibility';
 
 const log = createLogger('fileViewer');
 
@@ -61,6 +62,8 @@ let currentSessionId: string | null = null;
 const navigationHistory = new FileNavigationHistory();
 let parentPath: string | null = null;
 let navigationBar: HTMLElement | null = null;
+let releaseDirectoryVisibility: (() => void) | null = null;
+let directoryVisibilityGeneration = 0;
 let lastVideoVolume = 0.15;
 
 let isDirty = false;
@@ -194,6 +197,8 @@ function bindModalFileActions(viewer: HTMLElement): void {
 }
 
 function resetEditState(): void {
+  releaseDirectoryVisibility?.();
+  releaseDirectoryVisibility = null;
   if (currentEditOwner) releaseFileEdits(currentEditOwner);
   currentEditOwner = null;
   currentEdit = null;
@@ -607,6 +612,7 @@ async function checkFilePath(load: FileViewLoad): Promise<FilePathInfo | null> {
 }
 
 async function renderDirectory(load: FileViewLoad): Promise<void> {
+  const generation = ++directoryVisibilityGeneration;
   const path = load.path;
   try {
     const sessionId = load.sessionId;
@@ -614,30 +620,59 @@ async function renderDirectory(load: FileViewLoad): Promise<void> {
     if (sessionId) {
       url += `&sessionId=${encodeURIComponent(sessionId)}`;
     }
+    const preferences = getFileVisibility();
+    url += `&showHidden=${String(preferences.showHidden)}&showIgnored=${String(preferences.showIgnored)}`;
     const resp = await fetch(url, { signal: load.signal });
-    if (!load.isActive()) return;
+    if (!load.isActive() || generation !== directoryVisibilityGeneration) return;
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
       if (!load.isActive()) return;
       log.error(() => `List directory failed: ${resp.status} ${resp.statusText} ${body}`);
-      load.container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToList')} (${resp.status})</div>`;
+      showDirectoryLoadError(load.container);
       return;
     }
 
     const data = (await resp.json()) as DirectoryListResponse;
     if (!load.isActive()) return;
-    renderDirectoryListing(data.entries, path, load.container);
+    if (getFileVisibility() !== preferences) {
+      await renderDirectory(load);
+      return;
+    }
+    renderDirectoryListing(data.entries, path, load.container, data.visibility.excludedCount > 0);
+    releaseDirectoryVisibility?.();
+    const controls = createFileVisibilityControls(() => {
+      if (load.isActive()) void renderDirectory(load);
+    });
+    controls.update(data.visibility);
+    load.container.prepend(controls.root);
+    releaseDirectoryVisibility = controls.dispose;
   } catch (e) {
     if (!load.isActive()) return;
     log.error(() => `Failed to list directory: ${String(e)}`);
-    load.container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToList')}</div>`;
+    showDirectoryLoadError(load.container);
   }
+}
+
+function showDirectoryLoadError(container: HTMLElement): void {
+  if (!container.querySelector('.file-list')) {
+    container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToList')}</div>`;
+    return;
+  }
+  let error = container.querySelector<HTMLElement>('.file-directory-filter-error');
+  if (!error) {
+    error = document.createElement('div');
+    error.className = 'file-directory-filter-error';
+    error.setAttribute('role', 'alert');
+    container.prepend(error);
+  }
+  error.textContent = t('fileViewer.failedToList');
 }
 
 function renderDirectoryListing(
   entries: DirectoryEntry[],
   basePath: string,
   container: Element,
+  filtered = false,
 ): void {
   const html = `
     <div class="file-list">
@@ -662,12 +697,13 @@ function renderDirectoryListing(
              data-is-dir="${isDir}">
           <span class="file-icon">${isDir ? '📁' : getFileIcon(name)}</span>
           <span class="file-name">${escapeHtml(name)}</span>
+          ${entry.isHidden || entry.isIgnored ? `<span class="file-visibility-badge">${escapeHtml([entry.isHidden ? t('fileBrowser.hidden') : '', entry.isIgnored ? t('fileBrowser.ignored') : ''].filter(Boolean).join(', '))}</span>` : ''}
           ${!isDir && size != null ? `<span class="file-size">${formatSize(size)}</span>` : ''}
         </div>
       `;
         })
         .join('')}
-      ${entries.length === 0 ? `<div class="file-list-empty">${t('fileViewer.emptyDirectory')}</div>` : ''}
+      ${entries.length === 0 ? `<div class="file-list-empty">${t(filtered ? 'fileBrowser.allFiltered' : 'fileViewer.emptyDirectory')}</div>` : ''}
     </div>
   `;
 

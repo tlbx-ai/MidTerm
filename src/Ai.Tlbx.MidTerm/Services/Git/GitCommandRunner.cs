@@ -334,6 +334,30 @@ internal static class GitCommandRunner
         return stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
+    internal static async Task<HashSet<string>?> GetIgnoredPathsAsync(string repoRoot, IReadOnlyList<string> paths)
+    {
+        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var ignored = new HashSet<string>(comparer);
+        var offset = 0;
+        while (offset < paths.Count)
+        {
+            var batch = new List<string>();
+            var chars = 0;
+            while (offset < paths.Count && (batch.Count == 0 || chars + paths[offset].Length < 6000))
+            { var path = paths[offset++]; batch.Add(path); chars += path.Length + 3; }
+            var args = new[] { "-c", "core.quotepath=false", "check-ignore", "--verbose", "--non-matching", "--" }.Concat(batch).ToArray();
+            var (code, stdout, _) = await RunGitAsync(repoRoot, args);
+            if (code is not 0 and not 1) return null;
+            var records = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            if (records.Length != batch.Count) return null;
+            // One verbose record per input, including nonmatches. C-quoted control characters
+            // remain within one record, so input order avoids lossy filename decoding.
+            for (var i = 0; i < records.Length; i++)
+                if (!records[i].StartsWith("::\t", StringComparison.Ordinal)) ignored.Add(batch[i]);
+        }
+        return ignored;
+    }
+
     internal static async Task<Dictionary<string, (int Additions, int Deletions)>> GetNumStatAsync(string repoRoot)
     {
         var result = new Dictionary<string, (int, int)>(StringComparer.OrdinalIgnoreCase);

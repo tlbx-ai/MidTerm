@@ -2671,6 +2671,8 @@ export interface paths {
         query: {
           path: string;
           sessionId?: string;
+          showHidden?: boolean;
+          showIgnored?: boolean;
         };
         header?: never;
         path?: never;
@@ -4493,10 +4495,13 @@ export interface components {
       /** Format: date-time */
       modified: null | string;
       mimeType: null | string;
+      isHidden: boolean;
+      isIgnored: boolean;
     };
     DirectoryListResponse: {
       path: string;
       entries: components['schemas']['DirectoryEntry'][];
+      visibility: components['schemas']['FileVisibilitySummary'];
     };
     FeatureFlags: {
       voiceChat: boolean;
@@ -4601,9 +4606,27 @@ export interface components {
       mimeType: null | string;
       isText: null | boolean;
       gitStatus: null | string;
+      /** Format: date-time */
+      modified: null | string;
+      isHidden: boolean;
+      isIgnored: boolean;
     };
     FileUploadResponse: {
       path: string;
+    };
+    FileVisibilitySummary: {
+      /** Format: int32 */
+      totalCount: number;
+      /** Format: int32 */
+      shownCount: number;
+      /** Format: int32 */
+      hiddenCount: number;
+      /** Format: int32 */
+      ignoredCount: number;
+      /** Format: int32 */
+      excludedCount: number;
+      isGitRepo: boolean;
+      ignoreAvailable: boolean;
     };
     FirewallRuleStatusResponse: {
       supported: boolean;

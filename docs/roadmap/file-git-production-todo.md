@@ -346,7 +346,7 @@ bestehen; Desktop-/Mobile-Screenshots visuell geprüft. Nachweise:
 `.dev/file-git-production/task-17-accepted`, `task-17-edit`, `task-17-mobile`,
 `task-17-directory-final`, `task-17-large-final`, `task-17-unit`.
 
-### 18. [ ] Sichtbarkeit von ignorierten/versteckten Dateien kontrollierbar machen
+### 18. [x] Sichtbarkeit von ignorierten/versteckten Dateien kontrollierbar machen
 
 **Befund (mittel, reproduziert/Code):** Files filtert nach Git-Pfaden und blendet
 z.B. .git/.tlbx aus; Ordner-Modal zeigt sie. Kein Label oder Umschalter erklärt das.
@@ -356,6 +356,29 @@ Modal und Dock. Normale Dateiansicht darf Git-Ignore nicht mit Nichtexistenz ver
 
 **Abnahme:** Git- und Nicht-Git-Ordner, leere/ignorierte/versteckte Verzeichnisse;
 Umschalter und Filteranzeige korrekt, keine heimlich fehlenden Dateien.
+
+**Nachweis 11.10.2026:** Gemeinsame serverseitige Verzeichnisauflistung ersetzt
+die abweichenden Baum-/Modal-Filter. Native Hidden-Attribute und Git-eigene Ignore-
+Prüfung liefern dieselben Flags und Filterzahlen; ignorierte Dateien sind standardmäßig
+sichtbar. Normale Ordner wie `bin`/`node_modules`, leere Ordner und Git-Metadaten
+werden nicht mehr durch eine unsichtbare Skipliste entfernt. Shared Checkboxen und
+persistierte Browserpräferenz gelten für Tab/Modal/Dock; aufgeklappte Unterordner
+werden mit erneuert. Filterwechsel erhalten den aktuellen Editor samt Entwurf;
+Fehler erhalten die vorhandene Liste und eine nutzbare Wiederholungsaktion.
+Hidden/Ignored sind beschriftet, tatsächlich leere und vollständig weggefilterte
+Listen haben unterschiedliche Meldungen. Filter im Ordner-Viewer bleiben beim
+Scrollen erreichbar. Gitabfragen verwenden begrenzte Argumentbatches, vorhandene
+Service-User-Ausführung und explizite Nichttreffer; keine verlusthafte Pfaddekodierung.
+Tests decken Unicode/Leerzeichen, getrackte Dateien, getrackte Inhalte in ignorierten
+Ordnern, leere Ignore-Ordner und Windows-Hidden ab. Zehn reale neue Browserfälle
+und alle 89 bisherigen Fälle bestehen (99); 673 Frontendtests plus Kitty-Protokoll,
+15 Backendtests und eine zusätzliche Mixed-Directory-Abnahme bestehen. Typecheck,
+ESLint, Stylelint und Diffcheck bestehen; Desktop/Dock-Paint visuell geprüft.
+Nachweise: `.dev/file-git-production/task-18-final-all`, `task-18-navigation-accepted`,
+`task-18-directory`, `task-18-mobile`, `task-18-edit`, `task-18-large`, `task-18-unit`.
+Ein paralleler Source-Start zeigte zeitweise unvollständig geladenes CSS; zusätzlich
+wurde der Navigations-Testselektor nach den neuen Checkboxen auf die Adresszeile
+präzisiert. Der stabile Einzelablauf besteht; Asset-Hotsync bleibt Workflow-Follow-up.
 
 ### 19. [ ] Dateibaum aktuell halten und gezielt refreshen
 

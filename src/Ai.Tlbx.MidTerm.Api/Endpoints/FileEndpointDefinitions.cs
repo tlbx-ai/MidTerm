@@ -26,8 +26,8 @@ public static class FileEndpointDefinitions
             await handler.CheckPathsAsync(request, sessionId))
             .Produces<FileCheckResponse>(StatusCodes.Status200OK, "application/json");
 
-        app.MapGet("/api/files/list", (string path, IFileHandler handler, string? sessionId) =>
-            handler.ListDirectory(path, sessionId))
+        app.MapGet("/api/files/list", (string path, IFileHandler handler, string? sessionId, bool showHidden = false, bool showIgnored = true) =>
+            handler.ListDirectory(path, sessionId, showHidden, showIgnored))
             .Produces<DirectoryListResponse>(StatusCodes.Status200OK, "application/json");
 
         app.MapGet("/api/files/navigation", async (string path, IFileHandler handler, string? sessionId) =>

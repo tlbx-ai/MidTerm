@@ -3,11 +3,13 @@ import { readFileNavigation, type FileNavigation } from '../fileViewer/navigatio
 import { FileNavigationHistory } from '../fileViewer/navigationHistory';
 import { fetchTree, type FileTreeEntry, type FileTreeResponse } from './treeApi';
 import { beginFileOpen, isFileOpenCurrent, type FileOpenRequest } from '../fileViewer/loadState';
+import { createFileVisibilityControls, getFileVisibility } from '../fileViewer/visibility';
 
 interface BrowserNavigationActions {
   confirm: () => Promise<boolean>;
   apply: (path: string, data: FileTreeResponse) => void;
   file: (entry: FileTreeEntry) => Promise<boolean>;
+  refilter: (path: string, data: FileTreeResponse) => Promise<void>;
 }
 
 /** Per-session address/history UI. The server defines hierarchy and authorized roots. */
@@ -24,6 +26,9 @@ export class BrowserNavigation {
   private generation = 0;
   private cwd: string | null = null;
   private openRequest: FileOpenRequest | null = null;
+  private readonly visibility = createFileVisibilityControls(() => {
+    void this.refilter();
+  });
   public get hasLocation(): boolean {
     return this.metadata !== null;
   }
@@ -80,7 +85,7 @@ export class BrowserNavigation {
     this.error.className = 'file-browser-navigation-error';
     this.error.setAttribute('role', 'alert');
     this.error.hidden = true;
-    this.root.append(actionsRow, form, this.breadcrumbs, this.error);
+    this.root.append(actionsRow, form, this.breadcrumbs, this.visibility.root, this.error);
     this.syncControls();
   }
 
@@ -94,6 +99,7 @@ export class BrowserNavigation {
   public dispose(): void {
     this.generation++;
     this.controller?.abort();
+    this.visibility.dispose();
   }
   public cancelPending(): void {
     this.generation++;
@@ -179,9 +185,12 @@ export class BrowserNavigation {
     generation: number,
     signal: AbortSignal,
   ): Promise<boolean> {
+    const preferences = getFileVisibility();
     const data = await fetchTree(next.path, this.sessionId, signal);
     if (!this.current(generation)) return false;
     if (!data) throw new Error(t('fileBrowser.unableToLoad'));
+    if (preferences !== getFileVisibility())
+      return await this.openDirectoryLocation(next, action, generation, signal);
     if (!(await this.actions.confirm()) || !this.current(generation)) {
       this.restoreAddress();
       return false;
@@ -191,8 +200,30 @@ export class BrowserNavigation {
     else this.history.push(next.path);
     this.metadata = next;
     this.actions.apply(next.path, data);
+    this.visibility.update(data.visibility);
     this.renderLocation();
     return true;
+  }
+
+  private async refilter(): Promise<void> {
+    const path = this.metadata?.path;
+    if (!path) return;
+    const preferences = getFileVisibility();
+    this.error.hidden = true;
+    const data = await fetchTree(path, this.sessionId);
+    if (
+      this.root.isConnected &&
+      this.metadata?.path === path &&
+      getFileVisibility() === preferences
+    ) {
+      if (!data) {
+        this.error.textContent = t('fileBrowser.unableToLoad');
+        this.error.hidden = false;
+        return;
+      }
+      await this.actions.refilter(path, data);
+      this.visibility.update(data.visibility);
+    }
   }
 
   private current(generation: number): boolean {
