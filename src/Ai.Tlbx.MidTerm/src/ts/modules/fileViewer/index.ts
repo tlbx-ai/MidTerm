@@ -49,6 +49,7 @@ import {
 import { FileViewLoad, beginFileOpen, isFileOpenCurrent, cancelFileOpen } from './loadState';
 import { readFileDocument, writeFileDocument, type FileDocument } from './documentApi';
 import { createFileSaveStatus } from './saveStatus';
+import { createDocumentNotice } from './documentNotice';
 
 const log = createLogger('fileViewer');
 
@@ -671,7 +672,11 @@ async function renderTextFile(load: FileViewLoad): Promise<void> {
   }
 }
 
-function renderTextDocument(load: FileViewLoad, snapshot: FileDocument): void {
+function renderTextDocument(
+  load: FileViewLoad,
+  snapshot: FileDocument,
+  previousOffsets: number[] = [],
+): void {
   resetEditState();
   const container = load.container;
   let version = snapshot.version;
@@ -686,6 +691,19 @@ function renderTextDocument(load: FileViewLoad, snapshot: FileDocument): void {
       reviewedVersion ?? version,
     );
     version = saved.version;
+    snapshot = {
+      ...snapshot,
+      size: saved.size,
+      encoding: saved.encoding,
+      lineEnding: saved.lineEnding,
+    };
+    const updatedNotice = createNotice();
+    notice.replaceWith(updatedNotice);
+    notice = updatedNotice;
+    updateViewerHeaders(
+      load.path,
+      `${saved.encoding} | ${saved.lineEnding.toUpperCase()} | ${formatSize(saved.size)}`,
+    );
   });
   const edit = currentEdit;
   currentEditOwner = container;
@@ -718,31 +736,27 @@ function renderTextDocument(load: FileViewLoad, snapshot: FileDocument): void {
       currentContentIsPartial = latest.isTruncated;
       textarea.readOnly = latest.readOnly;
       edit.replaceFromDisk(latest.content);
+      const updatedNotice = createNotice();
+      notice.replaceWith(updatedNotice);
+      notice = updatedNotice;
       updateViewerHeaders(
         load.path,
         `${latest.encoding} | ${latest.lineEnding.toUpperCase()} | ${formatSize(latest.size)}`,
       );
     },
   });
-  stack.append(status, editor.root);
-  if (snapshot.canLoadFull) {
-    const more = document.createElement('button');
-    more.className = 'file-viewer-load-more';
-    more.textContent = `${t('fileViewer.loadMore')} (${formatSize(snapshot.size)})`;
-    more.addEventListener('click', () => {
-      more.disabled = true;
-      void readFileDocument(load.path, load.sessionId, true, load.signal)
-        .then((complete) => {
-          if (load.isActive()) renderTextDocument(load, complete);
-        })
-        .catch((error: unknown) => {
-          if (!load.isActive()) return;
-          log.error(() => `Failed to load complete document: ${String(error)}`);
-          more.disabled = false;
-        });
+  const createNotice = (): HTMLElement =>
+    createDocumentNotice(snapshot, {
+      read: (full, offset) =>
+        readFileDocument(load.path, load.sessionId, full, load.signal, offset),
+      active: () => load.isActive(),
+      previousOffsets,
+      display: (next, history) => {
+        renderTextDocument(load, next, history);
+      },
     });
-    stack.appendChild(more);
-  }
+  let notice = createNotice();
+  stack.append(notice, status, editor.root);
   container.replaceChildren(stack);
   updateSaveButtonVisibility(false);
 }

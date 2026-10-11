@@ -34,20 +34,29 @@ public sealed class FileDocumentService
         return current;
     }
 
-    public async Task<FileDocumentResponse> ReadAsync(string path, bool full, CancellationToken ct)
+    public async Task<FileDocumentResponse> ReadAsync(string path, bool full, CancellationToken ct, long offset = 0)
     {
         var resolved = ResolvePath(path);
         await using var stream = OpenRead(resolved);
         var size = stream.Length;
-        var complete = size <= MaxEditableBytes;
-        var count = checked((int)(complete ? size : Math.Min(size, PreviewBytes)));
+        if (offset < 0 || offset > size || (full && offset != 0))
+            throw new FileDocumentException(400, "invalid_offset", "The text page position is invalid. Return to the first page.");
+        var header = new byte[checked((int)Math.Min(4, size))];
+        await stream.ReadExactlyAsync(header, ct);
+        var codec = DetectEncoding(header);
+        var complete = offset == 0 && (size <= PreviewBytes || (full && size <= MaxEditableBytes));
+        var start = offset == 0 ? codec.PreambleLength : offset;
+        stream.Position = start;
+        var count = checked((int)Math.Min(size - start, complete ? size : PreviewBytes - (offset == 0 ? codec.PreambleLength : 0)));
         var bytes = new byte[count];
         await stream.ReadExactlyAsync(bytes, ct);
-        var codec = DetectEncoding(bytes);
-        var truncated = !complete || (!full && size > PreviewBytes);
-        var visibleBytes = truncated ? Math.Min(bytes.Length, PreviewBytes) : bytes.Length;
-        var content = Decode(bytes.AsSpan(codec.PreambleLength, Math.Max(0, visibleBytes - codec.PreambleLength)), codec.Encoding, truncated);
-        var version = complete && !truncated ? Version(resolved, bytes) : null;
+        var more = start + bytes.Length < size;
+        var content = Decode(bytes, codec.Encoding, more);
+        // Keep a CRLF pair together, just as an incomplete multibyte code point.
+        if (more && content.EndsWith('\r')) content = content[..^1];
+        var next = start + codec.Encoding.GetByteCount(content);
+        var truncated = offset > 0 || next < size;
+        var version = !truncated ? Version(resolved, codec.Encoding.GetPreamble().Concat(bytes).ToArray()) : null;
         return new FileDocumentResponse
         {
             Path = path,
@@ -57,8 +66,12 @@ public sealed class FileDocumentService
             Encoding = codec.Name,
             LineEnding = DetectLineEnding(content),
             IsTruncated = truncated,
-            CanLoadFull = complete && truncated,
-            ReadOnly = truncated || (File.GetAttributes(resolved) & FileAttributes.ReadOnly) != 0
+            CanLoadFull = size <= MaxEditableBytes && truncated,
+            ReadOnly = truncated || (File.GetAttributes(resolved) & FileAttributes.ReadOnly) != 0,
+            Offset = offset,
+            NextOffset = next,
+            PreviewBytes = next - offset,
+            EditLimitBytes = MaxEditableBytes
         };
     }
 

@@ -11,6 +11,58 @@ function response(body: unknown, status = 200): Response {
 }
 
 describe('file document API', () => {
+  it('reads aligned text pages using the server byte cursor', async () => {
+    const page = {
+      path: 'Q:\\notes.txt',
+      content: '😀\n',
+      size: 1000,
+      version: null,
+      offset: 512,
+      nextOffset: 519,
+      encoding: 'UTF-8',
+      lineEnding: 'crlf',
+      isTruncated: true,
+      readOnly: true,
+      canLoadFull: true,
+    };
+    const fetch = vi.fn().mockResolvedValue(response(page));
+    vi.stubGlobal('fetch', fetch);
+    const signal = new AbortController().signal;
+    await expect(readFileDocument(page.path, 'owner', false, signal, 512)).resolves.toEqual(page);
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/files/document?path=Q%3A%5Cnotes.txt&sessionId=owner&full=false&offset=512',
+      { signal },
+    );
+  });
+
+  it.each([{ nextOffset: 1001 }, { offset: 0 }, { readOnly: false }, { version: 'unsafe' }])(
+    'rejects unsafe or inconsistent page metadata %j',
+    async (invalid) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          response({
+            path: 'Q:\\notes.txt',
+            content: 'preview',
+            size: 1000,
+            version: null,
+            offset: 512,
+            nextOffset: 519,
+            encoding: 'UTF-8',
+            lineEnding: 'lf',
+            isTruncated: true,
+            readOnly: true,
+            canLoadFull: true,
+            ...invalid,
+          }),
+        ),
+      );
+      await expect(
+        readFileDocument('Q:\\notes.txt', 'owner', false, new AbortController().signal, 512),
+      ).rejects.toMatchObject({ code: 'invalid_response' });
+    },
+  );
+
   it('does not send a blind save when the complete version is unavailable', async () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);

@@ -48,8 +48,8 @@ public static class FileEndpointDefinitions
             .Produces<FileDocumentErrorResponse>(StatusCodes.Status409Conflict)
             .Produces<FileDocumentErrorResponse>(StatusCodes.Status428PreconditionRequired);
 
-        app.MapGet("/api/files/document", async (string path, IFileHandler handler, string? sessionId, bool full = false) =>
-            await handler.ReadDocumentAsync(path, sessionId, full))
+        app.MapGet("/api/files/document", async (string path, IFileHandler handler, string? sessionId, bool full = false, long offset = 0) =>
+            await handler.ReadDocumentAsync(path, sessionId, full, offset))
             .Produces<FileDocumentResponse>(StatusCodes.Status200OK, "application/json")
             .Produces<FileDocumentErrorResponse>(StatusCodes.Status403Forbidden)
             .Produces<FileDocumentErrorResponse>(StatusCodes.Status404NotFound)

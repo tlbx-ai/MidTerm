@@ -126,6 +126,10 @@ public sealed class FileDocumentResponse
     public bool IsTruncated { get; set; }
     public bool CanLoadFull { get; set; }
     public bool ReadOnly { get; set; }
+    public long Offset { get; set; }
+    public long NextOffset { get; set; }
+    public long PreviewBytes { get; set; }
+    public long EditLimitBytes { get; set; }
 }
 
 public sealed class FileDocumentErrorResponse

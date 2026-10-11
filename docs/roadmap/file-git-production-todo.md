@@ -393,7 +393,7 @@ Flows bestehen einschließlich Exportdatei-/Diskprüfung und Lost-Ack-Simulation
 18 fokussierte Tests, Typecheck und ESLint bestehen. Nachweise:
 `.dev/file-git-production/task-26-final/summary.json`, `save-outcome-unknown.png`.
 
-### 27. [~] Große Textdateien überall konsistent und sicher behandeln
+### 27. [x] Große Textdateien überall konsistent und sicher behandeln
 
 **Befund (mittel, Code):** Modal begrenzt initial auf 500 KiB, Files lädt alles.
 Modal-Ausschnitt ist editierbar, obwohl vollständiges Laden fürs Save nötig ist.
@@ -403,6 +403,22 @@ als vollständiges Dokument speichern; klare Größen-/Encodinginformation.
 
 **Abnahme:** Große UTF8/Unicode/BOM-Dateien, abgeschnittene Codepoints,
 Nachladefehler und Memoryverhalten in allen Views prüfen.
+
+**Nachweis 11.10.2026:** Gemeinsame 512-KiB-Vorschau in Files/Modal/Dock;
+bytegenaue Vor-/Zurücknavigation hält UTF-Codepoints und CRLF zusammen.
+Partielle Dokumente besitzen keine Save-Version und bleiben schreibgeschützt.
+Vollständiges Editieren ist explizit bis 32 MiB möglich; größere Dateien bleiben
+seitenweise lesbar und als Original herunterladbar. Größen-/Encoding-/EOL-Angabe
+und Bytebereich stehen in allen Ansichten; Nachladefehler erhalten den aktuellen
+Ausschnitt und die Wiederholungsaktion. Auch nach Save/Reload werden Metadaten erneuert.
+22 Backend-Dokumenttests bestehen, darunter UTF-8/UTF-16-BOM, Seitengrenzen und
+eine 64-MiB-Datei mit weniger als 12 MiB gemessener Backend-Allokation für die Vorschau.
+23 Frontendtests, acht reale große-Datei-Browserabläufe und die bisherigen
+37 Bearbeitungsabläufe bestehen. Chromium-JS-Heap im 64-MiB-Vorschautest:
+7.07 auf 7.26 MB nach GC (kein Nachweis des gesamten Browser-Prozessspeichers).
+Screenshots wurden visuell geprüft; DOM-Vorschau und HTTP-Inhalte bleiben begrenzt.
+Artefakte: `.dev/file-git-production/task-27-final/summary.json`,
+`task-27-regression/summary.json`, `task-27-unit/task-27-pages.trx`.
 
 ### 28. [ ] Dateinavigation und Viewer vollständig per Tastatur bedienen
 

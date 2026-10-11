@@ -13,6 +13,7 @@ class FakeElement {
   public spellcheck = true;
   public readonly style: Record<string, string> = {};
   public children: FakeElement[] = [];
+  public parentElement: FakeElement | null = null;
   public readonly classList = {
     add: (...tokens: string[]) => {
       const values = new Set(this.className.split(/\s+/).filter(Boolean));
@@ -39,8 +40,17 @@ class FakeElement {
   }
 
   public appendChild<T extends FakeElement>(child: T): T {
+    child.parentElement = this;
     this.children.push(child);
     return child;
+  }
+
+  public replaceWith(next: FakeElement): void {
+    if (!this.parentElement) return;
+    const parent = this.parentElement;
+    parent.children[parent.children.indexOf(this)] = next;
+    next.parentElement = parent;
+    this.parentElement = null;
   }
 
   public addEventListener(type: string, handler: (event?: any) => void): void {
@@ -106,6 +116,10 @@ function documentResponse(path: string, content: string, version = 'v1'): Respon
       isTruncated: false,
       canLoadFull: false,
       readOnly: false,
+      offset: 0,
+      nextOffset: content.length,
+      previewBytes: content.length,
+      editLimitBytes: 32 * 1024 * 1024,
     }),
   } as Response;
 }

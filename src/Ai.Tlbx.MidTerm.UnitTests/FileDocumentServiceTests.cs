@@ -172,6 +172,77 @@ public sealed class FileDocumentServiceTests : IDisposable
         Assert.Equal(FileDocumentService.PreviewBytes - 2, preview.Content.Length);
     }
 
+    [Theory]
+    [InlineData("utf8")]
+    [InlineData("utf16")]
+    public async Task PagesReconstructUnicodeAndCrLfWithoutMissingOrDuplicatedCharacters(string kind)
+    {
+        var path = Path.Combine(_folder, "paged-" + kind + ".txt");
+        var encoding = kind == "utf16" ? (Encoding)new UnicodeEncoding(false, true) : new UTF8Encoding(true);
+        var text = new string('a', FileDocumentService.PreviewBytes - 8) + "🎸\r\nsecond " + new string('b', FileDocumentService.PreviewBytes) + "Ω end";
+        await File.WriteAllTextAsync(path, text, encoding);
+        var combined = new StringBuilder();
+        long offset = 0;
+        var pages = 0;
+        do
+        {
+            var page = await _documents.ReadAsync(path, false, default, offset);
+            Assert.True(page.ReadOnly);
+            Assert.Null(page.Version);
+            Assert.InRange(page.PreviewBytes, 1, FileDocumentService.PreviewBytes);
+            Assert.DoesNotContain('\uFFFD', page.Content);
+            Assert.True(page.NextOffset > offset);
+            combined.Append(page.Content);
+            offset = page.NextOffset;
+            pages++;
+        } while (offset < new FileInfo(path).Length);
+        Assert.True(pages > 1);
+        Assert.Equal(text.Replace("\r\n", "\n", StringComparison.Ordinal), combined.ToString());
+    }
+
+    [Fact]
+    public async Task CrLfSplitAtByteBoundaryIsKeptOnTheFollowingPage()
+    {
+        var path = Path.Combine(_folder, "crlf-boundary.txt");
+        await File.WriteAllTextAsync(path, new string('x', FileDocumentService.PreviewBytes - 1) + "\r\nend", new UTF8Encoding(false));
+        var first = await _documents.ReadAsync(path, false, default);
+        Assert.Equal(FileDocumentService.PreviewBytes - 1, first.NextOffset);
+        var second = await _documents.ReadAsync(path, false, default, first.NextOffset);
+        Assert.Equal("\nend", second.Content);
+    }
+
+    [Fact]
+    public async Task LargeFilePreviewDoesNotAllocateTheWholeFile()
+    {
+        var path = Path.Combine(_folder, "bounded.txt");
+        await using (var output = File.Create(path))
+        {
+            var chunk = Encoding.UTF8.GetBytes(new string('x', 1024 * 1024));
+            for (var i = 0; i < 64; i++) await output.WriteAsync(chunk);
+        }
+        var before = GC.GetTotalAllocatedBytes(precise: true);
+        var preview = await _documents.ReadAsync(path, false, default);
+        var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+        Assert.True(preview.ReadOnly);
+        Assert.False(preview.CanLoadFull);
+        Assert.Equal(FileDocumentService.PreviewBytes, preview.Content.Length);
+        Assert.InRange(allocated, 0, 12 * 1024 * 1024);
+        var later = await _documents.ReadAsync(path, false, default, preview.NextOffset);
+        Assert.Equal(preview.NextOffset, later.Offset);
+        Assert.True(later.NextOffset > later.Offset);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(100)]
+    public async Task InvalidPageOffsetsDoNotReadAnotherDocument(long offset)
+    {
+        var path = Path.Combine(_folder, "offset.txt");
+        await File.WriteAllTextAsync(path, "short");
+        var error = await Assert.ThrowsAsync<FileDocumentException>(() => _documents.ReadAsync(path, false, default, offset));
+        Assert.Equal(400, error.StatusCode);
+    }
+
     [Fact]
     public async Task PartialPreview_IsReadOnlyAndCarriesNoWritableVersion()
     {

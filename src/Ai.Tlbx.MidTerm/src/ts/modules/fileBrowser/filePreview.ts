@@ -30,6 +30,7 @@ import { FileEditState, releaseFileEdits, trackFileEdits } from '../fileViewer/e
 import { FileViewLoad } from '../fileViewer/loadState';
 import { readFileDocument, writeFileDocument, type FileDocument } from '../fileViewer/documentApi';
 import { createFileSaveStatus } from '../fileViewer/saveStatus';
+import { createDocumentNotice } from '../fileViewer/documentNotice';
 
 const log = createLogger('filePreview');
 const previewLoads = new WeakMap<HTMLElement, FileViewLoad>();
@@ -314,6 +315,7 @@ function renderTextContent(
   ext: string,
   startInEditor: boolean,
   load: FileViewLoad,
+  previousOffsets: number[] = [],
 ): void {
   let isEditing = startInEditor && !snapshot.readOnly;
   let version = snapshot.version;
@@ -328,6 +330,13 @@ function renderTextContent(
         reviewedVersion ?? version,
       );
       version = saved.version;
+      snapshot = {
+        ...snapshot,
+        size: saved.size,
+        encoding: saved.encoding,
+        lineEnding: saved.lineEnding,
+      };
+      body.querySelector('.file-document-notice')?.replaceWith(createNotice());
     },
   );
   trackFileEdits(container, edit, sessionId);
@@ -376,8 +385,19 @@ function renderTextContent(
     },
   });
 
+  const createNotice = (): HTMLElement =>
+    createDocumentNotice(snapshot, {
+      read: (full, offset) =>
+        readFileDocument(entry.fullPath, sessionId, full, load.signal, offset),
+      active: () => load.isActive(),
+      previousOffsets,
+      display: (next, history) => {
+        renderTextContent(container, entry, sessionId, next, ext, startInEditor, load, history);
+      },
+    });
   const renderReadOnly = (): void => {
     body.innerHTML = '';
+    body.appendChild(createNotice());
     body.appendChild(status);
     const viewer = createLineNumberedViewer(edit.content, [], highlightCode(edit.content, ext));
     body.appendChild(viewer.root);
@@ -385,6 +405,7 @@ function renderTextContent(
 
   const renderEditor = (): void => {
     body.innerHTML = '';
+    body.appendChild(createNotice());
     body.appendChild(status);
     const editor = createLineNumberedEditor(edit.content, ['preview-textarea']);
     const textarea = editor.textarea;
@@ -433,25 +454,6 @@ function renderTextContent(
   container.appendChild(shell);
 
   renderMode();
-  if (snapshot.canLoadFull) {
-    const more = document.createElement('button');
-    more.className = 'file-viewer-load-more';
-    more.textContent = t('fileViewer.loadMore');
-    more.addEventListener('click', () => {
-      more.disabled = true;
-      void readFileDocument(entry.fullPath, sessionId, true, load.signal)
-        .then((complete) => {
-          if (load.isActive())
-            renderTextContent(container, entry, sessionId, complete, ext, startInEditor, load);
-        })
-        .catch((error: unknown) => {
-          if (!load.isActive()) return;
-          log.error(() => `Failed to load complete document: ${String(error)}`);
-          more.disabled = false;
-        });
-    });
-    shell.appendChild(more);
-  }
 }
 
 export function clearPreview(container: HTMLElement): void {

@@ -71,22 +71,50 @@ async function checked(response: Response): Promise<void> {
   );
 }
 
+function hasValidPageCursor(document: FileDocument, offset: number): boolean {
+  return (
+    Number.isSafeInteger(document.size) &&
+    document.size >= 0 &&
+    Number.isSafeInteger(document.offset) &&
+    document.offset === offset &&
+    Number.isSafeInteger(document.nextOffset) &&
+    document.nextOffset >= offset &&
+    document.nextOffset <= document.size
+  );
+}
+
+function hasSafeEditState(document: FileDocument): boolean {
+  return document.isTruncated
+    ? document.readOnly && document.version === null
+    : typeof document.version === 'string' && !!document.version;
+}
+
 export async function readFileDocument(
   path: string,
   sessionId: string | null,
   full: boolean,
   signal: AbortSignal,
+  offset = 0,
 ): Promise<FileDocument> {
   const params = query(path, sessionId);
   params.set('full', String(full));
+  if (offset) params.set('offset', String(offset));
   const response = await fetch(`/api/files/document?${params}`, { signal });
   await checked(response);
-  const document = (await response.json()) as FileDocument;
+  const payload: unknown = await response.json().catch(() => null);
+  if (typeof payload !== 'object' || payload === null)
+    throw new FileDocumentError(502, 'invalid_response');
+  const document = payload as FileDocument;
   if (
     document.path !== path ||
     typeof document.content !== 'string' ||
-    typeof document.size !== 'number' ||
-    (document.version !== null && typeof document.version !== 'string')
+    !hasValidPageCursor(document, offset) ||
+    typeof document.encoding !== 'string' ||
+    typeof document.lineEnding !== 'string' ||
+    typeof document.isTruncated !== 'boolean' ||
+    typeof document.readOnly !== 'boolean' ||
+    typeof document.canLoadFull !== 'boolean' ||
+    !hasSafeEditState(document)
   )
     throw new FileDocumentError(502, 'invalid_response');
   return document;

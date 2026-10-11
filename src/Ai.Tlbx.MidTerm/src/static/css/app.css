@@ -10674,6 +10674,30 @@ body.shared-session-mode .session-tab-bar {
   color: var(--accent-red);
 }
 
+.file-document-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.file-document-metadata {
+  overflow-wrap: anywhere;
+}
+
+.file-document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.file-document-load-error {
+  color: var(--accent-red);
+}
+
 .file-save-status-actions {
   display: flex;
   flex-wrap: wrap;

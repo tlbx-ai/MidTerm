@@ -334,13 +334,13 @@ public static class FileEndpoints
             }
         });
 
-        app.MapGet("/api/files/document", async (string path, string? sessionId, bool full = false, CancellationToken ct = default) =>
+        app.MapGet("/api/files/document", async (string path, string? sessionId, bool full = false, long offset = 0, CancellationToken ct = default) =>
         {
             var (resolved, error) = await ResolveDocumentAccessAsync(path, sessionId, fileService);
             if (error is not null) return error;
             try
             {
-                var document = await documents.ReadAsync(resolved!, full, ct);
+                var document = await documents.ReadAsync(resolved!, full, ct, offset);
                 document.Path = path;
                 if (sessionId is not null) { fileService.RegisterPath(sessionId, path); fileService.RegisterPath(sessionId, resolved!); }
                 return Results.Json(document, AppJsonContext.Default.FileDocumentResponse);

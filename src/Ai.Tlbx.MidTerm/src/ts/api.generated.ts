@@ -2880,6 +2880,7 @@ export interface paths {
           path: string;
           sessionId?: string;
           full?: boolean;
+          offset?: number;
         };
         header?: never;
         path?: never;
@@ -4478,6 +4479,14 @@ export interface components {
       isTruncated: boolean;
       canLoadFull: boolean;
       readOnly: boolean;
+      /** Format: int64 */
+      offset: number;
+      /** Format: int64 */
+      nextOffset: number;
+      /** Format: int64 */
+      previewBytes: number;
+      /** Format: int64 */
+      editLimitBytes: number;
     };
     FilePathInfo: {
       exists: boolean;
