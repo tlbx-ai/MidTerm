@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class FileNavigationServiceTests : IDisposable
 {
-    private readonly string _folder = Path.Combine(Path.GetTempPath(), $"file_navigation_test_{Guid.NewGuid():N}");
+    private readonly string _folder = Path.Combine(FileDocumentService.ResolvePath(Path.GetTempPath()), $"file_navigation_test_{Guid.NewGuid():N}");
     private readonly SessionPathAllowlistService _permissions = new();
     public FileNavigationServiceTests() => Directory.CreateDirectory(Path.Combine(_folder, "child", "nested"));
     private bool Accessible(string path) => _permissions.IsPathAllowed("owner", path, _folder);
@@ -58,7 +58,7 @@ public sealed class FileNavigationServiceTests : IDisposable
     public void Dispose()
     {
         var absolute = Path.GetFullPath(_folder);
-        if (!absolute.StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase) ||
+        if (!FileService.IsWithinDirectory(absolute, FileDocumentService.ResolvePath(Path.GetTempPath())) ||
             !Path.GetFileName(absolute).StartsWith("file_navigation_test_", StringComparison.Ordinal))
             throw new InvalidOperationException("Unexpected navigation test fixture.");
         Directory.Delete(absolute, recursive: true);

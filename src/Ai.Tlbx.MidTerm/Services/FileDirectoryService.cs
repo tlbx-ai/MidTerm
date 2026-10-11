@@ -11,7 +11,11 @@ public static class FileDirectoryService
     {
         var paths = Directory.EnumerateFileSystemEntries(path).ToArray();
         var repoRoot = await GitCommandRunner.GetRepoRootAsync(path);
-        var relative = repoRoot is null ? [] : paths.Select(entry => Path.GetRelativePath(repoRoot, entry).Replace('\\', '/')).ToArray();
+        var physicalParent = FileDocumentService.ResolvePath(path);
+        // Git reports a physical root even when the listing uses an alias such as macOS /var.
+        // Resolve the parent only: a symlink entry belongs to this worktree, not to its target.
+        var relative = repoRoot is null ? [] : paths.Select(entry =>
+            Path.GetRelativePath(repoRoot, Path.Combine(physicalParent, Path.GetFileName(entry))).Replace('\\', '/')).ToArray();
         var ignored = repoRoot is null ? null : await GitCommandRunner.GetIgnoredPathsAsync(repoRoot, relative);
         var summary = new FileVisibilitySummary { TotalCount = paths.Length, IsGitRepo = repoRoot is not null,
             IgnoreAvailable = repoRoot is null || ignored is not null };

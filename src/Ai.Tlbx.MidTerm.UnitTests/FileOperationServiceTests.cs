@@ -9,7 +9,7 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class FileOperationServiceTests : IDisposable
 {
-    private readonly string _base = Path.Combine(Path.GetTempPath(), "file_operations_test_" + Guid.NewGuid().ToString("N"));
+    private readonly string _base = Path.Combine(FileDocumentService.ResolvePath(Path.GetTempPath()), "file_operations_test_" + Guid.NewGuid().ToString("N"));
     private readonly string _workspace;
     private readonly string _storage;
     private readonly FileOperationService _operations;
@@ -484,7 +484,7 @@ public sealed class FileOperationServiceTests : IDisposable
     public void Dispose()
     {
         var full = Path.GetFullPath(_base);
-        if (!FileService.IsWithinDirectory(full, Path.GetTempPath()) || !Path.GetFileName(full).StartsWith("file_operations_test_", StringComparison.Ordinal))
+        if (!FileService.IsWithinDirectory(full, FileDocumentService.ResolvePath(Path.GetTempPath())) || !Path.GetFileName(full).StartsWith("file_operations_test_", StringComparison.Ordinal))
             throw new InvalidOperationException("Unexpected file operation fixture.");
         PrepareFixtureCleanup(full); Directory.Delete(full, recursive: true); GC.SuppressFinalize(this);
     }
