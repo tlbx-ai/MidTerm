@@ -601,6 +601,7 @@
   "webPreview.noTarget": "Entrez une URL à prévisualiser",
   "webPreview.agentHint": "Indiquer à l'agent IA le contrôle du navigateur",
   "webPreview.clearCookies": "Supprimer tous les cookies et recharger",
+  "fileBrowser.backToFiles": "Back to files",
   "fileBrowser.unableToLoad": "Impossible de charger le répertoire",
   "fileBrowser.selectFile": "Sélectionnez un fichier pour l'aperçu",
   "fileBrowser.loading": "Chargement...",

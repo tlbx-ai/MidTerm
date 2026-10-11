@@ -13,6 +13,7 @@ import { renderPreview, clearPreview } from './filePreview';
 import { $processStates } from '../../stores';
 import { confirmFileNavigation } from '../fileViewer/editState';
 import { beginFileOpen, isFileOpenCurrent } from '../fileViewer/loadState';
+import { t } from '../i18n';
 
 const log = createLogger('fileBrowser');
 
@@ -52,12 +53,50 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
   if (!initializedSessions.has(sessionId)) {
     initializedSessions.add(sessionId);
     previewContainers.set(sessionId, previewContainer);
+    const browser = panel.querySelector<HTMLElement>('.file-browser');
+    const detail = panel.querySelector<HTMLElement>('.file-browser-detail');
+    let treeScroll = 0;
+    let detailScroll: Array<{ element: HTMLElement; top: number; left: number }> = [];
+    if (browser && detail) {
+      const back = document.createElement('button');
+      back.type = 'button';
+      back.className = 'file-browser-back';
+      back.textContent = `← ${t('fileBrowser.backToFiles')}`;
+      back.addEventListener('click', () => {
+        detailScroll = [previewContainer, ...previewContainer.querySelectorAll<HTMLElement>('*')]
+          .filter((element) => element.scrollTop !== 0 || element.scrollLeft !== 0)
+          .map((element) => ({ element, top: element.scrollTop, left: element.scrollLeft }));
+        browser.dataset.filePane = 'tree';
+        treeContainer.scrollTop = treeScroll;
+        const selected = treeContainer.querySelector<HTMLElement>('.tree-node.selected');
+        if (selected) selected.tabIndex = 0;
+        selected?.focus({ preventScroll: true });
+      });
+      detail.insertBefore(back, previewContainer);
+    }
 
     createTreeView(treeContainer, sessionId, async (entry) => {
       const request = beginFileOpen(sessionId);
-      if (!(await confirmFileNavigation(previewContainer)) || !isFileOpenCurrent(request))
+      const sameFile = previewContainer.dataset.selectedPath === entry.fullPath;
+      if (
+        (!sameFile && !(await confirmFileNavigation(previewContainer))) ||
+        !isFileOpenCurrent(request)
+      )
         return false;
-      renderPreview(previewContainer, entry, sessionId);
+      // Reopening the selected file is a presentation change: retain its draft and DOM.
+      if (!sameFile) {
+        renderPreview(previewContainer, entry, sessionId);
+        previewContainer.dataset.selectedPath = entry.fullPath;
+        detailScroll = [];
+      }
+      treeScroll = treeContainer.scrollTop;
+      if (browser) browser.dataset.filePane = 'detail';
+      requestAnimationFrame(() => {
+        for (const position of detailScroll) {
+          position.element.scrollTop = position.top;
+          position.element.scrollLeft = position.left;
+        }
+      });
       return true;
     });
 

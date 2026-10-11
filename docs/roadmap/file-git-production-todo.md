@@ -153,7 +153,7 @@ added, deleted, renamed und conflict; verständliche Labels neben Farbcodierung.
 **Abnahme:** Alle Zustände in echten Git-Fixtures erzeugen und in beiden Views
 vergleichen; Farbenblindheit/Screenreaderinformation berücksichtigen.
 
-### 11. [ ] Ausgewählte Dateien auf schmalen Bildschirmen sichtbar öffnen
+### 11. [x] Ausgewählte Dateien auf schmalen Bildschirmen sichtbar öffnen
 
 **Befund (hoch, reproduziert):** Bei 390 px bleibt der Baum sichtbar, Vorschau
 display:none. Dateiklick markiert/lädt die Datei, öffnet aber weder Detail noch Modal.
@@ -163,6 +163,22 @@ und Entwurferhalt. File-/Medienaktionen müssen dort ebenfalls erreichbar sein.
 
 **Abnahme:** Mehrere Dateien und Medientypen bei 390/768 px öffnen, bearbeiten,
 zurückkehren und Größe wechseln. Zusätzlich Touch-Emulation prüfen.
+
+**Nachweis 11.10.2026:** Containerabhängige Baum-/Detailansicht bis 768 px mit
+echter Zurückaktion. Wiederöffnen derselben Auswahl erhält denselben Editor,
+Entwurf, Caret und Scroll; ein Wechsel zu einer anderen Datei verwendet den
+Save/Discard/Cancel-Schutz. Resize erhält die Ansicht ohne Neuladen.
+Mobile Tabs werden jetzt bei Sessionauswahl synchronisiert. Die visuelle Abnahme
+fand zusätzlich unsichtbare native Audiocontrols durch Padding und eine
+Editorhöhe, die Metadaten/Status aus der Vorschau schob; beide Layoutfehler behoben.
+14 echte Chromium-Touchabläufe bei 390/768 px bestehen einschließlich Disk-Save,
+Cancel, Desktopwechsel, Baumscroll, PNG-Originaldownload, Binär- und WAV-Vorschau.
+37 Bearbeitungsregressionen und acht große-Datei-Abläufe bestehen weiterhin.
+Screenshots/geometrische Messungen: `.dev/file-git-production/task-11-verified`,
+Regressionsdaten `task-11-regression-final` und `task-11-large-regression`.
+Typecheck, ESLint, Stylelint und Localecheck ohne Fehler; bestehende Warnungen
+über andere fehlende Übersetzungen bleiben sichtbar. Reale Geräte/OS-Tastatur
+sind durch Touch-Emulation nicht nachgewiesen und bleiben in der Files-Gesamtabnahme.
 
 ### 12. [x] Ungespeicherte Änderungen beim Dateiwechsel schützen
 

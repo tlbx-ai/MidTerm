@@ -1012,6 +1012,7 @@
   "webPreview.noTarget": "Enter a URL to preview",
   "webPreview.agentHint": "Hint agent about browser control",
   "webPreview.clearCookies": "Clear all cookies and reload",
+  "fileBrowser.backToFiles": "Back to files",
   "fileBrowser.unableToLoad": "Unable to load directory",
   "fileBrowser.selectFile": "Select a file to preview",
   "fileBrowser.loading": "Loading...",

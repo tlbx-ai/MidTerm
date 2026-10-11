@@ -170,7 +170,7 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
 
     if (tabId === 'files') {
       panel.innerHTML =
-        '<div class="file-browser"><div class="file-browser-tree"></div><div class="file-browser-preview"></div></div>';
+        '<div class="file-browser" data-file-pane="tree"><div class="file-browser-tree"></div><div class="file-browser-detail"><div class="file-browser-preview"></div></div></div>';
     }
 
     panels[tabId] = panel;

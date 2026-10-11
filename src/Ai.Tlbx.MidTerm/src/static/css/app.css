@@ -15972,6 +15972,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 /* File Browser layout (within files tab panel) */
 .file-browser {
+  container: file-browser / inline-size;
   display: flex;
   height: 100%;
   overflow: hidden;
@@ -15988,8 +15989,55 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .file-browser-preview {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: auto;
   background: var(--workspace-pane-background);
+}
+
+.file-browser-detail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.file-browser-back {
+  display: none;
+}
+
+@container file-browser (max-width: 768px) {
+  .file-browser-tree {
+    width: 100%;
+    border-right: 0;
+  }
+
+  .file-browser-detail {
+    display: none;
+  }
+
+  .file-browser[data-file-pane="detail"] .file-browser-tree {
+    display: none;
+  }
+
+  .file-browser[data-file-pane="detail"] .file-browser-detail {
+    display: flex;
+  }
+
+  .file-browser-back {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    cursor: pointer;
+  }
 }
 
 /* Mobile: maximize terminal viewport and move IDE controls to topbar dropdown */
@@ -16008,13 +16056,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
     display: none !important;
   }
 
-  .file-browser-tree {
-    width: 100%;
-  }
-
-  .file-browser-preview {
-    display: none;
-  }
 }
 
 @media (max-width: 768px) {
@@ -16284,6 +16325,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .preview-text-body {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -16294,7 +16337,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .preview-text-body > .file-viewer-readonly-shell,
 .preview-text-body > .file-viewer-code-stack,
 .preview-text-body > .file-viewer-image-stage {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 .preview-textarea {
@@ -16307,8 +16352,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .preview-audio {
-  width: 100%;
-  padding: 40px 20px;
+  display: block;
+  width: calc(100% - 40px);
+  height: 54px;
+  margin: 20px;
 }
 
 .preview-pdf {
