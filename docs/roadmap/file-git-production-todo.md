@@ -414,7 +414,7 @@ Screenshot `refreshed-tree.png` visuell geprüft. Artefakte:
 `.dev/file-git-production/task-19-final`, `task-19-edit`, `task-19-visibility`,
 `task-19-navigation`, `task-19-directory`, `task-19-mobile`, `task-19-large`, `task-19-unit`.
 
-### 20. [ ] Auswahl, Öffnen und Mehrfachauswahl klar trennen
+### 20. [x] Auswahl, Öffnen und Mehrfachauswahl klar trennen
 
 **Befund (mittel, Erwartungslücke):** Ordnerliste öffnet sofort auf Einzelklick;
 keine dauerhafte Auswahl oder Shift/Ctrl-Mehrfachauswahl. Baumvorschau und Liste
@@ -425,6 +425,30 @@ explizitem Öffnen; Preview darf Auswahl nicht mit destruktiven Aktionen vermisc
 
 **Abnahme:** Einzelauswahl, Bereiche, Ctrl/Meta-Toggle, Doppelklick/Enter,
 Touch-Auswahl und Aktionen auf exakt der ausgewählten Menge prüfen.
+
+**Abgenommen (2026-10-11):** Gemeinsames Auswahlmodell für Dateibaum und
+Ordnerliste: Ctrl/Meta-Toggle, vorwärts/rückwärts gerichtete Shift-Bereiche,
+Ctrl+Shift, Ctrl+A, Pfeile/Home/End/Leertaste, sichtbare Touch-Checkboxen und
+explizites Enter/Öffnen. Einzelklick in der Ordnerliste wählt; Doppelklick öffnet.
+Die Baumvorschau bleibt per Einzelklick erreichbar; Modifier/Checkboxen ändern
+nur die Auswahl. Mehrere ausgewählte Einträge deaktivieren das einzelne Öffnen.
+Kopierte Pfade und echte Downloads enthalten exakt die gewählte Menge; Ordner
+werden nicht als Datei-Download angeboten. Clipboard-Verweigerung ist sichtbar.
+Die vorhandenen Entwurfsentscheidungen schützen explizites Öffnen. Auswahl und
+Shift-Anker überleben Verlauf, Dock-Wechsel, Refresh und Sitzungsrückkehr;
+verschwundene Einträge werden vor Aktionen entfernt. Keyed Ordnerzeilen und
+lineare Auswahl-/Metadatenzugriffe ersetzen den bisherigen HTML-Neuaufbau.
+13 neue reale Chromium-Fälle einschließlich 390px Touch, echter Clipboard-
+Auslese und Diskvergleich der Downloads bestehen; alle 105 bisherigen Fälle
+bestehen weiterhin (118 insgesamt). 678 Frontendtests plus Kitty-Selbsttest,
+Typecheck, ESLint, Stylelint und Diffcheck bestehen. Neue Labels sind in allen
+zehn Sprachen vorhanden. Der strikte Locale-Check bleibt wegen unveränderter
+Alt-Lücken außerhalb der neuen Labels rot (Baselinevergleich ohne neue Lücken).
+Evidenz: `.dev/file-git-production/task-20-final-selection`,
+`task-20-accepted-{directory,navigation,refresh}`,
+`task-20-regression-{edit,large,mobile,visibility}` und `task-20-unit`.
+Reale Mobilgeräte und die vollständige ARIA-/Touch-Zielgrößen-Abnahme aus
+28/29 bleiben gesonderte Prüfungen. Kein Phasenrelease vor Files-Abschluss.
 
 ### 21. [ ] Echte Dateioperationen und Kontextmenüs implementieren
 

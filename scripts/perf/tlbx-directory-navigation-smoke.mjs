@@ -68,10 +68,10 @@ try {
     await page.waitForFunction(name => document.querySelector('#file-viewer-modal .file-viewer-title')?.textContent === name, text);
     await body.locator('.file-list, textarea, .file-viewer-error').first().waitFor();
   };
-  const choose = async name => modal.locator('.file-list-item').filter({ has: page.locator('.file-name', { hasText: new RegExp('^' + name.replace('.', '\\.') + '$') }) }).click();
+  const choose = async name => modal.locator('.file-list-item').filter({ has: page.locator('.file-name', { hasText: new RegExp('^' + name.replace('.', '\\.') + '$') }) }).dblclick();
   await openPath(child); await waitTitle('child');
   assert.equal(await back.isDisabled(), true); assert.equal(await up.isEnabled(), true);
-  await modal.locator('.file-list-parent').click(); await waitTitle(path.basename(fixtures));
+  await up.click(); await waitTitle(path.basename(fixtures));
   assert.equal(await up.isDisabled(), true);
   assert.equal(await modal.locator('.file-list-parent').count(), 0);
   result.cases.push('A directly opened subdirectory has a real parent; the authorized root stops Up');
@@ -160,8 +160,8 @@ try {
   await dock.locator('.file-list').waitFor();
   assert.equal(await modal.isVisible(), false);
   assert.equal(await dock.locator('[data-file-navigation="up"]').isDisabled(), true);
-  const chooseDock = async name => dock.locator('.file-list-item').filter({ has: page.locator('.file-name', { hasText: new RegExp('^' + name.replace('.', '\\.') + '$') }) }).click();
-  await chooseDock('child'); await dock.locator('.file-list-parent').waitFor();
+  const chooseDock = async name => dock.locator('.file-list-item').filter({ has: page.locator('.file-name', { hasText: new RegExp('^' + name.replace('.', '\\.') + '$') }) }).dblclick();
+  await chooseDock('child'); await dock.locator('[data-file-navigation="up"]:enabled').waitFor();
   assert.equal(await dock.locator('.file-viewer-dock-title').innerText(), 'child');
   assert.equal(await modal.isVisible(), false);
   result.cases.push('A directory moves into the dock with navigation, and opening a child stays docked');

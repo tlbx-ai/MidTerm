@@ -22,11 +22,8 @@ import { handleDockLayoutChange } from '../terminal/scaling';
 import { closeCommandsDock } from '../commands/dock';
 import { closeGitDock } from '../git/gitDock';
 import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
-import { escapeHtml } from '../../utils';
 import {
   getFileName,
-  joinPath,
-  getFileIcon,
   formatSize,
   formatViewerHeaderSubtitle,
   formatBinaryDump,
@@ -53,6 +50,7 @@ import { createDocumentNotice } from './documentNotice';
 import { FileNavigationHistory, type FileNavigationSnapshot } from './navigationHistory';
 import type { Schemas } from '../../api/types';
 import { createFileVisibilityControls, getFileVisibility } from './visibility';
+import { DirectoryListing } from './directoryListing';
 
 const log = createLogger('fileViewer');
 
@@ -64,6 +62,7 @@ let parentPath: string | null = null;
 let navigationBar: HTMLElement | null = null;
 let releaseDirectoryVisibility: (() => void) | null = null;
 let directoryVisibilityGeneration = 0;
+let directoryListing: DirectoryListing | null = null;
 let lastVideoVolume = 0.15;
 
 let isDirty = false;
@@ -197,6 +196,7 @@ function bindModalFileActions(viewer: HTMLElement): void {
 }
 
 function resetEditState(): void {
+  directoryListing = null;
   releaseDirectoryVisibility?.();
   releaseDirectoryVisibility = null;
   if (currentEditOwner) releaseFileEdits(currentEditOwner);
@@ -546,9 +546,8 @@ function captureCurrentVisit(): void {
   const previous = navigationHistory.current;
   if (previous && viewerLoad) {
     previous.scrollTop = viewerLoad.container.scrollTop;
-    previous.selectedPath =
-      viewerLoad.container.querySelector('.file-list-item.selected')?.getAttribute('data-path') ??
-      null;
+    previous.selectedPaths = [...(directoryListing?.surface.selection.paths ?? [])];
+    previous.selectionAnchor = directoryListing?.surface.selection.anchorPath ?? null;
   }
 }
 
@@ -640,6 +639,8 @@ async function renderDirectory(load: FileViewLoad): Promise<void> {
     }
     renderDirectoryListing(data.entries, path, load.container, data.visibility.excludedCount > 0);
     releaseDirectoryVisibility?.();
+    load.container.querySelector('.file-visibility-controls')?.remove();
+    load.container.querySelector('.file-directory-filter-error')?.remove();
     const controls = createFileVisibilityControls(() => {
       if (load.isActive()) void renderDirectory(load);
     });
@@ -674,66 +675,23 @@ function renderDirectoryListing(
   container: Element,
   filtered = false,
 ): void {
-  const html = `
-    <div class="file-list">
-      ${
-        parentPath
-          ? `
-        <div class="file-list-item file-list-parent" data-action="up">
-          <span class="file-icon">📁</span>
-          <span class="file-name">..</span>
-        </div>
-      `
-          : ''
-      }
-      ${entries
-        .map((entry) => {
-          const name = entry.name;
-          const isDir = entry.isDirectory;
-          const size = entry.size ?? null;
-          return `
-        <div class="file-list-item ${isDir ? 'file-list-dir' : 'file-list-file'}"
-             data-path="${escapeHtml(joinPath(basePath, name))}"
-             data-is-dir="${isDir}">
-          <span class="file-icon">${isDir ? '📁' : getFileIcon(name)}</span>
-          <span class="file-name">${escapeHtml(name)}</span>
-          ${entry.isHidden || entry.isIgnored ? `<span class="file-visibility-badge">${escapeHtml([entry.isHidden ? t('fileBrowser.hidden') : '', entry.isIgnored ? t('fileBrowser.ignored') : ''].filter(Boolean).join(', '))}</span>` : ''}
-          ${!isDir && size != null ? `<span class="file-size">${formatSize(size)}</span>` : ''}
-        </div>
-      `;
-        })
-        .join('')}
-      ${entries.length === 0 ? `<div class="file-list-empty">${t(filtered ? 'fileBrowser.allFiltered' : 'fileViewer.emptyDirectory')}</div>` : ''}
-    </div>
-  `;
-
-  container.innerHTML = html;
-
-  container.querySelectorAll('.file-list-item').forEach((item) => {
-    item.addEventListener('click', () => {
-      const action = item.getAttribute('data-action');
-      if (action === 'up') {
-        void navigateHistory('up');
-        return;
-      }
-
-      const itemPath = item.getAttribute('data-path');
-      if (itemPath) {
-        container.querySelector('.file-list-item.selected')?.classList.remove('selected');
-        item.classList.add('selected');
-        void openFile(itemPath, null, beginFileOpen(currentSessionId));
-      }
+  const reused =
+    directoryListing?.path === basePath && directoryListing.root.parentElement === container;
+  if (!reused) {
+    const sessionId = currentSessionId;
+    directoryListing = new DirectoryListing(basePath, sessionId, (path) => {
+      void openFile(path, null, beginFileOpen(sessionId));
     });
-  });
-  const visit = navigationHistory.current;
-  if (visit?.path === basePath) {
-    container.querySelectorAll('.file-list-item').forEach((item) => {
-      if (item.getAttribute('data-path') === visit.selectedPath) item.classList.add('selected');
-    });
-    requestAnimationFrame(() => {
-      if (currentPath === basePath) (container as HTMLElement).scrollTop = visit.scrollTop;
-    });
+    container.replaceChildren(directoryListing.root);
+    const visit = navigationHistory.current;
+    if (visit?.path === basePath) {
+      directoryListing.surface.selection.restore(visit.selectedPaths, visit.selectionAnchor);
+      requestAnimationFrame(() => {
+        if (currentPath === basePath) (container as HTMLElement).scrollTop = visit.scrollTop;
+      });
+    }
   }
+  directoryListing?.render(entries, filtered);
 }
 
 function buildViewUrl(

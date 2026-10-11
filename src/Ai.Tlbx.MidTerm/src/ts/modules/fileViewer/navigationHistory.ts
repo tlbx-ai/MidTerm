@@ -1,7 +1,8 @@
 export interface FileVisit {
   path: string;
   scrollTop: number;
-  selectedPath: string | null;
+  selectedPaths: string[];
+  selectionAnchor: string | null;
 }
 
 export interface FileNavigationSnapshot {
@@ -32,7 +33,7 @@ export class FileNavigationHistory {
   public push(path: string): void {
     if (path === this.current?.path) return;
     this.visits.splice(this.index + 1);
-    this.visits.push({ path, scrollTop: 0, selectedPath: null });
+    this.visits.push({ path, scrollTop: 0, selectedPaths: [], selectionAnchor: null });
     this.index = this.visits.length - 1;
   }
   public back(): void {
@@ -47,11 +48,17 @@ export class FileNavigationHistory {
   }
 
   public snapshot(): FileNavigationSnapshot {
-    return { visits: this.visits.map((visit) => ({ ...visit })), index: this.index };
+    return {
+      visits: this.visits.map((visit) => ({ ...visit, selectedPaths: [...visit.selectedPaths] })),
+      index: this.index,
+    };
   }
 
   public restore(snapshot: FileNavigationSnapshot): void {
-    this.visits = snapshot.visits.map((visit) => ({ ...visit }));
+    this.visits = snapshot.visits.map((visit) => ({
+      ...visit,
+      selectedPaths: [...visit.selectedPaths],
+    }));
     this.index = snapshot.index;
   }
 }

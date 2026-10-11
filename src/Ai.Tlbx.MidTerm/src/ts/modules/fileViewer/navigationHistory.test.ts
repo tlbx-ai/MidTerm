@@ -5,13 +5,14 @@ describe('file visit history', () => {
   it('returns from a file to its directory selection and scroll, then goes forward', () => {
     const history = new FileNavigationHistory();
     history.push('root/child');
-    Object.assign(history.current!, { scrollTop: 700, selectedPath: 'root/child/file' });
+    Object.assign(history.current!, { scrollTop: 700, selectedPaths: ['root/child/file'] });
     history.push('root/child/file');
     history.back();
     expect(history.current).toEqual({
       path: 'root/child',
       scrollTop: 700,
-      selectedPath: 'root/child/file',
+      selectedPaths: ['root/child/file'],
+      selectionAnchor: null,
     });
     expect(history.forwardPath).toBe('root/child/file');
     history.forward();
@@ -33,5 +34,16 @@ describe('file visit history', () => {
     history.clear();
     expect(history.canBack).toBe(false);
     expect(history.canForward).toBe(false);
+  });
+  it('does not share mutable multi-selection arrays with a saved session snapshot', () => {
+    const history = new FileNavigationHistory();
+    history.push('root');
+    if (history.current) history.current.selectedPaths = ['a', 'b'];
+    const snapshot = history.snapshot();
+    history.current?.selectedPaths.push('c');
+    expect(snapshot.visits[0]?.selectedPaths).toEqual(['a', 'b']);
+    history.restore(snapshot);
+    snapshot.visits[0]?.selectedPaths.push('d');
+    expect(history.current?.selectedPaths).toEqual(['a', 'b']);
   });
 });

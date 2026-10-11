@@ -624,7 +624,7 @@
   "fileBrowser.loading": "लोड हो रहा है...",
   "fileBrowser.unknownSize": "अज्ञात आकार",
   "fileBrowser.failedToLoad": "फ़ाइल लोड करने में विफल",
-  "fileBrowser.download": "डाउनलोड",
+  "fileBrowser.download": "डाउनलोड करें",
   "badges.overflow": "आउटपुट ओवरफ्लो",
   "badges.pasting": "पेस्ट हो रहा है...",
   "auth.certFrom": "से",
@@ -1148,5 +1148,11 @@
   "settings.behavior.runtimePriorityHint": "Windows: applies immediately to tlbx and its hosted processes, including all child processes. New processes inherit the selected priority. Child processes include compilers launched in terminals. High requires a Windows service or elevated privileges.",
   "settings.options.runtimePriorityAboveNormal": "Above normal",
   "settings.options.runtimePriorityHigh": "High",
-  "settings.options.runtimePriorityNormal": "Normal"
+  "settings.options.runtimePriorityNormal": "Normal",
+  "fileBrowser.open": "खोलें",
+  "fileBrowser.copyPaths": "पथ कॉपी करें",
+  "fileBrowser.selected": "चयनित",
+  "fileBrowser.select": "चुनें",
+  "fileBrowser.files": "फ़ाइलें",
+  "fileBrowser.copyFailed": "पथ कॉपी नहीं किए जा सके"
 }

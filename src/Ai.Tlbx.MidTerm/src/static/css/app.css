@@ -20879,3 +20879,48 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     grid-column: 1 / -1;
   }
 }
+
+/* Selection remains available with touch, keyboard and pointer input. */
+.file-selection-toolbar {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--workspace-pane-chrome-background);
+  font-size: var(--fs-xs);
+}
+
+.file-selection-toolbar button {
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--workspace-pane-background);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.file-selection-toolbar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.file-selection-checkbox {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0 6px 0 0;
+  accent-color: var(--accent-color);
+}
+
+.file-list-item:focus-visible,
+.tree-node:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -2px;
+}

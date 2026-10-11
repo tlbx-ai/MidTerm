@@ -1296,5 +1296,11 @@
   "settings.behavior.runtimePriorityHint": "Windows: applies immediately to tlbx and its hosted processes, including all child processes. New processes inherit the selected priority. Child processes include compilers launched in terminals. High requires a Windows service or elevated privileges.",
   "settings.options.runtimePriorityAboveNormal": "Above normal",
   "settings.options.runtimePriorityHigh": "High",
-  "settings.options.runtimePriorityNormal": "Normal"
+  "settings.options.runtimePriorityNormal": "Normal",
+  "fileBrowser.open": "Open",
+  "fileBrowser.copyPaths": "Copy paths",
+  "fileBrowser.selected": "selected",
+  "fileBrowser.select": "Select",
+  "fileBrowser.files": "Files",
+  "fileBrowser.copyFailed": "Could not copy paths"
 }

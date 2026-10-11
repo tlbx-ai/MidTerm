@@ -624,7 +624,7 @@
   "fileBrowser.loading": "লোড হচ্ছে...",
   "fileBrowser.unknownSize": "অজানা আকার",
   "fileBrowser.failedToLoad": "ফাইল লোড করতে ব্যর্থ",
-  "fileBrowser.download": "ডাউনলোড",
+  "fileBrowser.download": "ডাউনলোড করুন",
   "badges.overflow": "আউটপুট ওভারফ্লো",
   "badges.pasting": "পেস্ট হচ্ছে...",
   "auth.certFrom": "থেকে",
@@ -1148,5 +1148,11 @@
   "settings.behavior.runtimePriorityHint": "Windows: applies immediately to tlbx and its hosted processes, including all child processes. New processes inherit the selected priority. Child processes include compilers launched in terminals. High requires a Windows service or elevated privileges.",
   "settings.options.runtimePriorityAboveNormal": "Above normal",
   "settings.options.runtimePriorityHigh": "High",
-  "settings.options.runtimePriorityNormal": "Normal"
+  "settings.options.runtimePriorityNormal": "Normal",
+  "fileBrowser.open": "খুলুন",
+  "fileBrowser.copyPaths": "পথ কপি করুন",
+  "fileBrowser.selected": "নির্বাচিত",
+  "fileBrowser.select": "নির্বাচন করুন",
+  "fileBrowser.files": "ফাইল",
+  "fileBrowser.copyFailed": "পথ কপি করা যায়নি"
 }

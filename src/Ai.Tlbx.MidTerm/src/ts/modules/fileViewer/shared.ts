@@ -214,7 +214,7 @@ function getClipboardApi(): Clipboard | null {
   return (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
 }
 
-async function writeTextToClipboard(text: string): Promise<boolean> {
+export async function writeTextToClipboard(text: string): Promise<boolean> {
   const clipboard = getClipboardApi();
   if (clipboard === null || typeof clipboard.writeText !== 'function') {
     return false;
