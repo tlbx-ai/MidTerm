@@ -9,7 +9,6 @@ import {
   $commandsPanelDocked,
   $activeSessionId,
   $fileViewerDocked,
-  $dockedFilePath,
   $gitPanelDocked,
 } from '../../stores';
 import { handleDockLayoutChange } from '../terminal/scaling';
@@ -17,6 +16,7 @@ import { setActionButtonActive } from '../sessionTabs';
 import { renderCommandsPanelInto } from './commandsPanel';
 import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
 import { createLogger } from '../logging';
+import { requestCloseFileViewerDock } from '../fileViewer';
 
 const log = createLogger('commandsDock');
 
@@ -29,15 +29,6 @@ let closeGitDockFn: (() => void) | null = null;
 
 export function registerGitDockCloser(fn: () => void): void {
   closeGitDockFn = fn;
-}
-
-function closeFileViewerDockIfOpen(): void {
-  if (!$fileViewerDocked.get()) return;
-  $fileViewerDocked.set(false);
-  $dockedFilePath.set(null);
-  const fvDock = document.getElementById('file-viewer-dock');
-  if (fvDock) fvDock.classList.add('hidden');
-  document.getElementById('app')?.classList.remove('file-viewer-docked');
 }
 
 function closeGitDockIfOpen(): void {
@@ -55,7 +46,13 @@ export function toggleCommandsDock(sessionId: string): void {
 }
 
 export function openCommandsDock(sessionId: string): void {
-  closeFileViewerDockIfOpen();
+  void openCommandsDockAfterFileDecision(sessionId);
+}
+
+async function openCommandsDockAfterFileDecision(sessionId: string): Promise<void> {
+  const activeSessionId = $activeSessionId.get();
+  if ($fileViewerDocked.get() && !(await requestCloseFileViewerDock())) return;
+  if (activeSessionId !== $activeSessionId.get()) return;
   closeGitDockIfOpen();
 
   $commandsPanelDocked.set(true);

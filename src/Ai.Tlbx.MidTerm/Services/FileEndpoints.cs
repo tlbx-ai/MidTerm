@@ -239,18 +239,16 @@ public static class FileEndpoints
         app.MapPost("/api/files/check", async (FileCheckRequest request, string? sessionId) =>
         {
             var results = new Dictionary<string, FilePathInfo>(StringComparer.Ordinal);
-            var workingDir = await fileService.GetSessionWorkingDirectoryAsync(sessionId);
-
             foreach (var path in request.Paths)
             {
-                if (!string.IsNullOrEmpty(sessionId) &&
-                    !fileService.IsPathAccessible(sessionId, path, workingDir))
+                var (resolved, accessError) = await ResolveFileAccessAsync(path, sessionId, fileService);
+                if (accessError is not null)
                 {
                     results[path] = new FilePathInfo { Exists = false };
                     continue;
                 }
 
-                results[path] = FileService.GetFileInfo(path);
+                results[path] = FileService.GetFileInfo(resolved!);
             }
 
             return Results.Json(
@@ -260,7 +258,7 @@ public static class FileEndpoints
 
         app.MapGet("/api/files/navigation", async (string path, string? sessionId) =>
         {
-            var (_, error) = await ResolveDocumentAccessAsync(path, sessionId, fileService);
+            var (_, error) = await ResolveFileAccessAsync(path, sessionId, fileService);
             if (error is not null) return error;
             var cwd = await fileService.GetSessionWorkingDirectoryAsync(sessionId);
             try
@@ -275,19 +273,9 @@ public static class FileEndpoints
 
         app.MapGet("/api/files/list", async (string path, string? sessionId) =>
         {
-            if (!FileService.ValidatePath(path, out var errorResult))
-            {
-                return errorResult!;
-            }
-
-            var workingDir = await fileService.GetSessionWorkingDirectoryAsync(sessionId);
-            if (!string.IsNullOrEmpty(sessionId) &&
-                !fileService.IsPathAccessible(sessionId, path, workingDir))
-            {
-                return Results.StatusCode(403);
-            }
-
-            var fullPath = Path.GetFullPath(path);
+            var (resolved, error) = await ResolveFileAccessAsync(path, sessionId, fileService);
+            if (error is not null) return error;
+            var fullPath = resolved!;
 
             if (!Directory.Exists(fullPath))
             {
@@ -302,12 +290,13 @@ public static class FileEndpoints
                 {
                     try
                     {
+                        var (accessibleDir, dirError) = await ResolveFileAccessAsync(dir, sessionId, fileService);
                         var dirInfo = new DirectoryInfo(dir);
                         entries.Add(new DirectoryEntry
                         {
                             Name = dirInfo.Name,
                             IsDirectory = true,
-                            Modified = dirInfo.LastWriteTimeUtc
+                            Modified = dirError is null ? new DirectoryInfo(accessibleDir!).LastWriteTimeUtc : null
                         });
                     }
                     catch { }
@@ -317,14 +306,15 @@ public static class FileEndpoints
                 {
                     try
                     {
-                        var fileInfo = new FileInfo(file);
+                        var (accessibleFile, fileError) = await ResolveFileAccessAsync(file, sessionId, fileService);
+                        var fileInfo = fileError is null ? new FileInfo(accessibleFile!) : null;
                         entries.Add(new DirectoryEntry
                         {
-                            Name = fileInfo.Name,
+                            Name = Path.GetFileName(file),
                             IsDirectory = false,
-                            Size = fileInfo.Length,
-                            Modified = fileInfo.LastWriteTimeUtc,
-                            MimeType = FileService.GetMimeType(fileInfo.Name)
+                            Size = fileInfo?.Length,
+                            Modified = fileInfo?.LastWriteTimeUtc,
+                            MimeType = fileError is null ? FileService.GetMimeType(Path.GetFileName(file)) : null
                         });
                     }
                     catch { }
@@ -336,7 +326,7 @@ public static class FileEndpoints
                     .ToList();
 
                 return Results.Json(
-                    new DirectoryListResponse { Path = fullPath, Entries = entries.ToArray() },
+                    new DirectoryListResponse { Path = Path.GetFullPath(path), Entries = entries.ToArray() },
                     AppJsonContext.Default.DirectoryListResponse);
             }
             catch (UnauthorizedAccessException)
@@ -351,7 +341,7 @@ public static class FileEndpoints
 
         app.MapGet("/api/files/document", async (string path, string? sessionId, bool full = false, long offset = 0, CancellationToken ct = default) =>
         {
-            var (resolved, error) = await ResolveDocumentAccessAsync(path, sessionId, fileService);
+            var (resolved, error) = await ResolveFileAccessAsync(path, sessionId, fileService);
             if (error is not null) return error;
             try
             {
@@ -366,7 +356,7 @@ public static class FileEndpoints
 
         app.MapPut("/api/files/save", async (FileSaveRequest request, string? sessionId, CancellationToken ct) =>
         {
-            var (resolved, error) = await ResolveDocumentAccessAsync(request.Path, sessionId, fileService);
+            var (resolved, error) = await ResolveFileAccessAsync(request.Path, sessionId, fileService);
             if (error is not null) return error;
             try
             {
@@ -405,10 +395,12 @@ public static class FileEndpoints
             foreach (var tryPath in FileService.GetSlashVariants(path))
             {
                 var exactPath = Path.GetFullPath(Path.Combine(cwd, tryPath));
-                if (FileService.IsWithinDirectory(exactPath, cwd) && (File.Exists(exactPath) || Directory.Exists(exactPath)))
+                if (File.Exists(exactPath) || Directory.Exists(exactPath))
                 {
+                    var (accessiblePath, accessError) = await ResolveFileAccessAsync(exactPath, sessionId, fileService);
+                    if (accessError is not null) continue;
                     fileService.RegisterPath(sessionId, exactPath);
-                    return Results.Json(FileService.BuildResolveResponse(exactPath), AppJsonContext.Default.FileResolveResponse);
+                    return Results.Json(FileService.BuildResolveResponse(exactPath, accessiblePath), AppJsonContext.Default.FileResolveResponse);
                 }
             }
 
@@ -417,10 +409,12 @@ public static class FileEndpoints
                 foreach (var tryPath in FileService.GetSlashVariants(path))
                 {
                     var found = FileService.SearchTree(cwd, tryPath, maxDepth: 5);
-                    if (found is not null && FileService.IsWithinDirectory(found, cwd))
+                    if (found is not null)
                     {
+                        var (accessiblePath, accessError) = await ResolveFileAccessAsync(found, sessionId, fileService);
+                        if (accessError is not null) continue;
                         fileService.RegisterPath(sessionId, found);
-                        return Results.Json(FileService.BuildResolveResponse(found), AppJsonContext.Default.FileResolveResponse);
+                        return Results.Json(FileService.BuildResolveResponse(found, accessiblePath), AppJsonContext.Default.FileResolveResponse);
                     }
                 }
             }
@@ -430,24 +424,12 @@ public static class FileEndpoints
 
         app.MapGet("/api/files/tree", async (string path, string? sessionId, int depth) =>
         {
-            if (string.IsNullOrWhiteSpace(path) || path.Contains("..", StringComparison.Ordinal))
-            {
-                return Results.BadRequest("Invalid path");
-            }
-
-            var fullPath = Path.GetFullPath(path);
+            var (resolved, error) = await ResolveFileAccessAsync(path, sessionId, fileService);
+            if (error is not null) return error;
+            var fullPath = resolved!;
             if (!Directory.Exists(fullPath))
             {
                 return Results.NotFound("Directory not found");
-            }
-
-            if (!string.IsNullOrEmpty(sessionId))
-            {
-                var workingDir = await fileService.GetSessionWorkingDirectoryAsync(sessionId);
-                if (!string.IsNullOrEmpty(workingDir) && !FileService.IsWithinDirectory(fullPath, workingDir))
-                {
-                    return Results.StatusCode(403);
-                }
             }
 
             var isGitRepo = false;
@@ -541,7 +523,13 @@ public static class FileEndpoints
 
                     try
                     {
-                        var fileInfo = FileService.GetFileInfo(file);
+                        var (accessibleFile, fileError) = await ResolveFileAccessAsync(file, sessionId, fileService);
+                        if (fileError is not null)
+                        {
+                            entries.Add(new FileTreeEntry { Name = fileName, FullPath = file, IsDirectory = false });
+                            continue;
+                        }
+                        var fileInfo = FileService.GetFileInfo(accessibleFile!);
                         if (!fileInfo.Exists || fileInfo.IsDirectory)
                         {
                             continue;
@@ -585,7 +573,7 @@ public static class FileEndpoints
         });
     }
 
-    private static async Task<(string? Path, IResult? Error)> ResolveDocumentAccessAsync(string path, string? sessionId, FileService files)
+    private static async Task<(string? Path, IResult? Error)> ResolveFileAccessAsync(string path, string? sessionId, FileService files)
     {
         if (!FileService.ValidatePath(path, out var error)) return (null, error);
         var cwd = await files.GetSessionWorkingDirectoryAsync(sessionId);
@@ -640,19 +628,9 @@ public static class FileEndpoints
         string? sessionId,
         FileService fileService)
     {
-        if (!FileService.ValidatePath(path, out var errorResult))
-        {
-            return errorResult!;
-        }
-
-        var workingDir = await fileService.GetSessionWorkingDirectoryAsync(sessionId);
-        if (!string.IsNullOrEmpty(sessionId) &&
-            !fileService.IsPathAccessible(sessionId, path, workingDir))
-        {
-            return Results.StatusCode(403);
-        }
-
-        var fullPath = Path.GetFullPath(path);
+        var (resolved, error) = await ResolveFileAccessAsync(path, sessionId, fileService);
+        if (error is not null) return error;
+        var fullPath = resolved!;
 
         if (!File.Exists(fullPath))
         {
@@ -661,9 +639,8 @@ public static class FileEndpoints
 
         try
         {
-            var fileInfo = new FileInfo(fullPath);
-            var mimeType = FileService.GetMimeType(fileInfo.Name);
-            var fileName = fileInfo.Name;
+            var fileName = Path.GetFileName(path);
+            var mimeType = FileService.GetMimeType(fileName);
 
             return Results.File(
                 fullPath,

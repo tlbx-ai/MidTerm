@@ -50,7 +50,7 @@ import { FileViewLoad, beginFileOpen, isFileOpenCurrent, cancelFileOpen } from '
 import { readFileDocument, writeFileDocument, type FileDocument } from './documentApi';
 import { createFileSaveStatus } from './saveStatus';
 import { createDocumentNotice } from './documentNotice';
-import { FileNavigationHistory } from './navigationHistory';
+import { FileNavigationHistory, type FileNavigationSnapshot } from './navigationHistory';
 import type { Schemas } from '../../api/types';
 
 const log = createLogger('fileViewer');
@@ -214,14 +214,17 @@ async function requestCloseViewer(): Promise<void> {
   if (await confirmCurrentFileNavigation()) closeViewer();
 }
 
-async function requestCloseFileViewerDock(): Promise<void> {
-  if (await confirmCurrentFileNavigation()) closeFileViewerDock();
+export async function requestCloseFileViewerDock(): Promise<boolean> {
+  if (!(await confirmCurrentFileNavigation())) return false;
+  closeFileViewerDock();
+  return true;
 }
 
 function registerDockBackLayer(): void {
   releaseDockBackButtonLayer?.();
   releaseDockBackButtonLayer = registerBackButtonLayer(() => {
-    void requestCloseFileViewerDock();
+    if (navigationHistory.canBack) void navigateHistory('back');
+    else void requestCloseFileViewerDock();
   });
 }
 
@@ -256,6 +259,10 @@ function dockViewer(): void {
   terminalPage?.classList.add('file-viewer-docked');
 
   updateDockHeader(currentPath);
+  if (navigationBar)
+    dockPanel
+      .querySelector('.file-viewer-dock-header')
+      ?.insertAdjacentElement('afterend', navigationBar);
   transferViewerBody(source, target);
   hideModal();
   registerDockBackLayer();
@@ -271,6 +278,8 @@ export function closeFileViewerDock(): void {
   hideFileDock();
   currentPath = null;
   currentSessionId = null;
+  navigationHistory.clear();
+  parentPath = null;
   resetEditState();
 }
 
@@ -293,17 +302,36 @@ function hideFileDock(): void {
   handleDockLayoutChange();
 }
 
-export function openFileViewerDock(path: string): void {
+export function getFileViewerNavigationState(): FileNavigationSnapshot {
+  captureCurrentVisit();
+  return navigationHistory.snapshot();
+}
+
+export function openFileViewerDock(path: string, state?: FileNavigationSnapshot): void {
+  void restoreFileViewerDock(path, state);
+}
+
+async function restoreFileViewerDock(path: string, state?: FileNavigationSnapshot): Promise<void> {
+  const request = beginFileOpen();
+  if (!(await confirmCurrentFileNavigation()) || !isFileOpenCurrent(request)) return;
   registerDockBackLayer();
   $dockedFilePath.set(path);
   $fileViewerDocked.set(true);
   currentPath = path;
-  currentSessionId = $activeSessionId.get() ?? null;
+  currentSessionId = request.sessionId;
+  navigationHistory.clear();
+  if (state) navigationHistory.restore(state);
+  navigationHistory.push(path);
 
   const dockPanel = document.getElementById('file-viewer-dock');
   const terminalPage = document.getElementById('app');
   if (dockPanel) dockPanel.classList.remove('hidden');
+  if (navigationBar)
+    dockPanel
+      ?.querySelector('.file-viewer-dock-header')
+      ?.insertAdjacentElement('afterend', navigationBar);
   terminalPage?.classList.add('file-viewer-docked');
+  hideModal();
 
   void renderInDock(path);
 
@@ -377,11 +405,16 @@ async function renderInDock(path: string): Promise<void> {
   if (titleEl || pathEl) {
     updateDockHeader(path);
   }
+  captureCurrentVisit();
   bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
 
   resetEditState();
 
   const load = beginViewerLoad(path, bodyEl);
+  parentPath = null;
+  updateNavigationButtons();
+  await updateNavigation(load);
+  if (!load.isActive()) return;
   const info = await checkFilePath(load);
   if (!load.isActive()) return;
 
@@ -395,7 +428,7 @@ async function renderInDock(path: string): Promise<void> {
   updateFileActionButtons(info);
 
   if (info.isDirectory) {
-    load.container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.dirNotSupported')}</div>`;
+    await renderDirectory(load);
   } else {
     await renderFile(load, info);
   }
@@ -411,6 +444,8 @@ function hideModal(): void {
 }
 
 function showModal(): void {
+  if (navigationBar)
+    modal?.querySelector('.modal-header')?.insertAdjacentElement('afterend', navigationBar);
   if (!releaseBackButtonLayer) {
     releaseBackButtonLayer = registerBackButtonLayer(() => {
       if (navigationHistory.canBack) void navigateHistory('back');
@@ -447,12 +482,10 @@ export async function openFile(
 
   currentPath = path;
   currentSessionId = request.sessionId;
-  showModal();
-
-  const bodyEl = modal.querySelector<HTMLElement>('.file-viewer-body');
+  const bodyEl = viewerBodyForOpen(path);
   if (!bodyEl) return;
 
-  updateModalHeader(path);
+  updateViewerHeaders(path);
   bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
 
   resetEditState();
@@ -481,11 +514,30 @@ export async function openFile(
   }
 }
 
+function viewerBodyForOpen(path: string): HTMLElement | null {
+  if ($fileViewerDocked.get()) {
+    $dockedFilePath.set(path);
+    return document.querySelector<HTMLElement>('#file-viewer-dock .file-viewer-dock-body');
+  }
+  showModal();
+  return modal?.querySelector<HTMLElement>('.file-viewer-body') ?? null;
+}
+
 function commitNavigation(
   path: string,
   sessionId: string | null,
   action: 'push' | 'back' | 'forward',
 ): void {
+  captureCurrentVisit();
+  if (currentSessionId !== sessionId) navigationHistory.clear();
+  if (action === 'back') navigationHistory.back();
+  else if (action === 'forward') navigationHistory.forward();
+  else navigationHistory.push(path);
+  parentPath = null;
+  updateNavigationButtons();
+}
+
+function captureCurrentVisit(): void {
   const previous = navigationHistory.current;
   if (previous && viewerLoad) {
     previous.scrollTop = viewerLoad.container.scrollTop;
@@ -493,12 +545,6 @@ function commitNavigation(
       viewerLoad.container.querySelector('.file-list-item.selected')?.getAttribute('data-path') ??
       null;
   }
-  if (currentSessionId !== sessionId) navigationHistory.clear();
-  if (action === 'back') navigationHistory.back();
-  else if (action === 'forward') navigationHistory.forward();
-  else navigationHistory.push(path);
-  parentPath = null;
-  updateNavigationButtons();
 }
 
 function updateNavigationButtons(): void {

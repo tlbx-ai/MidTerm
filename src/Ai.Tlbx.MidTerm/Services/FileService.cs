@@ -53,8 +53,19 @@ public sealed class FileService
         return fresh?.CurrentDirectory;
     }
 
-    public bool IsPathAccessible(string sessionId, string path, string? workingDirectory) =>
-        _allowlistService.IsPathAllowed(sessionId, path, workingDirectory);
+    public bool IsPathAccessible(string sessionId, string path, string? workingDirectory)
+    {
+        if (_allowlistService.IsPathAllowed(sessionId, path, workingDirectory)) return true;
+        if (string.IsNullOrEmpty(workingDirectory)) return false;
+        try
+        {
+            // A deliberately chosen junction CWD has the same authority as its real directory.
+            return _allowlistService.IsPathAllowed(sessionId, FileDocumentService.ResolvePath(path),
+                FileDocumentService.ResolvePath(workingDirectory));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        { return false; }
+    }
 
     public static bool ValidatePath(string path, out IResult? errorResult)
     {
@@ -183,26 +194,27 @@ public sealed class FileService
         return null;
     }
 
-    public static FileResolveResponse BuildResolveResponse(string resolvedPath)
+    public static FileResolveResponse BuildResolveResponse(string resolvedPath, string? metadataPath = null)
     {
         var response = new FileResolveResponse { ResolvedPath = resolvedPath };
+        var inspectionPath = metadataPath ?? resolvedPath;
 
-        if (Directory.Exists(resolvedPath))
+        if (Directory.Exists(inspectionPath))
         {
-            var dirInfo = new DirectoryInfo(resolvedPath);
+            var dirInfo = new DirectoryInfo(inspectionPath);
             response.Exists = true;
             response.IsDirectory = true;
             response.Modified = dirInfo.LastWriteTimeUtc;
         }
-        else if (File.Exists(resolvedPath))
+        else if (File.Exists(inspectionPath))
         {
-            var fileInfo = new FileInfo(resolvedPath);
+            var fileInfo = new FileInfo(inspectionPath);
             response.Exists = true;
             response.IsDirectory = false;
             response.Size = fileInfo.Length;
             response.Modified = fileInfo.LastWriteTimeUtc;
             response.MimeType = GetMimeType(fileInfo.Name);
-            response.IsText = CheckIsText(resolvedPath, fileInfo.Length);
+            response.IsText = CheckIsText(inspectionPath, fileInfo.Length);
         }
 
         return response;

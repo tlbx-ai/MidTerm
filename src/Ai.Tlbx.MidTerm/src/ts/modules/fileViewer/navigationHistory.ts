@@ -4,6 +4,11 @@ export interface FileVisit {
   selectedPath: string | null;
 }
 
+export interface FileNavigationSnapshot {
+  visits: FileVisit[];
+  index: number;
+}
+
 /** Browser-style visit history; Up is supplied independently by the server. */
 export class FileNavigationHistory {
   private visits: FileVisit[] = [];
@@ -39,5 +44,14 @@ export class FileNavigationHistory {
   public clear(): void {
     this.visits = [];
     this.index = -1;
+  }
+
+  public snapshot(): FileNavigationSnapshot {
+    return { visits: this.visits.map((visit) => ({ ...visit })), index: this.index };
+  }
+
+  public restore(snapshot: FileNavigationSnapshot): void {
+    this.visits = snapshot.visits.map((visit) => ({ ...visit }));
+    this.index = snapshot.index;
   }
 }

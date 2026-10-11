@@ -124,6 +124,8 @@ Inhalt, erhaltene Einrückung und stabile Alt-/Neu-Zeilenzuordnung.
 
 **Befund (mittel, reproduziert):** Copy und Send sind 26×26 px; Text benötigt
 bereits etwa 29 px und läuft aus der Iconklasse heraus. Schmal wirkt es wie CopySend.
+Zusatzbefund aus 16: Der mobile Git-Einstieg dispatcht auf das Layout-div mit
+`data-action="git"`; der Klickhandler sitzt am enthaltenen Button und wird so nicht erreicht.
 
 **Aufgabe:** Echte Textbuttons mit Abstand, Zuständen, lokalisierten Namen und
 geeigneten Touchzielen; Sidebar-Iconklasse hier entfernen.
@@ -200,6 +202,11 @@ behält den jüngeren Entwurf (Unitregression). Nachweise:
 `.dev/file-git-production/task-12-navigation-final/summary.json`, zugehörige
 Screenshots, `editState.test.ts`. Neue Verlaufs-/Dockabläufe aus 13/15 werden
 in der integrierten Files-Abnahme erneut gegen diesen Schutz geprüft.
+Zusatznachweis aus 16: Wechsel vom File-Dock zu Git ruft denselben Schutz auf;
+Cancel, Save-Fehler und Save vor dem Panelwechsel sind mit realen Git-Buttons
+abgenommen. Commands verwendet ebenfalls die gemeinsame Close-Entscheidung;
+sein Einstieg ist im bestehenden Produkt verborgen und wurde nicht als sichtbarer
+Browserablauf behauptet. Doppelte direkte Store-/DOM-Teardowns wurden entfernt.
 
 ### 13. [x] Editzustand beim Andocken, Undocken und Refresh erhalten
 
@@ -272,8 +279,13 @@ Nachweise: `.dev/file-git-production/task-15-final/summary.json`, visuell geprü
 Screenshot `restored-directory.png`, `task-15-edit-regression/summary.json`,
 `task-15-unit/navigation-and-access.trx`. Der Unix-Testzweig benötigt noch echte
 Unix-Ausführung in der integrierten Plattformabnahme. Ordner im Dock folgt separat in 16.
+Die integrierte Junction-Prüfung aus 16 fand danach abweichende Alt-Lesewege:
+List/Tree/View/Download ließen den Ausbruch noch zu. Check/Resolve/List/Tree/View/
+Download und Document/Save verwenden jetzt dieselbe logische/physische Prüfung;
+Metadaten werden am geprüften Pfad gelesen. Eine bewusst gewählte Junction-CWD
+bleibt zulässig, eine Junction aus der bestehenden Root heraus wird abgewiesen.
 
-### 16. [ ] Ordner-Andocken tatsächlich unterstützen
+### 16. [x] Ordner-Andocken tatsächlich unterstützen
 
 **Befund (mittel, reproduziert):** Aktiver Dockbutton bei Ordner führt nur zu
 Directories not supported in dock und ersetzt die nutzbare Ordneransicht.
@@ -283,6 +295,24 @@ bereitstellen; kein Button, dessen normales Ziel nur eine Fehlermeldung ist.
 
 **Abnahme:** Ordner öffnen, andocken, navigieren, Datei öffnen, zurück, undocken;
 Historie, Auswahl und Refresh funktionieren Ende zu Ende.
+
+**Nachweis 11.10.2026:** Ordnerlisten und die bestehende Navigationsleiste werden
+gemeinsam in den Dock übertragen. Unterordner und Dateien bleiben beim Öffnen
+gedockt; Back/Forward/Up, Dirtyentscheidungen und Refresh verwenden dieselben
+Lade-/Editregeln. Die bestehende Session-Dockablage bewahrt jetzt zusätzlich
+Verlauf, Ordnerauswahl und Scroll; Restore bleibt an die aktuelle Session gebunden.
+Refresh entdeckt echte neu angelegte Dateien und bewahrt die Auswahl. Undocken
+erhält dieselbe Ansicht und ihren Verlauf. Der Wechsel zu Git schützt den Entwurf
+vor dem Teardown. Windows-Junctions wurden tatsächlich erzeugt: ein Ausbruch
+blockiert alle sechs Lesewege mit 403 sowie Check/Resolve ohne Metadaten;
+eine ausdrücklich gewählte Junction-Root bleibt lesbar. Die Namen eigener Links
+bleiben in Elternlisten sichtbar, ohne Inhalt/Metadaten ihres verbotenen Ziels zu lesen.
+19 Directory-/Dock-/Root-/Git-Wechselabläufe, 37 Editregressionen, acht große-Datei-
+und 14 Touchabläufe bestehen auf dem aktuellen Source-Stand. 673 Frontendtests
+(136 Dateien, plus Kitty-Protokolltest) und 41 Backendtests bestehen; Typecheck,
+ESLint und Diffcheck ebenfalls. Screenshot `refreshed-directory-dock.png` geprüft.
+Artefakte: `.dev/file-git-production/task-16-accepted`, `task-16-edit-final`,
+`task-16-large-final`, `task-16-mobile-final`, `task-16-unit`.
 
 ### 17. [ ] Eigene Navigation für den Files-Tab bereitstellen
 
@@ -341,6 +371,9 @@ Entscheidungen, recoverable Delete und Undo wo angeboten; keine UI-Scheinaktione
 
 **Abnahme:** Echte Diskprüfung jeder Operation; Mehrfachauswahl, Unicode,
 Namenskollision, Rechtefehler, symlinks, Rootgrenzen und Undo prüfen.
+Für Link-Mutationen den erlaubten Linkeintrag und seinen Elternordner prüfen;
+ein Link-Delete darf den Zielinhalt nicht löschen. Die kanonische Leseprüfung aus
+15/16 darf nicht unverändert als „Link löschen = Ziel löschen“ verwendet werden.
 
 ### 22. [ ] Dateiansicht, Sortierung, Filter und Metadaten vervollständigen
 
