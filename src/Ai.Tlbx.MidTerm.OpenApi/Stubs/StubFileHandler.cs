@@ -34,4 +34,7 @@ public class StubFileHandler : IFileHandler
 
     public Task<IResult> SaveFileAsync(FileSaveRequest request, string? sessionId) =>
         Task.FromResult<IResult>(Results.Json(new FileSaveResponse { Success = true, Size = 0 }));
+
+    public Task<IResult> ReadDocumentAsync(string path, string? sessionId, bool full) =>
+        Task.FromResult<IResult>(Results.Json(new FileDocumentResponse { Path = path }));
 }

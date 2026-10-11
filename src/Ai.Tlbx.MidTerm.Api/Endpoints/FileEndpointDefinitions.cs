@@ -44,7 +44,16 @@ public static class FileEndpointDefinitions
 
         app.MapPut("/api/files/save", async (FileSaveRequest request, IFileHandler handler, string? sessionId) =>
             await handler.SaveFileAsync(request, sessionId))
-            .Produces<FileSaveResponse>(StatusCodes.Status200OK, "application/json");
+            .Produces<FileSaveResponse>(StatusCodes.Status200OK, "application/json")
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status428PreconditionRequired);
+
+        app.MapGet("/api/files/document", async (string path, IFileHandler handler, string? sessionId, bool full = false) =>
+            await handler.ReadDocumentAsync(path, sessionId, full))
+            .Produces<FileDocumentResponse>(StatusCodes.Status200OK, "application/json")
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status403Forbidden)
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status422UnprocessableEntity);
 
         return app;
     }

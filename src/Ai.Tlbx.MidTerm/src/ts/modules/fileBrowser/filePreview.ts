@@ -28,17 +28,11 @@ import {
 import { createImageView } from '../fileViewer/imageView';
 import { FileEditState, releaseFileEdits, trackFileEdits } from '../fileViewer/editState';
 import { FileViewLoad } from '../fileViewer/loadState';
+import { readFileDocument, writeFileDocument, type FileDocument } from '../fileViewer/documentApi';
+import { createFileSaveStatus } from '../fileViewer/saveStatus';
 
 const log = createLogger('filePreview');
 const previewLoads = new WeakMap<HTMLElement, FileViewLoad>();
-
-function buildSaveUrl(sessionId: string): string {
-  let url = '/api/files/save';
-  if (sessionId) {
-    url += `?sessionId=${encodeURIComponent(sessionId)}`;
-  }
-  return url;
-}
 
 function formatBinaryPreviewMetadata(entry: FileTreeEntry): string {
   const parts = [entry.mimeType || t('fileViewer.binaryFile')];
@@ -204,7 +198,7 @@ export function renderPreview(
 
   if (previewKind === 'text') {
     container.innerHTML = `<div class="preview-loading">${t('fileBrowser.loading')}</div>`;
-    void fetchAndRenderText(load, viewUrl, entry, sessionId, ext);
+    void fetchAndRenderText(load, entry, sessionId, ext);
     return;
   }
 
@@ -214,24 +208,16 @@ export function renderPreview(
 
 async function fetchAndRenderText(
   load: FileViewLoad,
-  url: string,
   entry: FileTreeEntry,
   sessionId: string,
   ext: string,
 ): Promise<void> {
   const container = load.container;
   try {
-    const res = await fetch(url, { signal: load.signal });
-    if (!load.isActive()) return;
-    if (!res.ok) {
-      container.innerHTML = `<div class="preview-error">${t('fileBrowser.failedToLoad')} (${res.status})</div>`;
-      return;
-    }
-
-    const text = await res.text();
+    const document = await readFileDocument(entry.fullPath, sessionId, false, load.signal);
     if (!load.isActive()) return;
     const isMarkdown = ext === '.md' || ext === '.markdown';
-    renderTextContent(container, entry, sessionId, text, ext, isMarkdown);
+    renderTextContent(container, entry, sessionId, document, ext, isMarkdown, load);
   } catch (e) {
     if (!load.isActive()) return;
     log.error(() => `Failed to load preview: ${String(e)}`);
@@ -324,19 +310,26 @@ function renderTextContent(
   container: HTMLElement,
   entry: FileTreeEntry,
   sessionId: string,
-  originalText: string,
+  snapshot: FileDocument,
   ext: string,
   startInEditor: boolean,
+  load: FileViewLoad,
 ): void {
-  let isEditing = startInEditor;
-  const edit = new FileEditState(entry.fullPath, originalText, async (content) => {
-    const response = await fetch(buildSaveUrl(sessionId), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: entry.fullPath, content }),
-    });
-    if (!response.ok) throw new Error(`${t('fileViewer.saveFailed')} (${response.status})`);
-  });
+  let isEditing = startInEditor && !snapshot.readOnly;
+  let version = snapshot.version;
+  const edit = new FileEditState(
+    entry.fullPath,
+    snapshot.content,
+    async (content, reviewedVersion) => {
+      const saved = await writeFileDocument(
+        entry.fullPath,
+        sessionId,
+        content,
+        reviewedVersion ?? version,
+      );
+      version = saved.version;
+    },
+  );
   trackFileEdits(container, edit, sessionId);
 
   const { shell, body, actions } = createPreviewShell(entry);
@@ -346,6 +339,7 @@ function renderTextContent(
   editBtn.type = 'button';
   editBtn.className = 'preview-editor-btn';
   editBtn.textContent = t('commands.edit');
+  editBtn.disabled = snapshot.readOnly;
   editBtn.style.display = isEditing ? 'none' : '';
 
   const saveBtn = document.createElement('button');
@@ -356,7 +350,7 @@ function renderTextContent(
   saveBtn.style.display = isEditing ? '' : 'none';
 
   const updateDirtyState = (dirty: boolean): void => {
-    saveBtn.disabled = !dirty;
+    saveBtn.disabled = !dirty || edit.saving;
   };
 
   const saveCurrentText = async (): Promise<void> => {
@@ -377,16 +371,31 @@ function renderTextContent(
     }
   };
 
+  const status = createFileSaveStatus(edit, {
+    readLatest: () => readFileDocument(entry.fullPath, sessionId, true, load.signal),
+    active: () => load.isActive(),
+    replace: (latest) => {
+      version = latest.version;
+      snapshot = latest;
+      edit.replaceFromDisk(latest.content);
+      editBtn.disabled = latest.readOnly;
+      renderMode();
+    },
+  });
+
   const renderReadOnly = (): void => {
     body.innerHTML = '';
+    body.appendChild(status);
     const viewer = createLineNumberedViewer(edit.content, [], highlightCode(edit.content, ext));
     body.appendChild(viewer.root);
   };
 
   const renderEditor = (): void => {
     body.innerHTML = '';
+    body.appendChild(status);
     const editor = createLineNumberedEditor(edit.content, ['preview-textarea']);
     const textarea = editor.textarea;
+    textarea.readOnly = snapshot.readOnly;
     edit.subscribe(() => {
       if (textarea.value !== edit.content) editor.setText(edit.content);
       updateDirtyState(edit.dirty);
@@ -431,6 +440,25 @@ function renderTextContent(
   container.appendChild(shell);
 
   renderMode();
+  if (snapshot.canLoadFull) {
+    const more = document.createElement('button');
+    more.className = 'file-viewer-load-more';
+    more.textContent = t('fileViewer.loadMore');
+    more.addEventListener('click', () => {
+      more.disabled = true;
+      void readFileDocument(entry.fullPath, sessionId, true, load.signal)
+        .then((complete) => {
+          if (load.isActive())
+            renderTextContent(container, entry, sessionId, complete, ext, startInEditor, load);
+        })
+        .catch((error: unknown) => {
+          if (!load.isActive()) return;
+          log.error(() => `Failed to load complete document: ${String(error)}`);
+          more.disabled = false;
+        });
+    });
+    shell.appendChild(more);
+  }
 }
 
 export function clearPreview(container: HTMLElement): void {

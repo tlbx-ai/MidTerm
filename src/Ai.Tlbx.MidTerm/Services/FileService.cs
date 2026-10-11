@@ -263,6 +263,10 @@ public sealed class FileService
             using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             var bytesRead = fs.Read(buffer, 0, sampleSize);
 
+            if (buffer.AsSpan(0, bytesRead).StartsWith(new byte[] { 0xFF, 0xFE }) ||
+                buffer.AsSpan(0, bytesRead).StartsWith(new byte[] { 0xFE, 0xFF }) ||
+                buffer.AsSpan(0, bytesRead).StartsWith(new byte[] { 0, 0, 0xFE, 0xFF })) return true;
+
             for (var i = 0; i < bytesRead; i++)
             {
                 if (buffer[i] == 0)

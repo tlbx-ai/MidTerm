@@ -47,10 +47,10 @@ import {
   trackFileEdits,
 } from './editState';
 import { FileViewLoad, beginFileOpen, isFileOpenCurrent, cancelFileOpen } from './loadState';
+import { readFileDocument, writeFileDocument, type FileDocument } from './documentApi';
+import { createFileSaveStatus } from './saveStatus';
 
 const log = createLogger('fileViewer');
-
-const SIZE_LIMIT = 500 * 1024;
 
 let modal: HTMLElement | null = null;
 let currentPath: string | null = null;
@@ -134,6 +134,7 @@ export function initFileViewer(): void {
   }
 
   document.addEventListener('keydown', (e) => {
+    if (document.querySelector('.modal-overlay')) return;
     if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
       if (document.fullscreenElement) {
         void document.exitFullscreen();
@@ -653,121 +654,97 @@ async function renderFile(load: FileViewLoad, info: FilePathInfo): Promise<void>
     updateSaveButtonVisibility(false);
     container.innerHTML = `<iframe class="file-viewer-pdf" src="${viewUrl}"></iframe>`;
   } else if (previewKind === 'text') {
-    await renderTextFile(load, info);
+    await renderTextFile(load);
   } else {
     await renderBinaryContent(load, info);
   }
 }
 
-async function renderTextFile(load: FileViewLoad, info: FilePathInfo): Promise<void> {
-  const path = load.path;
+async function renderTextFile(load: FileViewLoad): Promise<void> {
   try {
-    const viewUrl = buildViewUrl(path, load.sessionId);
-    const fileSize = info.size ?? 0;
-
-    let resp: Response;
-    if (fileSize > SIZE_LIMIT) {
-      resp = await fetch(viewUrl, {
-        headers: { Range: `bytes=0-${SIZE_LIMIT - 1}` },
-        signal: load.signal,
-      });
-    } else {
-      resp = await fetch(viewUrl, { signal: load.signal });
-    }
-
+    const document = await readFileDocument(load.path, load.sessionId, false, load.signal);
+    if (load.isActive()) renderTextDocument(load, document);
+  } catch (error) {
     if (!load.isActive()) return;
-    if (!resp.ok && resp.status !== 206) {
-      load.container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToLoadFile')}</div>`;
-      return;
-    }
-
-    const text = await resp.text();
-    if (!load.isActive()) return;
-    const container = load.container;
-    isFullContentLoaded = fileSize <= SIZE_LIMIT;
-    currentContentIsPartial = !isFullContentLoaded;
-    currentContent = text;
-    isDirty = false;
-
-    const sessionId = load.sessionId;
-    currentEdit = new FileEditState(path, text, async (content) => {
-      if (!isFullContentLoaded) throw new Error(t('fileViewer.loadBeforeSaving'));
-      const saveUrl = sessionId
-        ? `/api/files/save?sessionId=${encodeURIComponent(sessionId)}`
-        : '/api/files/save';
-      const response = await fetch(saveUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, content }),
-      });
-      if (!response.ok) throw new Error(`${t('fileViewer.saveFailed')} (${response.status})`);
-    });
-    const edit = currentEdit;
-    currentEditOwner = container;
-    trackFileEdits(container, edit, sessionId ?? '');
-
-    const stack = createCodeStack();
-    const editor = createLineNumberedEditor(text);
-    const textarea = editor.textarea;
-    edit.subscribe(() => {
-      if (currentEdit !== edit) return;
-      if (textarea.value !== edit.content) editor.setText(edit.content);
-      currentContent = edit.content;
-      isDirty = edit.dirty;
-      updateSaveButtonVisibility(isDirty);
-    });
-    textarea.addEventListener('input', () => {
-      edit.content = textarea.value;
-      isDirty = edit.dirty;
-      currentContent = textarea.value;
-      updateSaveButtonVisibility(isDirty);
-    });
-
-    container.innerHTML = '';
-    stack.appendChild(editor.root);
-    container.appendChild(stack);
-
-    if (!isFullContentLoaded) {
-      const loadMoreBtn = document.createElement('button');
-      loadMoreBtn.className = 'file-viewer-load-more';
-      loadMoreBtn.textContent = `${t('fileViewer.loadMore')} (${formatSize(fileSize)})`;
-      loadMoreBtn.addEventListener('click', () => {
-        loadMoreBtn.textContent = t('fileViewer.loading');
-        loadMoreBtn.disabled = true;
-        void fetch(viewUrl, { signal: load.signal })
-          .then(async (fullResp) => {
-            if (!load.isActive()) return;
-            if (fullResp.ok) {
-              const fullText = await fullResp.text();
-              if (!load.isActive()) return;
-              editor.setText(fullText);
-              currentContent = fullText;
-              isDirty = false;
-              isFullContentLoaded = true;
-              currentContentIsPartial = false;
-              updateSaveButtonVisibility(false);
-              loadMoreBtn.remove();
-            } else {
-              loadMoreBtn.textContent = `${t('fileViewer.loadMore')} (${formatSize(fileSize)})`;
-              loadMoreBtn.disabled = false;
-            }
-          })
-          .catch((error: unknown) => {
-            if (!load.isActive()) return;
-            log.error(() => `Failed to load remaining file content: ${String(error)}`);
-            loadMoreBtn.textContent = `${t('fileViewer.loadMore')} (${formatSize(fileSize)})`;
-            loadMoreBtn.disabled = false;
-          });
-      });
-      stack.appendChild(loadMoreBtn);
-    }
-
-    updateSaveButtonVisibility(false);
-  } catch (e) {
-    if (!load.isActive()) return;
-    log.error(() => `Failed to load text file: ${String(e)}`);
+    log.error(() => `Failed to load text document: ${String(error)}`);
     load.container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToLoadFile')}</div>`;
   }
+}
+
+function renderTextDocument(load: FileViewLoad, snapshot: FileDocument): void {
+  resetEditState();
+  const container = load.container;
+  let version = snapshot.version;
+  isFullContentLoaded = !snapshot.isTruncated;
+  currentContentIsPartial = snapshot.isTruncated;
+  currentContent = snapshot.content;
+  currentEdit = new FileEditState(load.path, snapshot.content, async (content, reviewedVersion) => {
+    const saved = await writeFileDocument(
+      load.path,
+      load.sessionId,
+      content,
+      reviewedVersion ?? version,
+    );
+    version = saved.version;
+  });
+  const edit = currentEdit;
+  currentEditOwner = container;
+  trackFileEdits(container, edit, load.sessionId ?? '');
+  updateViewerHeaders(
+    load.path,
+    `${snapshot.encoding} | ${snapshot.lineEnding.toUpperCase()} | ${formatSize(snapshot.size)}`,
+  );
+  const stack = createCodeStack();
+  const editor = createLineNumberedEditor(snapshot.content);
+  const textarea = editor.textarea;
+  textarea.readOnly = snapshot.readOnly;
+  edit.subscribe(() => {
+    if (currentEdit !== edit) return;
+    if (textarea.value !== edit.content) editor.setText(edit.content);
+    currentContent = edit.content;
+    isDirty = edit.dirty;
+    updateSaveButtonVisibility(isDirty);
+  });
+  textarea.addEventListener('input', () => {
+    edit.content = textarea.value;
+  });
+  const status = createFileSaveStatus(edit, {
+    readLatest: () => readFileDocument(load.path, load.sessionId, true, load.signal),
+    active: () => load.isActive(),
+    replace: (latest) => {
+      version = latest.version;
+      snapshot = latest;
+      isFullContentLoaded = !latest.isTruncated;
+      currentContentIsPartial = latest.isTruncated;
+      textarea.readOnly = latest.readOnly;
+      edit.replaceFromDisk(latest.content);
+      updateViewerHeaders(
+        load.path,
+        `${latest.encoding} | ${latest.lineEnding.toUpperCase()} | ${formatSize(latest.size)}`,
+      );
+    },
+  });
+  stack.append(status, editor.root);
+  if (snapshot.canLoadFull) {
+    const more = document.createElement('button');
+    more.className = 'file-viewer-load-more';
+    more.textContent = `${t('fileViewer.loadMore')} (${formatSize(snapshot.size)})`;
+    more.addEventListener('click', () => {
+      more.disabled = true;
+      void readFileDocument(load.path, load.sessionId, true, load.signal)
+        .then((complete) => {
+          if (load.isActive()) renderTextDocument(load, complete);
+        })
+        .catch((error: unknown) => {
+          if (!load.isActive()) return;
+          log.error(() => `Failed to load complete document: ${String(error)}`);
+          more.disabled = false;
+        });
+    });
+    stack.appendChild(more);
+  }
+  container.replaceChildren(stack);
+  updateSaveButtonVisibility(false);
 }
 
 async function renderBinaryContent(load: FileViewLoad, info: FilePathInfo): Promise<void> {

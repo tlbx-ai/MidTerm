@@ -20,6 +20,7 @@ fs.writeFileSync(path.join(fixtures, 'B.md'), '# B\n');
 const longText = Array.from({ length: 300 }, (_, i) => `line ${i + 1} ${'abcdefghij'.repeat(20)}`).join('\n');
 fs.writeFileSync(path.join(fixtures, 'C.md'), longText);
 for (const name of ['D.md', 'E.md', 'F.md', 'G.md', 'H.md']) fs.writeFileSync(path.join(fixtures, name), '# ' + name + '\n');
+for (const name of ['M.md', 'N.md', 'P.md']) fs.writeFileSync(path.join(fixtures, name), '# base ' + name + '\n');
 fs.writeFileSync(path.join(fixtures, 'J.bin'), Buffer.from([0, 1, 0, 255, 0, 17]));
 const result = { ok: false, fixtures, cases: [], errors: [], failedRequests: [] };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -140,7 +141,7 @@ try {
   let documentReads = 0;
   page.on('request', request => {
     const requestUrl = new URL(request.url());
-    if (requestUrl.pathname === '/api/files/view' && requestUrl.searchParams.get('path')?.endsWith('C.md')) documentReads++;
+    if (['/api/files/view', '/api/files/document'].includes(requestUrl.pathname) && requestUrl.searchParams.get('path')?.endsWith('C.md')) documentReads++;
   });
   await openFile('C.md');
   await modalEditor.fill(longText + '\nUNSAVED_DOCK_DRAFT');
@@ -204,7 +205,7 @@ try {
   await page.locator('#dock-refresh').click();
   const replacementRead = page.waitForResponse(response => {
     const requestUrl = new URL(response.url());
-    return requestUrl.pathname === '/api/files/view' && requestUrl.searchParams.get('path')?.endsWith('C.md');
+    return ['/api/files/view', '/api/files/document'].includes(requestUrl.pathname) && requestUrl.searchParams.get('path')?.endsWith('C.md');
   });
   await dialog.locator('[data-file-decision="save"]').click();
   assert.equal((await replacementRead).ok(), true);
@@ -268,7 +269,8 @@ try {
   await page.waitForFunction(() => document.querySelector('.preview-toolbar-name')?.textContent === 'A.md');
 
   const delayedViews = new Set(['A.md', 'F.md', 'G.md', 'H.md', 'J.bin']);
-  await page.route('**/api/files/view**', async route => {
+  const documentRoute = /\/api\/files\/(?:view|document)\?/;
+  await page.route(documentRoute, async route => {
     const file = path.basename(new URL(route.request().url()).searchParams.get('path') || '');
     if (delayedViews.has(file)) await sleep(600);
     await route.continue();
@@ -282,7 +284,7 @@ try {
   assert.equal(await editor.inputValue(), '# B\n');
   await editor.fill('# latest B after race\n');
   await page.locator('.preview-save-btn').click();
-  await page.waitForFunction(() => document.querySelector('.preview-save-btn')?.disabled);
+  await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'saved');
   assert.equal(fs.readFileSync(path.join(fixtures, 'B.md'), 'utf8'), '# latest B after race\n');
   assert.equal(fs.readFileSync(path.join(fixtures, 'A.md'), 'utf8'), '# modal unsaved\n');
   result.cases.push('Late preview response cannot change selection, content or save target');
@@ -323,7 +325,7 @@ try {
 
   const pendingView = name => page.waitForRequest(request => {
     const requestUrl = new URL(request.url());
-    return requestUrl.pathname === '/api/files/view' && requestUrl.searchParams.get('path')?.endsWith(name);
+    return ['/api/files/view', '/api/files/document'].includes(requestUrl.pathname) && requestUrl.searchParams.get('path')?.endsWith(name);
   });
   let pending = pendingView('F.md');
   await openFile('F.md');
@@ -353,7 +355,76 @@ try {
   result.cases.push('A pending document finishes in its current dock rather than its old modal');
   await page.screenshot({ path: path.join(out, 'pending-dock.png') });
   await page.locator('#dock-close').click();
-  await page.unroute('**/api/files/view**');
+  await page.unroute(documentRoute);
+
+  await tabBar.locator('.session-tab[data-tab="files"]').click();
+  await choose('M.md');
+  await editor.fill('# my conflicting draft\n');
+  fs.writeFileSync(path.join(fixtures, 'M.md'), '# external version two\n');
+  await page.locator('.preview-save-btn').click();
+  await page.locator('.file-save-status-error [data-file-conflict-action="compare"]').waitFor();
+  assert.equal(await editor.inputValue(), '# my conflicting draft\n');
+  assert.equal(fs.readFileSync(path.join(fixtures, 'M.md'), 'utf8'), '# external version two\n');
+  result.cases.push('External file modification yields a visible conflict without losing either version');
+  await page.locator('.file-browser-preview [data-file-conflict-action="compare"]').click();
+  const comparison = page.locator('.file-conflict-overlay');
+  await comparison.waitFor();
+  assert.match(await comparison.locator('section').nth(0).innerText(), /my conflicting draft/);
+  assert.match(await comparison.locator('section').nth(1).innerText(), /external version two/);
+  await page.screenshot({ path: path.join(out, 'conflict-comparison.png') });
+  fs.writeFileSync(path.join(fixtures, 'M.md'), '# external version three\n');
+  await comparison.locator('[data-file-conflict-action="overwrite"]').click();
+  await page.locator('.modal-overlay [data-role="confirm"]').click();
+  await page.locator('.modal-overlay .modal-footer [data-role="ok"]').waitFor();
+  assert.equal(fs.readFileSync(path.join(fixtures, 'M.md'), 'utf8'), '# external version three\n');
+  await page.locator('.modal-overlay .modal-footer [data-role="ok"]').click();
+  await comparison.locator('[data-file-conflict-action="close"]').click();
+  result.cases.push('Overwrite is conditional on the reviewed version and rejects another intervening write');
+  await page.locator('.file-browser-preview [data-file-conflict-action="compare"]').click();
+  await comparison.waitFor();
+  await comparison.locator('[data-file-conflict-action="overwrite"]').click();
+  await page.locator('.modal-overlay [data-role="confirm"]').click();
+  await comparison.waitFor({ state: 'hidden' });
+  assert.equal(fs.readFileSync(path.join(fixtures, 'M.md'), 'utf8'), '# my conflicting draft\n');
+  assert.equal(await page.locator('.preview-save-btn').isDisabled(), true);
+  result.cases.push('Explicit reviewed overwrite publishes the actual draft and updates its version');
+  await editor.fill('# draft to discard on reload\n');
+  fs.writeFileSync(path.join(fixtures, 'M.md'), '# latest disk reload\n');
+  await page.locator('.preview-save-btn').click();
+  await page.locator('.file-browser-preview .file-save-status-error [data-file-conflict-action="reload"]').click();
+  await page.locator('.modal-overlay [data-role="confirm"]').click();
+  await page.waitForFunction(() => document.querySelector('.file-browser-preview textarea')?.value === '# latest disk reload\n');
+  assert.equal(fs.readFileSync(path.join(fixtures, 'M.md'), 'utf8'), '# latest disk reload\n');
+  await editor.fill('# saved using reloaded version\n');
+  await page.locator('.preview-save-btn').click();
+  await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'saved');
+  assert.equal(fs.readFileSync(path.join(fixtures, 'M.md'), 'utf8'), '# saved using reloaded version\n');
+  result.cases.push('Reload replaces the draft only after confirmation and subsequent save uses the new disk version');
+
+  await choose('N.md');
+  await editor.fill('# retained after external deletion\n');
+  fs.unlinkSync(path.join(fixtures, 'N.md'));
+  await page.locator('.preview-save-btn').click();
+  await page.locator('.file-save-status-error').waitFor();
+  assert.equal(fs.existsSync(path.join(fixtures, 'N.md')), false);
+  assert.equal(await editor.inputValue(), '# retained after external deletion\n');
+  result.cases.push('Deleting a document externally does not silently recreate it on save');
+  await choose('M.md');
+  await dialog.locator('[data-file-decision="discard"]').click();
+  await page.waitForFunction(() => document.querySelector('.preview-toolbar-name')?.textContent === 'M.md');
+
+  const parallelPath = path.join(fixtures, 'P.md');
+  const baseDocument = await api('GET', '/api/files/document?' + new URLSearchParams({ path: parallelPath, sessionId: session, full: 'true' }));
+  const responses = await Promise.all(['# client one\n', '# client two\n'].map(content => context.request.put(url + '/api/files/save?sessionId=' + session, {
+    data: { path: parallelPath, content, expectedVersion: baseDocument.version },
+  })));
+  assert.deepEqual(responses.map(response => response.status()).sort(), [200, 409]);
+  assert.equal(['# client one\n', '# client two\n'].includes(fs.readFileSync(parallelPath, 'utf8')), true);
+  result.cases.push('Two actual concurrent HTTP clients produce one save and one conflict from the same version');
+  const blind = await context.request.put(url + '/api/files/save?sessionId=' + session, { data: { path: parallelPath, content: '# blind\n' } });
+  assert.equal(blind.status(), 400);
+  assert.notEqual(fs.readFileSync(parallelPath, 'utf8'), '# blind\n');
+  result.cases.push('A request missing the required version is rejected before filesystem mutation');
 
   assert.deepEqual(result.errors, []);
   result.ok = true;

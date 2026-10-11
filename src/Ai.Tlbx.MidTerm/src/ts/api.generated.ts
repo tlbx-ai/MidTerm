@@ -2840,8 +2840,92 @@ export interface paths {
             'application/json': components['schemas']['FileSaveResponse'];
           };
         };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
+        /** @description Precondition Required */
+        428: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
       };
     };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/files/document': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query: {
+          path: string;
+          sessionId?: string;
+          full?: boolean;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentResponse'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
+        /** @description Unprocessable Entity */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
     post?: never;
     delete?: never;
     options?: never;
@@ -4377,6 +4461,24 @@ export interface components {
         [key: string]: components['schemas']['FilePathInfo'];
       };
     };
+    FileDocumentErrorResponse: {
+      code: string;
+      message: string;
+      currentVersion: null | string;
+      recoveryPath: null | string;
+    };
+    FileDocumentResponse: {
+      path: string;
+      content: string;
+      version: null | string;
+      /** Format: int64 */
+      size: number;
+      encoding: string;
+      lineEnding: string;
+      isTruncated: boolean;
+      canLoadFull: boolean;
+      readOnly: boolean;
+    };
     FilePathInfo: {
       exists: boolean;
       /** Format: int64 */
@@ -4405,11 +4507,15 @@ export interface components {
     FileSaveRequest: {
       path: string;
       content: string;
+      expectedVersion: string;
     };
     FileSaveResponse: {
       success: boolean;
       /** Format: int64 */
       size: number;
+      version: string;
+      encoding: string;
+      lineEnding: string;
     };
     FileUploadResponse: {
       path: string;

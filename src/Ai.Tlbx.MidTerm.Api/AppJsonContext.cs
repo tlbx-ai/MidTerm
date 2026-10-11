@@ -120,6 +120,8 @@ namespace Ai.Tlbx.MidTerm.Api;
 [JsonSerializable(typeof(Dictionary<string, FilePathInfo>))]
 [JsonSerializable(typeof(FileSaveRequest))]
 [JsonSerializable(typeof(FileSaveResponse))]
+[JsonSerializable(typeof(FileDocumentResponse))]
+[JsonSerializable(typeof(FileDocumentErrorResponse))]
 [JsonSerializable(typeof(PathsResponse))]
 [JsonSerializable(typeof(ManagerBarButton))]
 [JsonSerializable(typeof(List<ManagerBarButton>))]

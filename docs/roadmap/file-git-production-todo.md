@@ -342,7 +342,7 @@ erkennbare Schreibbarkeit und Dirtyzustand in Tab/Modal/Dock.
 **Abnahme:** Markdown/Code/Text/Readonly, Modewechsel mit Entwurf, Syntaxanzeige,
 keine unbeabsichtigten Writes; Tastatur und Screenreader-Modusinformation prüfen.
 
-### 25. [ ] Gleichzeitige Dateiveränderungen beim Speichern schützen
+### 25. [x] Gleichzeitige Dateiveränderungen beim Speichern schützen
 
 **Befund (hoch, Code):** Save sendet nur Pfad/Inhalt; File.WriteAllTextAsync prüft
 keine gelesene Version. Ein Agent kann zwischen Lesen und Speichern Änderungen
@@ -354,7 +354,23 @@ Reload/Compare/gezieltem Overwrite, Entwurf bleibt bis zur Entscheidung erhalten
 **Abnahme:** Zwei Clients und externe Änderung zwischen Read/Save; kein Lost
 Update, sauberer Conflictstatus, neuer/gelöschter Pfad und parallele Saves prüfen.
 
-### 26. [ ] Speichern mit sichtbaren Erfolgs-/Fehlerzuständen versehen
+**Nachweis 11.10.2026:** `/api/files/document` liefert Inhalt und an den
+aufgelösten Pfad gebundene SHA-256-Version aus demselben Snapshot. Save benötigt
+`expectedVersion`, serialisiert konkurrierende Writes und publiziert eine
+vollständig vorbereitete Datei; aktuelle und ersetzte Bytes werden geprüft.
+Konflikt erhält den Entwurf. Compare zeigt Entwurf und echten Diskinhalt;
+Overwrite benötigt die ausdrücklich geprüfte Version und scheitert bei einer
+erneuten Änderung. Reload ersetzt erst nach Bestätigung und aktualisiert die
+Save-Basis. Gelöschte Dateien werden nicht automatisch angelegt. BOM/Encoding
+und normale CRLF-Dateien bleiben erhalten; partielle Texte sind nicht editierbar.
+32 Windows-Backendtests bestehen (16 Dokumentfälle plus vorhandene Filetests),
+14 fokussierte Frontendtests, Typecheck/ESLint/Stylelint und 32 echte Chromium-
+Flows bestehen. Nachweise: `.dev/file-git-production/task-25-unit/task-25-final.trx`,
+`task-25-final/summary.json`, `conflict-comparison.png`. OpenAPI-Vertrag und
+generierte TS-Typen sind synchron. Linux/macOS-Dateisystemannahmen bleiben
+Teil der Plattform-/Releaseabnahme; der aktuelle Lauf ist Windows-Evidenz.
+
+### 26. [~] Speichern mit sichtbaren Erfolgs-/Fehlerzuständen versehen
 
 **Befund (mittel, Code):** Fehler werden geloggt bzw. Save wieder aktiviert;
 keine brauchbare Anzeige für Permission/Netzwerkfehler oder unsicheren Speicherstand.

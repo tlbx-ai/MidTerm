@@ -2424,6 +2424,100 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDocumentErrorResponse"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDocumentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/document": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "full",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDocumentResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDocumentErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDocumentErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDocumentErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -4945,6 +5039,82 @@
           }
         }
       },
+      "FileDocumentErrorResponse": {
+        "required": [
+          "code",
+          "message",
+          "currentVersion",
+          "recoveryPath"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "currentVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "recoveryPath": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "FileDocumentResponse": {
+        "required": [
+          "path",
+          "content",
+          "version",
+          "size",
+          "encoding",
+          "lineEnding",
+          "isTruncated",
+          "canLoadFull",
+          "readOnly"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "encoding": {
+            "type": "string"
+          },
+          "lineEnding": {
+            "type": "string"
+          },
+          "isTruncated": {
+            "type": "boolean"
+          },
+          "canLoadFull": {
+            "type": "boolean"
+          },
+          "readOnly": {
+            "type": "boolean"
+          }
+        }
+      },
       "FilePathInfo": {
         "required": [
           "exists",
@@ -5063,7 +5233,8 @@
       "FileSaveRequest": {
         "required": [
           "path",
-          "content"
+          "content",
+          "expectedVersion"
         ],
         "type": "object",
         "properties": {
@@ -5072,13 +5243,19 @@
           },
           "content": {
             "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string"
           }
         }
       },
       "FileSaveResponse": {
         "required": [
           "success",
-          "size"
+          "size",
+          "version",
+          "encoding",
+          "lineEnding"
         ],
         "type": "object",
         "properties": {
@@ -5088,6 +5265,15 @@
           "size": {
             "type": "integer",
             "format": "int64"
+          },
+          "version": {
+            "type": "string"
+          },
+          "encoding": {
+            "type": "string"
+          },
+          "lineEnding": {
+            "type": "string"
           }
         }
       },

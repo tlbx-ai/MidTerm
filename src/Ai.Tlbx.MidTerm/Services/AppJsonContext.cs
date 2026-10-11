@@ -216,6 +216,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(FileTreeEntry[]))]
 [JsonSerializable(typeof(FileSaveRequest))]
 [JsonSerializable(typeof(FileSaveResponse))]
+[JsonSerializable(typeof(FileDocumentResponse))]
+[JsonSerializable(typeof(FileDocumentErrorResponse))]
 [JsonSerializable(typeof(LauncherPathResponse))]
 [JsonSerializable(typeof(LauncherDirectoryEntry))]
 [JsonSerializable(typeof(LauncherDirectoryEntry[]))]

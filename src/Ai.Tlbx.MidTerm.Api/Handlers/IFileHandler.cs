@@ -20,4 +20,5 @@ public interface IFileHandler
     IResult DownloadFile(string path, string? sessionId);
     Task<IResult> ResolvePathAsync(string sessionId, string path, bool deep);
     Task<IResult> SaveFileAsync(FileSaveRequest request, string? sessionId);
+    Task<IResult> ReadDocumentAsync(string path, string? sessionId, bool full);
 }

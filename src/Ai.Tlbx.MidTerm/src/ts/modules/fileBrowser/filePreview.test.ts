@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { renderPreview } from './filePreview';
 
 class FakeElement {
+  public readonly dataset: Record<string, string> = {};
   public isConnected = true;
   public readonly tagName: string;
   public className = '';
@@ -89,6 +90,24 @@ function matchesSelector(element: FakeElement, selector: string): boolean {
   }
 
   return element.tagName.toLowerCase() === selector.toLowerCase();
+}
+
+function documentResponse(path: string, content: string, version = 'v1'): Response {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      path,
+      content,
+      version,
+      size: content.length,
+      encoding: 'UTF-8',
+      lineEnding: 'lf',
+      isTruncated: false,
+      canLoadFull: false,
+      readOnly: false,
+    }),
+  } as Response;
 }
 
 const originalDocument = globalThis.document;
@@ -242,8 +261,9 @@ vi.mock('../fileViewer/imageView', () => ({
 }));
 
 async function flushPromises(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 describe('filePreview', () => {
@@ -292,14 +312,18 @@ describe('filePreview', () => {
               resolveOld = resolve;
             }),
         )
-        .mockResolvedValueOnce({ ok: true, text: async () => '# Latest B' } as Response);
+        .mockResolvedValueOnce(documentResponse('Q:\\fixtures\\B.md', '# Latest B'));
       const container = new FakeElement('div');
       const first = { name: 'A.md', fullPath: 'Q:\\fixtures\\A.md', isDirectory: false };
       const latest = { name: 'B.md', fullPath: 'Q:\\fixtures\\B.md', isDirectory: false };
       renderPreview(container as unknown as HTMLElement, first, 'session-1');
       renderPreview(container as unknown as HTMLElement, latest, 'session-1');
       await flushPromises();
-      resolveOld({ ok, text: async () => '# Obsolete A' } as Response);
+      resolveOld(
+        ok
+          ? documentResponse('Q:\\fixtures\\A.md', '# Obsolete A')
+          : ({ ok: false, status: 500, json: async () => ({ code: 'io_error' }) } as Response),
+      );
       await flushPromises();
       expect(container.querySelector('.preview-toolbar-name')?.textContent).toBe('B.md');
       expect(container.querySelector('textarea')?.value).toBe('# Latest B');
@@ -309,13 +333,16 @@ describe('filePreview', () => {
 
   it('saves edited markdown content through the file save endpoint', async () => {
     vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(documentResponse('Q:\\repos\\MidTerm\\README.md', '# Title'))
       .mockResolvedValueOnce({
         ok: true,
-        text: async () => '# Title',
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => '',
+        json: async () => ({
+          success: true,
+          version: 'v2',
+          size: 9,
+          encoding: 'UTF-8',
+          lineEnding: 'lf',
+        }),
       } as Response);
 
     const container = new FakeElement('div');
@@ -350,6 +377,7 @@ describe('filePreview', () => {
         body: JSON.stringify({
           path: 'Q:\\repos\\MidTerm\\README.md',
           content: '# Updated',
+          expectedVersion: 'v1',
         }),
       }),
     );

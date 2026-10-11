@@ -8,11 +8,13 @@ export class FileEditState {
   private pendingSave: Promise<boolean> | null = null;
   private currentContent: string;
   private readonly listeners = new Set<() => void>();
+  public lastError: Error | null = null;
+  public saved = false;
 
   public constructor(
     public readonly path: string,
     initialContent: string,
-    private readonly write: (content: string) => Promise<void>,
+    private readonly write: (content: string, reviewedVersion?: string) => Promise<void>,
   ) {
     this.currentContent = initialContent;
     this.savedContent = initialContent;
@@ -51,16 +53,32 @@ export class FileEditState {
     this.content = this.savedContent;
   }
 
-  public save(): Promise<boolean> {
+  public replaceFromDisk(content: string): void {
+    this.savedContent = content;
+    this.currentContent = content;
+    this.lastError = null;
+    this.saved = false;
+    this.notify();
+  }
+
+  public save(reviewedVersion?: string): Promise<boolean> {
     if (this.pendingSave) return this.pendingSave;
     if (!this.dirty) return Promise.resolve(true);
 
     const snapshot = this.content;
-    this.pendingSave = this.write(snapshot)
+    this.lastError = null;
+    this.pendingSave = (
+      reviewedVersion ? this.write(snapshot, reviewedVersion) : this.write(snapshot)
+    )
       .then(() => {
         // Keystrokes received while the request was in flight remain unsaved.
         this.savedContent = snapshot;
+        this.saved = true;
         return !this.dirty;
+      })
+      .catch((reason: unknown) => {
+        this.lastError = reason instanceof Error ? reason : new Error(String(reason));
+        throw this.lastError;
       })
       .finally(() => {
         this.pendingSave = null;

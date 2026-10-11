@@ -101,12 +101,39 @@ public sealed class FileSaveRequest
 
     [JsonRequired]
     public string Content { get; set; } = string.Empty;
+
+    [JsonRequired]
+    public string ExpectedVersion { get; set; } = string.Empty;
 }
 
 public sealed class FileSaveResponse
 {
     public bool Success { get; set; }
     public long Size { get; set; }
+    public string Version { get; set; } = string.Empty;
+    public string Encoding { get; set; } = string.Empty;
+    public string LineEnding { get; set; } = string.Empty;
+}
+
+public sealed class FileDocumentResponse
+{
+    public string Path { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string? Version { get; set; }
+    public long Size { get; set; }
+    public string Encoding { get; set; } = string.Empty;
+    public string LineEnding { get; set; } = string.Empty;
+    public bool IsTruncated { get; set; }
+    public bool CanLoadFull { get; set; }
+    public bool ReadOnly { get; set; }
+}
+
+public sealed class FileDocumentErrorResponse
+{
+    public string Code { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string? CurrentVersion { get; set; }
+    public string? RecoveryPath { get; set; }
 }
 
 public sealed class LauncherPathResponse

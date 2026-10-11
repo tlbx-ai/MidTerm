@@ -10657,6 +10657,74 @@ body.shared-session-mode .session-tab-bar {
   color: var(--accent-red);
 }
 
+.file-save-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.file-save-status-error {
+  color: var(--accent-red);
+}
+
+.file-save-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.file-save-status-actions[hidden] {
+  display: none;
+}
+
+.file-conflict-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(1200px, 95vw);
+  max-width: 1200px;
+  max-height: 90vh;
+  padding: 16px;
+  gap: 12px;
+}
+
+.file-conflict-dialog h3 {
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+
+.file-conflict-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: 0;
+  overflow: auto;
+  gap: 16px;
+}
+
+.file-conflict-columns section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.file-conflict-columns .file-viewer-readonly-shell {
+  min-height: 150px;
+  max-height: 60vh;
+}
+
+@media (max-width: 768px) {
+  .file-conflict-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .file-viewer-modal-content .modal-header {
   flex-wrap: wrap;
   gap: 8px;

@@ -15,6 +15,7 @@ public static class FileEndpoints
         GitWatcherService gitWatcher)
     {
         var fileService = new FileService(sessionManager, allowlistService);
+        var documents = new FileDocumentService();
 
         app.MapGet("/api/files/picker/home", () =>
         {
@@ -333,44 +334,34 @@ public static class FileEndpoints
             }
         });
 
-        app.MapPut("/api/files/save", async (FileSaveRequest request, string? sessionId, CancellationToken ct) =>
+        app.MapGet("/api/files/document", async (string path, string? sessionId, bool full = false, CancellationToken ct = default) =>
         {
-            if (!FileService.ValidatePath(request.Path, out var errorResult))
-            {
-                return errorResult!;
-            }
-
-            var workingDir = await fileService.GetSessionWorkingDirectoryAsync(sessionId);
-            if (!string.IsNullOrEmpty(sessionId) &&
-                !fileService.IsPathAccessible(sessionId, request.Path, workingDir))
-            {
-                return Results.StatusCode(403);
-            }
-
-            var fullPath = Path.GetFullPath(request.Path);
-
-            if (!File.Exists(fullPath))
-            {
-                return Results.NotFound("File not found");
-            }
-
+            var (resolved, error) = await ResolveDocumentAccessAsync(path, sessionId, fileService);
+            if (error is not null) return error;
             try
             {
-                await File.WriteAllTextAsync(fullPath, request.Content, ct);
-                var fileInfo = new FileInfo(fullPath);
-                return Results.Json(
-                    new FileSaveResponse { Success = true, Size = fileInfo.Length },
-                    AppJsonContext.Default.FileSaveResponse);
+                var document = await documents.ReadAsync(resolved!, full, ct);
+                document.Path = path;
+                if (sessionId is not null) { fileService.RegisterPath(sessionId, path); fileService.RegisterPath(sessionId, resolved!); }
+                return Results.Json(document, AppJsonContext.Default.FileDocumentResponse);
             }
-            catch (UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { return DocumentError(ex, sessionId, fileService); }
+        }).Produces<FileDocumentResponse>().Produces<FileDocumentErrorResponse>(409);
+
+        app.MapPut("/api/files/save", async (FileSaveRequest request, string? sessionId, CancellationToken ct) =>
+        {
+            var (resolved, error) = await ResolveDocumentAccessAsync(request.Path, sessionId, fileService);
+            if (error is not null) return error;
+            try
             {
-                return Results.StatusCode(403);
+                var saved = await documents.SaveAsync(resolved!, request.Content, request.ExpectedVersion, ct);
+                return Results.Json(saved, AppJsonContext.Default.FileSaveResponse);
             }
-            catch (IOException ex)
-            {
-                return Results.Problem(ex.Message);
-            }
-        });
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { return DocumentError(ex, sessionId, fileService); }
+        }).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(64 * 1024 * 1024))
+            .Produces<FileSaveResponse>().Produces<FileDocumentErrorResponse>(409);
 
         app.MapGet("/api/files/view", async (string path, string? sessionId) =>
         {
@@ -577,6 +568,55 @@ public static class FileEndpoints
 
             return Results.Json(response, AppJsonContext.Default.FileTreeResponse);
         });
+    }
+
+    private static async Task<(string? Path, IResult? Error)> ResolveDocumentAccessAsync(string path, string? sessionId, FileService files)
+    {
+        if (!FileService.ValidatePath(path, out var error)) return (null, error);
+        var cwd = await files.GetSessionWorkingDirectoryAsync(sessionId);
+        if (!string.IsNullOrEmpty(sessionId) && !files.IsSessionValid(sessionId))
+            return (null, DocumentError(new FileDocumentException(404, "session_closed", "The file's session is no longer available."), sessionId, files));
+        if (!string.IsNullOrEmpty(sessionId) && !files.IsPathAccessible(sessionId, path, cwd))
+            return (null, DocumentError(new UnauthorizedAccessException(), sessionId, files));
+        try
+        {
+            var resolved = FileDocumentService.ResolvePath(path);
+            if (!string.IsNullOrEmpty(sessionId) && !files.IsPathAccessible(sessionId, resolved, cwd))
+                return (null, DocumentError(new UnauthorizedAccessException(), sessionId, files));
+            return (resolved, null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { return (null, DocumentError(ex, sessionId, files)); }
+    }
+
+    private static IResult DocumentError(Exception exception, string? sessionId, FileService files)
+    {
+        var status = 500;
+        var response = new FileDocumentErrorResponse { Code = "io_error", Message = "The file operation failed. Retry or keep a copy of your draft." };
+        switch (exception)
+        {
+            case FileDocumentException document:
+                status = document.StatusCode;
+                response.Code = document.Code;
+                response.Message = document.Message;
+                response.CurrentVersion = document.CurrentVersion;
+                response.RecoveryPath = document.RecoveryPath;
+                if (sessionId is not null && document.RecoveryPath is not null) files.RegisterPath(sessionId, document.RecoveryPath);
+                break;
+            case FileNotFoundException or DirectoryNotFoundException:
+                status = 404; response.Code = "deleted"; response.Message = "The file no longer exists. Your unsaved draft has not been written.";
+                break;
+            case UnauthorizedAccessException:
+                status = 403; response.Code = "access_denied"; response.Message = "You do not have permission to write or read this file.";
+                break;
+            case IOException io when (io.HResult & 0xFFFF) is 32 or 33:
+                status = 423; response.Code = "busy"; response.Message = "Another process is using the file. Retry when it is available.";
+                break;
+            case IOException io when (io.HResult & 0xFFFF) is 39 or 112:
+                status = 507; response.Code = "disk_full"; response.Message = "There is not enough free space to save the file.";
+                break;
+        }
+        return Results.Json(response, AppJsonContext.Default.FileDocumentErrorResponse, statusCode: status);
     }
 
     private static async Task<IResult> ServeFileAsync(
