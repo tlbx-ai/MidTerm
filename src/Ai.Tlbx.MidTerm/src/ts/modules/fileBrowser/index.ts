@@ -8,18 +8,27 @@
 import { createLogger } from '../logging';
 import { onTabActivated, onTabDeactivated } from '../sessionTabs';
 import { addProcessStateListener } from '../process';
-import { createTreeView, setTreeRoot, destroyTreeView } from './treeView';
+import {
+  applyTreeRoot,
+  createTreeView,
+  destroyTreeView,
+  getTreeSelection,
+  setTreeSelection,
+} from './treeView';
 import { renderPreview, clearPreview } from './filePreview';
 import { $processStates } from '../../stores';
 import { confirmFileNavigation } from '../fileViewer/editState';
 import { beginFileOpen, isFileOpenCurrent } from '../fileViewer/loadState';
 import { t } from '../i18n';
+import { BrowserNavigation } from './navigation';
+import type { FileTreeEntry } from './treeApi';
 
 const log = createLogger('fileBrowser');
 
 const initializedSessions = new Set<string>();
 const sessionCwds = new Map<string, string>();
 const previewContainers = new Map<string, HTMLElement>();
+const navigators = new Map<string, BrowserNavigation>();
 
 export function initFileBrowser(): void {
   onTabActivated('files', (sessionId, panel) => {
@@ -35,7 +44,7 @@ export function initFileBrowser(): void {
     if (cwd && cwd !== sessionCwds.get(sessionId)) {
       sessionCwds.set(sessionId, cwd);
       if (initializedSessions.has(sessionId)) {
-        void setTreeRoot(sessionId, cwd);
+        navigators.get(sessionId)?.setCwd(cwd);
       }
     }
   });
@@ -75,7 +84,8 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
       detail.insertBefore(back, previewContainer);
     }
 
-    createTreeView(treeContainer, sessionId, async (entry) => {
+    const selectFile = async (entry: FileTreeEntry): Promise<boolean> => {
+      navigators.get(sessionId)?.cancelPending();
       const request = beginFileOpen(sessionId);
       const sameFile = previewContainer.dataset.selectedPath === entry.fullPath;
       if (
@@ -98,7 +108,35 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
         }
       });
       return true;
+    };
+    createTreeView(treeContainer, sessionId, selectFile, (entry) => {
+      void navigators.get(sessionId)?.navigate(entry.fullPath);
     });
+
+    if (browser) {
+      const navigation = new BrowserNavigation(sessionId, {
+        confirm: () => confirmFileNavigation(previewContainer),
+        file: async (entry) => {
+          if (!(await selectFile(entry))) return false;
+          setTreeSelection(sessionId, entry.fullPath);
+          return true;
+        },
+        apply: (path, data) => {
+          applyTreeRoot(sessionId, path, data);
+          clearPreview(previewContainer);
+          delete previewContainer.dataset.selectedPath;
+          const selected = getTreeSelection(sessionId);
+          if (selected) {
+            renderPreview(previewContainer, selected, sessionId);
+            previewContainer.dataset.selectedPath = selected.fullPath;
+          }
+          detailScroll = [];
+          browser.dataset.filePane = 'tree';
+        },
+      });
+      navigators.set(sessionId, navigation);
+      browser.prepend(navigation.root);
+    }
 
     clearPreview(previewContainer);
   }
@@ -106,11 +144,16 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
   const cwd = sessionCwds.get(sessionId) ?? $processStates.get()[sessionId]?.foregroundCwd ?? null;
   if (cwd) {
     sessionCwds.set(sessionId, cwd);
-    void setTreeRoot(sessionId, cwd);
+    const navigator = navigators.get(sessionId);
+    if (navigator && (navigator.hasLocation || !navigator.busy)) {
+      navigator.setCwd(cwd);
+    }
   }
 }
 
 export function destroyFileBrowser(sessionId: string): void {
+  navigators.get(sessionId)?.dispose();
+  navigators.delete(sessionId);
   const preview = previewContainers.get(sessionId);
   if (preview) clearPreview(preview);
   previewContainers.delete(sessionId);

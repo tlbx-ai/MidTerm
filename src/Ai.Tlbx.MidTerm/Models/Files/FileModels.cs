@@ -46,6 +46,23 @@ public sealed class FileNavigationResponse
     public string? ParentPath { get; set; }
     public bool Exists { get; set; }
     public bool IsDirectory { get; set; }
+    public string? WorkingDirectory { get; set; }
+    public FileNavigationLocation[] Breadcrumbs { get; set; } = [];
+    public FileNavigationRoot[] Roots { get; set; } = [];
+    public FileTreeEntry? File { get; set; }
+}
+
+public sealed class FileNavigationLocation
+{
+    public string Path { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+}
+
+public sealed class FileNavigationRoot
+{
+    public string Path { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Kind { get; set; } = string.Empty;
 }
 
 /// <summary>

@@ -314,7 +314,7 @@ ESLint und Diffcheck ebenfalls. Screenshot `refreshed-directory-dock.png` geprü
 Artefakte: `.dev/file-git-production/task-16-accepted`, `task-16-edit-final`,
 `task-16-large-final`, `task-16-mobile-final`, `task-16-unit`.
 
-### 17. [ ] Eigene Navigation für den Files-Tab bereitstellen
+### 17. [x] Eigene Navigation für den Files-Tab bereitstellen
 
 **Befund (mittel, Erwartungslücke):** Keine editierbare Adresse, Breadcrumbs,
 Up/Back/Forward oder expliziter Rootwechsel; Startpunkt folgt Session-CWD.
@@ -324,6 +324,27 @@ innerhalb serverautorisierter Bereiche. CWD-Nachführung nachvollziehbar gestalt
 
 **Abnahme:** Navigation ohne Terminaleingabe, Pfadpaste, Back/Forward, ungültiger
 Pfad, CWD-Wechsel und Zugriff außerhalb erlaubter Roots sicher behandeln.
+
+**Nachweis 11.10.2026:** Eigene Adresszeile für Ordner/Dateien, Back/Forward/Up,
+serverseitige Breadcrumbs und Auswahl autorisierter Roots. Roots stammen aus CWD,
+Session-Repositories und bereits erfolgreich gelesenen Ordnern; Dateifreigaben
+erteilen keine Elternfreigabe. Erfolgreich besuchte Ordner bleiben beim CWD-Wechsel
+erreichbar. Die Ansicht folgt CWD-Wechseln nicht mehr kommentarlos: der explizite
+CWD-Button verwendet denselben Entwurfsschutz. Fehlende/unerlaubte Ziele erhalten
+die vorhandene Ansicht; verspätete Verzeichnisantworten überschreiben keine neuere
+Navigation. Baum-Auswahl, Expansion und Scroll werden je besuchtem Ordner erhalten.
+Dateipfade öffnen den tatsächlichen Inhalt und bei erlaubtem Parent dessen Baum.
+Doppelklick öffnet Ordner; normales Aufklappen bleibt vorhanden. Tab-Aktivierung
+zerstört keinen bestehenden Baum mehr. Die visuelle Abnahme fand einen bisherigen
+Git-Seiteneffekt: Lesen eines anderen Repositories setzte dessen CWD-Bindung um.
+Dieser Teardown ist entfernt; Dateibrowsing fragt den passenden Status explizit ab.
+Elf reale Navigationsfälle einschließlich echtem Terminal-CWD-Wechsel und zusätzlicher
+Repo-Root bestehen. 37 Edit-, 19 Directory/Dock/Root-, 14 Touch- und acht große-Datei-
+Regressionsfälle bestehen ebenfalls (89 Browserfälle). 673 Frontendtests, 23 Backend-
+Navigation-/Allowlist-/GitWatcher-Tests, Typecheck, ESLint, Stylelint und Diffcheck
+bestehen; Desktop-/Mobile-Screenshots visuell geprüft. Nachweise:
+`.dev/file-git-production/task-17-accepted`, `task-17-edit`, `task-17-mobile`,
+`task-17-directory-final`, `task-17-large-final`, `task-17-unit`.
 
 ### 18. [ ] Sichtbarkeit von ignorierten/versteckten Dateien kontrollierbar machen
 

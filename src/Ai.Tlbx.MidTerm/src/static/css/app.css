@@ -16002,9 +16002,83 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .file-browser {
   container: file-browser / inline-size;
   display: flex;
+  flex-direction: column;
   height: 100%;
   overflow: hidden;
   background: var(--workspace-pane-background);
+}
+
+.file-browser-layout {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.file-browser-navigation {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+  min-width: 0;
+}
+
+.file-browser-navigation-actions,
+.file-browser-address-form,
+.file-browser-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.file-browser-navigation-actions {
+  flex-wrap: wrap;
+}
+
+.file-browser-navigation button,
+.file-browser-navigation select,
+.file-browser-address-form input {
+  min-height: 36px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  padding: 4px 8px;
+}
+
+.file-browser-navigation select,
+.file-browser-address-form input {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-browser-navigation select {
+  max-width: 420px;
+}
+
+.file-browser-navigation button:disabled {
+  opacity: 0.45;
+}
+
+.file-browser-breadcrumbs {
+  overflow: auto;
+}
+
+.file-browser-breadcrumbs button {
+  flex: 0 0 auto;
+  border-color: transparent;
+}
+
+.file-browser-breadcrumbs [aria-current="location"] {
+  color: var(--accent-blue);
+}
+
+.file-browser-navigation-error {
+  color: var(--error-color, #ef6b6b);
 }
 
 .file-browser-tree {

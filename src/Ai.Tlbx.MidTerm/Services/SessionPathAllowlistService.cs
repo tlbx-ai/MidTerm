@@ -48,6 +48,12 @@ public sealed class SessionPathAllowlistService
         }
     }
 
+    public string[] GetRegisteredPaths(string sessionId)
+    {
+        if (!_allowlists.TryGetValue(sessionId, out var allowlist)) return [];
+        lock (allowlist) return allowlist.Order.ToArray();
+    }
+
     public bool IsPathAllowed(string sessionId, string path, string? workingDirectory)
     {
         var normalizedPath = NormalizePath(path);

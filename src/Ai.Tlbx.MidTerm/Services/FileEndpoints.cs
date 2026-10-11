@@ -14,7 +14,7 @@ public static class FileEndpoints
         SettingsService settingsService,
         GitWatcherService gitWatcher)
     {
-        var fileService = new FileService(sessionManager, allowlistService);
+        var fileService = new FileService(sessionManager, allowlistService, gitWatcher);
         var documents = new FileDocumentService();
 
         app.MapGet("/api/files/picker/home", () =>
@@ -265,6 +265,8 @@ public static class FileEndpoints
             {
                 var navigation = FileNavigationService.Describe(path, candidate =>
                     string.IsNullOrEmpty(sessionId) || fileService.IsPathAccessible(sessionId, candidate, cwd));
+                navigation.WorkingDirectory = cwd;
+                if (!string.IsNullOrEmpty(sessionId)) navigation.Roots = fileService.GetNavigationRoots(sessionId, cwd);
                 return Results.Json(navigation, AppJsonContext.Default.FileNavigationResponse);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -324,6 +326,8 @@ public static class FileEndpoints
                     .OrderByDescending(e => e.IsDirectory)
                     .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
                     .ToList();
+
+                if (!string.IsNullOrEmpty(sessionId)) fileService.RegisterPaths(sessionId, [Path.GetFullPath(path), fullPath]);
 
                 return Results.Json(
                     new DirectoryListResponse { Path = Path.GetFullPath(path), Entries = entries.ToArray() },
@@ -449,17 +453,11 @@ public static class FileEndpoints
 
                     if (!string.IsNullOrEmpty(sessionId))
                     {
-                        var registeredRepo = gitWatcher.GetRepoRoot(sessionId);
-                        if (!string.Equals(registeredRepo, repoRoot, StringComparison.OrdinalIgnoreCase))
-                        {
-                            await gitWatcher.RegisterSessionAsync(sessionId, fullPath);
-                        }
-
-                        var cachedStatus = gitWatcher.GetCachedStatus(sessionId);
+                        var cachedStatus = gitWatcher.GetCachedStatus(sessionId, repoRoot);
                         if (cachedStatus is null)
                         {
                             await gitWatcher.RefreshStatusAsync(repoRoot);
-                            cachedStatus = gitWatcher.GetCachedStatus(sessionId);
+                            cachedStatus = gitWatcher.GetCachedStatus(sessionId, repoRoot);
                         }
 
                         if (cachedStatus is not null)
@@ -568,6 +566,7 @@ public static class FileEndpoints
                 Entries = entries.ToArray(),
                 IsGitRepo = isGitRepo
             };
+            if (!string.IsNullOrEmpty(sessionId)) fileService.RegisterPaths(sessionId, [Path.GetFullPath(path), fullPath]);
 
             return Results.Json(response, AppJsonContext.Default.FileTreeResponse);
         });

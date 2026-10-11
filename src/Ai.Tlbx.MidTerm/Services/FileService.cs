@@ -1,5 +1,6 @@
 using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Services.Git;
 using Microsoft.AspNetCore.StaticFiles;
 
 namespace Ai.Tlbx.MidTerm.Services;
@@ -24,11 +25,13 @@ public sealed class FileService
 
     private readonly TtyHostSessionManager _sessionManager;
     private readonly SessionPathAllowlistService _allowlistService;
+    private readonly GitWatcherService _gitWatcher;
 
-    public FileService(TtyHostSessionManager sessionManager, SessionPathAllowlistService allowlistService)
+    public FileService(TtyHostSessionManager sessionManager, SessionPathAllowlistService allowlistService, GitWatcherService gitWatcher)
     {
         _sessionManager = sessionManager;
         _allowlistService = allowlistService;
+        _gitWatcher = gitWatcher;
     }
 
     public void RegisterPaths(string sessionId, IEnumerable<string> paths)
@@ -56,15 +59,32 @@ public sealed class FileService
     public bool IsPathAccessible(string sessionId, string path, string? workingDirectory)
     {
         if (_allowlistService.IsPathAllowed(sessionId, path, workingDirectory)) return true;
-        if (string.IsNullOrEmpty(workingDirectory)) return false;
+        var repos = _gitWatcher.GetRepoBindings(sessionId);
+        if (repos.Any(repo => IsWithinDirectory(path, repo.RepoRoot))) return true;
         try
         {
-            // A deliberately chosen junction CWD has the same authority as its real directory.
-            return _allowlistService.IsPathAllowed(sessionId, FileDocumentService.ResolvePath(path),
-                FileDocumentService.ResolvePath(workingDirectory));
+            var physical = FileDocumentService.ResolvePath(path);
+            if (!string.IsNullOrEmpty(workingDirectory) &&
+                _allowlistService.IsPathAllowed(sessionId, physical, FileDocumentService.ResolvePath(workingDirectory))) return true;
+            return repos.Any(repo => IsWithinDirectory(physical, FileDocumentService.ResolvePath(repo.RepoRoot)));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         { return false; }
+    }
+
+    public FileNavigationRoot[] GetNavigationRoots(string sessionId, string? workingDirectory)
+    {
+        var candidates = new List<FileNavigationRoot>();
+        if (!string.IsNullOrEmpty(workingDirectory))
+            candidates.Add(new() { Path = workingDirectory, Name = FileNavigationService.LocationName(workingDirectory), Kind = "cwd" });
+        candidates.AddRange(_gitWatcher.GetRepoBindings(sessionId).Select(repo => new FileNavigationRoot
+        { Path = repo.RepoRoot, Name = repo.Label, Kind = "repo" }));
+        candidates.AddRange(_allowlistService.GetRegisteredPaths(sessionId).Where(Directory.Exists)
+            .Select(path => new FileNavigationRoot { Path = path, Name = FileNavigationService.LocationName(path), Kind = "opened" }));
+        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        return candidates.DistinctBy(root => Path.GetFullPath(root.Path), comparer)
+            .Where(root => Directory.Exists(root.Path) && IsPathAccessible(sessionId, root.Path, workingDirectory) &&
+                IsPathAccessible(sessionId, FileDocumentService.ResolvePath(root.Path), workingDirectory)).ToArray();
     }
 
     public static bool ValidatePath(string path, out IResult? errorResult)

@@ -17,6 +17,7 @@ public sealed class FileNavigationServiceTests : IDisposable
         var result = FileNavigationService.Describe(child, Accessible);
         Assert.Equal(Path.Combine(_folder, "child"), result.ParentPath);
         Assert.True(result.IsDirectory);
+        Assert.Equal([_folder, Path.Combine(_folder, "child"), child], result.Breadcrumbs.Select(location => location.Path).ToArray());
         Assert.Null(FileNavigationService.Describe(_folder, Accessible).ParentPath);
     }
 
@@ -41,6 +42,10 @@ public sealed class FileNavigationServiceTests : IDisposable
         var result = FileNavigationService.Describe(path, candidate => _permissions.IsPathAllowed("isolated", candidate, null));
         Assert.Null(result.ParentPath);
         Assert.True(result.Exists);
+        Assert.Empty(result.Breadcrumbs);
+        Assert.NotNull(result.File);
+        Assert.Equal(path, result.File.FullPath);
+        Assert.Equal("notes.txt", result.File.Name);
     }
 
     [Fact]

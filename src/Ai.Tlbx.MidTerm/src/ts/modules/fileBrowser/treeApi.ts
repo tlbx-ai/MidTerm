@@ -8,10 +8,10 @@ export interface FileTreeEntry {
   name: string;
   fullPath: string;
   isDirectory: boolean;
-  size?: number;
-  mimeType?: string;
+  size?: number | null;
+  mimeType?: string | null;
   isText?: boolean | null;
-  gitStatus?: string;
+  gitStatus?: string | null;
 }
 
 export interface FileTreeResponse {
@@ -20,10 +20,14 @@ export interface FileTreeResponse {
   isGitRepo: boolean;
 }
 
-export async function fetchTree(path: string, sessionId: string): Promise<FileTreeResponse | null> {
+export async function fetchTree(
+  path: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<FileTreeResponse | null> {
   try {
     const params = new URLSearchParams({ path, depth: '1', sessionId });
-    const res = await fetch(`/api/files/tree?${params}`);
+    const res = await fetch(`/api/files/tree?${params}`, { signal: signal ?? null });
     if (!res.ok) return null;
     return (await res.json()) as FileTreeResponse;
   } catch {

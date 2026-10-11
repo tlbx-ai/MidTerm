@@ -5190,12 +5190,31 @@
           }
         }
       },
+      "FileNavigationLocation": {
+        "required": [
+          "path",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "FileNavigationResponse": {
         "required": [
           "path",
           "parentPath",
           "exists",
-          "isDirectory"
+          "isDirectory",
+          "workingDirectory",
+          "breadcrumbs",
+          "roots",
+          "file"
         ],
         "type": "object",
         "properties": {
@@ -5213,6 +5232,53 @@
           },
           "isDirectory": {
             "type": "boolean"
+          },
+          "workingDirectory": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "breadcrumbs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileNavigationLocation"
+            }
+          },
+          "roots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileNavigationRoot"
+            }
+          },
+          "file": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FileTreeEntry"
+              }
+            ]
+          }
+        }
+      },
+      "FileNavigationRoot": {
+        "required": [
+          "path",
+          "name",
+          "kind"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
           }
         }
       },
@@ -5375,6 +5441,54 @@
           },
           "lineEnding": {
             "type": "string"
+          }
+        }
+      },
+      "FileTreeEntry": {
+        "required": [
+          "name",
+          "fullPath",
+          "isDirectory",
+          "size",
+          "mimeType",
+          "isText",
+          "gitStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "fullPath": {
+            "type": "string"
+          },
+          "isDirectory": {
+            "type": "boolean"
+          },
+          "size": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "mimeType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isText": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "gitStatus": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

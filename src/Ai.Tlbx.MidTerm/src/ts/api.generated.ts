@@ -4535,11 +4535,24 @@ export interface components {
       /** Format: int64 */
       editLimitBytes: number;
     };
+    FileNavigationLocation: {
+      path: string;
+      name: string;
+    };
     FileNavigationResponse: {
       path: string;
       parentPath: null | string;
       exists: boolean;
       isDirectory: boolean;
+      workingDirectory: null | string;
+      breadcrumbs: components['schemas']['FileNavigationLocation'][];
+      roots: components['schemas']['FileNavigationRoot'][];
+      file: null | components['schemas']['FileTreeEntry'];
+    };
+    FileNavigationRoot: {
+      path: string;
+      name: string;
+      kind: string;
     };
     FilePathInfo: {
       exists: boolean;
@@ -4578,6 +4591,16 @@ export interface components {
       version: string;
       encoding: string;
       lineEnding: string;
+    };
+    FileTreeEntry: {
+      name: string;
+      fullPath: string;
+      isDirectory: boolean;
+      /** Format: int64 */
+      size: null | number;
+      mimeType: null | string;
+      isText: null | boolean;
+      gitStatus: null | string;
     };
     FileUploadResponse: {
       path: string;
