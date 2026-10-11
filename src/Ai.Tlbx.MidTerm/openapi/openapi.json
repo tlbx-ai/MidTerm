@@ -2593,6 +2593,195 @@
         }
       }
     },
+    "/api/files/operations": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileOperationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileOperationResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDocumentErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDocumentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/operations/{id}": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/recovery": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRecoveryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/restore": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRestoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileOperationItem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDocumentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/logs/files": {
       "get": {
         "tags": [
@@ -5310,6 +5499,116 @@
           }
         }
       },
+      "FileOperationItem": {
+        "required": [
+          "sourcePath",
+          "path",
+          "success",
+          "code",
+          "message",
+          "recoveryId"
+        ],
+        "type": "object",
+        "properties": {
+          "sourcePath": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "path": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "message": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "recoveryId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "FileOperationRequest": {
+        "required": [
+          "requestId",
+          "action",
+          "paths",
+          "conflict"
+        ],
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "destinationDirectory": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "conflict": {
+            "type": "string"
+          }
+        }
+      },
+      "FileOperationResponse": {
+        "required": [
+          "operationId",
+          "action",
+          "complete",
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileOperationItem"
+            }
+          }
+        }
+      },
       "FilePathInfo": {
         "required": [
           "exists",
@@ -5351,6 +5650,59 @@
             "type": [
               "null",
               "boolean"
+            ]
+          }
+        }
+      },
+      "FileRecoveryEntry": {
+        "required": [
+          "id",
+          "originalPath",
+          "kind",
+          "createdAt",
+          "isDirectory",
+          "isLink"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "originalPath": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isDirectory": {
+            "type": "boolean"
+          },
+          "isLink": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FileRecoveryResponse": {
+        "required": [
+          "entries",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileRecoveryEntry"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }
@@ -5422,6 +5774,21 @@
               "null",
               "boolean"
             ]
+          }
+        }
+      },
+      "FileRestoreRequest": {
+        "required": [
+          "recoveryId",
+          "conflict"
+        ],
+        "type": "object",
+        "properties": {
+          "recoveryId": {
+            "type": "string"
+          },
+          "conflict": {
+            "type": "string"
           }
         }
       },

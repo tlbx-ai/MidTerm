@@ -450,7 +450,7 @@ Evidenz: `.dev/file-git-production/task-20-final-selection`,
 Reale Mobilgeräte und die vollständige ARIA-/Touch-Zielgrößen-Abnahme aus
 28/29 bleiben gesonderte Prüfungen. Kein Phasenrelease vor Files-Abschluss.
 
-### 21. [ ] Echte Dateioperationen und Kontextmenüs implementieren
+### 21. [~] Echte Dateioperationen und Kontextmenüs implementieren
 
 **Befund (mittel, Erwartungslücke):** Nur Vorschau, Inhaltskopie und Download;
 keine serverseitigen Rename/Move/Duplicate/Delete/New File/New Folder/Copy-Paste.
@@ -463,6 +463,34 @@ Namenskollision, Rechtefehler, symlinks, Rootgrenzen und Undo prüfen.
 Für Link-Mutationen den erlaubten Linkeintrag und seinen Elternordner prüfen;
 ein Link-Delete darf den Zielinhalt nicht löschen. Die kanonische Leseprüfung aus
 15/16 darf nicht unverändert als „Link löschen = Ziel löschen“ verwendet werden.
+
+**Zwischenstand (2026-10-11, noch nicht abgenommen):** C#-Operationen für
+Create/Rename/Move/Copy/Duplicate/Delete/Restore sind mit realen Dateisystem-
+änderungen vorhanden; dauerhafte Receipts verhindern blindes Wiederholen nach
+verlorener Antwort. Konflikte, Keep both, explizites Ersetzen einschließlich
+Ordnern, verschachtelte Auswahl, fehlende Restore-Eltern und Rollback bei
+Windows-Dateisperren sind geprüft. Junctions werden als Einträge kopiert und
+entfernt, ohne ihren externen Zielinhalt zu lesen oder zu löschen. Ein Native-
+Cleanup-Test fand die Gefahr einer bereits entfernten Junction-Zieldirectory;
+die Fixture-Cleanup entfernt Links jetzt vor den übrigen eigenen Verzeichnissen.
+Windows-Service-Zugriffe verwenden verifizierten mthost-PID plus Startzeit,
+übernehmen dessen Account auch bei deferred Download-Results und trennen
+Recovery-Vaults pro Windows-SID. Öffentliche GET/POST-Verträge und erzeugte
+Types sind synchron. 61 native Prüfungen bestehen; ein echter Unix-Modus-Test
+ist auf Windows ausdrücklich übersprungen. Sieben HTTP-Fälle gegen die echte
+Source-Instanz verifizieren Diskbytes, Konflikte, Recovery und Rootgrenzen.
+Evidenz: `.dev/file-git-production/task-21-unit/operations-backend-v3.trx`
+und `task-21-api-first/summary.json`. Das beweist die interaktive Windows-
+Source-Identität; die reale LocalSystem-Grenze ist noch separat zu prüfen.
+
+**Vor Abnahme weiterhin nötig:** Bedienbare Aktionen/Kontextmenüs, Copy/Cut/
+Paste, Konflikt- und Recovery-Dialoge, Entwurfsschutz für betroffene offene
+Dateien, vollständige Browserabnahme. Originale ACLs/Ownership bei Restore
+und fehlenden Eltern brauchen gezielte Prüfung/Erhalt. Lange Delete-/Copy-
+Staging darf währenddessen nicht als Git-Worktree-Inhalt stagebar sein;
+Quarantäne-/Publikationsorte müssen dafür vor der UI-Abnahme überprüft werden.
+Cross-volume- und Unix/macOS-Filesystem-/Case-Akzeptanz fehlen weiterhin.
+Kein Files-Minor vor dem vollständigen Phasenabschluss.
 
 ### 22. [ ] Dateiansicht, Sortierung, Filter und Metadaten vervollständigen
 

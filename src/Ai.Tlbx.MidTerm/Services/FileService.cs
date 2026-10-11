@@ -47,6 +47,7 @@ public sealed class FileService
 
     public bool IsSessionValid(string sessionId) =>
         _sessionManager.GetSession(sessionId) is not null;
+    internal (int Pid, DateTime Started)? GetSessionHostIdentity(string sessionId) => _sessionManager.GetVerifiedHostIdentity(sessionId);
 
     public async Task<string?> GetSessionWorkingDirectoryAsync(string? sessionId)
     {

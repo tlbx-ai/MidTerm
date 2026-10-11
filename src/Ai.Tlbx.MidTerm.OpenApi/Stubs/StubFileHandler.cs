@@ -14,6 +14,10 @@ namespace Ai.Tlbx.MidTerm.OpenApi.Stubs;
 
 public class StubFileHandler : IFileHandler
 {
+    public Task<IResult> ExecuteOperationAsync(FileOperationRequest request, string sessionId) => Task.FromResult<IResult>(Results.Json(new FileOperationResponse()));
+    public IResult GetOperation(string id, string sessionId) => Results.Json(new FileOperationResponse());
+    public IResult GetRecovery(string directory, string sessionId, string? cursor) => Results.Json(new FileRecoveryResponse());
+    public Task<IResult> RestoreAsync(FileRestoreRequest request, string sessionId) => Task.FromResult<IResult>(Results.Json(new FileOperationItem()));
     public IResult RegisterPaths(FileRegisterRequest request) =>
         Results.Ok();
 

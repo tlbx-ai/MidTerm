@@ -60,6 +60,18 @@ public static class FileEndpointDefinitions
             .Produces<FileDocumentErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<FileDocumentErrorResponse>(StatusCodes.Status422UnprocessableEntity);
 
+        app.MapPost("/api/files/operations", async (FileOperationRequest request, string sessionId, IFileHandler handler) =>
+            await handler.ExecuteOperationAsync(request, sessionId))
+            .Produces<FileOperationResponse>(StatusCodes.Status200OK, "application/json")
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status403Forbidden)
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status409Conflict);
+        app.MapGet("/api/files/operations/{id}", (string id, string sessionId, IFileHandler handler) => handler.GetOperation(id, sessionId))
+            .Produces<FileOperationResponse>(StatusCodes.Status200OK, "application/json");
+        app.MapGet("/api/files/recovery", (string directory, string sessionId, IFileHandler handler, string? cursor) => handler.GetRecovery(directory, sessionId, cursor))
+            .Produces<FileRecoveryResponse>(StatusCodes.Status200OK, "application/json");
+        app.MapPost("/api/files/restore", async (FileRestoreRequest request, string sessionId, IFileHandler handler) => await handler.RestoreAsync(request, sessionId))
+            .Produces<FileOperationItem>(StatusCodes.Status200OK, "application/json")
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status409Conflict);
         return app;
     }
 }

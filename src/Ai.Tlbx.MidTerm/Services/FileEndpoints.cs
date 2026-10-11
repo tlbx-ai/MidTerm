@@ -17,6 +17,8 @@ public static class FileEndpoints
     {
         var fileService = new FileService(sessionManager, allowlistService, gitWatcher);
         var documents = new FileDocumentService();
+        FileOperationEndpoints.Map(app, fileService, settingsService);
+        var readers = app.MapGroup("/api/files").AddEndpointFilter(new FileSessionIdentityFilter(fileService, settingsService));
 
         app.MapGet("/api/files/events", async (HttpContext context, string path, string sessionId) =>
         {
@@ -252,7 +254,7 @@ public static class FileEndpoints
             }
         });
 
-        app.MapPost("/api/files/register", (FileRegisterRequest request) =>
+        readers.MapPost("/register", (FileRegisterRequest request) =>
         {
             if (string.IsNullOrEmpty(request.SessionId))
             {
@@ -268,7 +270,7 @@ public static class FileEndpoints
             return Results.Ok();
         });
 
-        app.MapPost("/api/files/check", async (FileCheckRequest request, string? sessionId) =>
+        readers.MapPost("/check", async (FileCheckRequest request, string? sessionId) =>
         {
             var results = new Dictionary<string, FilePathInfo>(StringComparer.Ordinal);
             foreach (var path in request.Paths)
@@ -288,7 +290,7 @@ public static class FileEndpoints
                 AppJsonContext.Default.FileCheckResponse);
         });
 
-        app.MapGet("/api/files/navigation", async (string path, string? sessionId) =>
+        readers.MapGet("/navigation", async (string path, string? sessionId) =>
         {
             var (_, error) = await ResolveFileAccessAsync(path, sessionId, fileService);
             if (error is not null) return error;
@@ -305,7 +307,7 @@ public static class FileEndpoints
             { return DocumentError(ex, sessionId, fileService); }
         }).Produces<FileNavigationResponse>();
 
-        app.MapGet("/api/files/list", async (string path, string? sessionId, bool showHidden = false, bool showIgnored = true) =>
+        readers.MapGet("/list", async (string path, string? sessionId, bool showHidden = false, bool showIgnored = true) =>
         {
             var (resolved, error) = await ResolveFileAccessAsync(path, sessionId, fileService);
             if (error is not null) return error;
@@ -343,7 +345,7 @@ public static class FileEndpoints
             }
         });
 
-        app.MapGet("/api/files/document", async (string path, string? sessionId, bool full = false, long offset = 0, CancellationToken ct = default) =>
+        readers.MapGet("/document", async (string path, string? sessionId, bool full = false, long offset = 0, CancellationToken ct = default) =>
         {
             var (resolved, error) = await ResolveFileAccessAsync(path, sessionId, fileService);
             if (error is not null) return error;
@@ -358,7 +360,7 @@ public static class FileEndpoints
             { return DocumentError(ex, sessionId, fileService); }
         }).Produces<FileDocumentResponse>().Produces<FileDocumentErrorResponse>(409);
 
-        app.MapPut("/api/files/save", async (FileSaveRequest request, string? sessionId, CancellationToken ct) =>
+        readers.MapPut("/save", async (FileSaveRequest request, string? sessionId, CancellationToken ct) =>
         {
             var (resolved, error) = await ResolveFileAccessAsync(request.Path, sessionId, fileService);
             if (error is not null) return error;
@@ -372,17 +374,17 @@ public static class FileEndpoints
         }).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(64 * 1024 * 1024))
             .Produces<FileSaveResponse>().Produces<FileDocumentErrorResponse>(409);
 
-        app.MapGet("/api/files/view", async (string path, string? sessionId) =>
+        readers.MapGet("/view", async (string path, string? sessionId) =>
         {
             return await ServeFileAsync(path, inline: true, sessionId, fileService);
         });
 
-        app.MapGet("/api/files/download", async (string path, string? sessionId) =>
+        readers.MapGet("/download", async (string path, string? sessionId) =>
         {
             return await ServeFileAsync(path, inline: false, sessionId, fileService);
         });
 
-        app.MapGet("/api/files/resolve", async (string sessionId, string path, bool deep = false, CancellationToken ct = default) =>
+        readers.MapGet("/resolve", async (string sessionId, string path, bool deep = false, CancellationToken ct = default) =>
         {
             if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(path) || path.Contains("..", StringComparison.Ordinal))
             {
@@ -426,7 +428,7 @@ public static class FileEndpoints
             return Results.Json(new FileResolveResponse { Exists = false }, AppJsonContext.Default.FileResolveResponse);
         });
 
-        app.MapGet("/api/files/tree", async (string path, string? sessionId, int depth, bool showHidden = false, bool showIgnored = true) =>
+        readers.MapGet("/tree", async (string path, string? sessionId, int depth, bool showHidden = false, bool showIgnored = true) =>
         {
             var (resolved, error) = await ResolveFileAccessAsync(path, sessionId, fileService);
             if (error is not null) return error;
@@ -517,7 +519,7 @@ public static class FileEndpoints
         { return (null, DocumentError(ex, sessionId, files)); }
     }
 
-    private static IResult DocumentError(Exception exception, string? sessionId, FileService files)
+    internal static IResult DocumentError(Exception exception, string? sessionId, FileService files)
     {
         var status = 500;
         var response = new FileDocumentErrorResponse { Code = "io_error", Message = "The file operation failed. Retry or keep a copy of your draft." };
@@ -536,6 +538,15 @@ public static class FileEndpoints
                 break;
             case UnauthorizedAccessException:
                 status = 403; response.Code = "access_denied"; response.Message = "You do not have permission to write or read this file.";
+                break;
+            case ArgumentException:
+                status = 400; response.Code = "invalid_path"; response.Message = "The supplied path or name is invalid.";
+                break;
+            case SessionCallerIdentityException:
+                status = 403; response.Code = "session_identity"; response.Message = "The session owner could not be verified. No operation will be retried automatically.";
+                break;
+            case System.ComponentModel.Win32Exception native when native.NativeErrorCode == 5:
+                status = 403; response.Code = "access_denied"; response.Message = "You do not have permission to modify this entry.";
                 break;
             case IOException io when (io.HResult & 0xFFFF) is 32 or 33:
                 status = 423; response.Code = "busy"; response.Message = "Another process is using the file. Retry when it is available.";

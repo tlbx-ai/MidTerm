@@ -7,7 +7,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
-/// <summary>Accesses user-private Codex state with the exact local tool caller's identity.</summary>
+/// <summary>Runs user-private operations with an explicitly verified process identity.</summary>
 internal static partial class SessionCallerIdentity
 {
     internal static Task<T> RunAsync<T>(int callerPid, Func<Task<T>> action)
@@ -16,11 +16,18 @@ internal static partial class SessionCallerIdentity
         return OperatingSystem.IsWindows() ? RunWindowsAsync(callerPid, action) : action();
     }
 
+    internal static Task<T> RunForSessionAsync<T>(int hostPid, DateTime started, Func<Task<T>> action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        return OperatingSystem.IsWindows() ? RunWindowsAsync(hostPid, action, started) : action();
+    }
+
     [SupportedOSPlatform("windows")]
-    private static async Task<T> RunWindowsAsync<T>(int callerPid, Func<Task<T>> action)
+    private static async Task<T> RunWindowsAsync<T>(int callerPid, Func<Task<T>> action, DateTime? expectedStarted = null)
     {
         var before = SessionProcessContext.ReadProcess(callerPid);
         if (before is null) throw InvalidCaller();
+        if (expectedStarted is { } expected && expected.ToFileTimeUtc() != before.Value.Started.ToFileTimeUtc()) throw InvalidCaller();
         using var process = OpenProcess(0x1000, false, callerPid); // PROCESS_QUERY_LIMITED_INFORMATION
         if (process.IsInvalid) throw IdentityFailure("OpenProcess", Marshal.GetLastPInvokeError());
         if (!GetProcessTimes(process, out var created, out _, out _, out _))
