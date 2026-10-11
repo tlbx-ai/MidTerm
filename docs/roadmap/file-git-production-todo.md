@@ -185,7 +185,7 @@ behält den jüngeren Entwurf (Unitregression). Nachweise:
 Screenshots, `editState.test.ts`. Neue Verlaufs-/Dockabläufe aus 13/15 werden
 in der integrierten Files-Abnahme erneut gegen diesen Schutz geprüft.
 
-### 13. [ ] Editzustand beim Andocken, Undocken und Refresh erhalten
+### 13. [x] Editzustand beim Andocken, Undocken und Refresh erhalten
 
 **Befund (hoch, reproduziert):** Modal→Dock lädt Diskinhalt neu; Refresh ebenfalls.
 Beide Wege verwarfen den Marker ohne Rückfrage. resetEditState löscht Editzustand.
@@ -196,7 +196,16 @@ Refresh bei Dirty-Datei fragt nach bzw. bietet kontrollierte Konfliktbehandlung.
 **Abnahme:** Modal/Dock/Fullscreen-Wechsel mit Änderungen, Dirty-Refresh,
 Save-Fehler, Cancel und Browser-Back; Zustand und Pfadidentität bleiben erhalten.
 
-### 14. [ ] Veraltete Dateianfragen dürfen neuere Auswahl nicht überschreiben
+**Nachweis 11.10.2026:** Modal und Dock verschieben denselben gerenderten
+Dokumentknoten statt ihn neu zu laden. Editoridentität, Text, Auswahl und
+vertikaler/horizontaler Scroll bleiben erhalten; Refresh wartet auf die explizite
+Dirty-Entscheidung, Speicherfehler ersetzen den Editor nicht. Fullscreen→Dock
+und Browser-Back mit Cancel bestehen. Achtzehn integrierte Chromiumfälle
+einschließlich Aufgabe 12 bestehen:
+`.dev/file-git-production/task-13-back-final/summary.json` und Screenshots.
+Typecheck, fokussiertes ESLint und acht Editor-/Navigationstests bestehen.
+
+### 14. [~] Veraltete Dateianfragen dürfen neuere Auswahl nicht überschreiben
 
 **Befund (hoch, reproduziert):** Agents.md-Anfrage 700 ms verzögert, dann CLAUDE.md
 ausgewählt: Baum zeigt CLAUDE.md, Vorschau nach beiden Antworten Agents.md.
@@ -206,6 +215,9 @@ veraltete Requests abbrechen oder verwerfen, auch bei Medien und Sessionwechsel.
 
 **Abnahme:** Vertauschte Antwortreihenfolge, Abbruch und Fehler für schnelle
 A→B→C-Wechsel; Titel, Inhalt, Aktionen und Speicherziel gehören immer zu C.
+Zusätzlich das Andocken während noch laufender Datei-/Metadatenanfragen prüfen:
+die Antwort muss im aktuellen sichtbaren Ziel erscheinen, kein versteckter
+Container darf nachträglich wieder mit altem Inhalt befüllt werden.
 
 ### 15. [ ] Durchgängigen Rückweg und echte Ordnerhierarchie anbieten
 

@@ -63,6 +63,7 @@ let currentContent = '';
 let currentContentIsPartial = false;
 let currentFileInfo: FilePathInfo | null = null;
 let releaseBackButtonLayer: (() => void) | null = null;
+let releaseDockBackButtonLayer: (() => void) | null = null;
 let currentEdit: FileEditState | null = null;
 let currentEditOwner: HTMLElement | null = null;
 
@@ -84,14 +85,13 @@ export function initFileViewer(): void {
   dockBtn?.addEventListener('click', dockViewer);
 
   modal.querySelector('#file-viewer-save')?.addEventListener('click', () => void saveFile());
+  bindModalFileActions(modal);
 
   // Dock panel buttons
   const dockPanel = document.getElementById('file-viewer-dock');
   if (dockPanel) {
     dockPanel.querySelector('#dock-close')?.addEventListener('click', () => {
-      void confirmCurrentFileNavigation().then((accepted) => {
-        if (accepted) closeFileViewerDock();
-      });
+      void requestCloseFileViewerDock();
     });
     dockPanel.querySelector('#dock-undock')?.addEventListener('click', undockViewer);
     dockPanel.querySelector('#dock-refresh')?.addEventListener('click', () => {
@@ -131,6 +131,15 @@ export function initFileViewer(): void {
   log.info(() => 'File viewer initialized');
 }
 
+function bindModalFileActions(viewer: HTMLElement): void {
+  viewer.querySelector('#file-viewer-download')?.addEventListener('click', () => {
+    if (currentPath) triggerFileDownload(currentPath, currentSessionId);
+  });
+  viewer.querySelector('#file-viewer-copy')?.addEventListener('click', () => {
+    void copyCurrentFileToClipboard();
+  });
+}
+
 function resetEditState(): void {
   if (currentEditOwner) releaseFileEdits(currentEditOwner);
   currentEditOwner = null;
@@ -152,6 +161,17 @@ async function requestCloseViewer(): Promise<void> {
   if (await confirmCurrentFileNavigation()) closeViewer();
 }
 
+async function requestCloseFileViewerDock(): Promise<void> {
+  if (await confirmCurrentFileNavigation()) closeFileViewerDock();
+}
+
+function registerDockBackLayer(): void {
+  releaseDockBackButtonLayer?.();
+  releaseDockBackButtonLayer = registerBackButtonLayer(() => {
+    void requestCloseFileViewerDock();
+  });
+}
+
 function toggleFullscreen(): void {
   const content = modal?.querySelector('.file-viewer-modal-content') as HTMLElement | undefined;
   if (document.fullscreenElement) {
@@ -163,35 +183,30 @@ function toggleFullscreen(): void {
 
 function dockViewer(): void {
   if (!currentPath) return;
+  const source = modal?.querySelector<HTMLElement>('.file-viewer-body');
+  const dockPanel = document.getElementById('file-viewer-dock');
+  const target = dockPanel?.querySelector<HTMLElement>('.file-viewer-dock-body');
+  if (!dockPanel || !source || !target) return;
 
   // Mutual exclusion: close sidebar docks if open
   if ($commandsPanelDocked.get()) closeCommandsDock();
   if ($gitPanelDocked.get()) closeGitDock();
 
-  const path = currentPath;
-  const sessionId = currentSessionId;
-
-  // Close the modal
-  closeViewer();
+  if (document.fullscreenElement) void document.exitFullscreen();
 
   // Update stores and show dock
-  $dockedFilePath.set(path);
+  $dockedFilePath.set(currentPath);
   $fileViewerDocked.set(true);
 
-  // Restore the session ID for the dock
-  currentPath = path;
-  currentSessionId = sessionId;
-
-  const dockPanel = document.getElementById('file-viewer-dock');
   const terminalPage = document.getElementById('app');
-
-  if (dockPanel) {
-    dockPanel.classList.remove('hidden');
-  }
+  dockPanel.classList.remove('hidden');
   terminalPage?.classList.add('file-viewer-docked');
 
-  // Render the file in dock
-  void renderInDock(path);
+  updateDockHeader(currentPath);
+  transferViewerBody(source, target);
+  hideModal();
+  registerDockBackLayer();
+  updateSaveButtonVisibility(currentEdit?.dirty ?? false);
 
   adjustInnerDockPositions();
   updateAllDockMargins();
@@ -199,6 +214,15 @@ function dockViewer(): void {
 }
 
 export function closeFileViewerDock(): void {
+  hideFileDock();
+  currentPath = null;
+  currentSessionId = null;
+  resetEditState();
+}
+
+function hideFileDock(): void {
+  releaseDockBackButtonLayer?.();
+  releaseDockBackButtonLayer = null;
   const dockPanel = document.getElementById('file-viewer-dock');
   const terminalPage = document.getElementById('app');
 
@@ -209,9 +233,6 @@ export function closeFileViewerDock(): void {
 
   $fileViewerDocked.set(false);
   $dockedFilePath.set(null);
-  currentPath = null;
-  currentSessionId = null;
-  resetEditState();
 
   adjustInnerDockPositions();
   updateAllDockMargins();
@@ -219,6 +240,7 @@ export function closeFileViewerDock(): void {
 }
 
 export function openFileViewerDock(path: string): void {
+  registerDockBackLayer();
   $dockedFilePath.set(path);
   $fileViewerDocked.set(true);
   currentPath = path;
@@ -237,19 +259,47 @@ export function openFileViewerDock(path: string): void {
 }
 
 function undockViewer(): void {
-  const path = $dockedFilePath.get();
-  if (!path) return;
+  if (!currentPath || !modal) return;
+  const source = document.querySelector<HTMLElement>('#file-viewer-dock .file-viewer-dock-body');
+  const target = modal.querySelector<HTMLElement>('.file-viewer-body');
+  if (!source || !target) return;
+  showModal();
+  updateModalHeader(currentPath);
+  transferViewerBody(source, target);
+  hideFileDock();
+  updateSaveButtonVisibility(currentEdit?.dirty ?? false);
+}
 
-  // Close dock first
-  closeFileViewerDock();
-
-  // Open in modal
-  void openFile(path);
+function transferViewerBody(source: HTMLElement, target: HTMLElement): void {
+  const scrollTop = source.scrollTop;
+  const scrollLeft = source.scrollLeft;
+  const editor = source.querySelector<HTMLTextAreaElement>('textarea');
+  const editorHadFocus = document.activeElement === editor;
+  const editorScrollTop = editor?.scrollTop ?? 0;
+  const editorScrollLeft = editor?.scrollLeft ?? 0;
+  const start = editor?.selectionStart ?? 0;
+  const end = editor?.selectionEnd ?? 0;
+  target.replaceChildren(...source.childNodes);
+  if (currentEdit && currentEditOwner === source) {
+    releaseFileEdits(source);
+    currentEditOwner = target;
+    trackFileEdits(target, currentEdit, currentSessionId ?? '');
+  }
+  requestAnimationFrame(() => {
+    target.scrollTop = scrollTop;
+    target.scrollLeft = scrollLeft;
+    if (editor?.isConnected) {
+      if (editorHadFocus) editor.focus({ preventScroll: true });
+      editor.setSelectionRange(start, end);
+      editor.scrollTop = editorScrollTop;
+      editor.scrollLeft = editorScrollLeft;
+    }
+  });
 }
 
 async function refreshDock(): Promise<void> {
   const path = $dockedFilePath.get();
-  if (path) {
+  if (path && (await confirmCurrentFileNavigation())) {
     await renderInDock(path);
   }
 }
@@ -290,13 +340,26 @@ async function renderInDock(path: string): Promise<void> {
   }
 }
 
-function closeViewer(): void {
+function hideModal(): void {
   releaseBackButtonLayer?.();
   releaseBackButtonLayer = null;
 
   if (modal) {
     modal.classList.add('hidden');
   }
+}
+
+function showModal(): void {
+  if (!releaseBackButtonLayer) {
+    releaseBackButtonLayer = registerBackButtonLayer(() => {
+      void requestCloseViewer();
+    });
+  }
+  modal?.classList.remove('hidden');
+}
+
+function closeViewer(): void {
+  hideModal();
   currentPath = null;
   currentSessionId = null;
   navigationHistory = [];
@@ -311,36 +374,17 @@ export async function openFile(path: string, info?: FilePathInfo | null): Promis
 
   if (!(await confirmCurrentFileNavigation())) return;
 
-  if (!releaseBackButtonLayer) {
-    releaseBackButtonLayer = registerBackButtonLayer(() => {
-      void requestCloseViewer();
-    });
-  }
-
   currentPath = path;
   currentSessionId = $activeSessionId.get() ?? null;
-  modal.classList.remove('hidden');
+  showModal();
 
   const bodyEl = modal.querySelector('.file-viewer-body');
-  const downloadBtn = modal.querySelector<HTMLElement>('#file-viewer-download');
-  const copyBtn = modal.querySelector<HTMLElement>('#file-viewer-copy');
 
   updateModalHeader(path);
   if (bodyEl)
     bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
 
   resetEditState();
-
-  if (downloadBtn) {
-    downloadBtn.onclick = () => {
-      triggerFileDownload(path, currentSessionId ?? $activeSessionId.get());
-    };
-  }
-  if (copyBtn) {
-    copyBtn.onclick = () => {
-      void copyCurrentFileToClipboard(path);
-    };
-  }
 
   if (!info) {
     info = await checkFilePath(path);
