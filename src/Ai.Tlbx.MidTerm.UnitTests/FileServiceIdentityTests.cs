@@ -1,0 +1,79 @@
+using System.Runtime.Versioning;
+using System.Security.Principal;
+using System.Text.Json;
+using Ai.Tlbx.MidTerm.Models.Files;
+using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.Git;
+using Ai.Tlbx.MidTerm.Services.Sessions;
+using Xunit;
+
+namespace Ai.Tlbx.MidTerm.UnitTests;
+
+public sealed class FileServiceIdentityTests
+{
+    [LocalSystemFileFact]
+    [SupportedOSPlatform("windows")]
+    public async Task ActualLocalSystemUsesTheVerifiedCallerForFilesAndGit()
+    {
+        using var system = WindowsIdentity.GetCurrent();
+        Assert.True(system.IsSystem);
+        using var configuration = JsonDocument.Parse(File.ReadAllText(Environment.GetEnvironmentVariable("TLBX_FILE_IDENTITY_FIXTURE")!));
+        var config = configuration.RootElement;
+        var root = config.GetProperty("root").GetString()!;
+        var sid = config.GetProperty("sid").GetString()!;
+        var pid = config.GetProperty("pid").GetInt32();
+        var started = DateTime.FromFileTimeUtc(config.GetProperty("started").GetInt64());
+        var source = Path.Combine(root, "caller.txt");
+        Assert.Throws<UnauthorizedAccessException>(() => File.ReadAllText(source));
+        var service = new FileOperationService(config.GetProperty("storage").GetString()!).ForOwner(sid);
+        service.GrantStorageOwner(sid);
+        bool Accessible(string path) => FileService.IsWithinDirectory(path, root);
+        FileOperationRequest Request(string action, params string[] paths) => new()
+        { RequestId = Guid.NewGuid().ToString(), Action = action, Paths = paths };
+        GitCommandRunner.Configure(null, true);
+        try
+        {
+            await SessionCallerIdentity.RunForSessionAsync(pid, started, async () =>
+            {
+                using var caller = WindowsIdentity.GetCurrent();
+                Assert.Equal(sid, caller.User!.Value); Assert.False(caller.IsSystem);
+                Assert.Equal("caller data", File.ReadAllText(source));
+                var repository = await GitCommandRunner.GetRepositoryInfoAsync(root);
+                Assert.NotNull(repository);
+                var ignored = await GitCommandRunner.GetIgnoredPathsAsync(root, ["ignored.tmp", "caller.txt"]);
+                Assert.NotNull(ignored); Assert.Contains("ignored.tmp", ignored); Assert.DoesNotContain("caller.txt", ignored);
+                using var afterGit = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterGit.User!.Value);
+
+                var create = Request("createFolder"); create.DestinationDirectory = root; create.Name = "destination";
+                Assert.True(Assert.Single((await service.ExecuteAsync(create, Accessible, [root], default)).Items).Success);
+                var duplicate = Assert.Single((await service.ExecuteAsync(Request("duplicate", source), Accessible, [root], default)).Items);
+                Assert.True(duplicate.Success, duplicate.Message); Assert.Equal("caller data", File.ReadAllText(duplicate.Path!));
+                var rename = Request("rename", duplicate.Path!); rename.Name = "renamed.txt";
+                var renamed = Assert.Single((await service.ExecuteAsync(rename, Accessible, [root], default)).Items);
+                Assert.True(renamed.Success, renamed.Message);
+                var move = Request("move", renamed.Path!); move.DestinationDirectory = Path.Combine(root, "destination");
+                var moved = Assert.Single((await service.ExecuteAsync(move, Accessible, [root], default)).Items);
+                Assert.True(moved.Success, moved.Message);
+                var deleted = Assert.Single((await service.ExecuteAsync(Request("delete", moved.Path!), Accessible, [root], default)).Items);
+                Assert.True(deleted.Success, deleted.Message); Assert.False(File.Exists(moved.Path!));
+                var recovery = new FileOperationService(config.GetProperty("storage").GetString()!).ForOwner(sid);
+                var restored = await recovery.RestoreAsync(new() { RecoveryId = deleted.RecoveryId! }, Accessible, default);
+                Assert.True(restored.Success); Assert.Equal("caller data", File.ReadAllText(restored.Path!));
+                await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.ExecuteAsync(Request("delete", config.GetProperty("outside").GetString()!), Accessible, [root], default));
+                return true;
+            });
+            using var restoredIdentity = WindowsIdentity.GetCurrent(); Assert.True(restoredIdentity.IsSystem);
+            Assert.Throws<UnauthorizedAccessException>(() => File.ReadAllText(source));
+        }
+        finally { GitCommandRunner.Configure(null, false); }
+    }
+}
+
+internal sealed class LocalSystemFileFactAttribute : FactAttribute
+{
+    public LocalSystemFileFactAttribute()
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrEmpty(Environment.GetEnvironmentVariable("TLBX_FILE_IDENTITY_FIXTURE")))
+            Skip = "Requires the isolated LocalSystem fixture from test-file-service-identity.ps1.";
+    }
+}

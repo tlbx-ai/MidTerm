@@ -134,9 +134,14 @@ public sealed class FileOperationService(string storageDirectory)
         ValidateName(name);
         var target = Path.Combine(parent, name);
         var conflict = request.Action == "duplicate" ? "keepBoth" : request.Conflict;
-        var caseOnly = source is not null && Paths.Equals(source, target) && !StringComparer.Ordinal.Equals(source, target) && request.Action == "rename";
+        var exactTarget = source is not null && (StringComparer.Ordinal.Equals(source, target) ||
+            (Paths.Equals(source, target) || request.Action == "rename" && Paths.Equals(Path.GetDirectoryName(source), parent)) &&
+            FileEntryLinks.Exists(target) && Directory.EnumerateFileSystemEntries(parent).Any(entry => StringComparer.Ordinal.Equals(entry, target)));
+        var caseOnly = source is not null && request.Action == "rename" && !StringComparer.Ordinal.Equals(source, target) &&
+            Paths.Equals(Path.GetDirectoryName(source), parent) && FileEntryLinks.Exists(target) && !exactTarget;
         if (conflict == "keepBoth") target = UniqueName(target);
-        else if (!caseOnly && source is not null && Paths.Equals(source, target)) throw Failure(409, "same_path", "Source and destination are the same entry.");
+        else if (!caseOnly && source is not null && Paths.Equals(source, target) &&
+            (StringComparer.Ordinal.Equals(source, target) || !exactTarget)) throw Failure(409, "same_path", "Source and destination are the same entry.");
         if (source is not null && FileEntryLinks.IsDirectory(source) && !FileEntryLinks.IsLink(source) && FileService.IsWithinDirectory(target, source))
             throw Failure(400, "recursive_destination", "A folder cannot be copied or moved inside itself.");
         if (source is not null && FileEntryLinks.Exists(target) && FileEntryLinks.IsDirectory(target) && !FileEntryLinks.IsLink(target) && FileService.IsWithinDirectory(source, target))
@@ -312,15 +317,15 @@ public sealed class FileOperationService(string storageDirectory)
         var temporaryParent = await GitStageDirectoryAsync(parent);
         if (temporaryParent is not null && FileEntryLinks.IsDirectory(source) && !FileEntryLinks.IsLink(source) && FileService.IsWithinDirectory(temporaryParent, source))
             temporaryParent = null;
-        try { await CopyPublishedInAsync(source, target, temporaryParent ?? parent, ct, rootAttributes); }
+        try { await CopyPublishedInAsync(source, target, temporaryParent ?? parent, rootAttributes, ct); }
         catch (IOException ex) when ((ex.HResult & 0xFFFF) is 17 or 18 && temporaryParent is not null && !Paths.Equals(temporaryParent, parent))
         {
             // Publish from the destination volume if worktree metadata is elsewhere.
-            await CopyPublishedInAsync(source, target, _gitFallbackDirectories[parent], ct, rootAttributes);
+            await CopyPublishedInAsync(source, target, _gitFallbackDirectories[parent], rootAttributes, ct);
         }
     }
 
-    private async Task CopyPublishedInAsync(string source, string target, string parent, CancellationToken ct, FileAttributes? rootAttributes)
+    private async Task CopyPublishedInAsync(string source, string target, string parent, FileAttributes? rootAttributes, CancellationToken ct)
     {
         var container = StageName(parent);
         FileRecoveryStorage.EnsurePrivate(container);

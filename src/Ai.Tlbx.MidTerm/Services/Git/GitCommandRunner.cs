@@ -582,11 +582,13 @@ internal static class GitCommandRunner
         IReadOnlyList<string> args,
         TimeSpan timeout)
     {
-        var fullArgs = new string[args.Count + 1];
+        var fullArgs = new string[args.Count + 3];
         fullArgs[0] = "--no-optional-locks";
+        fullArgs[1] = "-C";
+        fullArgs[2] = workingDir;
         for (var i = 0; i < args.Count; i++)
         {
-            fullArgs[i + 1] = args[i];
+            fullArgs[i + 3] = args[i];
         }
 
         using var cts = new CancellationTokenSource(timeout);
@@ -596,7 +598,10 @@ internal static class GitCommandRunner
 #if WINDOWS
             if (_isServiceMode && OperatingSystem.IsWindows())
             {
-                var result = await TtyHostSpawner.RunCommandAsUserAsync("git", fullArgs, workingDir, _runAsUser, cts.Token);
+                using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+                var result = identity.ImpersonationLevel != System.Security.Principal.TokenImpersonationLevel.None
+                    ? await TtyHostSpawner.RunCommandAsCurrentIdentityAsync("git", fullArgs, AppContext.BaseDirectory, cts.Token)
+                    : await TtyHostSpawner.RunCommandAsUserAsync("git", fullArgs, AppContext.BaseDirectory, _runAsUser, cts.Token);
                 RecordCommand(workingDir, fullArgs, result.ExitCode, result.Stdout, result.Stderr);
                 return result;
             }
@@ -622,7 +627,7 @@ internal static class GitCommandRunner
         var psi = new ProcessStartInfo
         {
             FileName = "git",
-            WorkingDirectory = workingDir,
+            WorkingDirectory = AppContext.BaseDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,

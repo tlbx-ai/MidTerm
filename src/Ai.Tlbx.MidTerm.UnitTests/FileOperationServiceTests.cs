@@ -61,6 +61,38 @@ public sealed class FileOperationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GitIgnoreClassificationTreatsPathsAsLiteralArguments()
+    {
+        var repository = Path.Combine(_workspace, "repo & $(echo marker) --help"); Directory.CreateDirectory(repository);
+        await GitAsync(repository, "init"); File.WriteAllText(Path.Combine(repository, ".gitignore"), "*.tmp\n");
+        var names = new[] { "--help.txt", "file & $(echo marker).tmp" };
+        foreach (var name in names) File.WriteAllText(Path.Combine(repository, name), "literal file");
+        var root = await Ai.Tlbx.MidTerm.Services.Git.GitCommandRunner.GetRepoRootAsync(repository);
+        Assert.NotNull(root); Assert.Equal(Path.GetFullPath(repository), Path.GetFullPath(root));
+        var ignored = await Ai.Tlbx.MidTerm.Services.Git.GitCommandRunner.GetIgnoredPathsAsync(repository, names);
+        Assert.NotNull(ignored); Assert.DoesNotContain(names[0], ignored); Assert.Contains(names[1], ignored);
+        Assert.False(File.Exists(Path.Combine(repository, "marker")));
+    }
+
+    [Fact]
+    public async Task CaseRenameUsesTheActualFilesystemAndPreservesAnOccupiedDistinctEntry()
+    {
+        var source = FileWith("case.txt"); var rename = Request("rename", source); rename.Name = "CASE.txt";
+        var renamed = Assert.Single((await Run(rename)).Items); Assert.True(renamed.Success, renamed.Message);
+        Assert.Contains(Path.Combine(_workspace, "CASE.txt"), Directory.EnumerateFileSystemEntries(_workspace), StringComparer.Ordinal);
+        Assert.DoesNotContain(source, Directory.EnumerateFileSystemEntries(_workspace), StringComparer.Ordinal);
+        Assert.Equal("original 🎸\r\n", File.ReadAllText(renamed.Path!));
+        // A case-sensitive volume can contain both names, and those are two different entries.
+        if (File.Exists(source)) return;
+        File.WriteAllText(source, "distinct lower-case file");
+        var conflictRequest = Request("rename", source); conflictRequest.Name = "CASE.txt";
+        var conflict = Assert.Single((await Run(conflictRequest)).Items);
+        Assert.False(conflict.Success); Assert.Equal("name_conflict", conflict.Code);
+        Assert.Equal("distinct lower-case file", File.ReadAllText(source));
+        Assert.Equal("original 🎸\r\n", File.ReadAllText(renamed.Path!));
+    }
+
+    [Fact]
     public async Task RequestReplayIsIdempotentAcrossServiceRestart()
     {
         var source = FileWith("notes.txt"); var request = Request("duplicate", source);
