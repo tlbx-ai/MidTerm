@@ -258,6 +258,21 @@ public static class FileEndpoints
                 AppJsonContext.Default.FileCheckResponse);
         });
 
+        app.MapGet("/api/files/navigation", async (string path, string? sessionId) =>
+        {
+            var (_, error) = await ResolveDocumentAccessAsync(path, sessionId, fileService);
+            if (error is not null) return error;
+            var cwd = await fileService.GetSessionWorkingDirectoryAsync(sessionId);
+            try
+            {
+                var navigation = FileNavigationService.Describe(path, candidate =>
+                    string.IsNullOrEmpty(sessionId) || fileService.IsPathAccessible(sessionId, candidate, cwd));
+                return Results.Json(navigation, AppJsonContext.Default.FileNavigationResponse);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { return DocumentError(ex, sessionId, fileService); }
+        }).Produces<FileNavigationResponse>();
+
         app.MapGet("/api/files/list", async (string path, string? sessionId) =>
         {
             if (!FileService.ValidatePath(path, out var errorResult))

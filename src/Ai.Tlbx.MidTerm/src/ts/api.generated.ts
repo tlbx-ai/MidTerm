@@ -2697,6 +2697,53 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/files/navigation': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query: {
+          path: string;
+          sessionId?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileNavigationResponse'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/files/view': {
     parameters: {
       query?: never;
@@ -4487,6 +4534,12 @@ export interface components {
       previewBytes: number;
       /** Format: int64 */
       editLimitBytes: number;
+    };
+    FileNavigationResponse: {
+      path: string;
+      parentPath: null | string;
+      exists: boolean;
+      isDirectory: boolean;
     };
     FilePathInfo: {
       exists: boolean;

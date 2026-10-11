@@ -10648,6 +10648,34 @@ body.shared-session-mode .session-tab-bar {
   width: 95%;
 }
 
+.file-viewer-navigation {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.file-viewer-navigation button {
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.file-viewer-navigation button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.file-list-item.selected {
+  background: var(--bg-hover);
+}
+
 .file-unsaved-path {
   font-family: var(--font-mono);
   overflow-wrap: anywhere;

@@ -2287,6 +2287,52 @@
         }
       }
     },
+    "/api/files/navigation": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileNavigationResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDocumentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/files/view": {
       "get": {
         "tags": [
@@ -5141,6 +5187,32 @@
           "editLimitBytes": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "FileNavigationResponse": {
+        "required": [
+          "path",
+          "parentPath",
+          "exists",
+          "isDirectory"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "parentPath": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "isDirectory": {
+            "type": "boolean"
           }
         }
       },

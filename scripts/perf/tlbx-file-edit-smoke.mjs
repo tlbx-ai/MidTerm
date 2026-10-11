@@ -496,7 +496,7 @@ try {
   assert.deepEqual(result.errors, []);
   result.ok = true;
 } catch (error) {
-  result.failure = String(error.stack || error);
+  result.failure = String(error.stack || error).replaceAll(cookie, '<redacted-session-cookie>');
   if (page) {
     await page.screenshot({ path: path.join(out, 'failure.png') }).catch(() => {});
     result.pageText = (await page.locator('body').innerText().catch(() => '')).slice(-5000);
@@ -511,7 +511,7 @@ try {
 } finally {
   if (context) {
     try { for (const id of [session, otherSession].filter(Boolean)) await api('DELETE', '/api/sessions/' + id); }
-    catch (error) { result.cleanupFailure = String(error); result.ok = false; process.exitCode = 1; }
+    catch (error) { result.cleanupFailure = String(error).replaceAll(cookie, '<redacted-session-cookie>'); result.ok = false; process.exitCode = 1; }
   }
   await context?.close();
   await browser?.close();

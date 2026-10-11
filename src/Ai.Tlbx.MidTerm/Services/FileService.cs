@@ -85,8 +85,9 @@ public sealed class FileService
     {
         var normalizedPath = Path.GetFullPath(path);
         var normalizedDir = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return normalizedPath.StartsWith(normalizedDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-               normalizedPath.Equals(normalizedDir, StringComparison.OrdinalIgnoreCase);
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return normalizedPath.StartsWith(normalizedDir + Path.DirectorySeparatorChar, comparison) ||
+               normalizedPath.Equals(normalizedDir, comparison);
     }
 
     public static IEnumerable<string> GetSlashVariants(string path)

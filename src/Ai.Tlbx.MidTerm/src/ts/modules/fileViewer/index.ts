@@ -50,13 +50,17 @@ import { FileViewLoad, beginFileOpen, isFileOpenCurrent, cancelFileOpen } from '
 import { readFileDocument, writeFileDocument, type FileDocument } from './documentApi';
 import { createFileSaveStatus } from './saveStatus';
 import { createDocumentNotice } from './documentNotice';
+import { FileNavigationHistory } from './navigationHistory';
+import type { Schemas } from '../../api/types';
 
 const log = createLogger('fileViewer');
 
 let modal: HTMLElement | null = null;
 let currentPath: string | null = null;
 let currentSessionId: string | null = null;
-let navigationHistory: string[] = [];
+const navigationHistory = new FileNavigationHistory();
+let parentPath: string | null = null;
+let navigationBar: HTMLElement | null = null;
 let lastVideoVolume = 0.15;
 
 let isDirty = false;
@@ -101,6 +105,7 @@ export function initFileViewer(): void {
 
   modal.querySelector('#file-viewer-save')?.addEventListener('click', () => void saveFile());
   bindModalFileActions(modal);
+  initViewerNavigation(modal);
   $activeSessionId.listen((sessionId) => {
     if (
       currentSessionId &&
@@ -155,6 +160,28 @@ export function initFileViewer(): void {
   });
 
   log.info(() => 'File viewer initialized');
+}
+
+function initViewerNavigation(viewer: HTMLElement): void {
+  navigationBar = document.createElement('nav');
+  navigationBar.className = 'file-viewer-navigation';
+  navigationBar.setAttribute('aria-label', t('fileViewer.navigation'));
+  for (const [action, symbol] of [
+    ['back', '←'],
+    ['forward', '→'],
+    ['up', '↑'],
+  ] as const) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.fileNavigation = action;
+    button.textContent = `${symbol} ${t(`fileViewer.${action}`)}`;
+    button.addEventListener('click', () => {
+      void navigateHistory(action);
+    });
+    navigationBar.appendChild(button);
+  }
+  viewer.querySelector('.modal-header')?.insertAdjacentElement('afterend', navigationBar);
+  updateNavigationButtons();
 }
 
 function bindModalFileActions(viewer: HTMLElement): void {
@@ -386,7 +413,8 @@ function hideModal(): void {
 function showModal(): void {
   if (!releaseBackButtonLayer) {
     releaseBackButtonLayer = registerBackButtonLayer(() => {
-      void requestCloseViewer();
+      if (navigationHistory.canBack) void navigateHistory('back');
+      else void requestCloseViewer();
     });
   }
   modal?.classList.remove('hidden');
@@ -397,7 +425,7 @@ function closeViewer(): void {
   hideModal();
   currentPath = null;
   currentSessionId = null;
-  navigationHistory = [];
+  navigationHistory.clear();
   resetEditState();
 }
 
@@ -405,6 +433,7 @@ export async function openFile(
   path: string,
   info?: FilePathInfo | null,
   request = beginFileOpen(),
+  historyAction: 'push' | 'back' | 'forward' = 'push',
 ): Promise<void> {
   if (!modal) {
     log.error(() => 'File viewer modal not initialized');
@@ -413,6 +442,8 @@ export async function openFile(
 
   if (!isFileOpenCurrent(request)) return;
   if (!(await confirmCurrentFileNavigation()) || !isFileOpenCurrent(request)) return;
+
+  commitNavigation(path, request.sessionId, historyAction);
 
   currentPath = path;
   currentSessionId = request.sessionId;
@@ -426,6 +457,8 @@ export async function openFile(
 
   resetEditState();
   const load = beginViewerLoad(path, bodyEl);
+  await updateNavigation(load);
+  if (!load.isActive()) return;
 
   if (!info) {
     info = await checkFilePath(load);
@@ -446,6 +479,63 @@ export async function openFile(
   } else {
     await renderFile(load, info);
   }
+}
+
+function commitNavigation(
+  path: string,
+  sessionId: string | null,
+  action: 'push' | 'back' | 'forward',
+): void {
+  const previous = navigationHistory.current;
+  if (previous && viewerLoad) {
+    previous.scrollTop = viewerLoad.container.scrollTop;
+    previous.selectedPath =
+      viewerLoad.container.querySelector('.file-list-item.selected')?.getAttribute('data-path') ??
+      null;
+  }
+  if (currentSessionId !== sessionId) navigationHistory.clear();
+  if (action === 'back') navigationHistory.back();
+  else if (action === 'forward') navigationHistory.forward();
+  else navigationHistory.push(path);
+  parentPath = null;
+  updateNavigationButtons();
+}
+
+function updateNavigationButtons(): void {
+  for (const button of navigationBar?.querySelectorAll<HTMLButtonElement>('button') ?? []) {
+    const action = button.dataset.fileNavigation;
+    button.disabled =
+      action === 'back'
+        ? !navigationHistory.canBack
+        : action === 'forward'
+          ? !navigationHistory.canForward
+          : !parentPath;
+  }
+}
+
+async function updateNavigation(load: FileViewLoad): Promise<void> {
+  const params = new URLSearchParams({ path: load.path });
+  if (load.sessionId) params.set('sessionId', load.sessionId);
+  try {
+    const response = await fetch(`/api/files/navigation?${params}`, { signal: load.signal });
+    if (!response.ok) return;
+    const result = (await response.json()) as Schemas['FileNavigationResponse'];
+    if (load.isActive()) parentPath = result.parentPath;
+  } catch {
+    /* Existing visit history remains usable if hierarchy lookup fails. */
+  }
+  if (load.isActive()) updateNavigationButtons();
+}
+
+async function navigateHistory(action: 'back' | 'forward' | 'up'): Promise<void> {
+  const path =
+    action === 'back'
+      ? navigationHistory.backPath
+      : action === 'forward'
+        ? navigationHistory.forwardPath
+        : parentPath;
+  if (!path) return;
+  await openFile(path, null, beginFileOpen(currentSessionId), action === 'up' ? 'push' : action);
 }
 
 async function checkFilePath(load: FileViewLoad): Promise<FilePathInfo | null> {
@@ -506,9 +596,9 @@ function renderDirectoryListing(
   const html = `
     <div class="file-list">
       ${
-        navigationHistory.length > 0
+        parentPath
           ? `
-        <div class="file-list-item file-list-parent" data-action="back">
+        <div class="file-list-item file-list-parent" data-action="up">
           <span class="file-icon">📁</span>
           <span class="file-name">..</span>
         </div>
@@ -540,22 +630,28 @@ function renderDirectoryListing(
   container.querySelectorAll('.file-list-item').forEach((item) => {
     item.addEventListener('click', () => {
       const action = item.getAttribute('data-action');
-      if (action === 'back') {
-        const prevPath = navigationHistory.pop();
-        if (prevPath) void openFile(prevPath);
+      if (action === 'up') {
+        void navigateHistory('up');
         return;
       }
 
       const itemPath = item.getAttribute('data-path');
-      const isDir = item.getAttribute('data-is-dir') === 'true';
       if (itemPath) {
-        if (isDir && currentPath) {
-          navigationHistory.push(currentPath);
-        }
-        void openFile(itemPath);
+        container.querySelector('.file-list-item.selected')?.classList.remove('selected');
+        item.classList.add('selected');
+        void openFile(itemPath, null, beginFileOpen(currentSessionId));
       }
     });
   });
+  const visit = navigationHistory.current;
+  if (visit?.path === basePath) {
+    container.querySelectorAll('.file-list-item').forEach((item) => {
+      if (item.getAttribute('data-path') === visit.selectedPath) item.classList.add('selected');
+    });
+    requestAnimationFrame(() => {
+      if (currentPath === basePath) (container as HTMLElement).scrollTop = visit.scrollTop;
+    });
+  }
 }
 
 function buildViewUrl(

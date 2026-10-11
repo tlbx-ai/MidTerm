@@ -247,7 +247,7 @@ Speicherzielprüfung, Schließen und Andocken während Laden:
 Transport, der Abort ignoriert, bestätigt alte Erfolgs- und Fehlerantworten.
 Typecheck, fokussiertes ESLint und 14 relevante Unit-/Navigationstests bestehen.
 
-### 15. [ ] Durchgängigen Rückweg und echte Ordnerhierarchie anbieten
+### 15. [x] Durchgängigen Rückweg und echte Ordnerhierarchie anbieten
 
 **Befund (mittel, reproduziert):** .. erscheint nur nach Navigation im Modal,
 nicht beim direkten Öffnen von agent. Dateiöffnung entfernt Liste ohne Rückweg.
@@ -257,6 +257,21 @@ Roots. Rückweg vom Dokument zum Ordner bewahrt Auswahl und Scrollposition.
 
 **Abnahme:** Direkter Unterordner, Ordner→Datei→Back, mehrere Ebenen, gelöschte
 Historienziele und unerlaubte Parentpfade; keine Verwechslung History/Parent.
+
+**Nachweis 11.10.2026:** Getrennte Back/Forward/Up-Aktionen und Browser-Back
+verwenden einen echten Verlauf. `..` verwendet den serverseitig ermittelten,
+autorisierten Elternordner. Rückkehr aus Dokumenten stellt Ordnerauswahl und
+Scrollposition wieder her; Save/Discard/Cancel bleibt vor jeder Navigation wirksam.
+Ein gelöschtes Verlaufsziel zeigt einen Fehler, ohne den sicheren Rückweg zu verlieren.
+Die neue Hierarchie-API prüft logische und physisch aufgelöste Pfade; eine isolierte
+Dateifreigabe erlaubt keinen Elternordner. Die vorhandene Allowlist und Rootprüfung
+verwenden auf Unix nun case-sensitive Vergleiche, sodass ein anders geschriebener
+Nachbarpfad keine Rootfreigabe erbt. 19 Backendtests und 25 fokussierte Frontendtests
+bestehen unter Windows. Neun neue reale Browserfälle und 37 Editregressionen bestehen.
+Nachweise: `.dev/file-git-production/task-15-final/summary.json`, visuell geprüfter
+Screenshot `restored-directory.png`, `task-15-edit-regression/summary.json`,
+`task-15-unit/navigation-and-access.trx`. Der Unix-Testzweig benötigt noch echte
+Unix-Ausführung in der integrierten Plattformabnahme. Ordner im Dock folgt separat in 16.
 
 ### 16. [ ] Ordner-Andocken tatsächlich unterstützen
 
@@ -295,6 +310,8 @@ Umschalter und Filteranzeige korrekt, keine heimlich fehlenden Dateien.
 
 **Befund (mittel, Code):** treeData cached Unterordner dauerhaft; Reopen lädt
 nicht erneut. Rootgleichheit behält Cache, Files hat keinen Refreshbutton.
+Zusatzbefund aus 15: Der globale Datei-Metadatencache verwendet auch auf Unix
+case-insensitive Keys; bei dort verschiedenen Dateinamen darf er keine Einträge vermischen.
 
 **Aufgabe:** Aktuelle Dateiänderungen und manuellen Refresh unterstützen;
 Auswahl/Expansion/Fokus/Scroll bei inhaltlichen Aktualisierungen bewahren.

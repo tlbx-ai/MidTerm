@@ -178,7 +178,7 @@ try {
   assert.deepEqual(result.errors, []);
   result.ok = true;
 } catch (error) {
-  result.failure = String(error.stack || error);
+  result.failure = String(error.stack || error).replaceAll(cookie, '<redacted-session-cookie>');
   if (page) {
     await page.screenshot({ path: path.join(out, 'failure.png') }).catch(() => {});
     result.pageText = (await page.locator('body').innerText().catch(() => '')).slice(-4000);
@@ -187,7 +187,7 @@ try {
 } finally {
   if (context && session) {
     try { await api('DELETE', '/api/sessions/' + session); }
-    catch (error) { result.cleanupFailure = String(error); result.ok = false; process.exitCode = 1; }
+    catch (error) { result.cleanupFailure = String(error).replaceAll(cookie, '<redacted-session-cookie>'); result.ok = false; process.exitCode = 1; }
   }
   await context?.close();
   await browser?.close();

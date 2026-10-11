@@ -10,6 +10,10 @@ namespace Ai.Tlbx.MidTerm.Services;
 public sealed class SessionPathAllowlistService
 {
     private const int MaxPathsPerSession = 1000;
+    private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+    private static readonly StringComparison PathComparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     private readonly ConcurrentDictionary<string, OrderedAllowlist> _allowlists = new(StringComparer.Ordinal);
 
@@ -104,13 +108,13 @@ public sealed class SessionPathAllowlistService
     private static bool IsUnderDirectory(string path, string directory)
     {
         var normalizedDir = directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return path.StartsWith(normalizedDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-            || path.Equals(normalizedDir, StringComparison.OrdinalIgnoreCase);
+        return path.StartsWith(normalizedDir + Path.DirectorySeparatorChar, PathComparison)
+            || path.Equals(normalizedDir, PathComparison);
     }
 
     private sealed class OrderedAllowlist
     {
         public List<string> Order { get; } = new();
-        public HashSet<string> Set { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> Set { get; } = new(PathComparer);
     }
 }

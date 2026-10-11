@@ -30,6 +30,11 @@ public static class FileEndpointDefinitions
             handler.ListDirectory(path, sessionId))
             .Produces<DirectoryListResponse>(StatusCodes.Status200OK, "application/json");
 
+        app.MapGet("/api/files/navigation", async (string path, IFileHandler handler, string? sessionId) =>
+            await handler.GetNavigationAsync(path, sessionId))
+            .Produces<FileNavigationResponse>(StatusCodes.Status200OK, "application/json")
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status403Forbidden);
+
         app.MapGet("/api/files/view", (string path, IFileHandler handler, string? sessionId) =>
             handler.ViewFile(path, sessionId))
             .Produces(StatusCodes.Status200OK);

@@ -40,6 +40,14 @@ public sealed class DirectoryListResponse
     public DirectoryEntry[] Entries { get; set; } = [];
 }
 
+public sealed class FileNavigationResponse
+{
+    public string Path { get; set; } = string.Empty;
+    public string? ParentPath { get; set; }
+    public bool Exists { get; set; }
+    public bool IsDirectory { get; set; }
+}
+
 /// <summary>
 /// A single entry in a directory listing.
 /// </summary>

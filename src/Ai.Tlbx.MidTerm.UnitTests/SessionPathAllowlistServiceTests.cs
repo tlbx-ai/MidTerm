@@ -86,4 +86,16 @@ public class SessionPathAllowlistServiceTests
 
         Assert.False(_service.IsPathAllowed("session_b", Path.Combine(Path.GetTempPath(), "a_file.txt"), null));
     }
+
+    [Fact]
+    public void PathPermissionsUseThePlatformCaseRule()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "CaseSensitiveRoot");
+        var alternate = Path.Combine(Path.GetTempPath(), "casesensitiveroot");
+        _service.RegisterPath("owner", root);
+        Assert.Equal(OperatingSystem.IsWindows(), _service.IsPathAllowed("owner", alternate, null));
+        Assert.Equal(OperatingSystem.IsWindows(), _service.IsPathAllowed("owner", Path.Combine(alternate, "file.txt"), null));
+        Assert.Equal(OperatingSystem.IsWindows(), _service.IsPathAllowed("owner", alternate, root));
+        Assert.Equal(OperatingSystem.IsWindows(), FileService.IsWithinDirectory(Path.Combine(alternate, "file.txt"), root));
+    }
 }
