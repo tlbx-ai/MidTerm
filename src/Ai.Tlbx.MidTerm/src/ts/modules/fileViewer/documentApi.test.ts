@@ -79,4 +79,32 @@ describe('file document API', () => {
       readFileDocument('Q:\\notes.md', 'owner', true, new AbortController().signal),
     ).rejects.toMatchObject({ status: 502 });
   });
+
+  it('marks a disconnected save as unknown rather than successful', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('connection interrupted')));
+    await expect(writeFileDocument('Q:\\notes.md', 'owner', 'draft', 'old')).rejects.toMatchObject({
+      code: 'network_error',
+      outcomeUnknown: true,
+    });
+  });
+
+  it.each([
+    [403, 'access_denied'],
+    [423, 'busy'],
+    [507, 'disk_full'],
+  ] as const)('classifies non-JSON HTTP %s safely', async (status, code) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('upstream failure', { status })));
+    await expect(writeFileDocument('Q:\\notes.md', 'owner', 'draft', 'old')).rejects.toMatchObject({
+      code,
+      outcomeUnknown: false,
+    });
+  });
+
+  it('does not assume success after a truncated JSON acknowledgement', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"success":', { status: 200 })));
+    await expect(writeFileDocument('Q:\\notes.md', 'owner', 'draft', 'old')).rejects.toMatchObject({
+      code: 'invalid_response',
+      outcomeUnknown: true,
+    });
+  });
 });

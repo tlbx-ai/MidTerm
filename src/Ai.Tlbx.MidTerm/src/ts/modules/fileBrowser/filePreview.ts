@@ -351,23 +351,16 @@ function renderTextContent(
 
   const updateDirtyState = (dirty: boolean): void => {
     saveBtn.disabled = !dirty || edit.saving;
+    saveBtn.textContent = t(edit.saving ? 'modal.saving' : 'fileViewer.save');
   };
 
   const saveCurrentText = async (): Promise<void> => {
-    if (!edit.dirty) return;
-
-    const previousLabel = saveBtn.textContent;
-    saveBtn.disabled = true;
-    saveBtn.textContent = t('modal.saving');
+    if (!edit.dirty || edit.saving) return;
 
     try {
       await edit.save();
-      updateDirtyState(edit.dirty);
-      saveBtn.textContent = previousLabel;
     } catch (e) {
       log.error(() => `Save failed for ${entry.fullPath}: ${String(e)}`);
-      saveBtn.textContent = previousLabel;
-      saveBtn.disabled = false;
     }
   };
 

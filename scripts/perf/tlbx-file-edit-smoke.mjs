@@ -21,6 +21,7 @@ const longText = Array.from({ length: 300 }, (_, i) => `line ${i + 1} ${'abcdefg
 fs.writeFileSync(path.join(fixtures, 'C.md'), longText);
 for (const name of ['D.md', 'E.md', 'F.md', 'G.md', 'H.md']) fs.writeFileSync(path.join(fixtures, name), '# ' + name + '\n');
 for (const name of ['M.md', 'N.md', 'P.md']) fs.writeFileSync(path.join(fixtures, name), '# base ' + name + '\n');
+fs.writeFileSync(path.join(fixtures, 'S.md'), '# base statuses\n');
 fs.writeFileSync(path.join(fixtures, 'J.bin'), Buffer.from([0, 1, 0, 255, 0, 17]));
 const result = { ok: false, fixtures, cases: [], errors: [], failedRequests: [] };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -425,6 +426,72 @@ try {
   assert.equal(blind.status(), 400);
   assert.notEqual(fs.readFileSync(parallelPath, 'utf8'), '# blind\n');
   result.cases.push('A request missing the required version is rejected before filesystem mutation');
+
+  await choose('S.md');
+  await editor.fill('# status draft\n');
+  const status = page.locator('.file-browser-preview .file-save-status');
+  const save = page.locator('.preview-save-btn');
+  for (const [http, code, message] of [[403, 'access_denied', 'permission'], [423, 'busy', 'Another process'], [507, 'disk_full', 'free space']]) {
+    await page.route('**/api/files/save**', route => route.fulfill({ status: http, contentType: 'application/json', body: JSON.stringify({ code }) }));
+    await save.click();
+    await page.waitForFunction(code => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileErrorCode === code, code);
+    assert.match(await status.innerText(), new RegExp(message, 'i'));
+    assert.equal(await editor.inputValue(), '# status draft\n');
+    assert.equal(fs.readFileSync(path.join(fixtures, 'S.md'), 'utf8'), '# base statuses\n');
+    await page.unroute('**/api/files/save**');
+  }
+  result.cases.push('Permission, busy and disk-full errors identify the cause and retain the draft');
+  const download = page.waitForEvent('download');
+  await status.locator('[data-file-conflict-action="download-draft"]').click();
+  const draftDownload = await download;
+  await draftDownload.saveAs(path.join(out, 'downloaded-draft.md'));
+  assert.equal(fs.readFileSync(path.join(out, 'downloaded-draft.md'), 'utf8'), '# status draft\n');
+  result.cases.push('Error recovery exports the actual unsaved draft without a server write');
+
+  let writes = 0;
+  await page.route('**/api/files/save**', async route => { writes++; await sleep(700); await route.continue(); });
+  await save.click();
+  await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'saving');
+  assert.equal(await save.isDisabled(), true);
+  await editor.press('Control+s');
+  await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'saved');
+  assert.equal(writes, 1);
+  assert.equal(await save.innerText(), 'Save');
+  assert.equal(fs.readFileSync(path.join(fixtures, 'S.md'), 'utf8'), '# status draft\n');
+  await page.unroute('**/api/files/save**');
+  result.cases.push('A delayed save shows Saving and suppresses a concurrent keyboard submit');
+
+  await editor.fill('# snapshot while saving\n');
+  await page.route('**/api/files/save**', async route => { await sleep(700); await route.continue(); });
+  await save.click();
+  await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'saving');
+  await editor.fill('# newer unsaved keystrokes\n');
+  await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'unsaved');
+  assert.equal(fs.readFileSync(path.join(fixtures, 'S.md'), 'utf8'), '# snapshot while saving\n');
+  assert.equal(await editor.inputValue(), '# newer unsaved keystrokes\n');
+  assert.equal(await save.isDisabled(), false);
+  await page.unroute('**/api/files/save**');
+  await save.click();
+  await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'saved');
+  result.cases.push('Keystrokes arriving during Save remain Unsaved until their own confirmed write');
+
+  await editor.fill('# committed before lost acknowledgement\n');
+  await page.route('**/api/files/save**', async route => {
+    const committed = await route.fetch();
+    assert.equal(committed.ok(), true);
+    await route.abort('failed');
+  });
+  await save.click();
+  await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'unknown');
+  assert.equal(await save.innerText(), 'Save');
+  assert.equal(fs.readFileSync(path.join(fixtures, 'S.md'), 'utf8'), '# committed before lost acknowledgement\n');
+  assert.equal(await editor.inputValue(), '# committed before lost acknowledgement\n');
+  await page.screenshot({ path: path.join(out, 'save-outcome-unknown.png') });
+  await page.unroute('**/api/files/save**');
+  await status.locator('[data-file-conflict-action="retry"]').click();
+  await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'saved');
+  assert.equal(fs.readFileSync(path.join(fixtures, 'S.md'), 'utf8'), '# committed before lost acknowledgement\n');
+  result.cases.push('A lost acknowledgement remains Unknown until an idempotent retry confirms the disk contents');
 
   assert.deepEqual(result.errors, []);
   result.ok = true;

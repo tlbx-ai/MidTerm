@@ -370,7 +370,7 @@ Flows bestehen. Nachweise: `.dev/file-git-production/task-25-unit/task-25-final.
 generierte TS-Typen sind synchron. Linux/macOS-Dateisystemannahmen bleiben
 Teil der Plattform-/Releaseabnahme; der aktuelle Lauf ist Windows-Evidenz.
 
-### 26. [~] Speichern mit sichtbaren Erfolgs-/Fehlerzuständen versehen
+### 26. [x] Speichern mit sichtbaren Erfolgs-/Fehlerzuständen versehen
 
 **Befund (mittel, Code):** Fehler werden geloggt bzw. Save wieder aktiviert;
 keine brauchbare Anzeige für Permission/Netzwerkfehler oder unsicheren Speicherstand.
@@ -381,7 +381,19 @@ Doppelrequests verhindern, keine falsche Erfolgsmeldung.
 **Abnahme:** HTTP403/409/500, Offline, verspätete Antwort und Retry; nur tatsächlicher
 Disk-Erfolg bestätigt Speicherung, Fehler blockieren verlustbringende Navigation.
 
-### 27. [ ] Große Textdateien überall konsistent und sicher behandeln
+**Nachweis 11.10.2026:** Ready/Unsaved/Saving/Saved/Error/Unknown werden aus
+dem Dokumentzustand angezeigt. Rechte-, belegte/gelöschte Datei-, Speicherplatz-
+und Verbindungsfehler haben konkrete lokalisierte Meldungen. Retry und Download
+des tatsächlichen Entwurfs stehen bei Fehlern bereit. Ein verlorener Response
+nach echtem Disk-Commit bleibt Unknown; erst bestätigter idempotenter Retry
+setzt Saved. Während Save verhindern Busy-Zustand und gemeinsame Pending-Promise
+Doppelwrites; spätere Keystrokes bleiben Unsaved. Toolbar-Beschriftung stammt
+ebenfalls aus diesem Zustand, kein veraltetes Saving-Label. 37 echte Chromium-
+Flows bestehen einschließlich Exportdatei-/Diskprüfung und Lost-Ack-Simulation;
+18 fokussierte Tests, Typecheck und ESLint bestehen. Nachweise:
+`.dev/file-git-production/task-26-final/summary.json`, `save-outcome-unknown.png`.
+
+### 27. [~] Große Textdateien überall konsistent und sicher behandeln
 
 **Befund (mittel, Code):** Modal begrenzt initial auf 500 KiB, Files lädt alles.
 Modal-Ausschnitt ist editierbar, obwohl vollständiges Laden fürs Save nötig ist.

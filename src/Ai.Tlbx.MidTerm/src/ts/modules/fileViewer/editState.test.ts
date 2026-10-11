@@ -46,4 +46,21 @@ describe('FileEditState', () => {
     await edit.save();
     expect(write).toHaveBeenCalledOnce();
   });
+
+  it('retains a failed draft until an acknowledged retry actually completes', async () => {
+    const write = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('unknown save outcome'))
+      .mockResolvedValueOnce(undefined);
+    const edit = new FileEditState('notes.md', 'base', write);
+    edit.content = 'draft';
+    await expect(edit.save()).rejects.toThrow('unknown save outcome');
+    expect(edit.saved).toBe(false);
+    expect(edit.dirty).toBe(true);
+    expect(edit.lastError?.message).toBe('unknown save outcome');
+    expect(await edit.save()).toBe(true);
+    expect(edit.dirty).toBe(false);
+    expect(edit.lastError).toBeNull();
+    expect(edit.saved).toBe(true);
+  });
 });

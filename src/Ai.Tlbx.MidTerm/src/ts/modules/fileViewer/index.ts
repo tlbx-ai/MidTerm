@@ -837,6 +837,13 @@ async function saveFile(): Promise<void> {
 
 function updateSaveButtonVisibility(dirty: boolean): void {
   const modalSaveBtn = modal?.querySelector<HTMLElement>('#file-viewer-save');
+  const busy = currentEdit?.saving ?? false;
+  for (const button of document.querySelectorAll<HTMLButtonElement>(
+    '#file-viewer-save, #dock-save',
+  )) {
+    button.disabled = busy;
+    button.setAttribute('aria-busy', String(busy));
+  }
   if (modalSaveBtn) {
     modalSaveBtn.style.display = dirty ? '' : 'none';
   }

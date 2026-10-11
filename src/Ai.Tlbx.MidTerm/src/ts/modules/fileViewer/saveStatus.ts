@@ -22,8 +22,12 @@ export function createFileSaveStatus(edit: FileEditState, actions: FileSaveActio
   buttons.className = 'file-save-status-actions';
   const reload = actionButton('fileViewer.reloadDisk', 'reload');
   const compare = actionButton('fileViewer.compare', 'compare');
+  const retry = actionButton('fileViewer.retrySave', 'retry');
+  const exportDraft = actionButton('fileViewer.downloadDraft', 'download-draft');
   buttons.appendChild(reload);
   buttons.appendChild(compare);
+  buttons.appendChild(retry);
+  buttons.appendChild(exportDraft);
   root.appendChild(buttons);
   const render = (): void => {
     const conflict =
@@ -40,24 +44,30 @@ export function createFileSaveStatus(edit: FileEditState, actions: FileSaveActio
               : 'fileViewer.ready',
         ));
     if (label.textContent !== message) label.textContent = message;
-    buttons.hidden = !conflict;
+    buttons.hidden = !edit.lastError;
+    reload.hidden = !conflict;
+    compare.hidden = !conflict;
+    retry.hidden = conflict;
+    exportDraft.hidden = !edit.dirty;
     reload.disabled = edit.saving;
     compare.disabled = edit.saving;
+    retry.disabled = edit.saving || !edit.dirty;
+    exportDraft.disabled = edit.saving;
     const name = `file-save-status${edit.lastError ? ' file-save-status-error' : ''}`;
     if (root.className !== name) root.className = name;
-    root.dataset.fileSaveState = edit.saving
-      ? 'saving'
-      : edit.lastError
-        ? 'error'
-        : edit.dirty
-          ? 'unsaved'
-          : edit.saved
-            ? 'saved'
-            : 'ready';
+    root.dataset.fileSaveState = saveState(edit);
     root.setAttribute('aria-busy', String(edit.saving));
+    root.dataset.fileErrorCode =
+      edit.lastError instanceof FileDocumentError ? edit.lastError.code : '';
   };
   edit.subscribe(render);
   render();
+  retry.addEventListener('click', () => {
+    void edit.save().catch(() => {});
+  });
+  exportDraft.addEventListener('click', () => {
+    downloadDraft(edit);
+  });
   reload.addEventListener('click', () => {
     void reloadFromDisk(edit, actions).catch((error: unknown) =>
       showAlert(error instanceof Error ? error.message : t('fileViewer.saveFailed')),
@@ -69,6 +79,29 @@ export function createFileSaveStatus(edit: FileEditState, actions: FileSaveActio
     );
   });
   return root;
+}
+
+function saveState(edit: FileEditState): string {
+  if (edit.saving) return 'saving';
+  if (edit.lastError)
+    return edit.lastError instanceof FileDocumentError && edit.lastError.outcomeUnknown
+      ? 'unknown'
+      : 'error';
+  if (edit.dirty) return 'unsaved';
+  return edit.saved ? 'saved' : 'ready';
+}
+
+function downloadDraft(edit: FileEditState): void {
+  const url = URL.createObjectURL(new Blob([edit.content], { type: 'text/plain;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = edit.path.split(/[\\/]/).pop() ?? 'draft.txt';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 1000);
 }
 
 function actionButton(key: string, action: string): HTMLButtonElement {

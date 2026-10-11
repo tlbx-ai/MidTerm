@@ -5,6 +5,30 @@ export type FileDocument = Schemas['FileDocumentResponse'];
 type FileDocumentErrorBody = Partial<Schemas['FileDocumentErrorResponse']>;
 type FileSaveResult = Schemas['FileSaveResponse'];
 
+const ERROR_KEYS: Record<string, string> = {
+  changed: 'fileViewer.conflict',
+  changed_during_save: 'fileViewer.conflict',
+  access_denied: 'fileViewer.errorPermission',
+  unauthenticated: 'fileViewer.errorLogin',
+  deleted: 'fileViewer.errorDeleted',
+  session_closed: 'fileViewer.errorSession',
+  busy: 'fileViewer.errorBusy',
+  disk_full: 'fileViewer.errorDiskFull',
+  version_required: 'fileViewer.errorVersion',
+  too_large: 'fileViewer.errorTooLarge',
+  unsupported_encoding: 'fileViewer.errorEncoding',
+  network_error: 'fileViewer.errorUnknownSave',
+  invalid_response: 'fileViewer.errorUnknownSave',
+  io_error: 'fileViewer.errorWrite',
+  save_failed: 'fileViewer.errorWrite',
+};
+
+function errorKey(code: string): string {
+  return Object.prototype.hasOwnProperty.call(ERROR_KEYS, code)
+    ? (ERROR_KEYS[code] ?? 'fileViewer.errorWrite')
+    : 'fileViewer.errorWrite';
+}
+
 export class FileDocumentError extends Error {
   public constructor(
     public readonly status: number,
@@ -12,13 +36,11 @@ export class FileDocumentError extends Error {
     public readonly currentVersion: string | null = null,
     public readonly recoveryPath: string | null = null,
   ) {
-    super(
-      t(
-        code === 'changed' || code === 'changed_during_save'
-          ? 'fileViewer.conflict'
-          : 'fileViewer.saveFailed',
-      ) + ` (${status})`,
-    );
+    super(t(errorKey(code)));
+  }
+
+  public get outcomeUnknown(): boolean {
+    return this.code === 'network_error' || this.code === 'invalid_response';
   }
 }
 
@@ -30,12 +52,22 @@ function query(path: string, sessionId: string | null): URLSearchParams {
 
 async function checked(response: Response): Promise<void> {
   if (response.ok) return;
-  const body = (await response.json().catch(() => ({}))) as FileDocumentErrorBody;
+  const payload: unknown = await response.json().catch(() => null);
+  const body =
+    typeof payload === 'object' && payload !== null ? (payload as FileDocumentErrorBody) : {};
+  const statusCodes: Record<number, string> = {
+    401: 'unauthenticated',
+    403: 'access_denied',
+    404: 'deleted',
+    413: 'too_large',
+    423: 'busy',
+    507: 'disk_full',
+  };
   throw new FileDocumentError(
     response.status,
-    body.code ?? 'request_failed',
-    body.currentVersion ?? null,
-    body.recoveryPath ?? null,
+    typeof body.code === 'string' ? body.code : (statusCodes[response.status] ?? 'request_failed'),
+    typeof body.currentVersion === 'string' ? body.currentVersion : null,
+    typeof body.recoveryPath === 'string' ? body.recoveryPath : null,
   );
 }
 
@@ -74,9 +106,13 @@ export async function writeFileDocument(
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, content, expectedVersion: version }),
+  }).catch(() => {
+    throw new FileDocumentError(0, 'network_error');
   });
   await checked(response);
-  const saved = (await response.json()) as Record<string, unknown>;
+  const payload: unknown = await response.json().catch(() => null);
+  const saved =
+    typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
   if (
     saved.success !== true ||
     typeof saved.version !== 'string' ||
