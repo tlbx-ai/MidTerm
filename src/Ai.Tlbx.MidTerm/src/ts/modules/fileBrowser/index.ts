@@ -11,11 +11,13 @@ import { addProcessStateListener } from '../process';
 import { createTreeView, setTreeRoot, destroyTreeView } from './treeView';
 import { renderPreview, clearPreview } from './filePreview';
 import { $processStates } from '../../stores';
+import { confirmFileNavigation, releaseFileEdits } from '../fileViewer/editState';
 
 const log = createLogger('fileBrowser');
 
 const initializedSessions = new Set<string>();
 const sessionCwds = new Map<string, string>();
+const previewContainers = new Map<string, HTMLElement>();
 
 export function initFileBrowser(): void {
   onTabActivated('files', (sessionId, panel) => {
@@ -48,9 +50,12 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
 
   if (!initializedSessions.has(sessionId)) {
     initializedSessions.add(sessionId);
+    previewContainers.set(sessionId, previewContainer);
 
-    createTreeView(treeContainer, sessionId, (entry) => {
+    createTreeView(treeContainer, sessionId, async (entry) => {
+      if (!(await confirmFileNavigation(previewContainer))) return false;
       renderPreview(previewContainer, entry, sessionId);
+      return true;
     });
 
     clearPreview(previewContainer);
@@ -64,6 +69,9 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
 }
 
 export function destroyFileBrowser(sessionId: string): void {
+  const preview = previewContainers.get(sessionId);
+  if (preview) releaseFileEdits(preview);
+  previewContainers.delete(sessionId);
   destroyTreeView(sessionId);
   initializedSessions.delete(sessionId);
   sessionCwds.delete(sessionId);

@@ -88,6 +88,7 @@ import { t } from './modules/i18n';
 import { closeOperatorView } from './modules/operator';
 import { closeActionGraphsView } from './modules/actionGraphs';
 import { repairTerminalDisplay } from './modules/terminal/displayRepair';
+import { hasDirtySessionFiles, confirmSessionFileNavigation } from './modules/fileViewer/editState';
 
 const log = createLogger('main');
 
@@ -291,6 +292,13 @@ export function createSessionActionHandlers({
   }
 
   function selectSession(sessionId: string, options?: SessionSelectionOptions): void {
+    const previous = $activeSessionId.get();
+    if (previous && previous !== sessionId && hasDirtySessionFiles(previous)) {
+      void confirmSessionFileNavigation(previous).then((accepted) => {
+        if (accepted && $activeSessionId.get() === previous) selectSession(sessionId, options);
+      });
+      return;
+    }
     closeOverlayViews();
     closeMobileActionsMenu();
     if (options?.closeSettingsPanel !== false) {
@@ -314,6 +322,12 @@ export function createSessionActionHandlers({
   const closingSessions = new Set<string>();
 
   function deleteSession(sessionId: string): void {
+    if (hasDirtySessionFiles(sessionId)) {
+      void confirmSessionFileNavigation(sessionId).then((accepted) => {
+        if (accepted) deleteSession(sessionId);
+      });
+      return;
+    }
     if (isHubSessionId(sessionId)) {
       const record = getHubSessionRecord(sessionId);
       destroySessionWrapper(sessionId);

@@ -16,7 +16,7 @@ interface TreeState {
   selectedPath: string | null;
   treeData: Map<string, FileTreeEntry[]>;
   container: HTMLElement;
-  onFileSelect: (entry: FileTreeEntry) => void;
+  onFileSelect: (entry: FileTreeEntry) => boolean | Promise<boolean>;
 }
 
 const treeStates = new Map<string, TreeState>();
@@ -24,7 +24,7 @@ const treeStates = new Map<string, TreeState>();
 export function createTreeView(
   container: HTMLElement,
   sessionId: string,
-  onFileSelect: (entry: FileTreeEntry) => void,
+  onFileSelect: TreeState['onFileSelect'],
 ): void {
   const state: TreeState = {
     rootPath: '',
@@ -130,12 +130,7 @@ function createTreeNode(state: TreeState, entry: FileTreeEntry, depth: number): 
     if (entry.isDirectory) {
       void toggleExpand(state, entry);
     } else {
-      state.selectedPath = entry.fullPath;
-      state.container.querySelectorAll('.tree-node.selected').forEach((n) => {
-        n.classList.remove('selected');
-      });
-      node.classList.add('selected');
-      state.onFileSelect(entry);
+      void selectFile(state, entry, node);
     }
   });
 
@@ -153,6 +148,20 @@ function createTreeNode(state: TreeState, entry: FileTreeEntry, depth: number): 
   }
 
   return wrapper;
+}
+
+async function selectFile(
+  state: TreeState,
+  entry: FileTreeEntry,
+  node: HTMLElement,
+): Promise<void> {
+  const accepted = await state.onFileSelect(entry);
+  if (!accepted) return;
+  state.selectedPath = entry.fullPath;
+  state.container.querySelectorAll('.tree-node.selected').forEach((selected) => {
+    selected.classList.remove('selected');
+  });
+  node.classList.add('selected');
 }
 
 async function toggleExpand(state: TreeState, entry: FileTreeEntry): Promise<void> {

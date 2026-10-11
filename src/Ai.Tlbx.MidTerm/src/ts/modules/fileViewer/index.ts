@@ -40,6 +40,12 @@ import {
   resolveFilePreviewKind,
 } from './shared';
 import { createImageView } from './imageView';
+import {
+  FileEditState,
+  confirmFileNavigation,
+  releaseFileEdits,
+  trackFileEdits,
+} from './editState';
 
 const log = createLogger('fileViewer');
 
@@ -57,6 +63,8 @@ let currentContent = '';
 let currentContentIsPartial = false;
 let currentFileInfo: FilePathInfo | null = null;
 let releaseBackButtonLayer: (() => void) | null = null;
+let currentEdit: FileEditState | null = null;
+let currentEditOwner: HTMLElement | null = null;
 
 export function initFileViewer(): void {
   modal = document.getElementById('file-viewer-modal');
@@ -70,8 +78,8 @@ export function initFileViewer(): void {
   const maximizeBtn = modal.querySelector('#file-viewer-maximize');
   const dockBtn = modal.querySelector('#file-viewer-dock-btn');
 
-  backdrop?.addEventListener('click', closeViewer);
-  closeBtn?.addEventListener('click', closeViewer);
+  backdrop?.addEventListener('click', () => void requestCloseViewer());
+  closeBtn?.addEventListener('click', () => void requestCloseViewer());
   maximizeBtn?.addEventListener('click', toggleFullscreen);
   dockBtn?.addEventListener('click', dockViewer);
 
@@ -80,7 +88,11 @@ export function initFileViewer(): void {
   // Dock panel buttons
   const dockPanel = document.getElementById('file-viewer-dock');
   if (dockPanel) {
-    dockPanel.querySelector('#dock-close')?.addEventListener('click', closeFileViewerDock);
+    dockPanel.querySelector('#dock-close')?.addEventListener('click', () => {
+      void confirmCurrentFileNavigation().then((accepted) => {
+        if (accepted) closeFileViewerDock();
+      });
+    });
     dockPanel.querySelector('#dock-undock')?.addEventListener('click', undockViewer);
     dockPanel.querySelector('#dock-refresh')?.addEventListener('click', () => {
       void refreshDock();
@@ -102,7 +114,7 @@ export function initFileViewer(): void {
       if (document.fullscreenElement) {
         void document.exitFullscreen();
       } else {
-        closeViewer();
+        void requestCloseViewer();
       }
     }
 
@@ -120,6 +132,9 @@ export function initFileViewer(): void {
 }
 
 function resetEditState(): void {
+  if (currentEditOwner) releaseFileEdits(currentEditOwner);
+  currentEditOwner = null;
+  currentEdit = null;
   isDirty = false;
   isFullContentLoaded = true;
   currentContent = '';
@@ -127,6 +142,14 @@ function resetEditState(): void {
   currentFileInfo = null;
   updateSaveButtonVisibility(false);
   updateFileActionButtons(null);
+}
+
+function confirmCurrentFileNavigation(): Promise<boolean> {
+  return currentEditOwner ? confirmFileNavigation(currentEditOwner) : Promise.resolve(true);
+}
+
+async function requestCloseViewer(): Promise<void> {
+  if (await confirmCurrentFileNavigation()) closeViewer();
 }
 
 function toggleFullscreen(): void {
@@ -286,23 +309,23 @@ export async function openFile(path: string, info?: FilePathInfo | null): Promis
     return;
   }
 
+  if (!(await confirmCurrentFileNavigation())) return;
+
   if (!releaseBackButtonLayer) {
-    releaseBackButtonLayer = registerBackButtonLayer(closeViewer);
+    releaseBackButtonLayer = registerBackButtonLayer(() => {
+      void requestCloseViewer();
+    });
   }
 
   currentPath = path;
   currentSessionId = $activeSessionId.get() ?? null;
   modal.classList.remove('hidden');
 
-  const titleEl = modal.querySelector('.file-viewer-title');
-  const pathEl = modal.querySelector('.file-viewer-path');
   const bodyEl = modal.querySelector('.file-viewer-body');
   const downloadBtn = modal.querySelector<HTMLElement>('#file-viewer-download');
   const copyBtn = modal.querySelector<HTMLElement>('#file-viewer-copy');
 
-  if (titleEl || pathEl) {
-    updateModalHeader(path);
-  }
+  updateModalHeader(path);
   if (bodyEl)
     bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
 
@@ -571,13 +594,39 @@ async function renderTextFile(path: string, info: FilePathInfo, container: Eleme
     currentContent = text;
     isDirty = false;
 
+    if (!(container instanceof HTMLElement)) return;
+    const sessionId = currentSessionId;
+    currentEdit = new FileEditState(path, text, async (content) => {
+      if (!isFullContentLoaded) throw new Error(t('fileViewer.loadBeforeSaving'));
+      const saveUrl = sessionId
+        ? `/api/files/save?sessionId=${encodeURIComponent(sessionId)}`
+        : '/api/files/save';
+      const response = await fetch(saveUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, content }),
+      });
+      if (!response.ok) throw new Error(`${t('fileViewer.saveFailed')} (${response.status})`);
+    });
+    const edit = currentEdit;
+    currentEditOwner = container;
+    trackFileEdits(container, edit, sessionId ?? '');
+
     const stack = createCodeStack();
     const editor = createLineNumberedEditor(text);
     const textarea = editor.textarea;
+    edit.subscribe(() => {
+      if (currentEdit !== edit) return;
+      if (textarea.value !== edit.content) editor.setText(edit.content);
+      currentContent = edit.content;
+      isDirty = edit.dirty;
+      updateSaveButtonVisibility(isDirty);
+    });
     textarea.addEventListener('input', () => {
-      isDirty = true;
+      edit.content = textarea.value;
+      isDirty = edit.dirty;
       currentContent = textarea.value;
-      updateSaveButtonVisibility(true);
+      updateSaveButtonVisibility(isDirty);
     });
 
     container.innerHTML = '';
@@ -684,25 +733,14 @@ async function renderBinaryContent(
 }
 
 async function saveFile(): Promise<void> {
-  if (!currentPath || !isDirty || !isFullContentLoaded) return;
-
-  const sessionId = currentSessionId ?? $activeSessionId.get();
+  const edit = currentEdit;
+  if (!edit?.dirty || !isFullContentLoaded) return;
   try {
-    const saveUrl = sessionId
-      ? `/api/files/save?sessionId=${encodeURIComponent(sessionId)}`
-      : '/api/files/save';
-    const resp = await fetch(saveUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: currentPath, content: currentContent }),
-    });
-
-    if (resp.ok) {
-      isDirty = false;
-      updateSaveButtonVisibility(false);
-      log.info(() => `File saved: ${currentPath}`);
-    } else {
-      log.error(() => `Save failed: ${resp.status}`);
+    await edit.save();
+    if (currentEdit === edit) {
+      isDirty = edit.dirty;
+      updateSaveButtonVisibility(isDirty);
+      log.info(() => `File saved: ${edit.path}`);
     }
   } catch (e) {
     log.error(() => `Save failed: ${String(e)}`);

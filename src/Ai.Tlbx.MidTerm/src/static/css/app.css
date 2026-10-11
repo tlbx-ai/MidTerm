@@ -10648,6 +10648,15 @@ body.shared-session-mode .session-tab-bar {
   width: 95%;
 }
 
+.file-unsaved-path {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.file-unsaved-error {
+  color: var(--accent-red);
+}
+
 .file-viewer-modal-content .modal-header {
   flex-wrap: wrap;
   gap: 8px;

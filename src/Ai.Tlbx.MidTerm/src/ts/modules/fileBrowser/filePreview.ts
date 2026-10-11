@@ -26,6 +26,7 @@ import {
   resolveFilePreviewKind,
 } from '../fileViewer/shared';
 import { createImageView } from '../fileViewer/imageView';
+import { FileEditState, releaseFileEdits, trackFileEdits } from '../fileViewer/editState';
 
 const log = createLogger('filePreview');
 
@@ -151,6 +152,7 @@ export function renderPreview(
   entry: FileTreeEntry,
   sessionId: string,
 ): void {
+  releaseFileEdits(container);
   container.innerHTML = '';
 
   if (entry.isDirectory) {
@@ -307,12 +309,19 @@ function renderTextContent(
   ext: string,
   startInEditor: boolean,
 ): void {
-  let currentText = originalText;
   let isEditing = startInEditor;
-  let isDirty = false;
+  const edit = new FileEditState(entry.fullPath, originalText, async (content) => {
+    const response = await fetch(buildSaveUrl(sessionId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: entry.fullPath, content }),
+    });
+    if (!response.ok) throw new Error(`${t('fileViewer.saveFailed')} (${response.status})`);
+  });
+  trackFileEdits(container, edit, sessionId);
 
   const { shell, body, actions } = createPreviewShell(entry);
-  appendPreviewFileActions(actions, entry, sessionId, () => currentText);
+  appendPreviewFileActions(actions, entry, sessionId, () => edit.content);
 
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
@@ -328,36 +337,19 @@ function renderTextContent(
   saveBtn.style.display = isEditing ? '' : 'none';
 
   const updateDirtyState = (dirty: boolean): void => {
-    isDirty = dirty;
     saveBtn.disabled = !dirty;
   };
 
   const saveCurrentText = async (): Promise<void> => {
-    if (!isDirty) return;
+    if (!edit.dirty) return;
 
     const previousLabel = saveBtn.textContent;
     saveBtn.disabled = true;
     saveBtn.textContent = t('modal.saving');
 
     try {
-      const resp = await fetch(buildSaveUrl(sessionId), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          path: entry.fullPath,
-          content: currentText,
-        }),
-      });
-
-      if (!resp.ok) {
-        log.error(() => `Save failed for ${entry.fullPath}: ${resp.status}`);
-        saveBtn.textContent = previousLabel;
-        saveBtn.disabled = false;
-        return;
-      }
-
-      originalText = currentText;
-      updateDirtyState(false);
+      await edit.save();
+      updateDirtyState(edit.dirty);
       saveBtn.textContent = previousLabel;
     } catch (e) {
       log.error(() => `Save failed for ${entry.fullPath}: ${String(e)}`);
@@ -368,17 +360,21 @@ function renderTextContent(
 
   const renderReadOnly = (): void => {
     body.innerHTML = '';
-    const viewer = createLineNumberedViewer(currentText, [], highlightCode(currentText, ext));
+    const viewer = createLineNumberedViewer(edit.content, [], highlightCode(edit.content, ext));
     body.appendChild(viewer.root);
   };
 
   const renderEditor = (): void => {
     body.innerHTML = '';
-    const editor = createLineNumberedEditor(currentText, ['preview-textarea']);
+    const editor = createLineNumberedEditor(edit.content, ['preview-textarea']);
     const textarea = editor.textarea;
+    edit.subscribe(() => {
+      if (textarea.value !== edit.content) editor.setText(edit.content);
+      updateDirtyState(edit.dirty);
+    });
     textarea.addEventListener('input', () => {
-      currentText = textarea.value;
-      updateDirtyState(currentText !== originalText);
+      edit.content = textarea.value;
+      updateDirtyState(edit.dirty);
     });
     textarea.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
@@ -419,5 +415,6 @@ function renderTextContent(
 }
 
 export function clearPreview(container: HTMLElement): void {
+  releaseFileEdits(container);
   container.innerHTML = `<div class="preview-empty">${t('fileBrowser.selectFile')}</div>`;
 }

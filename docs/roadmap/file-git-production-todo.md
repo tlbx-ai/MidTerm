@@ -164,7 +164,7 @@ und Entwurferhalt. File-/Medienaktionen müssen dort ebenfalls erreichbar sein.
 **Abnahme:** Mehrere Dateien und Medientypen bei 390/768 px öffnen, bearbeiten,
 zurückkehren und Größe wechseln. Zusätzlich Touch-Emulation prüfen.
 
-### 12. [ ] Ungespeicherte Änderungen beim Dateiwechsel schützen
+### 12. [x] Ungespeicherte Änderungen beim Dateiwechsel schützen
 
 **Befund (hoch, reproduziert):** Marker im Editor, andere Datei auswählen, erste
 erneut öffnen: Marker verloren, keine Rückfrage. Das Experiment schrieb nichts auf Disk.
@@ -174,6 +174,16 @@ gescheitertes Speichern verhindert den Wechsel. Entwürfe sinnvoll erhalten.
 
 **Abnahme:** Wechsel per Baum, Pfad, Verlauf, Tab, Session und Schließen; jeweils
 alle drei Entscheidungen und Save-Fehler prüfen. Kein stiller Entwurfverlust.
+
+**Nachweis 11.10.2026:** Gemeinsamer Dokument-Editzustand mit expliziter
+Save/Discard/Cancel-Entscheidung, Schutz vor Navigation bei Savefehler und
+Browser-Unload-Schutz. Elf reale Chromiumabläufe bestehen einschließlich
+Disk-Schreibnachweis, Modalwechsel/-schließen, Sessionwechsel/-schließen,
+Tabwechsel und abgebrochenem Browserreload. Save während weiterer Eingaben
+behält den jüngeren Entwurf (Unitregression). Nachweise:
+`.dev/file-git-production/task-12-navigation-final/summary.json`, zugehörige
+Screenshots, `editState.test.ts`. Neue Verlaufs-/Dockabläufe aus 13/15 werden
+in der integrierten Files-Abnahme erneut gegen diesen Schutz geprüft.
 
 ### 13. [ ] Editzustand beim Andocken, Undocken und Refresh erhalten
 
