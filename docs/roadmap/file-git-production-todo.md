@@ -205,7 +205,7 @@ einschließlich Aufgabe 12 bestehen:
 `.dev/file-git-production/task-13-back-final/summary.json` und Screenshots.
 Typecheck, fokussiertes ESLint und acht Editor-/Navigationstests bestehen.
 
-### 14. [~] Veraltete Dateianfragen dürfen neuere Auswahl nicht überschreiben
+### 14. [x] Veraltete Dateianfragen dürfen neuere Auswahl nicht überschreiben
 
 **Befund (hoch, reproduziert):** Agents.md-Anfrage 700 ms verzögert, dann CLAUDE.md
 ausgewählt: Baum zeigt CLAUDE.md, Vorschau nach beiden Antworten Agents.md.
@@ -218,6 +218,18 @@ A→B→C-Wechsel; Titel, Inhalt, Aktionen und Speicherziel gehören immer zu C.
 Zusätzlich das Andocken während noch laufender Datei-/Metadatenanfragen prüfen:
 die Antwort muss im aktuellen sichtbaren Ziel erscheinen, kein versteckter
 Container darf nachträglich wieder mit altem Inhalt befüllt werden.
+
+**Nachweis 11.10.2026:** Dokumentanfragen besitzen unveränderliche Datei-/Session-
+Identität, AbortSignal und einen mitbewegten Zielcontainer. Überholte Antworten
+und Fehler werden auch nach Body-Decoding verworfen. Dateilink-Auflösung nimmt
+bereits beim Klick eine Navigationsgeneration und die Session des angeklickten
+Terminals auf. Alte Metadaten dürfen keinen neuen Viewer öffnen. Tree-Auswahl
+wird nur für die letzte akzeptierte Navigation übernommen. 25 reale
+Chromiumfälle bestehen, einschließlich Text→Binär→Text, verspäteter Metadaten,
+Speicherzielprüfung, Schließen und Andocken während Laden:
+`.dev/file-git-production/task-14-final/summary.json`. Unitregression mit einem
+Transport, der Abort ignoriert, bestätigt alte Erfolgs- und Fehlerantworten.
+Typecheck, fokussiertes ESLint und 14 relevante Unit-/Navigationstests bestehen.
 
 ### 15. [ ] Durchgängigen Rückweg und echte Ordnerhierarchie anbieten
 

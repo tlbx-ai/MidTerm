@@ -11,7 +11,8 @@ import { addProcessStateListener } from '../process';
 import { createTreeView, setTreeRoot, destroyTreeView } from './treeView';
 import { renderPreview, clearPreview } from './filePreview';
 import { $processStates } from '../../stores';
-import { confirmFileNavigation, releaseFileEdits } from '../fileViewer/editState';
+import { confirmFileNavigation } from '../fileViewer/editState';
+import { beginFileOpen, isFileOpenCurrent } from '../fileViewer/loadState';
 
 const log = createLogger('fileBrowser');
 
@@ -53,7 +54,9 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
     previewContainers.set(sessionId, previewContainer);
 
     createTreeView(treeContainer, sessionId, async (entry) => {
-      if (!(await confirmFileNavigation(previewContainer))) return false;
+      const request = beginFileOpen(sessionId);
+      if (!(await confirmFileNavigation(previewContainer)) || !isFileOpenCurrent(request))
+        return false;
       renderPreview(previewContainer, entry, sessionId);
       return true;
     });
@@ -70,7 +73,7 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
 
 export function destroyFileBrowser(sessionId: string): void {
   const preview = previewContainers.get(sessionId);
-  if (preview) releaseFileEdits(preview);
+  if (preview) clearPreview(preview);
   previewContainers.delete(sessionId);
   destroyTreeView(sessionId);
   initializedSessions.delete(sessionId);

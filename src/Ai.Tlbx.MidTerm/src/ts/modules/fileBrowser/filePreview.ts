@@ -27,8 +27,10 @@ import {
 } from '../fileViewer/shared';
 import { createImageView } from '../fileViewer/imageView';
 import { FileEditState, releaseFileEdits, trackFileEdits } from '../fileViewer/editState';
+import { FileViewLoad } from '../fileViewer/loadState';
 
 const log = createLogger('filePreview');
+const previewLoads = new WeakMap<HTMLElement, FileViewLoad>();
 
 function buildSaveUrl(sessionId: string): string {
   let url = '/api/files/save';
@@ -152,6 +154,9 @@ export function renderPreview(
   entry: FileTreeEntry,
   sessionId: string,
 ): void {
+  previewLoads.get(container)?.abort();
+  const load = new FileViewLoad(entry.fullPath, sessionId, container);
+  previewLoads.set(container, load);
   releaseFileEdits(container);
   container.innerHTML = '';
 
@@ -199,49 +204,59 @@ export function renderPreview(
 
   if (previewKind === 'text') {
     container.innerHTML = `<div class="preview-loading">${t('fileBrowser.loading')}</div>`;
-    void fetchAndRenderText(container, viewUrl, entry, sessionId, ext);
+    void fetchAndRenderText(load, viewUrl, entry, sessionId, ext);
     return;
   }
 
   container.innerHTML = `<div class="preview-loading">${t('fileBrowser.loading')}</div>`;
-  void fetchAndRenderBinary(container, viewUrl, entry, sessionId);
+  void fetchAndRenderBinary(load, viewUrl, entry, sessionId);
 }
 
 async function fetchAndRenderText(
-  container: HTMLElement,
+  load: FileViewLoad,
   url: string,
   entry: FileTreeEntry,
   sessionId: string,
   ext: string,
 ): Promise<void> {
+  const container = load.container;
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: load.signal });
+    if (!load.isActive()) return;
     if (!res.ok) {
       container.innerHTML = `<div class="preview-error">${t('fileBrowser.failedToLoad')} (${res.status})</div>`;
       return;
     }
 
     const text = await res.text();
+    if (!load.isActive()) return;
     const isMarkdown = ext === '.md' || ext === '.markdown';
     renderTextContent(container, entry, sessionId, text, ext, isMarkdown);
   } catch (e) {
+    if (!load.isActive()) return;
     log.error(() => `Failed to load preview: ${String(e)}`);
     container.innerHTML = `<div class="preview-error">${t('fileBrowser.failedToLoad')}</div>`;
   }
 }
 
 async function fetchAndRenderBinary(
-  container: HTMLElement,
+  load: FileViewLoad,
   url: string,
   entry: FileTreeEntry,
   sessionId: string,
 ): Promise<void> {
+  const container = load.container;
   try {
     const { shell, body, actions } = createPreviewShell(entry, formatBinaryPreviewMetadata(entry));
     appendPreviewFileActions(actions, entry, sessionId);
     const stack = document.createElement('div');
     stack.className = 'file-viewer-code-stack';
-    const initialPage = await loadBinaryPreviewPage({ viewUrl: url, fileSize: entry.size ?? null });
+    const initialPage = await loadBinaryPreviewPage({
+      viewUrl: url,
+      fileSize: entry.size ?? null,
+      signal: load.signal,
+    });
+    if (!load.isActive()) return;
     const viewer = createLineNumberedViewer(
       formatBinaryDump(initialPage.bytes, initialPage.startOffset),
       ['file-viewer-binary-shell'],
@@ -265,8 +280,10 @@ async function fetchAndRenderBinary(
           viewUrl: url,
           startOffset: nextOffset,
           fileSize: entry.size ?? null,
+          signal: load.signal,
         })
           .then((page) => {
+            if (!load.isActive()) return;
             viewer.setText(formatBinaryDump(page.bytes, page.startOffset));
             nextOffset = page.endOffsetExclusive;
             if (page.hasMore) {
@@ -280,6 +297,7 @@ async function fetchAndRenderBinary(
             }
           })
           .catch((error: unknown) => {
+            if (!load.isActive()) return;
             log.error(() => `Failed to load binary preview page: ${String(error)}`);
             loadMoreBtn.textContent =
               entry.size != null
@@ -296,6 +314,7 @@ async function fetchAndRenderBinary(
     container.innerHTML = '';
     container.appendChild(shell);
   } catch (e) {
+    if (!load.isActive()) return;
     log.error(() => `Failed to load preview: ${String(e)}`);
     container.innerHTML = `<div class="preview-error">${t('fileBrowser.failedToLoad')}</div>`;
   }
@@ -415,6 +434,8 @@ function renderTextContent(
 }
 
 export function clearPreview(container: HTMLElement): void {
+  previewLoads.get(container)?.abort();
+  previewLoads.delete(container);
   releaseFileEdits(container);
   container.innerHTML = `<div class="preview-empty">${t('fileBrowser.selectFile')}</div>`;
 }

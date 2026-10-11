@@ -16,6 +16,7 @@ interface TreeState {
   selectedPath: string | null;
   treeData: Map<string, FileTreeEntry[]>;
   container: HTMLElement;
+  selectionRequest: number;
   onFileSelect: (entry: FileTreeEntry) => boolean | Promise<boolean>;
 }
 
@@ -33,6 +34,7 @@ export function createTreeView(
     selectedPath: null,
     treeData: new Map(),
     container,
+    selectionRequest: 0,
     onFileSelect,
   };
   treeStates.set(sessionId, state);
@@ -43,6 +45,7 @@ export async function setTreeRoot(sessionId: string, rootPath: string): Promise<
   if (!state) return;
 
   if (state.rootPath !== rootPath) {
+    state.selectionRequest++;
     state.expandedPaths.clear();
     state.selectedPath = null;
     state.treeData.clear();
@@ -60,6 +63,8 @@ export async function setTreeRoot(sessionId: string, rootPath: string): Promise<
 }
 
 export function destroyTreeView(sessionId: string): void {
+  const state = treeStates.get(sessionId);
+  if (state) state.selectionRequest++;
   treeStates.delete(sessionId);
 }
 
@@ -155,8 +160,9 @@ async function selectFile(
   entry: FileTreeEntry,
   node: HTMLElement,
 ): Promise<void> {
+  const request = ++state.selectionRequest;
   const accepted = await state.onFileSelect(entry);
-  if (!accepted) return;
+  if (!accepted || request !== state.selectionRequest) return;
   state.selectedPath = entry.fullPath;
   state.container.querySelectorAll('.tree-node.selected').forEach((selected) => {
     selected.classList.remove('selected');

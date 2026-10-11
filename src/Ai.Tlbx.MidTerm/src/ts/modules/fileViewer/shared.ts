@@ -97,10 +97,12 @@ export async function loadBinaryPreviewPage(options: {
   viewUrl: string;
   startOffset?: number;
   fileSize?: number | null;
+  signal?: AbortSignal;
 }): Promise<BinaryPreviewPage> {
   const startOffset = options.startOffset ?? 0;
   const endOffsetInclusive = startOffset + FILE_HEX_PREVIEW_PAGE_BYTES - 1;
   const response = await fetch(options.viewUrl, {
+    ...(options.signal ? { signal: options.signal } : {}),
     headers: {
       Range: `bytes=${startOffset}-${endOffsetInclusive}`,
     },

@@ -19,6 +19,8 @@ fs.writeFileSync(path.join(fixtures, 'A.md'), '# A\n');
 fs.writeFileSync(path.join(fixtures, 'B.md'), '# B\n');
 const longText = Array.from({ length: 300 }, (_, i) => `line ${i + 1} ${'abcdefghij'.repeat(20)}`).join('\n');
 fs.writeFileSync(path.join(fixtures, 'C.md'), longText);
+for (const name of ['D.md', 'E.md', 'F.md', 'G.md', 'H.md']) fs.writeFileSync(path.join(fixtures, name), '# ' + name + '\n');
+fs.writeFileSync(path.join(fixtures, 'J.bin'), Buffer.from([0, 1, 0, 255, 0, 17]));
 const result = { ok: false, fixtures, cases: [], errors: [], failedRequests: [] };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 let chrome, browser, context, session, otherSession, page;
@@ -264,6 +266,94 @@ try {
   await choose('A.md');
   await dialog.locator('[data-file-decision="discard"]').click();
   await page.waitForFunction(() => document.querySelector('.preview-toolbar-name')?.textContent === 'A.md');
+
+  const delayedViews = new Set(['A.md', 'F.md', 'G.md', 'H.md', 'J.bin']);
+  await page.route('**/api/files/view**', async route => {
+    const file = path.basename(new URL(route.request().url()).searchParams.get('path') || '');
+    if (delayedViews.has(file)) await sleep(600);
+    await route.continue();
+  });
+  await choose('A.md');
+  await sleep(40);
+  await choose('B.md');
+  await page.waitForFunction(() => document.querySelector('.preview-toolbar-name')?.textContent === 'B.md');
+  await sleep(700);
+  assert.equal(await selected.innerText(), 'B.md');
+  assert.equal(await editor.inputValue(), '# B\n');
+  await editor.fill('# latest B after race\n');
+  await page.locator('.preview-save-btn').click();
+  await page.waitForFunction(() => document.querySelector('.preview-save-btn')?.disabled);
+  assert.equal(fs.readFileSync(path.join(fixtures, 'B.md'), 'utf8'), '# latest B after race\n');
+  assert.equal(fs.readFileSync(path.join(fixtures, 'A.md'), 'utf8'), '# modal unsaved\n');
+  result.cases.push('Late preview response cannot change selection, content or save target');
+  await choose('J.bin');
+  await sleep(40);
+  await choose('E.md');
+  await page.waitForFunction(() => document.querySelector('.preview-toolbar-name')?.textContent === 'E.md');
+  await sleep(700);
+  assert.equal(await editor.inputValue(), '# E.md\n');
+  result.cases.push('Late binary preview cannot replace a newer text document');
+  await choose('A.md');
+  await sleep(40);
+  await choose('J.bin');
+  await sleep(40);
+  await choose('E.md');
+  await page.waitForFunction(() => document.querySelector('.preview-toolbar-name')?.textContent === 'E.md');
+  await sleep(700);
+  assert.equal(await selected.innerText(), 'E.md');
+  assert.equal(await editor.inputValue(), '# E.md\n');
+  result.cases.push('Rapid text to binary to text selection resolves only the latest document');
+
+  await tabBar.locator('.session-tab[data-tab="terminal"]').click();
+  await page.route('**/api/files/check**', async route => {
+    const data = route.request().postDataJSON();
+    if (data?.paths?.some(file => file.endsWith('D.md'))) await sleep(600);
+    await route.continue();
+  });
+  const delayedMetadata = page.waitForRequest(request => new URL(request.url()).pathname === '/api/files/check' && request.postDataJSON()?.paths?.some(file => file.endsWith('D.md')));
+  await openFile('D.md');
+  await delayedMetadata;
+  await openFile('E.md');
+  await modalEditor.waitFor();
+  await sleep(700);
+  assert.equal(await modal.locator('.file-viewer-title').innerText(), 'E.md');
+  assert.equal(await modalEditor.inputValue(), '# E.md\n');
+  result.cases.push('Late terminal-link metadata cannot reopen an obsolete file');
+  await page.unroute('**/api/files/check**');
+
+  const pendingView = name => page.waitForRequest(request => {
+    const requestUrl = new URL(request.url());
+    return requestUrl.pathname === '/api/files/view' && requestUrl.searchParams.get('path')?.endsWith(name);
+  });
+  let pending = pendingView('F.md');
+  await openFile('F.md');
+  await pending;
+  await openFile('E.md');
+  await sleep(700);
+  assert.equal(await modal.locator('.file-viewer-title').innerText(), 'E.md');
+  assert.equal(await modalEditor.inputValue(), '# E.md\n');
+  result.cases.push('Late modal content cannot replace a newer document');
+
+  pending = pendingView('G.md');
+  await openFile('G.md');
+  await pending;
+  await modal.locator('.modal-close').click();
+  await sleep(700);
+  assert.equal(await modal.isVisible(), false);
+  assert.equal(await modal.locator('textarea').count(), 0);
+  result.cases.push('Closing a pending viewer prevents a late hidden render');
+
+  pending = pendingView('H.md');
+  await openFile('H.md');
+  await pending;
+  await page.locator('#file-viewer-dock-btn').click();
+  await page.waitForFunction(() => document.querySelector('#file-viewer-dock textarea')?.value === '# H.md\n');
+  assert.equal(await modal.locator('textarea').count(), 0);
+  assert.equal(await page.locator('.file-viewer-dock-title').innerText(), 'H.md');
+  result.cases.push('A pending document finishes in its current dock rather than its old modal');
+  await page.screenshot({ path: path.join(out, 'pending-dock.png') });
+  await page.locator('#dock-close').click();
+  await page.unroute('**/api/files/view**');
 
   assert.deepEqual(result.errors, []);
   result.ok = true;

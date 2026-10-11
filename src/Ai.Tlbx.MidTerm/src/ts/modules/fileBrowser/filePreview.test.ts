@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { renderPreview } from './filePreview';
 
 class FakeElement {
+  public isConnected = true;
   public readonly tagName: string;
   public className = '';
   public textContent = '';
@@ -280,6 +281,32 @@ describe('filePreview', () => {
     });
   });
 
+  it.each([true, false])(
+    'ignores a superseded response (ok=%s) even when its transport does not honor cancellation',
+    async (ok) => {
+      let resolveOld!: (response: Response) => void;
+      vi.mocked(globalThis.fetch)
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>((resolve) => {
+              resolveOld = resolve;
+            }),
+        )
+        .mockResolvedValueOnce({ ok: true, text: async () => '# Latest B' } as Response);
+      const container = new FakeElement('div');
+      const first = { name: 'A.md', fullPath: 'Q:\\fixtures\\A.md', isDirectory: false };
+      const latest = { name: 'B.md', fullPath: 'Q:\\fixtures\\B.md', isDirectory: false };
+      renderPreview(container as unknown as HTMLElement, first, 'session-1');
+      renderPreview(container as unknown as HTMLElement, latest, 'session-1');
+      await flushPromises();
+      resolveOld({ ok, text: async () => '# Obsolete A' } as Response);
+      await flushPromises();
+      expect(container.querySelector('.preview-toolbar-name')?.textContent).toBe('B.md');
+      expect(container.querySelector('textarea')?.value).toBe('# Latest B');
+      expect(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    },
+  );
+
   it('saves edited markdown content through the file save endpoint', async () => {
     vi.mocked(globalThis.fetch)
       .mockResolvedValueOnce({
@@ -367,6 +394,7 @@ describe('filePreview', () => {
       viewUrl: '/api/files/view?path=Q%3A%5Crepos%5CMidTerm%5Carchive.bin&sessionId=session-1',
       startOffset: 2,
       fileSize: 4,
+      signal: expect.any(AbortSignal),
     });
     expect(renderingMocks.formatBinaryDumpMock).toHaveBeenNthCalledWith(
       2,

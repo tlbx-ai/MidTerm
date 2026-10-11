@@ -46,6 +46,7 @@ import {
   releaseFileEdits,
   trackFileEdits,
 } from './editState';
+import { FileViewLoad, beginFileOpen, isFileOpenCurrent, cancelFileOpen } from './loadState';
 
 const log = createLogger('fileViewer');
 
@@ -66,6 +67,19 @@ let releaseBackButtonLayer: (() => void) | null = null;
 let releaseDockBackButtonLayer: (() => void) | null = null;
 let currentEdit: FileEditState | null = null;
 let currentEditOwner: HTMLElement | null = null;
+let viewerLoad: FileViewLoad | null = null;
+
+function beginViewerLoad(path: string, container: HTMLElement): FileViewLoad {
+  viewerLoad?.abort();
+  viewerLoad = new FileViewLoad(path, currentSessionId, container);
+  return viewerLoad;
+}
+
+function cancelViewerLoad(): void {
+  cancelFileOpen();
+  viewerLoad?.abort();
+  viewerLoad = null;
+}
 
 export function initFileViewer(): void {
   modal = document.getElementById('file-viewer-modal');
@@ -86,6 +100,16 @@ export function initFileViewer(): void {
 
   modal.querySelector('#file-viewer-save')?.addEventListener('click', () => void saveFile());
   bindModalFileActions(modal);
+  $activeSessionId.listen((sessionId) => {
+    if (
+      currentSessionId &&
+      sessionId !== currentSessionId &&
+      modal &&
+      !modal.classList.contains('hidden') &&
+      !currentEdit?.dirty
+    )
+      closeViewer();
+  });
 
   // Dock panel buttons
   const dockPanel = document.getElementById('file-viewer-dock');
@@ -214,6 +238,7 @@ function dockViewer(): void {
 }
 
 export function closeFileViewerDock(): void {
+  cancelViewerLoad();
   hideFileDock();
   currentPath = null;
   currentSessionId = null;
@@ -280,6 +305,7 @@ function transferViewerBody(source: HTMLElement, target: HTMLElement): void {
   const start = editor?.selectionStart ?? 0;
   const end = editor?.selectionEnd ?? 0;
   target.replaceChildren(...source.childNodes);
+  if (viewerLoad?.container === source) viewerLoad.container = target;
   if (currentEdit && currentEditOwner === source) {
     releaseFileEdits(source);
     currentEditOwner = target;
@@ -299,7 +325,13 @@ function transferViewerBody(source: HTMLElement, target: HTMLElement): void {
 
 async function refreshDock(): Promise<void> {
   const path = $dockedFilePath.get();
-  if (path && (await confirmCurrentFileNavigation())) {
+  const sessionId = currentSessionId;
+  if (
+    path &&
+    (await confirmCurrentFileNavigation()) &&
+    path === $dockedFilePath.get() &&
+    sessionId === currentSessionId
+  ) {
     await renderInDock(path);
   }
 }
@@ -310,21 +342,22 @@ async function renderInDock(path: string): Promise<void> {
 
   const titleEl = dockPanel.querySelector('.file-viewer-dock-title');
   const pathEl = dockPanel.querySelector('.file-viewer-dock-path');
-  const bodyEl = dockPanel.querySelector('.file-viewer-dock-body');
+  const bodyEl = dockPanel.querySelector<HTMLElement>('.file-viewer-dock-body');
+  if (!bodyEl) return;
 
   if (titleEl || pathEl) {
     updateDockHeader(path);
   }
-  if (bodyEl)
-    bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
+  bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
 
   resetEditState();
 
-  const info = await checkFilePath(path);
+  const load = beginViewerLoad(path, bodyEl);
+  const info = await checkFilePath(load);
+  if (!load.isActive()) return;
 
   if (!info || !info.exists) {
-    if (bodyEl)
-      bodyEl.innerHTML = `<div class="file-viewer-error">${t('fileViewer.fileNotFound')}</div>`;
+    load.container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.fileNotFound')}</div>`;
     updateFileActionButtons(null);
     return;
   }
@@ -333,10 +366,9 @@ async function renderInDock(path: string): Promise<void> {
   updateFileActionButtons(info);
 
   if (info.isDirectory) {
-    if (bodyEl)
-      bodyEl.innerHTML = `<div class="file-viewer-error">${t('fileViewer.dirNotSupported')}</div>`;
-  } else if (bodyEl) {
-    await renderFile(path, info, bodyEl);
+    load.container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.dirNotSupported')}</div>`;
+  } else {
+    await renderFile(load, info);
   }
 }
 
@@ -359,6 +391,7 @@ function showModal(): void {
 }
 
 function closeViewer(): void {
+  cancelViewerLoad();
   hideModal();
   currentPath = null;
   currentSessionId = null;
@@ -366,33 +399,39 @@ function closeViewer(): void {
   resetEditState();
 }
 
-export async function openFile(path: string, info?: FilePathInfo | null): Promise<void> {
+export async function openFile(
+  path: string,
+  info?: FilePathInfo | null,
+  request = beginFileOpen(),
+): Promise<void> {
   if (!modal) {
     log.error(() => 'File viewer modal not initialized');
     return;
   }
 
-  if (!(await confirmCurrentFileNavigation())) return;
+  if (!isFileOpenCurrent(request)) return;
+  if (!(await confirmCurrentFileNavigation()) || !isFileOpenCurrent(request)) return;
 
   currentPath = path;
-  currentSessionId = $activeSessionId.get() ?? null;
+  currentSessionId = request.sessionId;
   showModal();
 
-  const bodyEl = modal.querySelector('.file-viewer-body');
+  const bodyEl = modal.querySelector<HTMLElement>('.file-viewer-body');
+  if (!bodyEl) return;
 
   updateModalHeader(path);
-  if (bodyEl)
-    bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
+  bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
 
   resetEditState();
+  const load = beginViewerLoad(path, bodyEl);
 
   if (!info) {
-    info = await checkFilePath(path);
+    info = await checkFilePath(load);
   }
+  if (!load.isActive()) return;
 
   if (!info || !info.exists) {
-    if (bodyEl)
-      bodyEl.innerHTML = `<div class="file-viewer-error">${t('fileViewer.fileNotFound')}</div>`;
+    load.container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.fileNotFound')}</div>`;
     updateFileActionButtons(null);
     return;
   }
@@ -400,55 +439,60 @@ export async function openFile(path: string, info?: FilePathInfo | null): Promis
   currentFileInfo = info;
   updateFileActionButtons(info);
 
-  if (!bodyEl) return;
-
   if (info.isDirectory) {
-    await renderDirectory(path, bodyEl);
+    await renderDirectory(load);
   } else {
-    await renderFile(path, info, bodyEl);
+    await renderFile(load, info);
   }
 }
 
-async function checkFilePath(path: string): Promise<FilePathInfo | null> {
+async function checkFilePath(load: FileViewLoad): Promise<FilePathInfo | null> {
   try {
-    const sessionId = currentSessionId ?? $activeSessionId.get();
+    const sessionId = load.sessionId;
     const url = sessionId
       ? `/api/files/check?sessionId=${encodeURIComponent(sessionId)}`
       : '/api/files/check';
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paths: [path] }),
+      body: JSON.stringify({ paths: [load.path] }),
+      signal: load.signal,
     });
     if (!resp.ok) return null;
     const data = (await resp.json()) as { results: Record<string, FilePathInfo> };
-    return data.results[path] || null;
+    return load.isActive() ? data.results[load.path] || null : null;
   } catch (e) {
+    if (!load.isActive()) return null;
     log.error(() => `Failed to check file path: ${String(e)}`);
     return null;
   }
 }
 
-async function renderDirectory(path: string, container: Element): Promise<void> {
+async function renderDirectory(load: FileViewLoad): Promise<void> {
+  const path = load.path;
   try {
-    const sessionId = currentSessionId ?? $activeSessionId.get();
+    const sessionId = load.sessionId;
     let url = `/api/files/list?path=${encodeURIComponent(path)}`;
     if (sessionId) {
       url += `&sessionId=${encodeURIComponent(sessionId)}`;
     }
-    const resp = await fetch(url);
+    const resp = await fetch(url, { signal: load.signal });
+    if (!load.isActive()) return;
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
+      if (!load.isActive()) return;
       log.error(() => `List directory failed: ${resp.status} ${resp.statusText} ${body}`);
-      container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToList')} (${resp.status})</div>`;
+      load.container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToList')} (${resp.status})</div>`;
       return;
     }
 
     const data = (await resp.json()) as DirectoryListResponse;
-    renderDirectoryListing(data.entries, path, container);
+    if (!load.isActive()) return;
+    renderDirectoryListing(data.entries, path, load.container);
   } catch (e) {
+    if (!load.isActive()) return;
     log.error(() => `Failed to list directory: ${String(e)}`);
-    container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToList')}</div>`;
+    load.container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToList')}</div>`;
   }
 }
 
@@ -512,8 +556,10 @@ function renderDirectoryListing(
   });
 }
 
-function buildViewUrl(path: string): string {
-  const sessionId = currentSessionId ?? $activeSessionId.get();
+function buildViewUrl(
+  path: string,
+  sessionId = currentSessionId ?? $activeSessionId.get(),
+): string {
   let url = `/api/files/view?path=${encodeURIComponent(path)}`;
   if (sessionId) {
     url += `&sessionId=${encodeURIComponent(sessionId)}`;
@@ -563,9 +609,11 @@ function formatBinaryHeaderMetadata(info: FilePathInfo): string {
   return parts.join(' | ');
 }
 
-async function renderFile(path: string, info: FilePathInfo, container: Element): Promise<void> {
+async function renderFile(load: FileViewLoad, info: FilePathInfo): Promise<void> {
+  const path = load.path;
+  const container = load.container;
   const mime = info.mimeType || 'application/octet-stream';
-  const viewUrl = buildViewUrl(path);
+  const viewUrl = buildViewUrl(path, load.sessionId);
   const previewKind = resolveFilePreviewKind(path, mime, info.isText);
 
   if (previewKind === 'image') {
@@ -605,41 +653,43 @@ async function renderFile(path: string, info: FilePathInfo, container: Element):
     updateSaveButtonVisibility(false);
     container.innerHTML = `<iframe class="file-viewer-pdf" src="${viewUrl}"></iframe>`;
   } else if (previewKind === 'text') {
-    await renderTextFile(path, info, container);
+    await renderTextFile(load, info);
   } else {
-    await renderBinaryContent(path, info, container);
+    await renderBinaryContent(load, info);
   }
 }
 
-async function renderTextFile(path: string, info: FilePathInfo, container: Element): Promise<void> {
+async function renderTextFile(load: FileViewLoad, info: FilePathInfo): Promise<void> {
+  const path = load.path;
   try {
-    const viewUrl = buildViewUrl(path);
+    const viewUrl = buildViewUrl(path, load.sessionId);
     const fileSize = info.size ?? 0;
 
     let resp: Response;
     if (fileSize > SIZE_LIMIT) {
       resp = await fetch(viewUrl, {
         headers: { Range: `bytes=0-${SIZE_LIMIT - 1}` },
+        signal: load.signal,
       });
-      isFullContentLoaded = false;
-      currentContentIsPartial = true;
     } else {
-      resp = await fetch(viewUrl);
-      isFullContentLoaded = true;
-      currentContentIsPartial = false;
+      resp = await fetch(viewUrl, { signal: load.signal });
     }
 
+    if (!load.isActive()) return;
     if (!resp.ok && resp.status !== 206) {
-      container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToLoadFile')}</div>`;
+      load.container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToLoadFile')}</div>`;
       return;
     }
 
     const text = await resp.text();
+    if (!load.isActive()) return;
+    const container = load.container;
+    isFullContentLoaded = fileSize <= SIZE_LIMIT;
+    currentContentIsPartial = !isFullContentLoaded;
     currentContent = text;
     isDirty = false;
 
-    if (!(container instanceof HTMLElement)) return;
-    const sessionId = currentSessionId;
+    const sessionId = load.sessionId;
     currentEdit = new FileEditState(path, text, async (content) => {
       if (!isFullContentLoaded) throw new Error(t('fileViewer.loadBeforeSaving'));
       const saveUrl = sessionId
@@ -684,41 +734,50 @@ async function renderTextFile(path: string, info: FilePathInfo, container: Eleme
       loadMoreBtn.addEventListener('click', () => {
         loadMoreBtn.textContent = t('fileViewer.loading');
         loadMoreBtn.disabled = true;
-        void fetch(viewUrl).then(async (fullResp) => {
-          if (fullResp.ok) {
-            const fullText = await fullResp.text();
-            editor.setText(fullText);
-            currentContent = fullText;
-            isDirty = false;
-            isFullContentLoaded = true;
-            currentContentIsPartial = false;
-            updateSaveButtonVisibility(false);
-            loadMoreBtn.remove();
-          } else {
+        void fetch(viewUrl, { signal: load.signal })
+          .then(async (fullResp) => {
+            if (!load.isActive()) return;
+            if (fullResp.ok) {
+              const fullText = await fullResp.text();
+              if (!load.isActive()) return;
+              editor.setText(fullText);
+              currentContent = fullText;
+              isDirty = false;
+              isFullContentLoaded = true;
+              currentContentIsPartial = false;
+              updateSaveButtonVisibility(false);
+              loadMoreBtn.remove();
+            } else {
+              loadMoreBtn.textContent = `${t('fileViewer.loadMore')} (${formatSize(fileSize)})`;
+              loadMoreBtn.disabled = false;
+            }
+          })
+          .catch((error: unknown) => {
+            if (!load.isActive()) return;
+            log.error(() => `Failed to load remaining file content: ${String(error)}`);
             loadMoreBtn.textContent = `${t('fileViewer.loadMore')} (${formatSize(fileSize)})`;
             loadMoreBtn.disabled = false;
-          }
-        });
+          });
       });
       stack.appendChild(loadMoreBtn);
     }
 
     updateSaveButtonVisibility(false);
   } catch (e) {
+    if (!load.isActive()) return;
     log.error(() => `Failed to load text file: ${String(e)}`);
-    container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToLoadFile')}</div>`;
+    load.container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToLoadFile')}</div>`;
   }
 }
 
-async function renderBinaryContent(
-  path: string,
-  info: FilePathInfo,
-  container: Element,
-): Promise<void> {
+async function renderBinaryContent(load: FileViewLoad, info: FilePathInfo): Promise<void> {
+  const path = load.path;
   try {
-    const viewUrl = buildViewUrl(path);
+    const viewUrl = buildViewUrl(path, load.sessionId);
     const fileSize = info.size ?? null;
-    const initialPage = await loadBinaryPreviewPage({ viewUrl, fileSize });
+    const initialPage = await loadBinaryPreviewPage({ viewUrl, fileSize, signal: load.signal });
+    if (!load.isActive()) return;
+    const container = load.container;
     const stack = createCodeStack();
     const viewer = createLineNumberedViewer(
       formatBinaryDump(initialPage.bytes, initialPage.startOffset),
@@ -742,8 +801,14 @@ async function renderBinaryContent(
       loadMoreBtn.addEventListener('click', () => {
         loadMoreBtn.textContent = t('fileViewer.loading');
         loadMoreBtn.disabled = true;
-        void loadBinaryPreviewPage({ viewUrl, startOffset: nextOffset, fileSize })
+        void loadBinaryPreviewPage({
+          viewUrl,
+          startOffset: nextOffset,
+          fileSize,
+          signal: load.signal,
+        })
           .then((page) => {
+            if (!load.isActive()) return;
             viewer.setText(formatBinaryDump(page.bytes, page.startOffset));
             nextOffset = page.endOffsetExclusive;
             if (page.hasMore) {
@@ -757,6 +822,7 @@ async function renderBinaryContent(
             }
           })
           .catch((error: unknown) => {
+            if (!load.isActive()) return;
             log.error(() => `Failed to load binary file page: ${String(error)}`);
             loadMoreBtn.textContent =
               fileSize != null
@@ -771,8 +837,9 @@ async function renderBinaryContent(
     container.appendChild(stack);
     updateSaveButtonVisibility(false);
   } catch (e) {
+    if (!load.isActive()) return;
     log.error(() => `Failed to load binary file: ${String(e)}`);
-    container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToLoadFile')}</div>`;
+    load.container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToLoadFile')}</div>`;
   }
 }
 
