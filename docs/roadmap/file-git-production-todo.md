@@ -555,6 +555,23 @@ Evidenz: `task-21-unit/{native-relocation-accepted.trx,linux-files.trx}` und
 sind damit belegt; macOS-Case-Verhalten und echte LocalSystem-Service-Abnahme
 bleiben offen. Punkt 21 ist weiterhin nicht vollständig abgeschlossen.
 
+**Service-/macOS-Prüfung (2026-10-11):** `b3dfb12a` ergänzt echte Plattform-CI
+und einen isolierten LocalSystem-Runner. SYSTEM darf die private Testdatei nicht
+direkt lesen; der verifizierte Caller kann reale Create/Duplicate/Rename/Move/
+Delete/Restore-Aktionen und Git-Abfragen ausführen. Der Git-Prozess übernimmt
+den Caller-Token statt einer allgemeinen Desktop-Benutzersuche. Eine tatsächlich
+ausgeführte LocalSystem-Prüfung besteht (TRX: 1/1); die Task wird entfernt.
+Git bekommt das Repository als separates `-C`-Argument und einen festen Prozess-
+Arbeitsordner. Warn-as-error-Fehler am Copy-Helfer ist korrigiert. Reale Case-
+Renames und Pfade mit Shell-Zeichen bestehen. macOS fand `/var`-/`/private/var`-
+Unterschiede in Test-Roots und Git-Ignore-Berechnung; `4240b3f3` korrigiert diese.
+macOS, Linux, CodeQL und Frontend-CI sind dort grün; Windows-CI läuft noch.
+Sieben neue Source-HTTP-/Diskfälle und zehn reale Visibility-Browserfälle bestehen.
+Evidenz: CI-Runs `38132512559` / `38133598180`,
+`task-21-unit/ci-windows`, `task-21-service-build-api/summary.json`,
+`task-21-service-visibility/summary.json`. Punkt 21 bleibt bis zum terminalen
+Windows-Ergebnis des letzten Commits offen; beide Phasenreleases stehen aus.
+
 ### 22. [ ] Dateiansicht, Sortierung, Filter und Metadaten vervollständigen
 
 **Befund (mittel, Erwartungslücke):** Nur Ordner-zuerst/Namen/Größen; kein Datum,
