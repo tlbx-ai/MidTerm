@@ -538,6 +538,23 @@ vermerkt; keine Reparatur des Editors aus diesem Befund behauptet. Punkt 21
 bleibt wegen der bereits genannten Native-/Plattform-/Recovery-Lifecycle-
 Restprüfungen offen; das vollständige Phasenrelease bleibt ausstehend.
 
+**Native-/Recovery-Abnahme (2026-10-11):** Linux läuft jetzt mit verifiziertem
+SDK 10.0.303 in einem eigenen Container und realen Overlay-/tmpfs-Volumes:
+60 Prüfungen bestehen, fünf Windows-Fälle sind übersprungen. Native no-replace
+Renames ersetzen den impliziten Unix-Copy/Delete-Fallback; Kollisionen bleiben
+unangetastet. Cross-volume-Move behält ein originales, über Hardlink/Inode
+geprüftes Recovery-Objekt. Externe Git-Metadaten auf anderem Volume verwenden
+einen Ausweichort außerhalb des Worktrees; Git-Status enthält keine internen
+Payloads. Recovery-Verweise bleiben bei Parent-Rename/-Delete und Neustart
+gültig; gespeicherte Kandidatenpaare funktionieren vor und nach dem Rename.
+Ordnerkopien/Fingerprints schließen nur registrierte interne Recovery-Container
+aus; gelöschte Inhalte werden nicht wieder mitkopiert. 66 Windows-Prüfungen
+einschließlich Caller-Identity und sieben Source-HTTP-/Diskfälle bestehen.
+Evidenz: `task-21-unit/{native-relocation-accepted.trx,linux-files.trx}` und
+`task-21-native-accepted-api/summary.json`. Originale Windows- und Unix-Prüfungen
+sind damit belegt; macOS-Case-Verhalten und echte LocalSystem-Service-Abnahme
+bleiben offen. Punkt 21 ist weiterhin nicht vollständig abgeschlossen.
+
 ### 22. [ ] Dateiansicht, Sortierung, Filter und Metadaten vervollständigen
 
 **Befund (mittel, Erwartungslücke):** Nur Ordner-zuerst/Namen/Größen; kein Datum,

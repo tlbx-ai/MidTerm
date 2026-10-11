@@ -17,6 +17,7 @@ public sealed class FileOperationService(string storageDirectory)
     private static readonly StringComparer Paths = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private static readonly HashSet<string> Actions = ["createFile", "createFolder", "rename", "move", "copy", "duplicate", "delete"];
     private readonly Dictionary<string, string?> _gitStageDirectories = new(Paths);
+    private readonly Dictionary<string, string> _gitFallbackDirectories = new(Paths);
     internal void GrantStorageOwner(string sid) => FileRecoveryStorage.EnsurePrivate(_storage, sid);
     private FileOperationService(string directory, string owner) : this(directory)
     {
@@ -38,6 +39,7 @@ public sealed class FileOperationService(string storageDirectory)
         {
             FileRecoveryStorage.EnsurePrivate(_storage);
             _gitStageDirectories.Clear();
+            _gitFallbackDirectories.Clear();
             var receiptPath = Path.Combine(_storage, "operations", id + ".json");
             if (File.Exists(receiptPath))
             {
@@ -181,8 +183,8 @@ public sealed class FileOperationService(string storageDirectory)
             // A rename on the same volume preserves ownership, ACLs, links and all file streams.
             record.StagePath = record.StoredPath;
             Write(recordPath, record, FileOperationJsonContext.Default.RecoveryRecord);
-            FileEntryCopy.Move(original, record.StoredPath);
-            record.Fingerprint = await FileEntryCopy.FingerprintAsync(record.StoredPath, ct);
+            MoveEntry(original, record.StoredPath);
+            record.Fingerprint = await FileEntryCopy.FingerprintAsync(record.StoredPath, RecoveryContainers(), ct);
             record.State = "stored"; Write(recordPath, record, FileOperationJsonContext.Default.RecoveryRecord);
             return record;
         }
@@ -192,6 +194,7 @@ public sealed class FileOperationService(string storageDirectory)
             var sourceParent = Path.GetDirectoryName(original)!;
             var repository = await GitCommandRunner.GetRepositoryInfoAsync(sourceParent);
             var recoveryParent = repository?.GitDir ?? sourceParent;
+            var fallbackParent = repository is null ? sourceParent : Path.GetDirectoryName(repository.RepoRoot) ?? sourceParent;
             if (FileService.IsWithinDirectory(recoveryParent, original)) recoveryParent = sourceParent;
             var container = Path.Combine(recoveryParent, ".tlbx-recovery-" + id);
             FileRecoveryStorage.EnsurePrivate(container);
@@ -200,20 +203,31 @@ public sealed class FileOperationService(string storageDirectory)
             Write(recordPath, record, FileOperationJsonContext.Default.RecoveryRecord);
             try
             {
-                FileEntryCopy.Move(original, record.StoredPath);
-                record.Fingerprint = await FileEntryCopy.FingerprintAsync(record.StoredPath, ct);
+                try { MoveEntry(original, record.StoredPath); }
+                catch (IOException moveError) when ((moveError.HResult & 0xFFFF) is 17 or 18 && !Paths.Equals(recoveryParent, fallbackParent))
+                {
+                    // External worktree metadata can reside on another filesystem too.
+                    RemoveEmptyRecoveryContainer(record.StoredPath);
+                    container = Path.Combine(fallbackParent, ".tlbx-recovery-" + id);
+                    FileRecoveryStorage.EnsurePrivate(container);
+                    if (OperatingSystem.IsWindows()) File.SetAttributes(container, File.GetAttributes(container) | FileAttributes.Hidden);
+                    record.StoredPath = Path.Combine(container, "content"); record.StagePath = record.StoredPath;
+                    Write(recordPath, record, FileOperationJsonContext.Default.RecoveryRecord);
+                    MoveEntry(original, record.StoredPath);
+                }
+                record.Fingerprint = await FileEntryCopy.FingerprintAsync(record.StoredPath, RecoveryContainers(), ct);
                 record.State = "stored"; Write(recordPath, record, FileOperationJsonContext.Default.RecoveryRecord);
                 return record;
             }
             catch
             {
-                if (!FileEntryLinks.Exists(original) && FileEntryLinks.Exists(record.StoredPath)) FileEntryCopy.Move(record.StoredPath, original);
+                if (!FileEntryLinks.Exists(original) && FileEntryLinks.Exists(record.StoredPath)) MoveEntry(record.StoredPath, original);
                 throw;
             }
         }
         catch
         {
-            if (!FileEntryLinks.Exists(original) && FileEntryLinks.Exists(record.StoredPath)) FileEntryCopy.Move(record.StoredPath, original);
+            if (!FileEntryLinks.Exists(original) && FileEntryLinks.Exists(record.StoredPath)) MoveEntry(record.StoredPath, original);
             throw;
         }
     }
@@ -231,15 +245,17 @@ public sealed class FileOperationService(string storageDirectory)
             var target = request.Conflict == "keepBoth" ? UniqueName(record.OriginalPath) : record.OriginalPath;
             if (FileEntryLinks.Exists(target)) throw Failure(409, "name_conflict", "The original name is occupied. Keep both to restore under another name.");
             RequireRecoveryParent(target, accessible, create: true, record.ParentMetadata);
+            var oldPayload = RecoveryPayload(record);
             if (record.State == "stored") await RestoreStoredAsync(record, target, ct);
-            else if (FileEntryLinks.Exists(record.StagePath))
+            else if (FileEntryLinks.Exists(RecoveryPayload(record)))
             {
-                FileEntryCopy.Move(record.StagePath, target);
+                MoveEntry(RecoveryPayload(record), target);
                 if (!record.IsLink) File.SetAttributes(target, record.OriginalAttributes);
             }
             else throw Failure(404, "recovery_missing", "This recovery entry is no longer available.");
             record.State = "restored"; record.RestoredPath = target;
             Write(RecoveryPath(id), record, FileOperationJsonContext.Default.RecoveryRecord);
+            RemoveEmptyRecoveryContainer(oldPayload);
             return new() { Success = true, Path = target, RecoveryId = id };
         }
         finally { Gate.Release(); }
@@ -278,34 +294,45 @@ public sealed class FileOperationService(string storageDirectory)
 
     private static bool CanRestore(RecoveryRecord record, Func<string, bool> accessible)
     {
-        try { RequireRecoveryParent(record.OriginalPath, accessible, create: false); return (record.State == "stored" && FileEntryLinks.Exists(record.StoredPath)) || FileEntryLinks.Exists(record.StagePath); }
+        try { RequireRecoveryParent(record.OriginalPath, accessible, create: false); return FileEntryLinks.Exists(RecoveryPayload(record)); }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or FileDocumentException) { return false; }
     }
 
     private async Task RestoreStoredAsync(RecoveryRecord record, string target, CancellationToken ct)
     {
-        if (record.Fingerprint != await FileEntryCopy.FingerprintAsync(record.StoredPath, ct))
+        var payload = RecoveryPayload(record);
+        if (record.Fingerprint != await FileEntryCopy.FingerprintAsync(payload, RecoveryContainers(), ct))
             throw Failure(409, "recovery_changed", "The recovery copy has changed. It has been kept for inspection.");
-        ct.ThrowIfCancellationRequested(); FileEntryCopy.Move(record.StoredPath, target);
+        ct.ThrowIfCancellationRequested(); MoveEntry(payload, target);
     }
 
     private async Task CopyPublishedAsync(string source, string target, CancellationToken ct, FileAttributes? rootAttributes = null)
     {
         var parent = Path.GetDirectoryName(target)!;
         var temporaryParent = await GitStageDirectoryAsync(parent);
-        var container = StageName(temporaryParent ?? parent);
-        if (FileEntryLinks.IsDirectory(source) && !FileEntryLinks.IsLink(source) && FileService.IsWithinDirectory(container, source))
-            container = StageName(Path.Combine(_storage, "staging"));
+        if (temporaryParent is not null && FileEntryLinks.IsDirectory(source) && !FileEntryLinks.IsLink(source) && FileService.IsWithinDirectory(temporaryParent, source))
+            temporaryParent = null;
+        try { await CopyPublishedInAsync(source, target, temporaryParent ?? parent, ct, rootAttributes); }
+        catch (IOException ex) when ((ex.HResult & 0xFFFF) is 17 or 18 && temporaryParent is not null && !Paths.Equals(temporaryParent, parent))
+        {
+            // Publish from the destination volume if worktree metadata is elsewhere.
+            await CopyPublishedInAsync(source, target, _gitFallbackDirectories[parent], ct, rootAttributes);
+        }
+    }
+
+    private async Task CopyPublishedInAsync(string source, string target, string parent, CancellationToken ct, FileAttributes? rootAttributes)
+    {
+        var container = StageName(parent);
         FileRecoveryStorage.EnsurePrivate(container);
         var stage = Path.Combine(container, "content");
         try
         {
-            await FileEntryCopy.CopyAsync(source, stage, ct);
-            if (await FileEntryCopy.FingerprintAsync(source, ct) != await FileEntryCopy.FingerprintAsync(stage, ct))
+            await FileEntryCopy.CopyAsync(source, stage, RecoveryContainers(), ct);
+            if (await FileEntryCopy.FingerprintAsync(source, RecoveryContainers(), ct) != await FileEntryCopy.FingerprintAsync(stage, ct))
                 throw Failure(409, "source_changed", "The source changed while it was copied. Nothing was published.");
             ct.ThrowIfCancellationRequested();
             if (rootAttributes is { } attributes && !FileEntryLinks.IsLink(stage)) File.SetAttributes(stage, attributes);
-            FileEntryCopy.Move(stage, target);
+            MoveEntry(stage, target);
         }
         finally
         {
@@ -319,6 +346,7 @@ public sealed class FileOperationService(string storageDirectory)
         var info = await GitCommandRunner.GetRepositoryInfoAsync(directory);
         var gitDirectory = info?.GitDir;
         _gitStageDirectories[directory] = gitDirectory;
+        _gitFallbackDirectories[directory] = info is null ? directory : Path.GetDirectoryName(info.RepoRoot) ?? directory;
         return gitDirectory;
     }
 
@@ -337,22 +365,80 @@ public sealed class FileOperationService(string storageDirectory)
 
     private async Task MoveAsync(string source, string target, Func<string, bool> accessible, CancellationToken ct)
     {
-        try { FileEntryCopy.Move(source, target); return; }
+        try { MoveEntry(source, target); return; }
         catch (IOException ex) when ((ex.HResult & 0xFFFF) is 17 or 18) { }
         // Publish on the destination volume, then retain the original object in recovery.
         FileEntryCopy.RequireDeletable(source);
         await CopyPublishedAsync(source, target, ct);
         var recovery = await RecoverAsync(source, "move", accessible, ct);
-        if (recovery.Fingerprint == await FileEntryCopy.FingerprintAsync(target, ct)) return;
+        if (recovery.Fingerprint == await FileEntryCopy.FingerprintAsync(target, RecoveryContainers(), ct)) return;
         await RestoreStoredAsync(recovery, source, CancellationToken.None);
         throw Failure(409, "source_changed", "The source changed while moving. Its current version is back at the original location; the copied destination was retained.");
     }
 
-    private static void RenameCase(string source, string target)
+    private void RenameCase(string source, string target)
     {
-        var stage = StageName(Path.GetDirectoryName(source)!); FileEntryCopy.Move(source, stage);
-        try { FileEntryCopy.Move(stage, target); }
-        catch { FileEntryCopy.Move(stage, source); throw; }
+        var stage = StageName(Path.GetDirectoryName(source)!); MoveEntry(source, stage);
+        try { MoveEntry(stage, target); }
+        catch { MoveEntry(stage, source); throw; }
+    }
+
+    private static string RecoveryPayload(RecoveryRecord record) =>
+        FileEntryLinks.Exists(record.StoredPath) ? record.StoredPath :
+        record.PendingStoredPath is { } pending && FileEntryLinks.Exists(pending) ? pending : record.StagePath;
+
+    private HashSet<string> RecoveryContainers()
+    {
+        var containers = new HashSet<string>(Paths);
+        var records = Path.Combine(_storage, "records");
+        if (!Directory.Exists(records)) return containers;
+        foreach (var path in Directory.EnumerateFiles(records, "*.json"))
+        {
+            var record = Read<RecoveryRecord>(path, FileOperationJsonContext.Default.RecoveryRecord);
+            var parent = Path.GetDirectoryName(RecoveryPayload(record));
+            if (record.State != "restored" && parent is not null && Path.GetFileName(parent) == ".tlbx-recovery-" + record.Id)
+                containers.Add(parent);
+        }
+        return containers;
+    }
+
+    private void MoveEntry(string source, string target)
+    {
+        var records = Path.Combine(_storage, "records");
+        var relocated = new List<RecoveryRecord>();
+        if (FileEntryLinks.IsDirectory(source) && !FileEntryLinks.IsLink(source) && Directory.Exists(records))
+        {
+            foreach (var path in Directory.EnumerateFiles(records, "*.json"))
+            {
+                var record = Read<RecoveryRecord>(path, FileOperationJsonContext.Default.RecoveryRecord);
+                var payload = RecoveryPayload(record);
+                if (record.State == "restored" || !FileService.IsWithinDirectory(payload, source)) continue;
+                // Persist both candidate locations before the rename: either is recoverable after a crash.
+                record.StoredPath = payload; record.StagePath = payload;
+                record.PendingStoredPath = Path.Combine(target, Path.GetRelativePath(source, payload));
+                Write(path, record, FileOperationJsonContext.Default.RecoveryRecord); relocated.Add(record);
+            }
+        }
+        try { FileEntryCopy.Move(source, target); }
+        catch
+        {
+            foreach (var record in relocated)
+            {
+                record.PendingStoredPath = null;
+                Write(RecoveryPath(record.Id), record, FileOperationJsonContext.Default.RecoveryRecord);
+            }
+            throw;
+        }
+        // Keep the durable candidate pair. A later move normalizes it from the existing payload;
+        // no fallible metadata write should turn a committed rename into an apparent failure.
+    }
+
+    private static void RemoveEmptyRecoveryContainer(string payload)
+    {
+        var parent = Path.GetDirectoryName(payload);
+        if (parent is null || !Path.GetFileName(parent).StartsWith(".tlbx-recovery-", StringComparison.Ordinal) ||
+            !Guid.TryParseExact(Path.GetFileName(parent)[15..], "N", out _) || !Directory.Exists(parent)) return;
+        if (!Directory.EnumerateFileSystemEntries(parent).Any()) Directory.Delete(parent, recursive: false);
     }
 
     private static string RequireEntry(string path, Func<string, bool> accessible, HashSet<string> roots, bool mutate)
@@ -496,6 +582,7 @@ internal sealed class RecoveryRecord
     public string Id { get; set; } = string.Empty;
     public string OriginalPath { get; set; } = string.Empty;
     public string StoredPath { get; set; } = string.Empty;
+    public string? PendingStoredPath { get; set; }
     public string StagePath { get; set; } = string.Empty;
     public string? RestoredPath { get; set; }
     public string Kind { get; set; } = string.Empty;

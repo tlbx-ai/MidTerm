@@ -326,6 +326,118 @@ public sealed class FileOperationServiceTests : IDisposable
         Assert.Equal("external", await File.ReadAllTextAsync(Path.Combine(outside, "keep.txt")));
     }
 
+    [UnixFact]
+    public void NativeUnixRenameNeverOverwritesOrCopiesAcrossFilesystems()
+    {
+        var source = FileWith("native.txt"); var target = FileWith("occupied.txt", "occupied");
+        var collision = Assert.Throws<FileDocumentException>(() => FileEntryMove.MoveUnix(source, target));
+        Assert.Equal("name_conflict", collision.Code); Assert.Equal("occupied", File.ReadAllText(target));
+        Assert.True(File.Exists(source));
+        if (!OperatingSystem.IsLinux() || !Directory.Exists("/dev/shm")) return;
+        var cross = Path.Combine("/dev/shm", "tlbx-native-" + Guid.NewGuid().ToString("N"));
+        var error = Assert.Throws<IOException>(() => FileEntryMove.MoveUnix(source, cross));
+        Assert.Equal(18, error.HResult & 0xFFFF); Assert.True(File.Exists(source)); Assert.False(File.Exists(cross));
+    }
+
+    [LinuxFact]
+    public async Task LinuxCrossVolumeMoveRetainsARecoverableOriginalObject()
+    {
+        var destination = Path.Combine("/dev/shm", "tlbx-files-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(destination);
+        try
+        {
+            var source = FileWith("volume.txt"); var alias = Path.Combine(_workspace, "original-hardlink.txt");
+            Assert.Equal(0, NativeTestLink(source, alias));
+            var request = Request("move", source); request.DestinationDirectory = destination;
+            bool Allowed(string path) => Accessible(path) || FileService.IsWithinDirectory(path, destination);
+            var moved = Assert.Single((await _operations.ExecuteAsync(request, Allowed, [_workspace, destination], default)).Items);
+            Assert.True(moved.Success, moved.Message); Assert.False(File.Exists(source));
+            Assert.Equal("original 🎸\r\n", File.ReadAllText(moved.Path!));
+            var recovery = Assert.Single(_operations.ListRecovery(_workspace, null, Allowed).Entries);
+            await _operations.RestoreAsync(new() { RecoveryId = recovery.Id }, Allowed, default);
+            File.WriteAllText(alias, "same original inode"); Assert.Equal("same original inode", File.ReadAllText(source));
+        }
+        finally { PrepareFixtureCleanup(destination); Directory.Delete(destination, recursive: true); }
+    }
+
+    [LinuxFact]
+    public async Task NestedRecoverySurvivesParentRenameDeleteAndRestart()
+    {
+        var storage = Path.Combine("/dev/shm", "tlbx-files-test-" + Guid.NewGuid().ToString("N"));
+        var operations = new FileOperationService(storage);
+        Directory.CreateDirectory(storage);
+        try
+        {
+            var source = FileWith("parent/child.txt"); var parent = Path.GetDirectoryName(source)!;
+            var child = Assert.Single((await operations.ExecuteAsync(Request("delete", source), Accessible, [_workspace], default)).Items);
+            Assert.True(child.Success, child.Message);
+            var rename = Request("rename", parent); rename.Name = "renamed";
+            var renamed = Assert.Single((await operations.ExecuteAsync(rename, Accessible, [_workspace], default)).Items);
+            Assert.True(renamed.Success, renamed.Message);
+            var duplicate = Assert.Single((await operations.ExecuteAsync(Request("duplicate", renamed.Path!), Accessible, [_workspace], default)).Items);
+            Assert.True(duplicate.Success, duplicate.Message); Assert.Empty(Directory.EnumerateFileSystemEntries(duplicate.Path!));
+            var deleted = Assert.Single((await operations.ExecuteAsync(Request("delete", renamed.Path!), Accessible, [_workspace], default)).Items);
+            Assert.True(deleted.Success, deleted.Message);
+            operations = new(storage);
+            var restoredChild = await operations.RestoreAsync(new() { RecoveryId = child.RecoveryId! }, Accessible, default);
+            Assert.True(restoredChild.Success); Assert.Equal("original 🎸\r\n", File.ReadAllText(source));
+            var restoredParent = await operations.RestoreAsync(new() { RecoveryId = deleted.RecoveryId! }, Accessible, default);
+            Assert.True(restoredParent.Success); Assert.True(Directory.Exists(renamed.Path!));
+        }
+        finally { PrepareFixtureCleanup(storage); Directory.Delete(storage, recursive: true); }
+    }
+
+    [LinuxFact]
+    public async Task ExternalGitMetadataOnAnotherVolumeSupportsCopyDeleteAndRestore()
+    {
+        var metadata = Path.Combine("/dev/shm", "tlbx-files-test-" + Guid.NewGuid().ToString("N"));
+        var storage = Path.Combine("/dev/shm", "tlbx-files-test-" + Guid.NewGuid().ToString("N"));
+        var operations = new FileOperationService(storage);
+        Directory.CreateDirectory(storage);
+        try
+        {
+            await GitAsync(_workspace, "init", "--separate-git-dir=" + metadata);
+            var source = FileWith("external-git.txt");
+            var copied = Assert.Single((await operations.ExecuteAsync(Request("duplicate", source), Accessible, [_workspace], default)).Items);
+            Assert.True(copied.Success, copied.Message); Assert.Equal(File.ReadAllText(source), File.ReadAllText(copied.Path!));
+            var deleted = Assert.Single((await operations.ExecuteAsync(Request("delete", source), Accessible, [_workspace], default)).Items);
+            Assert.True(deleted.Success, deleted.Message);
+            Assert.DoesNotContain("tlbx", await GitAsync(_workspace, "status", "--porcelain", "--untracked-files=all"), StringComparison.OrdinalIgnoreCase);
+            var restored = await new FileOperationService(storage).RestoreAsync(new() { RecoveryId = deleted.RecoveryId! }, Accessible, default);
+            Assert.True(restored.Success); Assert.Equal("original 🎸\r\n", File.ReadAllText(source));
+        }
+        finally
+        {
+            foreach (var path in new[] { metadata, storage })
+                if (Directory.Exists(path)) { PrepareFixtureCleanup(path); Directory.Delete(path, recursive: true); }
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RecoveryCandidatePairWorksOnEitherSideOfTheNativeRename(bool moved)
+    {
+        var source = FileWith("crash.txt");
+        var deleted = Assert.Single((await Run(Request("delete", source))).Items);
+        var recordPath = Path.Combine(_storage, "file-recovery", "records", deleted.RecoveryId! + ".json");
+        var record = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(recordPath))!;
+        var stored = record["storedPath"]!.GetValue<string>();
+        var candidate = Path.Combine(_base, "pending", "content"); Directory.CreateDirectory(Path.GetDirectoryName(candidate)!);
+        if (moved) FileEntryCopy.Move(stored, candidate);
+        else File.WriteAllText(candidate, "unrelated occupied candidate");
+        record["pendingStoredPath"] = candidate; File.WriteAllText(recordPath, record.ToJsonString());
+        await new FileOperationService(_storage).RestoreAsync(new() { RecoveryId = deleted.RecoveryId! }, Accessible, default);
+        Assert.Equal("original 🎸\r\n", File.ReadAllText(source));
+        if (!moved) Assert.Equal("unrelated occupied candidate", File.ReadAllText(candidate));
+    }
+
+    [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "link", CharSet = System.Runtime.InteropServices.CharSet.Ansi)]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CA2101", Justification = "POSIX link requires UTF-8 paths and does not accept UTF-16.")]
+    private static extern int NativeTestLink(
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.LPUTF8Str)] string source,
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.LPUTF8Str)] string target);
+
     [WindowsFact]
     public async Task WindowsLockedSourceDoesNotLoseAReplacedDestination()
     {
@@ -367,6 +479,10 @@ internal sealed class WindowsFactAttribute : FactAttribute
 internal sealed class UnixFactAttribute : FactAttribute
 {
     public UnixFactAttribute() { if (OperatingSystem.IsWindows()) Skip = "Unix permission modes."; }
+}
+internal sealed class LinuxFactAttribute : FactAttribute
+{
+    public LinuxFactAttribute() { if (!OperatingSystem.IsLinux() || !Directory.Exists("/dev/shm")) Skip = "Requires Linux with a separate tmpfs volume."; }
 }
 internal sealed class CrossVolumeWindowsFactAttribute : FactAttribute
 {

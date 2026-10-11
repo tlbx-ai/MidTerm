@@ -8,13 +8,15 @@ internal static class FileEntryCopy
     private const int MaximumEntries = 100_000;
     private const int MaximumDepth = 128;
 
-    internal static async Task CopyAsync(string source, string target, CancellationToken ct)
+    internal static Task CopyAsync(string source, string target, CancellationToken ct) => CopyAsync(source, target, null, ct);
+
+    internal static async Task CopyAsync(string source, string target, IReadOnlySet<string>? excluded, CancellationToken ct)
     {
         var remaining = new int[] { MaximumEntries };
-        await CopyAsync(source, target, remaining, 0, ct);
+        await CopyAsync(source, target, remaining, 0, excluded, ct);
     }
 
-    private static async Task CopyAsync(string source, string target, int[] remaining, int depth, CancellationToken ct)
+    private static async Task CopyAsync(string source, string target, int[] remaining, int depth, IReadOnlySet<string>? excluded, CancellationToken ct)
     {
         CheckBudget(remaining, depth, ct);
         if (FileEntryLinks.Exists(target)) throw Collision();
@@ -28,7 +30,8 @@ internal static class FileEntryCopy
             else Directory.CreateDirectory(target, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             HideWindowsStage(target);
             foreach (var child in Directory.EnumerateFileSystemEntries(source))
-                await CopyAsync(child, Path.Combine(target, Path.GetFileName(child)), remaining, depth + 1, ct);
+                if (excluded?.Contains(child) != true)
+                    await CopyAsync(child, Path.Combine(target, Path.GetFileName(child)), remaining, depth + 1, excluded, ct);
             Directory.SetLastWriteTimeUtc(target, modified);
         }
         else if (OperatingSystem.IsWindows())
@@ -57,14 +60,16 @@ internal static class FileEntryCopy
         if (!OperatingSystem.IsWindows() && unixMode is { } mode) File.SetUnixFileMode(target, mode);
     }
 
-    internal static async Task<string> FingerprintAsync(string path, CancellationToken ct)
+    internal static Task<string> FingerprintAsync(string path, CancellationToken ct) => FingerprintAsync(path, null, ct);
+
+    internal static async Task<string> FingerprintAsync(string path, IReadOnlySet<string>? excluded, CancellationToken ct)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        await HashAsync(path, string.Empty, hash, new byte[64 * 1024], [MaximumEntries], 0, ct);
+        await HashAsync(path, string.Empty, hash, new byte[64 * 1024], [MaximumEntries], 0, excluded, ct);
         return Convert.ToHexString(hash.GetHashAndReset());
     }
 
-    private static async Task HashAsync(string path, string relative, IncrementalHash hash, byte[] buffer, int[] remaining, int depth, CancellationToken ct)
+    private static async Task HashAsync(string path, string relative, IncrementalHash hash, byte[] buffer, int[] remaining, int depth, IReadOnlySet<string>? excluded, CancellationToken ct)
     {
         CheckBudget(remaining, depth, ct);
         hash.AppendData(Encoding.UTF8.GetBytes(relative + '\0'));
@@ -78,7 +83,8 @@ internal static class FileEntryCopy
         if (directory)
         {
             foreach (var child in Directory.EnumerateFileSystemEntries(path).Order(StringComparer.Ordinal))
-                await HashAsync(child, Path.Combine(relative, Path.GetFileName(child)), hash, buffer, remaining, depth + 1, ct);
+                if (excluded?.Contains(child) != true)
+                    await HashAsync(child, Path.Combine(relative, Path.GetFileName(child)), hash, buffer, remaining, depth + 1, excluded, ct);
         }
         else
         {
@@ -95,8 +101,7 @@ internal static class FileEntryCopy
     {
         if (FileEntryLinks.Exists(target)) throw Collision();
         if (OperatingSystem.IsWindows()) { FileEntryLinks.MoveWindows(source, target); return; }
-        if (FileEntryLinks.IsDirectory(source)) Directory.Move(source, target);
-        else File.Move(source, target, overwrite: false);
+        FileEntryMove.MoveUnix(source, target);
     }
 
     internal static void RemoveOwnedStage(string path, bool clearReadOnly = false)
