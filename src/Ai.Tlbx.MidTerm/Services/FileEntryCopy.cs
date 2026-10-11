@@ -31,6 +31,13 @@ internal static class FileEntryCopy
                 await CopyAsync(child, Path.Combine(target, Path.GetFileName(child)), remaining, depth + 1, ct);
             Directory.SetLastWriteTimeUtc(target, modified);
         }
+        else if (OperatingSystem.IsWindows())
+        {
+            // Native copy retains alternate streams and other Windows file data.
+            await Task.Run(() => File.Copy(source, target, overwrite: false), ct);
+            ct.ThrowIfCancellationRequested();
+            File.SetLastWriteTimeUtc(target, modified);
+        }
         else
         {
             var outputOptions = new FileStreamOptions
@@ -87,6 +94,7 @@ internal static class FileEntryCopy
     internal static void Move(string source, string target)
     {
         if (FileEntryLinks.Exists(target)) throw Collision();
+        if (OperatingSystem.IsWindows()) { FileEntryLinks.MoveWindows(source, target); return; }
         if (FileEntryLinks.IsDirectory(source)) Directory.Move(source, target);
         else File.Move(source, target, overwrite: false);
     }

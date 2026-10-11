@@ -161,6 +161,85 @@ public sealed class FileOperationServiceTests : IDisposable
         Assert.Equal("old", await File.ReadAllTextAsync(Path.Combine(old.Path!, "old.txt")));
     }
 
+    [CrossVolumeWindowsFact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public async Task CrossVolumeRecoveryUsesGitMetadataAndRetainsExistingAclAndOwner()
+    {
+        var repository = Path.Combine("Q:\\repos\\tlbx-2\\.dev\\file-git-production", "volume-fixture-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(repository);
+        try
+        {
+            await GitAsync(repository, "init", "--quiet");
+            var source = Path.Combine(repository, "protected.txt"); File.WriteAllText(source, "actual data");
+            var crossDevice = Assert.Throws<IOException>(() => FileEntryLinks.MoveWindows(source, Path.Combine(_workspace, "volume-probe.txt")));
+            Assert.Equal(17, crossDevice.HResult & 0xFFFF); Assert.True(File.Exists(source));
+            var before = new FileInfo(source).GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner).GetSecurityDescriptorSddlForm(AccessControlSections.Access | AccessControlSections.Owner);
+            bool Allowed(string path) => Accessible(path) || FileService.IsWithinDirectory(path, repository);
+            var response = await _operations.ExecuteAsync(Request("delete", source), Allowed, [_workspace, repository], default);
+            var deleted = Assert.Single(response.Items); Assert.True(deleted.Success, deleted.Message); Assert.False(File.Exists(source));
+            Assert.DoesNotContain("tlbx", await GitAsync(repository, "status", "--porcelain", "--untracked-files=all"), StringComparison.OrdinalIgnoreCase);
+            await _operations.RestoreAsync(new() { RecoveryId = deleted.RecoveryId! }, Allowed, default);
+            Assert.Equal("actual data", File.ReadAllText(source));
+            Assert.Equal(before, new FileInfo(source).GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner).GetSecurityDescriptorSddlForm(AccessControlSections.Access | AccessControlSections.Owner));
+            var incoming = FileWith("incoming.txt", "cross-volume move");
+            var move = Request("move", incoming); move.DestinationDirectory = repository;
+            var moved = Assert.Single((await _operations.ExecuteAsync(move, Allowed, [_workspace, repository], default)).Items);
+            Assert.True(moved.Success, moved.Message); Assert.False(File.Exists(incoming)); Assert.Equal("cross-volume move", File.ReadAllText(moved.Path!));
+            Assert.DoesNotContain("tlbx", await GitAsync(repository, "status", "--porcelain", "--untracked-files=all"), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            var full = Path.GetFullPath(repository);
+            Assert.True(FileService.IsWithinDirectory(full, "Q:\\repos\\tlbx-2\\.dev\\file-git-production"));
+            Assert.StartsWith("volume-fixture-", Path.GetFileName(full), StringComparison.Ordinal);
+            PrepareFixtureCleanup(full); Directory.Delete(full, recursive: true);
+        }
+    }
+
+    private static async Task<string> GitAsync(string directory, params string[] arguments)
+    {
+        var start = new ProcessStartInfo("git") { WorkingDirectory = directory, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+        using var process = Process.Start(start)!; var stdout = process.StandardOutput.ReadToEndAsync(); var stderr = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync(); var output = await stdout; Assert.True(process.ExitCode == 0, await stderr); return output;
+    }
+
+    [WindowsFact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public async Task RestoringIntoAMissingParentRetainsItsProtectedSecurityDescriptor()
+    {
+        var child = FileWith("private-parent/child.txt"); var parent = Path.GetDirectoryName(child)!;
+        using var identity = WindowsIdentity.GetCurrent(); var security = new DirectorySecurity(); security.SetAccessRuleProtection(true, false);
+        security.SetOwner(identity.User!); security.AddAccessRule(new(identity.User!, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+        new DirectoryInfo(parent).SetAccessControl(security);
+        var before = new DirectoryInfo(parent).GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner | AccessControlSections.Group)
+            .GetSecurityDescriptorSddlForm(AccessControlSections.Access | AccessControlSections.Owner | AccessControlSections.Group);
+        var deleted = Assert.Single((await Run(Request("delete", child))).Items); await Run(Request("delete", parent));
+        await _operations.RestoreAsync(new() { RecoveryId = deleted.RecoveryId! }, Accessible, default);
+        Assert.Equal(before, new DirectoryInfo(parent).GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner | AccessControlSections.Group)
+            .GetSecurityDescriptorSddlForm(AccessControlSections.Access | AccessControlSections.Owner | AccessControlSections.Group));
+        Assert.Equal("original 🎸\r\n", File.ReadAllText(child));
+    }
+
+    [WindowsFact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public async Task NativeRecoveryRetainsProtectedAclOwnershipAndAlternateStream()
+    {
+        var source = FileWith("protected.txt"); using var identity = WindowsIdentity.GetCurrent();
+        var security = new FileSecurity(); security.SetAccessRuleProtection(true, false);
+        security.SetOwner(identity.User!);
+        security.AddAccessRule(new(identity.User!, FileSystemRights.FullControl, AccessControlType.Allow));
+        new FileInfo(source).SetAccessControl(security);
+        File.WriteAllText(source + ":metadata", "alternate stream");
+        var before = new FileInfo(source).GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner).GetSecurityDescriptorSddlForm(AccessControlSections.Access | AccessControlSections.Owner);
+        var duplicate = Assert.Single((await Run(Request("duplicate", source))).Items); Assert.True(duplicate.Success, duplicate.Message);
+        Assert.Equal("alternate stream", File.ReadAllText(duplicate.Path! + ":metadata"));
+        var deleted = Assert.Single((await Run(Request("delete", source))).Items); Assert.True(deleted.Success, deleted.Message);
+        await _operations.RestoreAsync(new() { RecoveryId = deleted.RecoveryId! }, Accessible, default);
+        Assert.Equal(before, new FileInfo(source).GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner).GetSecurityDescriptorSddlForm(AccessControlSections.Access | AccessControlSections.Owner));
+        Assert.Equal("alternate stream", File.ReadAllText(source + ":metadata"));
+    }
+
     [WindowsFact]
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     public async Task RecoveryIsPrivateAndRestoreRetainsTheOriginalHiddenAttribute()
@@ -288,4 +367,12 @@ internal sealed class WindowsFactAttribute : FactAttribute
 internal sealed class UnixFactAttribute : FactAttribute
 {
     public UnixFactAttribute() { if (OperatingSystem.IsWindows()) Skip = "Unix permission modes."; }
+}
+internal sealed class CrossVolumeWindowsFactAttribute : FactAttribute
+{
+    public CrossVolumeWindowsFactAttribute()
+    {
+        if (!OperatingSystem.IsWindows() || !Directory.Exists("Q:\\repos\\tlbx-2\\.dev\\file-git-production"))
+            Skip = "Requires the local Q: second-volume fixture lane.";
+    }
 }

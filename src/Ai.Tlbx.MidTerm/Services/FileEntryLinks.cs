@@ -17,6 +17,14 @@ internal static partial class FileEntryLinks
     internal static bool IsDirectory(string path) => (File.GetAttributes(path) & FileAttributes.Directory) != 0;
     internal static bool IsLink(string path) => (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
 
+    internal static void MoveWindows(string source, string target)
+    {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+        if (MoveFileExW(source, target, 8)) return; // Write-through, never copy across volumes or replace an entry.
+        var error = Marshal.GetLastPInvokeError();
+        throw new IOException(new Win32Exception(error).Message, unchecked((int)(0x80070000u | (uint)error)));
+    }
+
     internal static byte[] Descriptor(string path)
     {
         if (OperatingSystem.IsWindows()) return ReadWindows(path);
@@ -76,6 +84,10 @@ internal static partial class FileEntryLinks
     [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
     private static partial SafeFileHandle CreateFileW(string name, uint access, uint sharing,
         IntPtr security, uint creation, uint flags, IntPtr template);
+
+    [LibraryImport("kernel32.dll", EntryPoint = "MoveFileExW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool MoveFileExW(string source, string target, uint flags);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

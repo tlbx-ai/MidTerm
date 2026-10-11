@@ -492,6 +492,28 @@ Quarantäne-/Publikationsorte müssen dafür vor der UI-Abnahme überprüft werd
 Cross-volume- und Unix/macOS-Filesystem-/Case-Akzeptanz fehlen weiterhin.
 Kein Files-Minor vor dem vollständigen Phasenabschluss.
 
+**Weitere Backendprüfung (2026-10-11, weiterhin offen):** Recovery verschiebt
+jetzt das echte Dateisystemobjekt statt eines Inhaltsklons; dadurch bleiben
+Windows-ACL, Besitzer, Links und alternative Streams erhalten. Bei einem anderen
+Storage-Volume liegt der private Payload auf dem Ursprungsvolume, in Git-Fällen
+im administrativen Git-Verzeichnis. Windows nutzt MoveFileEx ohne impliziten
+Cross-Volume-Copy-Fallback; die .NET-Implementierung kann einen Move sonst als
+Copy/Delete ausführen. Private Kopiercontainer liegen bei Git-Zielen ebenfalls
+außerhalb des Worktrees. Cross-Volume-Move publiziert die geprüfte Kopie und
+behält das Original in Recovery. Snapshotdaten stellen Rechte fehlender Restore-
+Eltern wieder her; SACL wird dabei nicht angefordert. Der Test fand und reparierte
+hier einen unbeabsichtigten SeSecurityPrivilege-Request. Native Windows-Copy
+bewahrt auch Alternate Data Streams. Überlappende Auswahl wird über ausgewählte
+Vorfahren eingeordnet, statt quadratische Filesystem-Metadataprobes auszuführen.
+64 native Prüfungen bestehen, ein Unix-Test bleibt explizit übersprungen.
+Ein echter ReFS-Q:/NTFS-C:-Test prüft EXDEV, ACL/Owner, Cross-Volume-Move und
+Git-Status ohne Recovery-/Stagingdateien; NTFS prüft geschützte ACL und ADS.
+Sieben echte Source-HTTP-/Diskfälle bestehen erneut. Evidenz:
+`task-21-unit/native-copy-final.trx` und `task-21-final-safety-api/summary.json`.
+Unix-native Rename/Volume-Semantik und weitere Plattformakzeptanz bleiben vor
+Release zu prüfen. UI/Kontextmenüs, Clipboard, Konflikte/Recovery und die gesamte
+Browserabnahme sind weiterhin nicht implementiert/abgenommen.
+
 ### 22. [ ] Dateiansicht, Sortierung, Filter und Metadaten vervollständigen
 
 **Befund (mittel, Erwartungslücke):** Nur Ordner-zuerst/Namen/Größen; kein Datum,

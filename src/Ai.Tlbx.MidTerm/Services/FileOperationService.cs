@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Ai.Tlbx.MidTerm.Models.Files;
+using Ai.Tlbx.MidTerm.Services.Git;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -15,6 +16,7 @@ public sealed class FileOperationService(string storageDirectory)
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static readonly StringComparer Paths = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private static readonly HashSet<string> Actions = ["createFile", "createFolder", "rename", "move", "copy", "duplicate", "delete"];
+    private readonly Dictionary<string, string?> _gitStageDirectories = new(Paths);
     internal void GrantStorageOwner(string sid) => FileRecoveryStorage.EnsurePrivate(_storage, sid);
     private FileOperationService(string directory, string owner) : this(directory)
     {
@@ -35,6 +37,7 @@ public sealed class FileOperationService(string storageDirectory)
         try
         {
             FileRecoveryStorage.EnsurePrivate(_storage);
+            _gitStageDirectories.Clear();
             var receiptPath = Path.Combine(_storage, "operations", id + ".json");
             if (File.Exists(receiptPath))
             {
@@ -58,9 +61,8 @@ public sealed class FileOperationService(string storageDirectory)
             var receipt = new OperationReceipt { Digest = digest, AuthorityPaths = authorityPaths.ToArray(), Response = response };
             Write(receiptPath, receipt, FileOperationJsonContext.Default.OperationReceipt);
             var results = new List<FileOperationItem>();
-            var topLevel = sources.Where(path => !sources.Any(parent => !Paths.Equals(path, parent) &&
-                FileEntryLinks.IsDirectory(parent) && !FileEntryLinks.IsLink(parent) && FileService.IsWithinDirectory(path, parent)))
-                .OrderBy(path => path.Length).ToArray();
+            var coveringParents = CoveringParents(sources);
+            var topLevel = sources.Where(path => !coveringParents.ContainsKey(path)).ToArray();
             var completed = new Dictionary<string, FileOperationItem>(Paths);
             foreach (var source in request.Action is "createFile" or "createFolder" ? new string?[] { null } : topLevel)
             {
@@ -84,7 +86,7 @@ public sealed class FileOperationService(string storageDirectory)
             }
             foreach (var source in sources.Except(topLevel, Paths))
             {
-                var parent = topLevel.First(candidate => FileService.IsWithinDirectory(source, candidate));
+                var parent = coveringParents[source];
                 var item = completed[parent];
                 results.Add(new FileOperationItem { SourcePath = logicalSources[source], Success = item.Success, Code = item.Success ? "included_in_folder" : item.Code,
                     Message = item.Message, Path = item.Path is null ? null : Path.Combine(item.Path, Path.GetRelativePath(parent, source)), RecoveryId = item.RecoveryId });
@@ -96,13 +98,32 @@ public sealed class FileOperationService(string storageDirectory)
         finally { Gate.Release(); }
     }
 
+    private static Dictionary<string, string> CoveringParents(string[] sources)
+    {
+        var directories = sources.Where(path => {
+            var attributes = File.GetAttributes(path);
+            return (attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) == FileAttributes.Directory;
+        }).ToHashSet(Paths);
+        var covered = new Dictionary<string, string>(Paths);
+        foreach (var source in sources)
+        {
+            var parent = Path.GetDirectoryName(source);
+            while (parent is not null)
+            {
+                if (directories.Contains(parent)) covered[source] = parent;
+                parent = Path.GetDirectoryName(parent);
+            }
+        }
+        return covered;
+    }
+
     private async Task<FileOperationItem> ApplyAsync(FileOperationRequest request, string? source, string? directory,
         Func<string, bool> accessible, HashSet<string> roots, CancellationToken ct)
     {
         if (source is not null) RequireEntry(source, accessible, roots, request.Action is not ("copy" or "duplicate"));
         if (request.Action == "delete")
         {
-            var recovery = await RecoverAsync(source!, "delete", ct);
+            var recovery = await RecoverAsync(source!, "delete", accessible, ct);
             return new() { SourcePath = source, Success = true, RecoveryId = recovery.Id };
         }
         var parent = directory ?? Path.GetDirectoryName(source!)!;
@@ -125,14 +146,14 @@ public sealed class FileOperationService(string storageDirectory)
         if (FileEntryLinks.Exists(target) && !caseOnly)
         {
             if (conflict != "replace") throw Failure(409, "name_conflict", "A file or folder with that name already exists.");
-            replaced = await RecoverAsync(target, "replace", ct);
+            replaced = await RecoverAsync(target, "replace", accessible, ct);
         }
         try
         {
             if (request.Action is "createFile" or "createFolder") await CreateAsync(target, request.Action == "createFolder", ct);
             else if (request.Action is "copy" or "duplicate") await CopyPublishedAsync(source!, target, ct);
             else if (caseOnly) RenameCase(source!, target);
-            else await MoveAsync(source!, target, ct);
+            else await MoveAsync(source!, target, accessible, ct);
             return new() { SourcePath = source, Path = target, Success = true, RecoveryId = replaced?.Id };
         }
         catch
@@ -143,42 +164,56 @@ public sealed class FileOperationService(string storageDirectory)
         }
     }
 
-    private async Task<RecoveryRecord> RecoverAsync(string original, string kind, CancellationToken ct)
+    private async Task<RecoveryRecord> RecoverAsync(string original, string kind, Func<string, bool> accessible, CancellationToken ct)
     {
         FileEntryCopy.RequireDeletable(original);
         var id = Guid.CreateVersion7().ToString("N");
         var record = new RecoveryRecord { Id = id, OriginalPath = original, Kind = kind, CreatedAt = DateTimeOffset.UtcNow,
             IsDirectory = FileEntryLinks.IsDirectory(original), IsLink = FileEntryLinks.IsLink(original),
             OriginalAttributes = File.GetAttributes(original),
+            ParentMetadata = FileDirectoryMetadata.CaptureParents(original, accessible),
             StagePath = StageName(Path.GetDirectoryName(original)!), StoredPath = Path.Combine(_storage, "entries", id, "content") };
         var recordPath = RecoveryPath(id);
         Write(recordPath, record, FileOperationJsonContext.Default.RecoveryRecord);
+        Directory.CreateDirectory(Path.GetDirectoryName(record.StoredPath)!);
         try
         {
-            FileEntryCopy.Move(original, record.StagePath);
-            FileEntryCopy.HideWindowsStage(record.StagePath);
-            Directory.CreateDirectory(Path.GetDirectoryName(record.StoredPath)!);
-            await FileEntryCopy.CopyAsync(record.StagePath, record.StoredPath, ct);
-            record.Fingerprint = await FileEntryCopy.FingerprintAsync(record.StagePath, ct);
-            if (record.Fingerprint != await FileEntryCopy.FingerprintAsync(record.StoredPath, ct))
-                throw Failure(409, "source_changed", "The entry changed while its recovery copy was being written.");
+            // A rename on the same volume preserves ownership, ACLs, links and all file streams.
+            record.StagePath = record.StoredPath;
+            Write(recordPath, record, FileOperationJsonContext.Default.RecoveryRecord);
+            FileEntryCopy.Move(original, record.StoredPath);
+            record.Fingerprint = await FileEntryCopy.FingerprintAsync(record.StoredPath, ct);
             record.State = "stored"; Write(recordPath, record, FileOperationJsonContext.Default.RecoveryRecord);
-            FileEntryCopy.RequireDeletable(record.StagePath);
-            FileEntryCopy.RemoveOwnedStage(record.StagePath);
             return record;
+        }
+        catch (IOException ex) when ((ex.HResult & 0xFFFF) is 17 or 18)
+        {
+            // Keep the original filesystem object on its own volume when central storage differs.
+            var sourceParent = Path.GetDirectoryName(original)!;
+            var repository = await GitCommandRunner.GetRepositoryInfoAsync(sourceParent);
+            var recoveryParent = repository?.GitDir ?? sourceParent;
+            if (FileService.IsWithinDirectory(recoveryParent, original)) recoveryParent = sourceParent;
+            var container = Path.Combine(recoveryParent, ".tlbx-recovery-" + id);
+            FileRecoveryStorage.EnsurePrivate(container);
+            if (OperatingSystem.IsWindows()) File.SetAttributes(container, File.GetAttributes(container) | FileAttributes.Hidden);
+            record.StoredPath = Path.Combine(container, "content"); record.StagePath = record.StoredPath;
+            Write(recordPath, record, FileOperationJsonContext.Default.RecoveryRecord);
+            try
+            {
+                FileEntryCopy.Move(original, record.StoredPath);
+                record.Fingerprint = await FileEntryCopy.FingerprintAsync(record.StoredPath, ct);
+                record.State = "stored"; Write(recordPath, record, FileOperationJsonContext.Default.RecoveryRecord);
+                return record;
+            }
+            catch
+            {
+                if (!FileEntryLinks.Exists(original) && FileEntryLinks.Exists(record.StoredPath)) FileEntryCopy.Move(record.StoredPath, original);
+                throw;
+            }
         }
         catch
         {
-            // Never overwrite a newly recreated original, or erase a failed recovery copy.
-            if (!FileEntryLinks.Exists(original))
-            {
-                if (record.State == "stored") await CopyPublishedAsync(record.StoredPath, original, CancellationToken.None, record.OriginalAttributes);
-                else if (FileEntryLinks.Exists(record.StagePath))
-                {
-                    FileEntryCopy.Move(record.StagePath, original);
-                    if (!record.IsLink) File.SetAttributes(original, record.OriginalAttributes);
-                }
-            }
+            if (!FileEntryLinks.Exists(original) && FileEntryLinks.Exists(record.StoredPath)) FileEntryCopy.Move(record.StoredPath, original);
             throw;
         }
     }
@@ -195,7 +230,7 @@ public sealed class FileOperationService(string storageDirectory)
             if (record.State == "restored") return new() { Success = true, Path = record.RestoredPath, RecoveryId = id };
             var target = request.Conflict == "keepBoth" ? UniqueName(record.OriginalPath) : record.OriginalPath;
             if (FileEntryLinks.Exists(target)) throw Failure(409, "name_conflict", "The original name is occupied. Keep both to restore under another name.");
-            RequireRecoveryParent(target, accessible, create: true);
+            RequireRecoveryParent(target, accessible, create: true, record.ParentMetadata);
             if (record.State == "stored") await RestoreStoredAsync(record, target, ct);
             else if (FileEntryLinks.Exists(record.StagePath))
             {
@@ -247,16 +282,22 @@ public sealed class FileOperationService(string storageDirectory)
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or FileDocumentException) { return false; }
     }
 
-    private static async Task RestoreStoredAsync(RecoveryRecord record, string target, CancellationToken ct)
+    private async Task RestoreStoredAsync(RecoveryRecord record, string target, CancellationToken ct)
     {
         if (record.Fingerprint != await FileEntryCopy.FingerprintAsync(record.StoredPath, ct))
             throw Failure(409, "recovery_changed", "The recovery copy has changed. It has been kept for inspection.");
-        await CopyPublishedAsync(record.StoredPath, target, ct, record.OriginalAttributes);
+        ct.ThrowIfCancellationRequested(); FileEntryCopy.Move(record.StoredPath, target);
     }
 
-    private static async Task CopyPublishedAsync(string source, string target, CancellationToken ct, FileAttributes? rootAttributes = null)
+    private async Task CopyPublishedAsync(string source, string target, CancellationToken ct, FileAttributes? rootAttributes = null)
     {
-        var stage = StageName(Path.GetDirectoryName(target)!);
+        var parent = Path.GetDirectoryName(target)!;
+        var temporaryParent = await GitStageDirectoryAsync(parent);
+        var container = StageName(temporaryParent ?? parent);
+        if (FileEntryLinks.IsDirectory(source) && !FileEntryLinks.IsLink(source) && FileService.IsWithinDirectory(container, source))
+            container = StageName(Path.Combine(_storage, "staging"));
+        FileRecoveryStorage.EnsurePrivate(container);
+        var stage = Path.Combine(container, "content");
         try
         {
             await FileEntryCopy.CopyAsync(source, stage, ct);
@@ -268,8 +309,17 @@ public sealed class FileOperationService(string storageDirectory)
         }
         finally
         {
-            if (FileEntryLinks.Exists(stage)) FileEntryCopy.RemoveOwnedStage(stage, clearReadOnly: true);
+            if (FileEntryLinks.Exists(container)) FileEntryCopy.RemoveOwnedStage(container, clearReadOnly: true);
         }
+    }
+
+    private async Task<string?> GitStageDirectoryAsync(string directory)
+    {
+        if (_gitStageDirectories.TryGetValue(directory, out var existing)) return existing;
+        var info = await GitCommandRunner.GetRepositoryInfoAsync(directory);
+        var gitDirectory = info?.GitDir;
+        _gitStageDirectories[directory] = gitDirectory;
+        return gitDirectory;
     }
 
     private static async Task CreateAsync(string target, bool directory, CancellationToken ct)
@@ -285,22 +335,17 @@ public sealed class FileOperationService(string storageDirectory)
         finally { if (FileEntryLinks.Exists(stage)) FileEntryCopy.RemoveOwnedStage(stage, clearReadOnly: true); }
     }
 
-    private static async Task MoveAsync(string source, string target, CancellationToken ct)
+    private async Task MoveAsync(string source, string target, Func<string, bool> accessible, CancellationToken ct)
     {
         try { FileEntryCopy.Move(source, target); return; }
         catch (IOException ex) when ((ex.HResult & 0xFFFF) is 17 or 18) { }
-        // Cross-volume moves publish a verified copy before removing the quarantined original.
+        // Publish on the destination volume, then retain the original object in recovery.
         FileEntryCopy.RequireDeletable(source);
-        var attributes = File.GetAttributes(source);
-        var stage = StageName(Path.GetDirectoryName(source)!); FileEntryCopy.Move(source, stage);
-        FileEntryCopy.HideWindowsStage(stage);
-        try { await CopyPublishedAsync(stage, target, ct, attributes); FileEntryCopy.RequireDeletable(stage); FileEntryCopy.RemoveOwnedStage(stage); }
-        catch
-        {
-            if (!FileEntryLinks.Exists(source) && FileEntryLinks.Exists(stage))
-            { FileEntryCopy.Move(stage, source); if (!FileEntryLinks.IsLink(source)) File.SetAttributes(source, attributes); }
-            throw;
-        }
+        await CopyPublishedAsync(source, target, ct);
+        var recovery = await RecoverAsync(source, "move", accessible, ct);
+        if (recovery.Fingerprint == await FileEntryCopy.FingerprintAsync(target, ct)) return;
+        await RestoreStoredAsync(recovery, source, CancellationToken.None);
+        throw Failure(409, "source_changed", "The source changed while moving. Its current version is back at the original location; the copied destination was retained.");
     }
 
     private static void RenameCase(string source, string target)
@@ -336,7 +381,7 @@ public sealed class FileOperationService(string storageDirectory)
         return Path.Combine(RequireDirectory(parent, accessible), Path.GetFileName(logical));
     }
 
-    private static void RequireRecoveryParent(string path, Func<string, bool> accessible, bool create)
+    private static void RequireRecoveryParent(string path, Func<string, bool> accessible, bool create, FileDirectoryMetadata[]? metadata = null)
     {
         if (!accessible(path)) throw new UnauthorizedAccessException();
         var parent = Path.GetDirectoryName(path) ?? throw new UnauthorizedAccessException();
@@ -352,7 +397,13 @@ public sealed class FileOperationService(string storageDirectory)
         {
             current = Path.Combine(current, name);
             if (!accessible(current)) throw new UnauthorizedAccessException();
-            if (create) { Directory.CreateDirectory(current); current = RequireDirectory(current, accessible); }
+            if (create)
+            {
+                Directory.CreateDirectory(current);
+                try { metadata?.FirstOrDefault(entry => Paths.Equals(entry.Path, current))?.Apply(current); }
+                catch { if (!Directory.EnumerateFileSystemEntries(current).Any()) Directory.Delete(current); throw; }
+                current = RequireDirectory(current, accessible);
+            }
         }
     }
 
@@ -454,6 +505,7 @@ internal sealed class RecoveryRecord
     public bool IsDirectory { get; set; }
     public bool IsLink { get; set; }
     public FileAttributes OriginalAttributes { get; set; }
+    public FileDirectoryMetadata[] ParentMetadata { get; set; } = [];
 }
 
 [JsonSerializable(typeof(FileOperationRequest))]
