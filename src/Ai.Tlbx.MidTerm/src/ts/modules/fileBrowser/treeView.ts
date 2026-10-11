@@ -9,6 +9,7 @@ import { fetchTree } from './treeApi';
 import { t } from '../i18n';
 import { getFileVisibility } from '../fileViewer/visibility';
 import { getFileIcon, formatSize } from '../fileViewer/rendering';
+import { reconcileKeyedChildren } from '../../utils/domReconcile';
 
 interface TreeState {
   rootPath: string;
@@ -26,6 +27,7 @@ interface TreeState {
 }
 
 const treeStates = new Map<string, TreeState>();
+const rowEntries = new WeakMap<HTMLElement, FileTreeEntry>();
 
 export function getTreeSelection(sessionId: string): FileTreeEntry | null {
   const state = treeStates.get(sessionId);
@@ -67,21 +69,6 @@ export function createTreeView(
   treeStates.set(sessionId, state);
 }
 
-export async function setTreeRoot(sessionId: string, rootPath: string): Promise<void> {
-  const state = treeStates.get(sessionId);
-  if (!state) return;
-
-  const request = ++state.rootRequest;
-  const data = await fetchTree(rootPath, sessionId);
-  if (request !== state.rootRequest) return;
-  if (!data) {
-    state.container.innerHTML = `<div class="tree-empty">${t('fileBrowser.unableToLoad')}</div>`;
-    return;
-  }
-
-  applyTreeRoot(sessionId, rootPath, data);
-}
-
 /** Apply a validated directory only after both navigation and listing have succeeded. */
 export function applyTreeRoot(sessionId: string, rootPath: string, data: FileTreeResponse): void {
   const state = treeStates.get(sessionId);
@@ -108,6 +95,7 @@ export async function applyTreeVisibility(
   sessionId: string,
   rootPath: string,
   data: FileTreeResponse,
+  signal?: AbortSignal,
 ): Promise<void> {
   const state = treeStates.get(sessionId);
   if (!state || state.rootPath !== rootPath) return;
@@ -120,10 +108,11 @@ export async function applyTreeVisibility(
     const pages = await Promise.all(
       expanded
         .slice(index, index + 4)
-        .map(async (path) => ({ path, data: await fetchTree(path, sessionId) })),
+        .map(async (path) => ({ path, data: await fetchTree(path, sessionId, signal) })),
     );
     if (
       state.rootRequest !== request ||
+      signal?.aborted ||
       state.rootPath !== rootPath ||
       getFileVisibility() !== preferences
     )
@@ -146,7 +135,8 @@ export function destroyTreeView(sessionId: string): void {
 }
 
 function renderTree(state: TreeState): void {
-  state.container.innerHTML = '';
+  const focused = document.activeElement as HTMLElement | null;
+  const hadFocus = !!focused && state.container.contains(focused);
   const entries = state.treeData.get(state.rootPath);
   if (!entries) return;
   if (entries.length === 0) {
@@ -154,11 +144,26 @@ function renderTree(state: TreeState): void {
     return;
   }
 
-  const fragment = document.createDocumentFragment();
-  for (const entry of sortEntries(entries)) {
-    fragment.appendChild(createTreeNode(state, entry, 0));
+  renderBranch(state.container, state, entries, 0);
+  if (hadFocus && !focused.isConnected) {
+    state.container.tabIndex = -1;
+    state.container.focus({ preventScroll: true });
   }
-  state.container.appendChild(fragment);
+}
+
+function renderBranch(
+  container: HTMLElement,
+  state: TreeState,
+  entries: FileTreeEntry[],
+  depth: number,
+): void {
+  reconcileKeyedChildren(container, sortEntries(entries), {
+    key: (entry) => entry.fullPath,
+    create: () => createTreeNode(state),
+    patch: (wrapper, entry) => {
+      patchTreeNode(wrapper, state, entry, depth);
+    },
+  });
 }
 
 function sortEntries(entries: FileTreeEntry[]): FileTreeEntry[] {
@@ -168,78 +173,88 @@ function sortEntries(entries: FileTreeEntry[]): FileTreeEntry[] {
   });
 }
 
-function createTreeNode(state: TreeState, entry: FileTreeEntry, depth: number): HTMLElement {
+function createTreeNode(state: TreeState): HTMLElement {
   const node = document.createElement('div');
   node.className = 'tree-node';
-  if (state.selectedPath === entry.fullPath) node.classList.add('selected');
-
-  const indent = document.createElement('span');
-  indent.className = 'tree-indent';
-  indent.style.width = `${depth * 16}px`;
-
-  const expand = document.createElement('span');
-  expand.className = 'tree-expand';
-  if (entry.isDirectory) {
-    const isExpanded = state.expandedPaths.has(entry.fullPath);
-    expand.textContent = isExpanded ? '\u25BE' : '\u25B8';
-    expand.classList.add('expandable');
+  node.tabIndex = -1;
+  for (const className of [
+    'tree-indent',
+    'tree-expand',
+    'tree-icon',
+    'tree-name',
+    'file-visibility-badge',
+    'tree-git-badge',
+    'tree-size',
+  ]) {
+    const span = document.createElement('span');
+    span.className = className;
+    node.appendChild(span);
   }
-
-  const icon = document.createElement('span');
-  icon.className = 'tree-icon';
-  icon.textContent = getFileIcon(entry.name, entry.isDirectory);
-
-  const name = document.createElement('span');
-  name.className = 'tree-name';
-  name.textContent = entry.name;
-
-  node.appendChild(indent);
-  node.appendChild(expand);
-  node.appendChild(icon);
-  node.appendChild(name);
-  appendVisibilityBadge(node, entry);
-
-  if (entry.gitStatus) {
-    const badge = document.createElement('span');
-    badge.className = 'tree-git-badge';
-    badge.textContent = entry.gitStatus;
-    node.appendChild(badge);
-  }
-
-  if (!entry.isDirectory && entry.size != null) {
-    const size = document.createElement('span');
-    size.className = 'tree-size';
-    size.textContent = formatSize(entry.size);
-    node.appendChild(size);
-  }
-
   node.addEventListener('click', () => {
+    const entry = rowEntries.get(node);
+    if (!entry) return;
     if (entry.isDirectory) {
       void toggleExpand(state, entry);
     } else {
       void selectFile(state, entry, node);
     }
   });
-  if (entry.isDirectory)
-    node.addEventListener('dblclick', (event) => {
-      event.preventDefault();
-      state.onDirectoryOpen?.(entry);
-    });
+  node.addEventListener('dblclick', (event) => {
+    const entry = rowEntries.get(node);
+    if (!entry?.isDirectory) return;
+    event.preventDefault();
+    state.onDirectoryOpen?.(entry);
+  });
 
   const wrapper = document.createElement('div');
   wrapper.className = 'tree-node-group';
   wrapper.appendChild(node);
-
-  if (entry.isDirectory && state.expandedPaths.has(entry.fullPath)) {
-    const children = state.treeData.get(entry.fullPath);
-    if (children) {
-      for (const child of sortEntries(children)) {
-        wrapper.appendChild(createTreeNode(state, child, depth + 1));
-      }
-    }
-  }
-
+  const children = document.createElement('div');
+  children.className = 'tree-children';
+  wrapper.appendChild(children);
   return wrapper;
+}
+
+function patchTreeNode(
+  wrapper: HTMLElement,
+  state: TreeState,
+  entry: FileTreeEntry,
+  depth: number,
+): void {
+  const node = wrapper.firstElementChild as HTMLElement;
+  rowEntries.set(node, entry);
+  node.dataset.path = entry.fullPath;
+  node.classList.toggle('selected', state.selectedPath === entry.fullPath);
+  const text = (selector: string, value: string): void => {
+    const element = node.querySelector<HTMLElement>(selector);
+    if (element && element.textContent !== value) element.textContent = value;
+  };
+  const indent = node.querySelector<HTMLElement>('.tree-indent');
+  if (indent) indent.style.width = `${depth * 16}px`;
+  const expanded = entry.isDirectory && state.expandedPaths.has(entry.fullPath);
+  text('.tree-expand', entry.isDirectory ? (expanded ? '▾' : '▸') : '');
+  text('.tree-icon', getFileIcon(entry.name, entry.isDirectory));
+  text('.tree-name', entry.name);
+  text(
+    '.file-visibility-badge',
+    [entry.isHidden ? t('fileBrowser.hidden') : '', entry.isIgnored ? t('fileBrowser.ignored') : '']
+      .filter(Boolean)
+      .join(', '),
+  );
+  text('.tree-git-badge', entry.gitStatus ?? '');
+  text('.tree-size', !entry.isDirectory && entry.size != null ? formatSize(entry.size) : '');
+  for (const selector of ['.file-visibility-badge', '.tree-git-badge', '.tree-size']) {
+    hideEmptyMetadata(node, selector);
+  }
+  node.querySelector('.tree-expand')?.classList.toggle('expandable', entry.isDirectory);
+  const children = wrapper.lastElementChild as HTMLElement;
+  children.hidden = !expanded;
+  if (expanded) renderBranch(children, state, state.treeData.get(entry.fullPath) ?? [], depth + 1);
+}
+
+function hideEmptyMetadata(node: HTMLElement, selector: string): void {
+  const span = node.querySelector<HTMLElement>(selector);
+  if (span) span.style.display = span.textContent ? '' : 'none';
 }
 
 async function selectFile(
@@ -257,29 +272,16 @@ async function selectFile(
   node.classList.add('selected');
 }
 
-function appendVisibilityBadge(node: HTMLElement, entry: FileTreeEntry): void {
-  if (!entry.isIgnored && !entry.isHidden) return;
-  const visibility = document.createElement('span');
-  visibility.className = 'file-visibility-badge';
-  visibility.textContent = [
-    entry.isHidden ? t('fileBrowser.hidden') : '',
-    entry.isIgnored ? t('fileBrowser.ignored') : '',
-  ]
-    .filter(Boolean)
-    .join(', ');
-  node.appendChild(visibility);
-}
-
 async function toggleExpand(state: TreeState, entry: FileTreeEntry): Promise<void> {
   if (state.expandedPaths.has(entry.fullPath)) {
     state.expandedPaths.delete(entry.fullPath);
   } else {
     state.expandedPaths.add(entry.fullPath);
-    if (!state.treeData.has(entry.fullPath)) {
-      const data = await fetchTree(entry.fullPath, state.sessionId);
-      if (data) {
-        state.treeData.set(entry.fullPath, data.entries);
-      }
+    const request = state.rootRequest;
+    const data = await fetchTree(entry.fullPath, state.sessionId);
+    if (request !== state.rootRequest || !state.expandedPaths.has(entry.fullPath)) return;
+    if (data) {
+      state.treeData.set(entry.fullPath, data.entries);
     }
   }
   renderTree(state);

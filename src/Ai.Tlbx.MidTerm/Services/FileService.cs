@@ -12,7 +12,8 @@ public sealed class FileService
     private const long FileInfoCacheNegativeTtlTicks = TimeSpan.TicksPerSecond * 5;
     private static readonly FileExtensionContentTypeProvider _contentTypeProvider = new();
     private static readonly Lock _fileInfoCacheLock = new();
-    private static readonly Dictionary<string, FileInfoCacheEntry> _fileInfoCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, FileInfoCacheEntry> _fileInfoCache = new(
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     private static readonly FileInfoCacheSlot[] _fileInfoCacheRing = new FileInfoCacheSlot[FileInfoCacheMaxEntries];
     private static int _fileInfoCacheRingIndex;
     private static long _fileInfoCacheGeneration;
@@ -240,7 +241,7 @@ public sealed class FileService
         return response;
     }
 
-    public static FilePathInfo GetFileInfo(string path)
+    public static FilePathInfo GetFileInfo(string path, bool fresh = false)
     {
         if (string.IsNullOrWhiteSpace(path) || path.Contains("..", StringComparison.Ordinal))
         {
@@ -250,7 +251,7 @@ public sealed class FileService
         try
         {
             var fullPath = Path.GetFullPath(path);
-            if (TryGetCachedFileInfo(fullPath, out var cached))
+            if (!fresh && TryGetCachedFileInfo(fullPath, out var cached))
             {
                 return cached;
             }

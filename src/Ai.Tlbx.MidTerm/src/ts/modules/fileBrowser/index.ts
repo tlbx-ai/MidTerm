@@ -6,7 +6,7 @@
  */
 
 import { createLogger } from '../logging';
-import { onTabActivated, onTabDeactivated } from '../sessionTabs';
+import { getActiveTab, onTabActivated, onTabDeactivated } from '../sessionTabs';
 import { addProcessStateListener } from '../process';
 import {
   applyTreeRoot,
@@ -17,7 +17,7 @@ import {
   setTreeSelection,
 } from './treeView';
 import { renderPreview, clearPreview } from './filePreview';
-import { $processStates } from '../../stores';
+import { $activeSessionId, $processStates } from '../../stores';
 import { confirmFileNavigation } from '../fileViewer/editState';
 import { beginFileOpen, isFileOpenCurrent } from '../fileViewer/loadState';
 import { t } from '../i18n';
@@ -34,10 +34,16 @@ const navigators = new Map<string, BrowserNavigation>();
 export function initFileBrowser(): void {
   onTabActivated('files', (sessionId, panel) => {
     ensureFileBrowserForSession(sessionId, panel);
+    navigators.get(sessionId)?.setActive(sessionId === $activeSessionId.get());
   });
 
-  onTabDeactivated('files', () => {
-    // Nothing to clean up on deactivation
+  onTabDeactivated('files', (sessionId) => {
+    navigators.get(sessionId)?.setActive(false);
+  });
+  $activeSessionId.listen((active) => {
+    navigators.forEach((navigation, sessionId) => {
+      navigation.setActive(sessionId === active && getActiveTab(sessionId) === 'files');
+    });
   });
 
   addProcessStateListener((sessionId, state) => {
@@ -116,7 +122,7 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
 
     if (browser) {
       const navigation = new BrowserNavigation(sessionId, {
-        refilter: (path, data) => applyTreeVisibility(sessionId, path, data),
+        refilter: (path, data, signal) => applyTreeVisibility(sessionId, path, data, signal),
         confirm: () => confirmFileNavigation(previewContainer),
         file: async (entry) => {
           if (!(await selectFile(entry))) return false;

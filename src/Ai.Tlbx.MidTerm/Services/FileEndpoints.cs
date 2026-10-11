@@ -2,6 +2,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Services.Git;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Settings;
+using System.Threading.Channels;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -16,6 +17,37 @@ public static class FileEndpoints
     {
         var fileService = new FileService(sessionManager, allowlistService, gitWatcher);
         var documents = new FileDocumentService();
+
+        app.MapGet("/api/files/events", async (HttpContext context, string path, string sessionId) =>
+        {
+            var (resolved, error) = await ResolveFileAccessAsync(path, sessionId, fileService);
+            if (error is not null) { await error.ExecuteAsync(context); return; }
+            if (!Directory.Exists(resolved)) { context.Response.StatusCode = 404; return; }
+            var ct = context.RequestAborted;
+            var changes = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
+            { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true, SingleWriter = false });
+            using var watcher = new FileSystemWatcher(resolved!)
+            { IncludeSubdirectories = true, NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size };
+            FileSystemEventHandler changed = (_, _) => changes.Writer.TryWrite(true);
+            RenamedEventHandler renamed = (_, _) => changes.Writer.TryWrite(true);
+            ErrorEventHandler overflow = (_, _) => changes.Writer.TryWrite(true);
+            watcher.Changed += changed; watcher.Created += changed; watcher.Deleted += changed;
+            watcher.Renamed += renamed; watcher.Error += overflow;
+            watcher.EnableRaisingEvents = true;
+            context.Response.ContentType = "text/event-stream";
+            context.Response.Headers.CacheControl = "no-cache";
+            try
+            {
+                await context.Response.WriteAsync("event: ready\ndata: 1\n\n", ct); await context.Response.Body.FlushAsync(ct);
+                while (await changes.Reader.WaitToReadAsync(ct))
+                {
+                    await Task.Delay(180, ct);
+                    while (changes.Reader.TryRead(out _)) { }
+                    await context.Response.WriteAsync("event: changed\ndata: 1\n\n", ct); await context.Response.Body.FlushAsync(ct);
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        });
 
         app.MapGet("/api/files/picker/home", () =>
         {

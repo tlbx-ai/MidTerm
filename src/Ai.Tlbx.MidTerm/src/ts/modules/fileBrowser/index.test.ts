@@ -50,6 +50,7 @@ vi.mock('./navigation', () => ({
     hasLocation = false;
     busy = false;
     setCwd = setCwdMock;
+    setActive = vi.fn();
   },
 }));
 

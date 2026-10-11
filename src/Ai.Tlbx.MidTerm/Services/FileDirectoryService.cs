@@ -34,7 +34,7 @@ public static class FileDirectoryService
                 entry.Modified = File.GetLastWriteTimeUtc(canonical);
                 if (!isDirectory)
                 {
-                    var info = FileService.GetFileInfo(canonical);
+                    var info = FileService.GetFileInfo(canonical, fresh: true);
                     entry.Size = info.Size; entry.MimeType = info.MimeType; entry.IsText = info.IsText;
                 }
             }

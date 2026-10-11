@@ -380,7 +380,7 @@ Ein paralleler Source-Start zeigte zeitweise unvollständig geladenes CSS; zusä
 wurde der Navigations-Testselektor nach den neuen Checkboxen auf die Adresszeile
 präzisiert. Der stabile Einzelablauf besteht; Asset-Hotsync bleibt Workflow-Follow-up.
 
-### 19. [ ] Dateibaum aktuell halten und gezielt refreshen
+### 19. [x] Dateibaum aktuell halten und gezielt refreshen
 
 **Befund (mittel, Code):** treeData cached Unterordner dauerhaft; Reopen lädt
 nicht erneut. Rootgleichheit behält Cache, Files hat keinen Refreshbutton.
@@ -392,6 +392,27 @@ Auswahl/Expansion/Fokus/Scroll bei inhaltlichen Aktualisierungen bewahren.
 
 **Abnahme:** Dateien extern erstellen/umbenennen/löschen, offenen Baum refreshen;
 mehrere Sessions und große Ordner ohne Pollingsturm oder DOM-Neuaufbauverlust.
+
+**Nachweis 11.10.2026:** Expliziter Refresh sowie kurz gebündelte FileSystemWatcher-
+Ereignisse über einen abbrechbaren SSE-Leseweg. Offene Unterordner werden in Batches
+bis vier geladen; sichtbare Files-Tabs beobachten ihren Root, inaktive Tabs/Sessions
+schließen den Stream und brechen laufende Refresh-/Unterordnerabfragen ab. Im Leerlauf
+gibt es keine periodischen Listingrequests. Wiederaufklappen liest den Ordner erneut.
+Der Baum reconciled nach vollständigem Pfad; Handler lesen gepatchte Metadaten und
+unveränderte Zeilen behalten ihre DOM-Identität. Auswahl/Expansion/Fokus/Scroll und
+der aktuelle Editor samt Entwurf bleiben erhalten. Der ungenutzte direkte Root-
+Resetpfad ist entfernt. Directory-Metadaten umgehen gezielt veraltete Cacheeinträge;
+Cachekeys verwenden nun die Plattform-Case-Regel. Tests prüfen sofortige Größe/
+Delete-Änderungen und den Unix-Case-Zweig (Windows-Ausführung aktuell nachgewiesen).
+Sechs neue reale Browserfälle mit 600 Root-Dateien bestehen: Änderungen im offenen
+Unterordner, Zeilenidentität/Fokus, Reopen, echter Watcher, zusammengefasster 20-Dateien-
+Burst, Rename/Delete und zwei Sessions. Die erste Inaktivprüfung fand eine nachlaufende
+Childabfrage; expliziter Abort repariert sie, erneute Prüfung besteht. Alle 99 bisherigen
+Browserfälle bestehen ebenfalls (105 insgesamt). 673 Frontendtests plus Kitty und zehn
+Backend-Metadata-/Visibilitytests bestehen; Typecheck/ESLint/Diffcheck ebenfalls.
+Screenshot `refreshed-tree.png` visuell geprüft. Artefakte:
+`.dev/file-git-production/task-19-final`, `task-19-edit`, `task-19-visibility`,
+`task-19-navigation`, `task-19-directory`, `task-19-mobile`, `task-19-large`, `task-19-unit`.
 
 ### 20. [ ] Auswahl, Öffnen und Mehrfachauswahl klar trennen
 

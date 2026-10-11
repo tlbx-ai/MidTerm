@@ -620,6 +620,7 @@
   "fileBrowser.hidden": "Hidden",
   "fileBrowser.ignored": "Ignored",
   "fileBrowser.allFiltered": "All entries are hidden by the visibility filters.",
+  "fileBrowser.refresh": "Refresh",
   "fileBrowser.backToFiles": "Back to files",
   "fileBrowser.unableToLoad": "无法加载目录",
   "fileBrowser.selectFile": "选择文件进行预览",

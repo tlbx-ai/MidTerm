@@ -9,7 +9,7 @@ interface BrowserNavigationActions {
   confirm: () => Promise<boolean>;
   apply: (path: string, data: FileTreeResponse) => void;
   file: (entry: FileTreeEntry) => Promise<boolean>;
-  refilter: (path: string, data: FileTreeResponse) => Promise<void>;
+  refilter: (path: string, data: FileTreeResponse, signal: AbortSignal) => Promise<void>;
 }
 
 /** Per-session address/history UI. The server defines hierarchy and authorized roots. */
@@ -27,8 +27,14 @@ export class BrowserNavigation {
   private cwd: string | null = null;
   private openRequest: FileOpenRequest | null = null;
   private readonly visibility = createFileVisibilityControls(() => {
-    void this.refilter();
+    void this.refresh();
   });
+  private active = false;
+  private events: EventSource | null = null;
+  private refreshTask: Promise<void> | null = null;
+  private refreshAgain = false;
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshController: AbortController | null = null;
   public get hasLocation(): boolean {
     return this.metadata !== null;
   }
@@ -44,13 +50,20 @@ export class BrowserNavigation {
     this.root.setAttribute('aria-label', t('fileViewer.navigation'));
     const actionsRow = document.createElement('div');
     actionsRow.className = 'file-browser-navigation-actions';
-    for (const action of ['back', 'forward', 'up', 'cwd']) {
+    for (const action of ['back', 'forward', 'up', 'cwd', 'refresh']) {
       const button = document.createElement('button');
       button.type = 'button';
       button.dataset.browserNavigation = action;
-      button.textContent = t(action === 'cwd' ? 'fileBrowser.toCwd' : `fileViewer.${action}`);
+      button.textContent = t(
+        action === 'cwd'
+          ? 'fileBrowser.toCwd'
+          : action === 'refresh'
+            ? 'fileBrowser.refresh'
+            : `fileViewer.${action}`,
+      );
       button.addEventListener('click', () => {
-        void this.navigateAction(action);
+        if (action === 'refresh') void this.refresh();
+        else void this.navigateAction(action);
       });
       this.buttons.set(action, button);
       actionsRow.appendChild(button);
@@ -100,6 +113,66 @@ export class BrowserNavigation {
     this.generation++;
     this.controller?.abort();
     this.visibility.dispose();
+    this.setActive(false);
+  }
+
+  public setActive(active: boolean): void {
+    if (active === this.active && this.events) return;
+    this.active = active;
+    if (!active) {
+      this.refreshController?.abort();
+      this.events?.close();
+      this.events = null;
+      if (this.refreshTimer) clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    } else this.startWatching();
+  }
+
+  private startWatching(): void {
+    this.events?.close();
+    this.events = null;
+    if (!this.active || !this.metadata) return;
+    const query = new URLSearchParams({ path: this.metadata.path, sessionId: this.sessionId });
+    this.events = new EventSource(`/api/files/events?${query}`);
+    this.events.addEventListener('changed', () => {
+      this.scheduleRefresh();
+    });
+    this.events.addEventListener('ready', () => {
+      this.scheduleRefresh();
+    });
+  }
+
+  private scheduleRefresh(): void {
+    if (this.refreshTimer || !this.active) return;
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null;
+      void this.refresh();
+    }, 500);
+  }
+
+  public async refresh(): Promise<void> {
+    if (!this.active) {
+      this.refreshAgain = true;
+      return;
+    }
+    if (this.refreshTask) {
+      this.refreshAgain = true;
+      await this.refreshTask;
+      return;
+    }
+    this.refreshTask = this.refilter();
+    const button = this.buttons.get('refresh');
+    if (button) button.disabled = true;
+    try {
+      await this.refreshTask;
+    } finally {
+      this.refreshTask = null;
+      this.syncControls();
+      if (this.refreshAgain) {
+        this.refreshAgain = false;
+        this.scheduleRefresh();
+      }
+    }
   }
   public cancelPending(): void {
     this.generation++;
@@ -202,6 +275,7 @@ export class BrowserNavigation {
     this.actions.apply(next.path, data);
     this.visibility.update(data.visibility);
     this.renderLocation();
+    this.startWatching();
     return true;
   }
 
@@ -209,9 +283,13 @@ export class BrowserNavigation {
     const path = this.metadata?.path;
     if (!path) return;
     const preferences = getFileVisibility();
+    const controller = new AbortController();
+    this.refreshController = controller;
     this.error.hidden = true;
-    const data = await fetchTree(path, this.sessionId);
+    const data = await fetchTree(path, this.sessionId, controller.signal);
     if (
+      this.active &&
+      !controller.signal.aborted &&
       this.root.isConnected &&
       this.metadata?.path === path &&
       getFileVisibility() === preferences
@@ -221,7 +299,7 @@ export class BrowserNavigation {
         this.error.hidden = false;
         return;
       }
-      await this.actions.refilter(path, data);
+      await this.actions.refilter(path, data, controller.signal);
       this.visibility.update(data.visibility);
     }
   }
@@ -279,6 +357,7 @@ export class BrowserNavigation {
       forward: this.history.canForward,
       up: !!this.metadata?.parentPath,
       cwd: !!this.cwd && this.cwd !== this.metadata?.path,
+      refresh: !!this.metadata && !this.refreshTask,
     };
     for (const [action, button] of this.buttons)
       button.disabled = !enabled[action as keyof typeof enabled];

@@ -617,6 +617,7 @@
   "fileBrowser.hidden": "Hidden",
   "fileBrowser.ignored": "Ignored",
   "fileBrowser.allFiltered": "All entries are hidden by the visibility filters.",
+  "fileBrowser.refresh": "Refresh",
   "fileBrowser.backToFiles": "Back to files",
   "fileBrowser.unableToLoad": "No se pudo cargar el directorio",
   "fileBrowser.selectFile": "Seleccione un archivo para vista previa",

@@ -617,6 +617,7 @@
   "fileBrowser.hidden": "Hidden",
   "fileBrowser.ignored": "Ignored",
   "fileBrowser.allFiltered": "All entries are hidden by the visibility filters.",
+  "fileBrowser.refresh": "Refresh",
   "fileBrowser.backToFiles": "Back to files",
   "fileBrowser.unableToLoad": "Не удалось загрузить каталог",
   "fileBrowser.selectFile": "Выберите файл для предпросмотра",

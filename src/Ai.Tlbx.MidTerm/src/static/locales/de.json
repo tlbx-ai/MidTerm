@@ -679,6 +679,7 @@
   "fileBrowser.hidden": "Versteckt",
   "fileBrowser.ignored": "Ignoriert",
   "fileBrowser.allFiltered": "Alle Einträge sind durch die Sichtbarkeitsfilter ausgeblendet.",
+  "fileBrowser.refresh": "Aktualisieren",
   "fileBrowser.backToFiles": "Zurück zu Dateien",
   "fileBrowser.unableToLoad": "Verzeichnis konnte nicht geladen werden",
   "fileBrowser.selectFile": "Datei zur Vorschau auswählen",
