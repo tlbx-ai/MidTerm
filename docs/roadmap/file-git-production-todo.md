@@ -116,7 +116,7 @@ breiten Coarse-Pointer-Geräten 44-px-Ziele. Source-Bild/Settings sind restaurie
 Evidenz: `.dev/file-git-production/task-4-final/summary.json`; die gemeinsame
 Containeränderung ist in `0721b2a0` abgenommen. Stylelint besteht.
 
-### 5. [~] Transparenzpolitik für Modal, Dock und Tab vereinheitlichen
+### 5. [x] Transparenzpolitik für Modal, Dock und Tab vereinheitlichen
 
 **Befund (mittel, reproduziert):** Modalhintergrund ist deckend rgb(22,24,33),
 Dock und Files sind transparent. Andocken ändert den visuellen Charakter stark.
@@ -127,7 +127,19 @@ Darstellungen. Modal-Abschirmung darf bewusst abweichen, Inhaltssurfaces nicht z
 **Abnahme:** Eine Datei ohne Edit-/Scrollverlust in Tab/Modal/Dock/Fullscreen
 betrachten; alle Themes und Hintergrundbild an/aus prüfen.
 
-### 6. [ ] Lesbarkeit sekundärer Informationen auf Hintergrundbildern sichern
+**Nachweis 12.10.2026:** Der File-Modal verwendet denselben Pane-Backgroundtoken
+wie Files und Dock. Sein bewusster Modal-Backdrop dimmt die Umgebung; Fullscreen
+besitzt einen Wallpaper-/Theme-Backdrop, der darunterliegende Appinhalte verdeckt.
+Die Inhaltsfarbe und Alpha sind in Tab, Modal, Dock und Fullscreen identisch.
+32 echte differenzielle Pixelprüfungen in vier Themes mit Bild an/aus bestehen:
+temporär transparent gemessener Untergrund plus einmalige Inhaltskomposition
+entsprechen dem echten Screenshot. Derselbe Editor/Entwurf, Cursorbereich und
+Scrollwert 500 bleiben durch Fullscreen/Dock/Undock erhalten; Disk bleibt bis
+zur ausdrücklichen Entscheidung unverändert. Screenshots aller Darstellungen
+sind geprüft. Source-Settings/Bild und Sessions sind restauriert. Stylelint besteht.
+Evidenz: `.dev/file-git-production/task-5-first/summary.json`.
+
+### 6. [~] Lesbarkeit sekundärer Informationen auf Hintergrundbildern sichern
 
 **Befund (mittel, reproduziert):** Gedämpfte Größen, Pfade und Metadaten verlieren
 über hellen Wolken/Landschaften Kontrast. Der zufällige Bildausschnitt entscheidet

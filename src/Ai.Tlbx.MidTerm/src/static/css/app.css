@@ -10646,6 +10646,11 @@ body.shared-session-mode .session-tab-bar {
   max-width: 900px;
   max-height: 85vh;
   width: 95%;
+  background: var(--workspace-pane-background);
+}
+
+.file-viewer-modal-content::backdrop {
+  background: var(--app-background-image) center / cover no-repeat var(--bg-primary-opaque);
 }
 
 .file-viewer-navigation {

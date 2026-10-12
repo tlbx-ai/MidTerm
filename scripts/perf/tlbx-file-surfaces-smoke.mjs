@@ -25,6 +25,7 @@ const wallpaper = new PNG({ width: 64, height: 64 });
 for (let i = 0; i < wallpaper.data.length; i += 4) { wallpaper.data[i] = 60; wallpaper.data[i + 1] = 120; wallpaper.data[i + 2] = 168; wallpaper.data[i + 3] = 255; }
 const wallpaperBytes = PNG.sync.write(wallpaper); fs.writeFileSync(path.join(out, 'wallpaper.png'), wallpaperBytes);
 const mediaAcceptance = process.env.TLBX_SURFACE_MEDIA === '1';
+const policyAcceptance = process.env.TLBX_SURFACE_POLICY === '1';
 if (mediaAcceptance) {
   const picture = new PNG({ width: 32, height: 32 });
   for (let i = 0; i < picture.data.length; i += 4) { picture.data[i] = 200; picture.data[i + 1] = 60; picture.data[i + 2] = 80; picture.data[i + 3] = 128; }
@@ -54,7 +55,7 @@ function rgba(value) {
   if (value.startsWith('color(')) for (let i = 0; i < 3; i++) numbers[i] *= 255;
   return [...numbers.slice(0, 3), numbers[3] ?? 1];
 }
-async function sample(label, selector, owner, imageColor, leftCorner = false) {
+async function sample(label, selector, owner, imageColor, leftCorner = false, probeSubstrate = false) {
   const evidence = await page.locator(selector).last().evaluate((element, { stop, leftCorner }) => {
     const chain = []; let node = element;
     while (node) {
@@ -74,10 +75,18 @@ async function sample(label, selector, owner, imageColor, leftCorner = false) {
   const painted = evidence.chain.filter(layer => rgba(layer.background)[3] > 0);
   assert.equal(painted.length, 1, `${label}: ${JSON.stringify(evidence.chain)}`);
   const expectedSurface = rgba(evidence.owner);
+  let substrate = imageColor;
+  if (probeSubstrate || owner === '.file-viewer-modal-content') {
+    const oldColor = await page.locator(selector).last().evaluate((element, owner) => { const surface = element.closest(owner); const color = surface.style.backgroundColor; surface.style.backgroundColor = 'transparent'; return color; }, owner);
+    try {
+      const background = PNG.sync.read(await page.screenshot({ animations: 'disabled' }));
+      const offset = (Math.floor(evidence.point.y) * background.width + Math.floor(evidence.point.x)) * 4; substrate = [...background.data.subarray(offset, offset + 3)];
+    } finally { await page.locator(selector).last().evaluate((element, { owner, oldColor }) => { element.closest(owner).style.backgroundColor = oldColor; }, { owner, oldColor }); }
+  }
   const screenshot = await page.screenshot({ animations: 'disabled' });
   const pixels = PNG.sync.read(screenshot), x = Math.floor(evidence.point.x), y = Math.floor(evidence.point.y), offset = (y * pixels.width + x) * 4;
   const actual = [...pixels.data.subarray(offset, offset + 3)];
-  const expected = expectedSurface.slice(0, 3).map((c, i) => Math.round(c * expectedSurface[3] + imageColor[i] * (1 - expectedSurface[3])));
+  const expected = expectedSurface.slice(0, 3).map((c, i) => Math.round(c * expectedSurface[3] + substrate[i] * (1 - expectedSurface[3])));
   assert.ok(actual.every((c, i) => Math.abs(c - expected[i]) <= 3), `${label} pixel ${actual} != ${expected}`);
   result.samples.push({ label, actual, expected, alpha: expectedSurface[3], chain: evidence.chain });
   if (label.includes('65')) fs.writeFileSync(path.join(out, label + '.png'), screenshot);
@@ -105,7 +114,35 @@ try {
   const wrapper = page.locator(`.session-wrapper[data-session-id="${session}"]`), files = wrapper.locator('.session-tab[data-tab="files"]'), terminal = wrapper.locator('.session-tab[data-tab="terminal"]');
   await files.click();
   const row = wrapper.locator('.tree-node').filter({ has: page.locator('.tree-name', { hasText: /^tracked\.txt$/ }) }); await row.waitFor();
-  if (mediaAcceptance) {
+  if (policyAcceptance) {
+    for (const theme of ['dark', 'light', 'solarizedDark', 'solarizedLight']) for (const imageEnabled of [false, true]) {
+      await api('PATCH', '/api/settings', { theme, uiTransparency: 65, terminalTransparency: 65, backgroundImageEnabled: imageEnabled });
+      await page.reload(); await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click(); await files.click(); await row.click();
+      const preview = wrapper.locator('.file-browser-preview'), prefix = `.session-wrapper[data-session-id="${session}"] .file-browser-preview`;
+      await preview.locator('.file-document-source').waitFor();
+      const base = await wrapper.locator('.file-browser').evaluate(el => getComputedStyle(el).backgroundColor), label = `${theme}-65-image${imageEnabled}`;
+      await sample(label + '-tab', prefix + ' .file-viewer-text', '.file-browser', imageColor, false, true);
+      await terminal.click(); await page.evaluate(target => window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), target), documentPath);
+      const modal = page.locator('#file-viewer-modal'), content = modal.locator('.file-viewer-modal-content'); await modal.locator('.file-document-view').waitFor();
+      assert.equal(await content.evaluate(el => getComputedStyle(el).backgroundColor), base);
+      await modal.locator('.file-document-mode[data-mode="edit"]').click();
+      const editor = modal.locator('textarea'), draft = 'Preserved draft\n' + 'scrollable line\n'.repeat(180); await editor.fill(draft);
+      const position = await editor.evaluate(el => { window.policyEditor = el; el.setSelectionRange(5, 19); el.scrollTop = 500; return [el.selectionStart, el.selectionEnd, el.scrollTop]; });
+      const retained = async root => { assert.equal(await root.locator('textarea').evaluate(el => el === window.policyEditor), true); assert.equal(await root.locator('textarea').inputValue(), draft); assert.deepEqual(await root.locator('textarea').evaluate(el => [el.selectionStart, el.selectionEnd, el.scrollTop]), position); };
+      await sample(label + '-modal', '#file-viewer-modal textarea', '.file-viewer-modal-content', imageColor, false, true);
+      await modal.locator('#file-viewer-maximize').click(); await page.waitForFunction(() => !!document.fullscreenElement); await retained(modal);
+      assert.equal(await content.evaluate(el => getComputedStyle(el).backgroundColor), base);
+      await sample(label + '-fullscreen', '#file-viewer-modal textarea', '.file-viewer-modal-content', imageColor, false, true);
+      await modal.locator('#file-viewer-maximize').click(); await page.waitForFunction(() => !document.fullscreenElement);
+      await modal.locator('#file-viewer-dock-btn').click(); const dock = page.locator('#file-viewer-dock'); await dock.waitFor(); await retained(dock);
+      assert.equal(await dock.evaluate(el => getComputedStyle(el).backgroundColor), base);
+      await sample(label + '-dock', '#file-viewer-dock textarea', '#file-viewer-dock', imageColor, false, true);
+      await dock.locator('#dock-undock').click(); await retained(modal);
+      await modal.locator('.modal-close').click(); const decision = page.locator('.file-unsaved-overlay'); await decision.locator('[data-file-decision="discard"]').click(); await modal.waitFor({ state: 'hidden' });
+      assert.equal(fs.readFileSync(documentPath, 'utf8'), 'Changed first line\nsecond line\nthird line\n');
+    }
+    assert.deepEqual(result.errors, []); result.ok = true;
+  } else if (mediaAcceptance) {
     await page.bringToFront();
     const movie = await page.evaluate(async () => {
       const canvas = document.createElement('canvas'); canvas.width = 160; canvas.height = 90;
