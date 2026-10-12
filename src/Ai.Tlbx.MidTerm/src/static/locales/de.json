@@ -1214,6 +1214,8 @@
   "fileBrowser.restore": "Wiederherstellen",
   "fileBrowser.apply": "Anwenden",
   "fileBrowser.name": "Name",
+  "fileBrowser.expandFolder": "Ordner aufklappen",
+  "fileBrowser.collapseFolder": "Ordner zuklappen",
   "fileViewer.displayMode": "Darstellungsmodus",
   "fileViewer.modePreview": "Vorschau",
   "fileViewer.modeSource": "Quelltext",

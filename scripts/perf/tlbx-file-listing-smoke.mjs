@@ -48,6 +48,12 @@ try {
   context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 1000 }, hasTouch: true });
   const eq = cookie.indexOf('=');
   await context.addCookies([{ name: cookie.slice(0, eq), value: cookie.slice(eq + 1), url }]);
+  let assetsReady = false;
+  for (let i = 0; i < 40; i++) {
+    try { const css = await context.request.get(url + '/css/app.css'), locale = await context.request.get(url + '/locales/en.json'); assetsReady = css.ok() && (await css.text()).includes('.file-selection-target') && locale.ok() && JSON.parse((await locale.text()).replace(/^\uFEFF/, ''))['fileViewer.modePreview'] === 'Preview'; } catch {}
+    if (assetsReady) break; await sleep(250);
+  }
+  if (!assetsReady) throw new Error('Source static asset synchronization did not finish');
   session = (await api('POST', '/api/sessions', { shell: 'Pwsh', cols: 90, rows: 30, workingDirectory: fixtures, launchRequestId: crypto.randomUUID() })).id;
   page = await context.newPage(); page.setDefaultTimeout(15000);
   page.on('websocket', socket => socket.on('framesent', frame => {
@@ -68,7 +74,7 @@ try {
   async function drag(grip, delta, cancel = false) {
     const rect = await grip.boundingBox(); assert.ok(rect);
     await page.mouse.move(rect.x + rect.width / 2, rect.y + Math.min(100, rect.height / 2));
-    await page.mouse.down(); await page.mouse.move(rect.x + delta, rect.y + 100, { steps: 12 });
+    await page.mouse.down(); await page.mouse.move(rect.x + rect.width / 2 + delta, rect.y + 100, { steps: 12 });
     if (cancel) await page.keyboard.press('Escape');
     await page.mouse.up(); await sleep(100);
   }

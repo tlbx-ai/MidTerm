@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "बहाल करें",
   "fileBrowser.apply": "लागू करें",
   "fileBrowser.name": "नाम",
+  "fileBrowser.expandFolder": "फ़ोल्डर फैलाएँ",
+  "fileBrowser.collapseFolder": "फ़ोल्डर समेटें",
   "fileViewer.displayMode": "प्रदर्शन मोड",
   "fileViewer.modePreview": "पूर्वावलोकन",
   "fileViewer.modeSource": "स्रोत",

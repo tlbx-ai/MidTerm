@@ -54,6 +54,8 @@ export class FileActions {
   private busy = false;
   private undo: string[] = [];
   private closeContext: (() => void) | null = null;
+  private popupEvents: AbortController | null = null;
+  private popupObserver: ResizeObserver | null = null;
   private readonly clipboardChanged = (): void => {
     if (this.context.owner.isConnected) this.update();
   };
@@ -71,6 +73,23 @@ export class FileActions {
       menu.append(button);
     }
     this.root.append(menu);
+    this.root.addEventListener('toggle', () => {
+      this.popupEvents?.abort();
+      this.popupObserver?.disconnect();
+      if (!this.root.open) return;
+      const pane =
+        this.context.owner.closest<HTMLElement>(
+          '.file-browser-tree, .file-viewer-body, .file-viewer-dock-body',
+        ) ?? this.context.owner;
+      const place = (): void => {
+        this.placePopup(menu, pane);
+      };
+      place();
+      this.popupEvents = new AbortController();
+      window.addEventListener('resize', place, { signal: this.popupEvents.signal });
+      this.popupObserver = new ResizeObserver(place);
+      this.popupObserver.observe(pane);
+    });
     this.status.className = 'file-operation-status';
     this.status.setAttribute('role', 'status');
     this.status.hidden = true;
@@ -86,8 +105,31 @@ export class FileActions {
     this.update();
   }
   public dispose(): void {
+    this.popupEvents?.abort();
+    this.popupObserver?.disconnect();
     clipboardListeners.delete(this.clipboardChanged);
     this.closeContext?.();
+  }
+
+  private placePopup(menu: HTMLElement, pane: HTMLElement): void {
+    menu.style.left = '0px';
+    menu.style.top = '100%';
+    menu.style.bottom = 'auto';
+    menu.style.maxHeight = '';
+    const box = pane.getBoundingClientRect(),
+      anchor = this.root.getBoundingClientRect();
+    const right = Math.min(innerWidth, box.left + pane.clientLeft + pane.clientWidth);
+    menu.style.maxWidth = `${Math.max(180, pane.clientWidth - 16)}px`;
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.min(0, right - rect.right - 8)}px`;
+    let available =
+      Math.min(innerHeight, box.top + pane.clientTop + pane.clientHeight) - rect.top - 8;
+    if (available < 88 && anchor.top - box.top > available) {
+      menu.style.top = 'auto';
+      menu.style.bottom = '100%';
+      available = anchor.top - Math.max(0, box.top) - 8;
+    }
+    menu.style.maxHeight = `${Math.max(44, Math.min(innerHeight * 0.65, available))}px`;
   }
 
   private button(action: Action): HTMLButtonElement {

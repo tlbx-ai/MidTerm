@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "Restaurer",
   "fileBrowser.apply": "Appliquer",
   "fileBrowser.name": "Nom",
+  "fileBrowser.expandFolder": "Développer le dossier",
+  "fileBrowser.collapseFolder": "Replier le dossier",
   "fileViewer.displayMode": "Mode d’affichage",
   "fileViewer.modePreview": "Aperçu",
   "fileViewer.modeSource": "Source",

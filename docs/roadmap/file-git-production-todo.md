@@ -61,7 +61,7 @@ Scrollposition und Rückweg beim Resizen erhalten.
 **Abnahme:** Während einer Dateiprüfung Dock/Fenster mehrfach verbreitern und
 verkleinern. Inhalt, Fokus und Rückweg bleiben konsistent; kein Layoutsprungverlust.
 
-### 3. [ ] Mehrfaches Stapeln transparenter Hintergründe beseitigen
+### 3. [~] Mehrfaches Stapeln transparenter Hintergründe beseitigen
 
 **Befund (mittel, reproduziert):** Bei uiTransparency=65 ergibt die Palette Alpha
 0,408. Drei Ebenen im Baum ergeben etwa 79 % Deckkraft, sechs im Editor etwa 96 %.
@@ -772,7 +772,7 @@ AX-Evidenz; eine konkrete NVDA-/VoiceOver-Sprachausgabe wird damit nicht behaupt
 Evidenz: `.dev/file-git-production/task-28-final/summary.json`,
 `task-28-verify.*.log`; Resize-/Ownership-Evidenz zusätzlich aus Aufgabe 23.
 
-### 29. [~] Ausreichende Bedienziele für schmale und Touchansichten schaffen
+### 29. [x] Ausreichende Bedienziele für schmale und Touchansichten schaffen
 
 **Befund (mittel, reproduziert):** Baumzeilen circa 25 px, Viewericons 28×28 px,
 Close etwa 14×24 px. Schmale Ansicht vergrößert die Ziele nicht.
@@ -782,6 +782,24 @@ Toolbaraktionen klar trennen, Bedienelemente nicht kollidieren lassen.
 
 **Abnahme:** Pointer coarse/Touch-Emulation, lange Namen, dichtes Panel,
 Toolbar-Wrapping und Fehlklickfreiheit über Zielgeometrie/Interaktion prüfen.
+
+**Nachweis 12.10.2026:** Coarse-Pointer-Zeilen, Checkbox-Labels, Chevronbuttons,
+Modi, Navigation, Vieweraktionen und Resize-Griffe haben 44-px-Ziele. Rand-Taps
+auf Checkboxlabels toggeln genau einmal; Chevron-Taps falten unabhängig von
+Auswahl/Preview. Fine-Pointer-Zeilen bleiben kompakt. Touch-Eingaben verwenden
+16-px-Controls; lange Header umbrechen mit festem Eigenplatz statt unter die
+Navigation zu schrumpfen. Der Actions-Popup begrenzt Position/Höhe an seinem
+tatsächlich sichtbaren Scrollpanel und reagiert auf dessen Resize. Seine
+Listener/Observer werden beim Schließen/Dispose entfernt. Sechs reale Szenarien
+prüfen Pointer-coarse, Zielrechtecke, Rand-Taps, Popupbounds, 390×844/390×500,
+lange Namen und einen separaten Fine-Pointer-Browser; Screenshots sind geprüft.
+Sieben Ansicht-/Resize-/Ownershipfälle und 17 tatsächliche Dateioperations-/
+Disk-/Recoveryfälle bestehen. 689 Frontendtests und Kitty/Typecheck/ESLint/
+Stylelint bestehen. Browserharnesses prüfen fertige CSS-/Localeassets vor Start,
+damit Source-Hotcopy-Zwischenstände keine UI-Abnahme vortäuschen.
+Evidenz: `.dev/file-git-production/task-29-touch-accepted/summary.json`,
+`task-29-resize-accepted/summary.json`, `task-29-actions-final/summary.json`,
+`task-29-verify-final.*.log`. Konkrete Smartphonehardware bleibt Feldabnahme.
 
 ### 30. [ ] Vollständigen Stage–Review–Commit-Ablauf in Git implementieren
 

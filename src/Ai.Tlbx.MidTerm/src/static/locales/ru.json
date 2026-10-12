@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "Восстановить",
   "fileBrowser.apply": "Применить",
   "fileBrowser.name": "Имя",
+  "fileBrowser.expandFolder": "Развернуть папку",
+  "fileBrowser.collapseFolder": "Свернуть папку",
   "fileViewer.displayMode": "Режим просмотра",
   "fileViewer.modePreview": "Предпросмотр",
   "fileViewer.modeSource": "Исходный текст",

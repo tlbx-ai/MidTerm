@@ -21072,7 +21072,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 .file-listing-icons :is(.tree-indent, .tree-expand, .tree-type, .tree-modified, .file-type, .file-modified) {
   display: none;
 }
-.file-listing-icons .file-selection-checkbox { position: absolute; top: 4px; left: 4px; margin: 0; }
+.file-listing-icons .file-selection-target { position: absolute; top: 4px; left: 4px; margin: 0; }
 .file-listing-icons :is(.file-icon, .tree-icon) { margin: 0; font-size: 32px; }
 .file-listing-icons .file-entry-label { flex: 0; flex-wrap: wrap; justify-content: center; width: 100%; }
 .file-listing-icons :is(.file-name, .tree-name) {
@@ -21185,4 +21185,59 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 }
 @container file-browser (max-width: 768px) {
   .file-pane-resize-grip { display: none; }
+}
+
+.file-selection-target {
+  display: inline-flex;
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  cursor: pointer;
+}
+.file-selection-target .file-selection-checkbox { margin: 0; }
+.file-actions-menu summary:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+button.tree-expand { height: 22px; padding: 0; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }
+
+@media (pointer: coarse) {
+  .tree-node, .file-list-item { min-height: 44px; }
+  .file-selection-target { flex-basis: 44px; width: 44px; min-height: 44px; }
+  button.tree-expand { flex-basis: 44px; width: 44px; height: 44px; font-size: 18px; }
+  .file-selection-toolbar button,
+  .file-actions-menu summary,
+  .file-actions-list button,
+  .file-context-menu button,
+  .file-operation-overlay button,
+  .file-unsaved-overlay button,
+  .file-conflict-overlay button,
+  .file-document-notice button,
+  .file-save-status button,
+  .file-listing-controls :is(input, select, button),
+  .file-listing-heading,
+  .file-document-mode,
+  .preview-save-btn,
+  .preview-toolbar-action-btn,
+  .file-browser-navigation button,
+  .file-browser-back,
+  .file-viewer-navigation button,
+  .file-viewer-dock-actions button,
+  .file-viewer-header-actions button,
+  .file-viewer-modal-content .modal-close { min-width: 44px; min-height: 44px; }
+  .file-browser-navigation input, .file-listing-filter, .file-listing-sort, .file-operation-input { min-height: 44px; font-size: 16px; }
+  .file-listing-details :is(.tree-node, .file-list-item) { grid-template-columns: 44px 18px minmax(180px, 1fr) 90px 170px 80px; }
+  .file-listing-details .file-selection-target { min-height: 44px; }
+  .file-listing-header { padding-left: 90px; }
+  .file-viewer-modal-content .modal-header, .file-viewer-dock-header { flex: 0 0 auto; flex-wrap: wrap; height: auto; min-height: 44px; }
+  .file-viewer-modal-content .file-viewer-body { flex: 1; min-height: 0; max-height: none; }
+  .file-viewer-header-info, .file-viewer-dock-title { flex: 1 1 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .file-viewer-header-actions, .file-viewer-dock-actions { flex-basis: 100%; flex-wrap: wrap; justify-content: flex-end; }
+  .file-viewer-dock-path { flex-basis: 100%; }
+  .file-pane-resize-grip { flex-basis: 44px; width: 44px; }
+  .file-viewer-dock:not([data-file-overlay="true"]) { padding-left: 44px; }
+  .file-dock-resize-grip { left: 0; }
+}
+@media (pointer: coarse) {
+  @container file-listing (max-width: 639px) {
+    .file-listing-details :is(.file-list-item, .tree-node) { grid-template-columns: 44px 18px minmax(0, 1fr); }
+  }
 }

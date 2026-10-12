@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "恢复文件",
   "fileBrowser.apply": "应用",
   "fileBrowser.name": "名称",
+  "fileBrowser.expandFolder": "展开文件夹",
+  "fileBrowser.collapseFolder": "折叠文件夹",
   "fileViewer.displayMode": "显示模式",
   "fileViewer.modePreview": "预览",
   "fileViewer.modeSource": "源文本",

@@ -1318,6 +1318,8 @@
   "fileBrowser.restore": "Restore",
   "fileBrowser.apply": "Apply",
   "fileBrowser.name": "Name",
+  "fileBrowser.expandFolder": "Expand folder",
+  "fileBrowser.collapseFolder": "Collapse folder",
   "fileViewer.displayMode": "Display mode",
   "fileViewer.modePreview": "Preview",
   "fileViewer.modeSource": "Source",

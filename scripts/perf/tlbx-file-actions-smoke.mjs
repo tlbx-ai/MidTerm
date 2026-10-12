@@ -59,7 +59,7 @@ try {
   result.cases.push('New file UI creates an actual empty Unicode file');
   await invoke('createFolder'); await apply('created folder'); await node('created folder').waitFor(); assert.ok(fs.statSync(path.join(fixtures, 'created folder')).isDirectory());
   result.cases.push('New folder UI creates a real directory');
-  await node('a.md').click(); const editor = preview.locator('textarea'); await editor.fill('# Draft before rename\n');
+  await node('a.md').click(); await preview.locator('.file-document-mode[data-mode="edit"]').click(); const editor = preview.locator('textarea'); await editor.fill('# Draft before rename\n');
   await invoke('rename'); await apply('renamed.md'); const unsaved = page.locator('.file-unsaved-overlay'); await unsaved.waitFor();
   await unsaved.locator('[data-file-decision="cancel"]').click(); assert.ok(fs.existsSync(path.join(fixtures, 'a.md'))); assert.equal(await editor.inputValue(), '# Draft before rename\n');
   await invoke('rename'); await apply('renamed.md'); await unsaved.waitFor(); await unsaved.locator('[data-file-decision="save"]').click();
@@ -88,7 +88,7 @@ try {
   await invoke('recovery'); await dialog.locator('select').waitFor(); await dialog.locator('select').selectOption({ label: (await dialog.locator('select option').allTextContents()).find(text => text.includes('context-renamed.md')) });
   await dialog.locator('[data-operation-choice="restore"]').click(); await node('context-renamed.md').waitFor();
   result.cases.push('Recovery uses a named-entry chooser and restores actual data without exposed internal IDs');
-  await node('d.md').click(); await editor.fill('# Guarded operation draft\n');
+  await node('d.md').click(); await preview.locator('.file-document-mode[data-mode="edit"]').click(); await editor.fill('# Guarded operation draft\n');
   await page.route('**/api/files/save**', route => route.fulfill({ status: 507, contentType: 'application/json', body: JSON.stringify({ code: 'disk_full', message: 'Disk full' }) }));
   await invoke('rename'); await apply('must-not-rename.md'); await unsaved.waitFor(); await unsaved.locator('[data-file-decision="save"]').click();
   await unsaved.locator('.file-unsaved-error:not([hidden])').waitFor(); assert.ok(fs.existsSync(path.join(fixtures, 'd.md'))); assert.ok(!fs.existsSync(path.join(fixtures, 'must-not-rename.md')));

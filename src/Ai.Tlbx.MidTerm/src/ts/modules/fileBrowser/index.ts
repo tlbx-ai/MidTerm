@@ -210,7 +210,10 @@ function setupTreeResize(panel: HTMLElement, tree: HTMLElement, sessionId: strin
       direction: 1,
       bounds: () => ({
         min: 220,
-        max: Math.max(220, Math.min(900, layout.clientWidth - 260)),
+        max: Math.max(
+          220,
+          Math.min(900, layout.clientWidth - 260 - (parseFloat(getComputedStyle(grip).width) || 8)),
+        ),
         enabled: layout.clientWidth > 768,
       }),
       observe: [layout, tree],

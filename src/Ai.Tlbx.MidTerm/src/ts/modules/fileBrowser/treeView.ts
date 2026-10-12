@@ -356,8 +356,17 @@ function createTreeNode(state: TreeState): HTMLElement {
     'tree-modified',
     'tree-size',
   ]) {
-    const span = document.createElement('span');
+    const span = document.createElement(className === 'tree-expand' ? 'button' : 'span');
     span.className = className;
+    if (span instanceof HTMLButtonElement) {
+      span.type = 'button';
+      span.tabIndex = -1;
+      span.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const entry = rowEntries.get(node);
+        if (entry?.isDirectory) void toggleExpand(state, entry);
+      });
+    }
     if (['tree-name', 'file-visibility-badge', 'tree-git-badge'].includes(className))
       label.append(span);
     else if (['tree-type', 'tree-modified', 'tree-size'].includes(className)) metadata.append(span);
@@ -458,6 +467,11 @@ function patchTreePresentation(
     expand.textContent =
       state.view.mode === 'tree' && entry.isDirectory ? (expanded ? '▾' : '▸') : '';
     expand.classList.toggle('expandable', entry.isDirectory);
+    expand.style.visibility = entry.isDirectory ? '' : 'hidden';
+    expand.setAttribute('aria-hidden', String(!entry.isDirectory));
+    const label = `${t(expanded ? 'fileBrowser.collapseFolder' : 'fileBrowser.expandFolder')}: ${entry.name}`;
+    expand.setAttribute('aria-label', label);
+    expand.title = label;
   }
 }
 

@@ -12,7 +12,10 @@ const out = path.resolve(process.env.TLBX_PERF_ARTIFACT_ROOT || '.dev/file-git-p
 fs.mkdirSync(out, { recursive: true });
 const fixtures = fs.mkdtempSync(path.join(os.tmpdir(), 'tlbx-file-modes-'));
 const keyboardAcceptance = process.env.TLBX_TEST_KEYBOARD === '1';
-if (keyboardAcceptance) { fs.mkdirSync(path.join(fixtures, 'nested')); fs.writeFileSync(path.join(fixtures, 'nested', 'child.txt'), 'Child\n'); }
+const touchAcceptance = process.env.TLBX_TEST_TOUCH === '1';
+const longName = 'Long file name with spaces and Unicode äöü that must keep toolbar actions reachable.md';
+if (keyboardAcceptance || touchAcceptance) { fs.mkdirSync(path.join(fixtures, 'nested')); fs.writeFileSync(path.join(fixtures, 'nested', 'child.txt'), 'Child\n'); }
+if (touchAcceptance) fs.writeFileSync(path.join(fixtures, longName), '# Long file\n');
 const original = '# Rendered heading\n\n**Bold** and [Safe](https://example.com)\n\n| Name | Value |\n| --- | --- |\n| One | 1 |\n\n```ts\nconst x = 1;\n```\n\n<script>window.fileModeUnsafe = true</script>\n[Unsafe](javascript:alert(1))\n';
 fs.writeFileSync(path.join(fixtures, 'note.md'), original);
 fs.writeFileSync(path.join(fixtures, 'code.ts'), 'const value = 42;\n// code\n');
@@ -41,7 +44,11 @@ try {
   const eq = cookie.indexOf('='); await context.addCookies([{ name: cookie.slice(0, eq), value: cookie.slice(eq + 1), url }]);
   let assetsReady = false;
   for (let i = 0; i < 40; i++) {
-    try { const response = await context.request.get(url + '/locales/en.json'); assetsReady = response.ok() && JSON.parse((await response.text()).replace(/^\uFEFF/, ''))['fileViewer.modePreview'] === 'Preview'; } catch {}
+    try {
+      const response = await context.request.get(url + '/locales/en.json'), css = await context.request.get(url + '/css/app.css');
+      const style = await css.text();
+      assetsReady = response.ok() && JSON.parse((await response.text()).replace(/^\uFEFF/, ''))['fileViewer.modePreview'] === 'Preview' && css.ok() && style.length > 50000 && style.includes('.file-selection-target');
+    } catch {}
     if (assetsReady) break; await sleep(250);
   }
   if (!assetsReady) throw new Error('Source static asset synchronization did not finish');
@@ -58,6 +65,37 @@ try {
   const tree = wrapper.locator('.file-browser-tree'), preview = wrapper.locator('.file-browser-preview');
   const row = name => tree.locator('.tree-node').filter({ has: page.locator('.tree-name', { hasText: new RegExp('^' + name.replace('.', '\\.') + '$') }) });
   const mode = (root, value) => root.locator(`.file-document-mode[data-mode="${value}"]`);
+  if (touchAcceptance) {
+    await page.setViewportSize({ width: 390, height: 844 });
+    if (await page.locator('#btn-mobile-strip-files').isVisible()) await page.locator('#btn-mobile-strip-files').tap();
+    else { await page.locator('#btn-mobile-actions-menu').tap(); await page.locator('#btn-mobile-tab-files').tap(); }
+    assert.equal(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), true);
+    await row(longName).waitFor();
+    const targetRects = root => root.evaluateAll(nodes => nodes.filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden').map(el => { const r = el.getBoundingClientRect(); return { width: r.width, height: r.height, right: r.right, label: el.getAttribute('aria-label') || el.textContent }; }));
+    for (const r of await targetRects(tree.locator('.file-selection-target, .tree-expand.expandable, .file-listing-controls button, .file-selection-toolbar button, .file-actions-menu summary'))) assert.ok(r.width >= 43.9 && r.height >= 43.9, JSON.stringify(r));
+    await row(longName).locator('.file-selection-target').tap({ position: { x: 2, y: 2 } });
+    assert.equal(await tree.locator('.tree-node[aria-selected="true"]').count(), 1);
+    assert.equal(await preview.locator('.file-document-view').count(), 0);
+    await tree.locator('.file-actions-menu summary').tap();
+    const popup = tree.locator('.file-actions-list');
+    await popup.evaluate(el => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const popupRect = await popup.boundingBox();
+    result.popup = { rect: popupRect, style: await popup.getAttribute('style') };
+    assert.ok(popupRect.x >= 0 && popupRect.x + popupRect.width <= 390 && popupRect.y + popupRect.height <= 844);
+    for (const r of await targetRects(popup.locator('button'))) assert.ok(r.width >= 43.9 && r.height >= 43.9, JSON.stringify(r));
+    await tree.locator('.file-actions-menu summary').tap();
+    await row('nested').locator('.tree-expand').tap({ position: { x: 2, y: 2 } });
+    await row('child.txt').waitFor();
+    assert.equal(await tree.locator('.tree-node[aria-selected="true"]').count(), 1);
+    assert.equal(await row(longName).getAttribute('aria-selected'), 'true');
+    await tree.locator('[data-selection-action="open"]').tap(); await preview.locator('.file-document-view').waitFor();
+    for (const r of await targetRects(preview.locator('button'))) assert.ok(r.width >= 43.9 && r.height >= 43.9, JSON.stringify(r));
+    await wrapper.locator('.file-browser-back').tap();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: path.join(out, 'touch-tree-390.png') });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    result.cases.push('390px coarse-pointer targets are at least 44px; edge checkbox taps toggle once and chevrons expand without selecting or opening');
+  }
   if (keyboardAcceptance) {
     await row('nested').waitFor(); await sleep(300);
     const inputsBefore = terminalInputFrames;
@@ -177,6 +215,31 @@ try {
   }
   assert.equal(result.writes, 2);
   result.cases.push('Modal/dock readonly and plain/code preview match Files and perform no implicit writes');
+  if (touchAcceptance) {
+    await page.setViewportSize({ width: 390, height: 500 });
+    await page.evaluate(target => window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), target), path.join(fixtures, longName));
+    await modal.locator('.file-document-view').waitFor();
+    await modal.evaluate(el => Promise.all(el.getAnimations({ subtree: true }).filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))));
+    const chromeTargets = async root => root.locator('.file-viewer-header-actions button, .file-viewer-dock-actions button, .file-viewer-navigation button, .file-document-mode').evaluateAll(nodes => nodes.filter(el => el.getClientRects().length > 0).map(el => { const r = el.getBoundingClientRect(); return { width: r.width, height: r.height, right: r.right }; }));
+    for (const r of await chromeTargets(modal)) assert.ok(r.width >= 43.9 && r.height >= 43.9 && r.right <= 390, JSON.stringify(r));
+    await page.screenshot({ path: path.join(out, 'touch-modal-390x500.png') });
+    await modal.locator('#file-viewer-dock-btn').tap(); await dock.waitFor();
+    for (const r of await chromeTargets(dock)) assert.ok(r.width >= 43.9 && r.height >= 43.9 && r.right <= 390, JSON.stringify(r));
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: path.join(out, 'touch-dock-390x500.png') });
+    await dock.locator('#dock-close').tap();
+    const fine = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 1000 } });
+    try {
+      await fine.addCookies([{ name: cookie.slice(0, eq), value: cookie.slice(eq + 1), url }]);
+      const finePage = await fine.newPage(); await finePage.goto(url);
+      await finePage.locator(`.session-item[data-session-id="${session}"] .session-title`).click();
+      await finePage.locator(`.session-wrapper[data-session-id="${session}"] .session-tab[data-tab="files"]`).click();
+      const fineRow = finePage.locator('.tree-node').filter({ has: finePage.locator('.tree-name', { hasText: 'note.md' }) }); await fineRow.waitFor();
+      const rect = await fineRow.boundingBox(); assert.ok(rect.height < 44 && rect.height >= 24);
+      assert.equal(await finePage.evaluate(() => matchMedia('(pointer: fine)').matches), true);
+    } finally { await fine.close(); }
+    result.cases.push('Long-name modal/dock controls fit a 390x500 viewport at 44px; a fine-pointer browser keeps compact desktop rows');
+  }
   if (keyboardAcceptance) {
     await page.evaluate(target => window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), target), path.join(fixtures, 'note.md'));
     await mode(modal, 'edit').focus(); await page.keyboard.press('Enter');

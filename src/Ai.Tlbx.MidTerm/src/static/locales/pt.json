@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "Restaurar",
   "fileBrowser.apply": "Aplicar",
   "fileBrowser.name": "Nome",
+  "fileBrowser.expandFolder": "Expandir pasta",
+  "fileBrowser.collapseFolder": "Recolher pasta",
   "fileViewer.displayMode": "Modo de exibição",
   "fileViewer.modePreview": "Prévia",
   "fileViewer.modeSource": "Código-fonte",

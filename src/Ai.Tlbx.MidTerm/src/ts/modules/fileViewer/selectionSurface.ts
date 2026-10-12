@@ -58,7 +58,16 @@ export class FileSelectionSurface {
     checkbox.addEventListener('dblclick', (event) => {
       event.stopPropagation();
     });
-    row.prepend(checkbox);
+    const target = document.createElement('label');
+    target.className = 'file-selection-target';
+    target.append(checkbox);
+    target.addEventListener('click', (event) => {
+      event.stopPropagation();
+    });
+    target.addEventListener('dblclick', (event) => {
+      event.stopPropagation();
+    });
+    row.prepend(target);
     row.addEventListener('keydown', (event) => {
       this.key(event, row);
     });

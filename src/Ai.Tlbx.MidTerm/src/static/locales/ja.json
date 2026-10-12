@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "復元する",
   "fileBrowser.apply": "適用",
   "fileBrowser.name": "名前",
+  "fileBrowser.expandFolder": "フォルダーを展開",
+  "fileBrowser.collapseFolder": "フォルダーを折りたたむ",
   "fileViewer.displayMode": "表示モード",
   "fileViewer.modePreview": "プレビュー",
   "fileViewer.modeSource": "ソース",
