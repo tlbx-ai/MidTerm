@@ -11539,7 +11539,8 @@ body.shared-session-mode .session-tab-bar {
   top: var(--bar-height);
   right: 0;
   bottom: 0;
-  width: 400px;
+  width: var(--git-pane-width, 400px);
+  max-width: 100%;
   background: transparent;
   border-left: 1px solid var(--border-color);
   display: flex;
@@ -11601,6 +11602,13 @@ body.shared-session-mode .session-tab-bar {
 .git-dock-resize-grip.active {
   background-color: var(--bg-hover);
 }
+.git-dock-resize-grip:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.git-dock[data-git-overlay="true"] { position: fixed; inset: 0; width: 100%; max-width: 100%; z-index: 500; }
+@media (pointer: coarse) {
+  .git-dock:not([data-git-overlay="true"]) .git-dock-resize-grip { left: 0; width: 44px; touch-action: none; }
+  .git-dock:not([data-git-overlay="true"]) .git-dock-header,
+  .git-dock:not([data-git-overlay="true"]) .git-dock-body { padding-left: 44px; }
+}
 
 .git-dock-body {
   flex: 1;
@@ -11610,10 +11618,6 @@ body.shared-session-mode .session-tab-bar {
   min-height: 0;
   background: transparent;
   container: git-panel / inline-size;
-}
-
-.terminal-page.git-docked .session-tab-panels {
-  margin-right: 400px;
 }
 
 /* =============================================
@@ -16561,6 +16565,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .git-panel-shell {
   display: grid;
+  --git-single-column: 0;
   grid-template-columns: minmax(260px, 1fr) minmax(280px, 1fr);
 }
 
@@ -16602,6 +16607,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-anchor: none;
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -16818,6 +16824,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-anchor: none;
   scrollbar-width: thin;
   scrollbar-color: var(--accent-blue-25) var(--workspace-pane-background);
 }
@@ -16941,6 +16948,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-anchor: none;
 }
 
 /* --- File tree --- */
@@ -17068,6 +17076,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-anchor: none;
 }
 
 .git-commit-entry {
@@ -17265,6 +17274,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 @container git-panel (max-width: 539px) {
   .git-panel-shell {
+    --git-single-column: 1;
     grid-template-columns: minmax(0, 1fr);
   }
 

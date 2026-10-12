@@ -22,6 +22,12 @@ import { areJsonLikeEqual } from '../../stores';
 import { syncGitPanelDom } from './gitPanelDom';
 import { showPathDetails, repositoryFilePath } from '../fileViewer/pathDetails';
 import { fileStatusPresentation } from './fileStatus';
+import {
+  connectGitPanelLayout,
+  disconnectGitPanelLayout,
+  focusGitSelection,
+  type GitPanelLayoutState,
+} from './gitPanelLayout';
 
 type SectionId = 'conflicts' | 'staged' | 'changes' | 'untracked';
 type PanelSectionId = SectionId | 'commits';
@@ -48,7 +54,7 @@ interface GitCommitSelection {
 
 type GitSelection = GitFileSelection | GitCommitSelection | null;
 
-interface GitPanelState {
+interface GitPanelState extends GitPanelLayoutState {
   sessionId: string;
   repoRoot?: string | undefined;
   container: HTMLElement;
@@ -77,6 +83,7 @@ const activePanels = new WeakMap<HTMLElement, GitPanelState>();
 const boundPanelContainers = new WeakSet<HTMLElement>();
 
 export function suspendGitPanel(container: HTMLElement): void {
+  disconnectGitPanelLayout(container);
   activePanels.delete(container);
 }
 
@@ -159,8 +166,10 @@ export function destroyGitPanel(sessionId: string): void {
   for (const key of panelStates.keys()) {
     if (key === sessionId || key.startsWith(`${sessionId}|`)) {
       const state = panelStates.get(key);
-      if (state && activePanels.get(state.container) === state)
+      if (state && activePanels.get(state.container) === state) {
+        disconnectGitPanelLayout(state.container);
         activePanels.delete(state.container);
+      }
       panelStates.delete(key);
     }
   }
@@ -178,6 +187,8 @@ function createPanelState(
     status: null,
     expandedSections: new Set<PanelSectionId>(),
     selection: null,
+    detailActive: true,
+    scrollPositions: new Map(),
     historyEntries: [],
     historyCount: HISTORY_PAGE_SIZE,
     hasMoreHistory: false,
@@ -244,6 +255,10 @@ function countWorktreeChanges(status: GitStatusResponse): number {
     status.modified.length +
     status.untracked.length
   );
+}
+
+function panelShellClass(state: GitPanelState): string {
+  return `git-panel-shell${state.selection && state.detailActive ? ' git-panel-detail-active' : ''}`;
 }
 
 function buildFileTree(files: GitFileEntry[], scope: FileScope): TreeNode {
@@ -439,7 +454,7 @@ function renderPanel(state: GitPanelState): void {
   const sectionCount = [hasConflicts, hasStaged, hasChanges, hasUntracked].filter(Boolean).length;
   const singleFillSection = sectionCount === 1;
 
-  let html = `<div class="git-panel-shell${state.selection ? ' git-panel-detail-active' : ''}">`;
+  let html = `<div class="${panelShellClass(state)}">`;
   html += '<div class="git-panel-list">';
   html += renderSummary(status);
   html += '<div class="git-panel-content">';
@@ -507,6 +522,7 @@ function renderPanel(state: GitPanelState): void {
   const inspector = container.querySelector<HTMLElement>('.git-panel-inspector');
   if (inspector) syncGitPanelDom(inspector, state.inspectorHtml);
   bindPanelEvents(container);
+  connectGitPanelLayout(container, () => activePanels.get(container))?.update();
 }
 
 function renderSection(
@@ -608,7 +624,7 @@ function renderInspector(state: GitPanelState): string {
   }
 
   return `<div class="git-inspector-header">
-      <button class="git-inspector-back" data-action="clear-selection" type="button">Back</button>
+      <button class="git-inspector-back" data-action="show-list" type="button">${t('git.backToList')}</button>
     </div>
     <div class="git-inspector-body">${body}</div>`;
 }
@@ -807,9 +823,10 @@ function handlePanelAction(state: GitPanelState, data: DOMStringMap): void {
     case 'send-command':
       runPanelCommand(state, data);
       break;
-    case 'clear-selection':
-      state.selection = null;
+    case 'show-list':
+      state.detailActive = false;
       renderPanel(state);
+      focusGitSelection(state.container, state);
       break;
     case undefined:
     default:
@@ -839,6 +856,8 @@ async function openFileSelection(
   selection: Pick<GitFileSelection, 'path' | 'scope' | 'status' | 'originalPath'>,
 ): Promise<void> {
   const existing = getExistingFileSelection(state, selection);
+  state.detailActive = true;
+  if (!existing) state.scrollPositions.delete('inspector');
 
   if (existing && !existing.loading && existing.diff) {
     renderPanel(state);
@@ -945,6 +964,8 @@ function createResolvedFileSelection(
 async function openCommitSelection(state: GitPanelState, hash: string): Promise<void> {
   const existing =
     state.selection?.kind === 'commit' && state.selection.hash === hash ? state.selection : null;
+  state.detailActive = true;
+  if (!existing) state.scrollPositions.delete('inspector');
 
   if (existing && !existing.loading && existing.details) {
     renderPanel(state);

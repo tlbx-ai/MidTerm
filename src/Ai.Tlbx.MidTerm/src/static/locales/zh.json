@@ -509,6 +509,8 @@
   "git.fileStatus.copied": "已复制",
   "git.fileStatus.type-changed": "类型已更改",
   "git.fileStatus.contains": "包含更改",
+  "git.backToList": "返回列表",
+  "git.resizeDock": "调整 Git 面板大小",
   "git.notARepo": "不是 Git 仓库",
   "git.notARepoHint": "导航到 Git 仓库以查看状态",
   "git.stagedChanges": "已暂存的更改",

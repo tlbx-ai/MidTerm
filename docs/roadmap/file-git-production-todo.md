@@ -63,7 +63,7 @@ bestehen. Evidenz: `.dev/file-git-production/git-task-1-final/summary.json`,
 `git-task-1-verify.*.log`. Die separaten Copy/Send-Buttonformate und Diff-
 Umbruchmodi bleiben ausdrücklich Aufgaben 8 beziehungsweise 7.
 
-### 2. [~] Responsive Git-Navigation an die Panelbreite binden
+### 2. [x] Responsive Git-Navigation an die Panelbreite binden
 
 **Befund (hoch, reproduziert):** Unter 980 px Fensterbreite funktioniert derselbe
 400-px-Dock einspaltig mit Back; im größeren Fenster wird er abgeschnitten.
@@ -74,6 +74,28 @@ Scrollposition und Rückweg beim Resizen erhalten.
 
 **Abnahme:** Während einer Dateiprüfung Dock/Fenster mehrfach verbreitern und
 verkleinern. Inhalt, Fokus und Rückweg bleiben konsistent; kein Layoutsprungverlust.
+
+**Nachweis 12.10.2026:** Listen-/Detailansicht ist von der Auswahl getrennt;
+Zurück erhält die ausgewählte Datei und den bereits geladenen Diff. CSS meldet
+den tatsächlichen Container-Modus; ein begrenzter Layoutcontroller erhält
+Scroller und führt den Fokus aus ausgeblendeten Bereichen zu Rückweg/Auswahl.
+Observer/Listener werden bei Suspend/Destroy beendet. Browser-Scroll-Anchoring
+ist für diese Scroller deaktiviert, damit ein Reflow die Leseposition nicht
+verschiebt. Git verwendet den vorhandenen Pane-Resize-Helper mit Pointer-
+Capture, Tastatur, Grenzen und gespeicherter Breite; alte globale Mouse/Touch-
+Listener sind entfernt. Unter 769 px ist Git ein Vollflächen-Overlay ohne
+Terminal-Marginreservierung; Rückkehr stellt die Desktopbreite wieder her.
+Drei reale Abläufe bestehen: Back/Enter mit gleicher Auswahl/DOM/Scroll und
+null Refetches; drei echte Tastatur-/Fenster-Resizezyklen mit erhaltenem Fokus;
+Pointerresize, gespeicherte 600 px, 390-px-Overlay und Desktopreturn. Null
+Terminal-Inputframes. 30 Inspector-Geometrien bleiben grün, ebenso sieben
+Files-/Resize-/Followerfälle, 19 Ordner-/Dirty-/Git-Dockwechsel und 707
+Frontendtests plus Kitty/Typecheck/ESLint/Stylelint. Mobile und Desktop-
+Screenshots sind visuell geprüft. Evidenz: `git-task-2-fourth/summary.json`,
+`git-task-2-layout-regression`, `git-task-2-files-regression`,
+`git-task-2-directory-regression`, `git-task-2-verify.*.log` unter
+`.dev/file-git-production`. Initialer Overlayfokus und umfassende Git-
+Tab-/Escape-Navigation werden zusätzlich in Aufgabe 38 abgenommen.
 
 ### 3. [x] Mehrfaches Stapeln transparenter Hintergründe beseitigen
 
@@ -183,7 +205,7 @@ https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html.
 Evidenz: `.dev/file-git-production/task-6-final/summary.json`,
 `task-6-{surface,policy}-regression/summary.json`, `task-6-verify.*.log`.
 
-### 7. [ ] Git-Diffs lesbar umbrechen oder horizontal scrollen lassen
+### 7. [~] Git-Diffs lesbar umbrechen oder horizontal scrollen lassen
 
 **Befund (mittel, reproduziert):** pre-wrap und overflow-wrap:anywhere zerlegen
 lange Codezeilen im schmalen Inspector innerhalb von Wörtern. Einrückungen und
@@ -1018,6 +1040,10 @@ Tastaturnavigation; Zustände bei WebSocketaktualisierung erhalten.
 
 **Abnahme:** Viele Änderungen, tiefe Ordner, gleiche Namen, Filter und Bulkaktionen;
 Auswahl/Focus/Scroll stabil ohne unnötigen vollständigen DOM-Neuaufbau.
+
+Zusätzlich: initialen Fokus im mobilen Git-Overlay setzen, Tab/Shift-Tab und
+Escape ohne Eingabe an das verdeckte Terminal prüfen; Fokus nach Dockclose
+sinnvoll zurückgeben.
 
 ### 39. [ ] Git-Laden, fehlendes Repo und Abfragefehler unterscheiden
 

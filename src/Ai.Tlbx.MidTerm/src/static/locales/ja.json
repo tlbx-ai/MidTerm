@@ -506,6 +506,8 @@
   "git.fileStatus.copied": "コピー済み",
   "git.fileStatus.type-changed": "種類が変更されました",
   "git.fileStatus.contains": "変更を含む",
+  "git.backToList": "一覧に戻る",
+  "git.resizeDock": "Gitパネルのサイズ変更",
   "git.notARepo": "Gitリポジトリではありません",
   "git.notARepoHint": "ステータスを表示するにはGitリポジトリに移動してください",
   "git.stagedChanges": "ステージされた変更",

@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { chromium } = require('../../docs/marketing/ScreenshotAutomation/node_modules/playwright');
 const url = process.env.TLBX_PERF_URL, cookie = process.env.TLBX_COOKIE_HEADER;
+const navigation = process.env.TLBX_GIT_NAVIGATION === '1';
 if (!url || !cookie) throw new Error('Authenticated source URL required');
 const out = path.resolve(process.env.TLBX_PERF_ARTIFACT_ROOT || '.dev/file-git-production/git-layout'); fs.mkdirSync(out, { recursive: true });
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'tlbx-git-layout-'));
@@ -21,8 +22,9 @@ git(['init', '--quiet']); git(['config', 'user.name', 'A long author name used f
 fs.appendFileSync(full, 'Normal commit line\n'); git(['commit', '--quiet', '-am', 'A long normal commit subject whose inspector must remain usable in a narrow dock']);
 const commit = git(['rev-parse', 'HEAD']).trim();
 for (let i = 0; i < 40; i++) fs.appendFileSync(path.join(fixture, `file${i}.txt`), `Changed ${i}\n`);
+fs.appendFileSync(path.join(fixture, 'file35.txt'), Array.from({ length: 100 }, (_, i) => `Long changed line ${i} ` + 'abcdefghij'.repeat(8)).join('\n') + '\n');
 fs.appendFileSync(full, 'WORKTREE_CHANGE_' + 'abcdefghij'.repeat(50) + '\n');
-const result = { ok: false, fixture, cases: [], geometry: [], errors: [], inputFrames: 0 };
+const result = { ok: false, fixture, cases: [], geometry: [], errors: [], inputFrames: 0, diffReads: 0 };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms)); let chrome, browser, context, page, session;
 async function api(method, route, data) { const response = await context.request.fetch(url + route, { method, data }); assert.ok(response.ok(), `${route}: ${response.status()}`); const text = await response.text(); return text ? JSON.parse(text.replace(/^\uFEFF/, '')) : null; }
 try {
@@ -36,6 +38,7 @@ try {
   assert.ok(ready, 'Complete container-responsive CSS is served');
   session = (await api('POST', '/api/sessions', { shell: 'Pwsh', cols: 90, rows: 30, workingDirectory: fixture, launchRequestId: crypto.randomUUID() })).id;
   page = await context.newPage(); page.setDefaultTimeout(15000); page.on('pageerror', error => result.errors.push(error.message));
+  page.on('request', request => { if (new URL(request.url()).pathname.includes('/api/git/diff')) result.diffReads++; });
   page.on('websocket', socket => socket.on('framesent', frame => { if (Buffer.isBuffer(frame.payload) && frame.payload[0] === 0x14) result.inputFrames++; }));
   await page.goto(url); await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click();
   const wrapper = page.locator(`.session-wrapper[data-session-id="${session}"]`), dock = page.locator('#git-dock');
@@ -54,6 +57,45 @@ try {
     for (const button of geometry.buttons) assert.ok(button.x >= geometry.inspector.x - 1 && button.right <= geometry.inspector.right + 1, JSON.stringify({ label, button, inspector: geometry.inspector }));
     result.geometry.push(geometry);
   }
+  if (navigation) {
+    const grip = dock.locator('.git-dock-resize-grip'), body = inspector.locator('.git-inspector-body');
+    await grip.focus(); await grip.press('End'); await page.waitForFunction(() => document.querySelector('#git-dock').getBoundingClientRect().width === 600);
+    const navFile = dock.locator('.git-tree-file[data-path="file35.txt"]');
+    const rows = dock.locator('.git-section-body'); await rows.evaluate(el => { el.scrollTop = 280; }); await navFile.click(); await inspector.locator('.git-diff-lines').filter({ hasText: 'Long changed line' }).waitFor(); await body.evaluate(el => { el.scrollTop = 250; });
+    await body.evaluate(el => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const initial = { list: await rows.evaluate(el => el.scrollTop), detail: await body.evaluate(el => el.scrollTop), reads: result.diffReads };
+    await body.evaluate(el => { window.gitRetainedBody = el; window.gitRetainedDiff = el.querySelector('.git-diff-lines'); });
+    await navFile.focus(); await page.setViewportSize({ width: 500, height: 1000 }); await page.waitForFunction(() => document.querySelector('#git-dock').getBoundingClientRect().width === 500);
+    await page.waitForFunction(() => document.activeElement?.classList.contains('git-inspector-back'));
+    assert.equal(await body.evaluate(el => el.scrollTop), initial.detail); assert.equal(await dock.locator('.git-panel-list').isVisible(), false);
+    await inspector.locator('.git-inspector-back').press('Enter'); await page.waitForFunction(() => document.activeElement?.dataset.action === 'open-file');
+    assert.equal(await navFile.getAttribute('class').then(c => c.includes('git-tree-file-selected')), true); assert.equal(await rows.evaluate(el => el.scrollTop), initial.list);
+    await navFile.press('Enter'); await page.waitForFunction(() => document.activeElement?.classList.contains('git-inspector-back'));
+    assert.equal(result.diffReads, initial.reads); assert.equal(await body.evaluate(el => el === window.gitRetainedBody && el.querySelector('.git-diff-lines') === window.gitRetainedDiff), true);
+    assert.equal(await body.evaluate(el => el.scrollTop), initial.detail);
+    result.cases.push('Narrow Back retains the exact selected file, list scroll and loaded diff; keyboard reopens cached content with visible focus and zero refetches');
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await grip.focus(); await grip.press('End'); await page.waitForFunction(() => document.querySelector('#git-dock .git-panel-list').getClientRects().length > 0);
+      assert.equal(await grip.evaluate(el => document.activeElement === el), true); assert.equal(await rows.evaluate(el => el.scrollTop), initial.list);
+      await inspector.locator('[data-action="copy-command"]').first().focus();
+      await page.setViewportSize({ width: 900, height: 900 }); await page.setViewportSize({ width: 1920, height: 1000 });
+      assert.equal(await body.evaluate(el => el === window.gitRetainedBody), true);
+      await grip.focus(); await grip.press('Home'); await page.waitForFunction(() => document.querySelector('#git-dock').getBoundingClientRect().width === 250);
+      assert.equal(await grip.evaluate(el => document.activeElement === el), true); assert.equal(result.diffReads, initial.reads);
+    }
+    result.cases.push('Repeated real keyboard dock and window resizing preserves selected content, retained DOM, scroll and resizer focus');
+    const start = await grip.boundingBox(); await page.mouse.move(start.x + start.width / 2, start.y + 200); await page.mouse.down(); await page.mouse.move(start.x - 180, start.y + 200, { steps: 8 }); await page.mouse.up();
+    assert.ok((await dock.boundingBox()).width >= 420); assert.equal(await grip.getAttribute('aria-orientation'), 'vertical');
+    await grip.press('End'); assert.equal(await page.evaluate(() => localStorage.getItem('mt-git-dock-width')), '600');
+    await page.setViewportSize({ width: 390, height: 844 }); await page.waitForFunction(() => document.querySelector('#git-dock').dataset.gitOverlay === 'true');
+    const overlay = await dock.boundingBox(); assert.equal(overlay.x, 0); assert.equal(overlay.width, 390); assert.equal(await grip.isVisible(), false);
+    assert.equal(await wrapper.locator('.session-tab-panels').evaluate(el => getComputedStyle(el).marginRight), '0px');
+    assert.ok((await inspector.innerText()).includes('Long changed line')); await page.screenshot({ path: path.join(out, 'mobile-overlay-390.png'), animations: 'disabled' });
+    await page.setViewportSize({ width: 1440, height: 1000 }); await page.waitForFunction(() => document.querySelector('#git-dock').getBoundingClientRect().width === 600);
+    assert.equal(result.diffReads, initial.reads); await page.screenshot({ path: path.join(out, 'restored-wide-600.png'), animations: 'disabled' });
+    result.cases.push('Actual pointer resize persists width; 390px overlay retains inspection without terminal margin reservation and restores the saved desktop width');
+  } else {
   for (const viewport of [900, 1440, 1920]) {
     await page.setViewportSize({ width: viewport, height: 1000 });
     for (const width of [250, 300, 400, 539, 540, 541, 600]) {
@@ -78,6 +120,7 @@ try {
     await page.screenshot({ path: path.join(out, `${viewport}-${width}-commit.png`), animations: 'disabled' });
   }
   result.cases.push('Nine real normal-commit inspectors keep long authors, parent hashes, patches and actions inside the available panel');
+  }
   assert.equal(result.inputFrames, 0); assert.deepEqual(result.errors, []); result.ok = true;
 } catch (error) { result.failure = String(error.stack || error).replaceAll(cookie, '<redacted-session-cookie>'); await page?.screenshot({ path: path.join(out, 'failure.png'), animations: 'disabled' }).catch(() => {}); process.exitCode = 1; }
 finally {

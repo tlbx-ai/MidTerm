@@ -506,6 +506,8 @@
   "git.fileStatus.copied": "Скопирован",
   "git.fileStatus.type-changed": "Тип изменён",
   "git.fileStatus.contains": "Содержит изменения",
+  "git.backToList": "Вернуться к списку",
+  "git.resizeDock": "Изменить размер панели Git",
   "git.notARepo": "Не является репозиторием Git",
   "git.notARepoHint": "Перейдите в репозиторий Git для просмотра статуса",
   "git.stagedChanges": "Подготовленные изменения",

@@ -775,6 +775,8 @@
   "git.fileStatus.copied": "Copied",
   "git.fileStatus.type-changed": "Type changed",
   "git.fileStatus.contains": "Contains changes",
+  "git.backToList": "Back to list",
+  "git.resizeDock": "Resize Git panel",
   "git.notARepo": "Not a git repository",
   "git.notARepoHint": "Navigate to a git repository to see status",
   "git.stagedChanges": "Staged Changes",

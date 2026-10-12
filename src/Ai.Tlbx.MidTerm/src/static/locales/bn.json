@@ -506,6 +506,8 @@
   "git.fileStatus.copied": "কপি করা হয়েছে",
   "git.fileStatus.type-changed": "ধরন পরিবর্তিত",
   "git.fileStatus.contains": "পরিবর্তন রয়েছে",
+  "git.backToList": "তালিকায় ফিরে যান",
+  "git.resizeDock": "Git প্যানেলের আকার পরিবর্তন করুন",
   "git.notARepo": "Git রিপোজিটরি নয়",
   "git.notARepoHint": "স্ট্যাটাস দেখতে Git রিপোজিটরিতে যান",
   "git.stagedChanges": "স্টেজ করা পরিবর্তন",

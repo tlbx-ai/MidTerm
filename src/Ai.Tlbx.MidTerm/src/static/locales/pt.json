@@ -506,6 +506,8 @@
   "git.fileStatus.copied": "Copiado",
   "git.fileStatus.type-changed": "Tipo alterado",
   "git.fileStatus.contains": "Contém alterações",
+  "git.backToList": "Voltar à lista",
+  "git.resizeDock": "Redimensionar o painel Git",
   "git.notARepo": "Não é um repositório Git",
   "git.notARepoHint": "Navegue até um repositório Git para ver o status",
   "git.stagedChanges": "Alterações preparadas",
