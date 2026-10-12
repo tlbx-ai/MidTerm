@@ -20,6 +20,14 @@ import { buildCommitCommandSuggestions, buildFileCommandSuggestions } from './gi
 import { pasteToTerminal } from '../terminal';
 import { escapeHtml } from '../../utils';
 import { renderPatchFile } from './gitDiffView';
+import {
+  createGitDiffUi,
+  clearDiffSelection,
+  renderDiffControls,
+  handleDiffControl,
+  handleDiffKey,
+  type GitDiffUi,
+} from './gitDiffControls';
 import { t } from '../i18n';
 import { areJsonLikeEqual, $sessions } from '../../stores';
 import { syncGitPanelDom } from './gitPanelDom';
@@ -30,6 +38,8 @@ import { sessionTerminals } from '../../state';
 import { addProcessStateListener, getProcessState } from '../process';
 import {
   createGitOperationsUi,
+  buildGitMutationRequest,
+  buildGitSelectionRequest,
   renderGitOperations,
   gitFileAction,
   gitSectionAction,
@@ -73,6 +83,7 @@ type GitSelection = GitFileSelection | GitCommitSelection | null;
 interface GitPanelState extends GitPanelLayoutState {
   operations: GitOperationsUi;
   wrapDiff: boolean;
+  diffUi: GitDiffUi;
   sessionId: string;
   repoRoot?: string | undefined;
   container: HTMLElement;
@@ -232,6 +243,7 @@ function createPanelState(
     selection: null,
     operations: createGitOperationsUi(sessionId, repoRoot),
     wrapDiff: readDiffWrap(),
+    diffUi: createGitDiffUi(),
     detailActive: true,
     scrollPositions: new Map(),
     historyEntries: [],
@@ -337,7 +349,7 @@ function countWorktreeChanges(status: GitStatusResponse): number {
 }
 
 function panelShellClass(state: GitPanelState): string {
-  return `git-panel-shell${state.selection && state.detailActive ? ' git-panel-detail-active' : ''}`;
+  return `git-panel-shell${state.selection && state.detailActive ? ' git-panel-detail-active' : ''}${state.diffUi.sideBySide ? ' git-panel-side-comparison' : ''}`;
 }
 
 function buildFileTree(files: GitFileEntry[], scope: FileScope): TreeNode {
@@ -713,23 +725,48 @@ function renderInspector(state: GitPanelState): string {
       selection,
       state.sessionId,
       state.status?.repoRoot ?? state.repoRoot ?? '',
+      state,
     );
   } else if (selection?.kind === 'commit') {
     body = renderCommitInspector(
       selection,
       state.sessionId,
       state.status?.repoRoot ?? state.repoRoot ?? '',
+      state.diffUi,
     );
   }
 
   return `<div class="git-inspector-header">
       <button class="git-inspector-back" data-action="show-list" type="button">${t('git.backToList')}</button>
       <button class="git-diff-wrap" data-action="toggle-diff-wrap" aria-pressed="${state.wrapDiff}" type="button">${t('git.wrapLines')}</button>
+      ${renderInspectorDiffControls(state)}
     </div>
     <div class="git-inspector-body">${body}</div>`;
 }
 
-function renderFileInspector(selection: GitFileSelection, sessionId: string, root: string): string {
+function selectedDiffFiles(selection: GitSelection): GitDiffFileView[] {
+  if (selection?.kind === 'file') return selection.diff?.files ?? [];
+  if (selection?.kind === 'commit') return selection.details?.files ?? [];
+  return [];
+}
+
+function renderInspectorDiffControls(state: GitPanelState): string {
+  const selection = state.selection;
+  return renderDiffControls(
+    state.diffUi,
+    selection?.kind === 'file' && !!selection.diff?.canSelectLines,
+    selection?.kind === 'file' && selection.scope === 'staged',
+    selectedDiffFiles(selection).some((file) => file.hunks.length > 0),
+    state.operations.busy || state.operations.pending !== null,
+  );
+}
+
+function renderFileInspector(
+  selection: GitFileSelection,
+  sessionId: string,
+  root: string,
+  state: GitPanelState,
+): string {
   if (selection.loading) {
     return renderInspectorFill('Loading diff...');
   }
@@ -762,7 +799,12 @@ function renderFileInspector(selection: GitFileSelection, sessionId: string, roo
     </div>
     ${originalHtml}
   </div>`;
-  html += renderPatchFile(file);
+  html += renderPatchFile(file, {
+    ui: state.diffUi,
+    selectable: !!diff?.canSelectLines,
+    staged: selection.scope === 'staged',
+    busy: state.operations.busy || state.operations.pending !== null,
+  });
   html += renderCommandSuggestions(suggestions, sessionId);
   return html;
 }
@@ -771,6 +813,7 @@ function renderCommitInspector(
   selection: GitCommitSelection,
   sessionId: string,
   root: string,
+  diffUi: GitDiffUi,
 ): string {
   if (selection.loading) {
     return renderInspectorFill('Loading commit...');
@@ -805,7 +848,7 @@ function renderCommitInspector(
     ${parentsHtml}
   </div>`;
   html += bodyHtml;
-  html += `<div class="git-commit-patch-list">${commit.files.map((file) => renderPatchFile(file)).join('')}</div>`;
+  html += `<div class="git-commit-patch-list">${commit.files.map((file) => renderPatchFile(file, { ui: diffUi, historical: true })).join('')}</div>`;
   html += renderCommandSuggestions(suggestions, sessionId);
   return html;
 }
@@ -894,7 +937,7 @@ function bindPanelEvents(container: HTMLElement): void {
     const element =
       event.target instanceof Element ? event.target.closest<HTMLElement>('[data-action]') : null;
     if (!state || !element || !container.contains(element)) return;
-    handlePanelAction(state, element);
+    handlePanelAction(state, element, event);
   });
   container.addEventListener('input', (event) => {
     const state = activePanels.get(container);
@@ -909,6 +952,8 @@ function bindPanelEvents(container: HTMLElement): void {
     if (commit && state.status) commit.disabled = !canCommit(state.operations, state.status);
   });
   container.addEventListener('keydown', (event) => {
+    const state = activePanels.get(container);
+    if (state) handleDiffKey(state.diffUi, event, container);
     if (
       !(event.target instanceof HTMLTextAreaElement) ||
       event.target.dataset.gitCommitMessage !== 'true'
@@ -923,7 +968,24 @@ function bindPanelEvents(container: HTMLElement): void {
   });
 }
 
-function handlePanelAction(state: GitPanelState, element: HTMLElement): void {
+function handleDiffAction(state: GitPanelState, element: HTMLElement, event: MouseEvent): boolean {
+  const data = element.dataset;
+  if (
+    handleDiffControl(state.diffUi, element, event, state.container, () => {
+      delete state.inspectorSelection;
+      renderPanel(state);
+    })
+  )
+    return true;
+  if (data.action === 'apply-diff-hunk' || data.action === 'apply-diff-selection') {
+    applyDiffSelection(state, data.action === 'apply-diff-hunk' ? Number(data.hunk) : undefined);
+    return true;
+  }
+  return false;
+}
+
+function handlePanelAction(state: GitPanelState, element: HTMLElement, event: MouseEvent): void {
+  if (handleDiffAction(state, element, event)) return;
   const data = element.dataset;
   if (handleMutationAction(state, data)) return;
   switch (data.action) {
@@ -941,7 +1003,7 @@ function handlePanelAction(state: GitPanelState, element: HTMLElement): void {
       openFileFromButton(state, data);
       break;
     case 'open-commit':
-      if (data.hash) void openCommitSelection(state, data.hash);
+      openCommitFromButton(state, data);
       break;
     case 'path-details': {
       showGitPathDetails(state, data);
@@ -987,65 +1049,56 @@ function handleMutationAction(state: GitPanelState, data: DOMStringMap): boolean
     return true;
   }
   if (state.operations.pending) return true;
-  void performMutation(state, buildMutationRequest(state, data, state.status));
+  void performMutation(
+    state,
+    buildGitMutationRequest(state.sessionId, state.operations.message, data, state.status),
+  );
   return true;
 }
 
-function buildMutationRequest(
-  state: GitPanelState,
-  data: DOMStringMap,
-  status: GitStatusResponse,
-): GitOperationRequest {
-  let action: GitOperationRequest['action'] =
-    data.action === 'commit-staged'
-      ? 'commit'
-      : data.action?.startsWith('unstage')
-        ? 'unstage'
-        : 'stage';
-  let paths = data.path ? [data.path] : [];
-  if (data.action === 'stage-section') {
-    const section = data.section as SectionId;
-    action = section === 'staged' ? 'unstage' : 'stage';
-    const entries =
-      section === 'staged'
-        ? status.staged
-        : section === 'untracked'
-          ? status.untracked
-          : status.modified;
-    paths = entries.map((file) => file.path);
-  }
-  const root = status.repoRoot;
-  const request: GitOperationRequest = {
-    sessionId: state.sessionId,
-    repoRoot: root,
-    operationId: crypto.randomUUID(),
-    action,
-    paths,
-    all: data.action === 'stage-all' || data.action === 'unstage-all',
-  };
-  if (action === 'commit') {
-    request.message = state.operations.message;
-    request.expectedIndexVersion = status.indexVersion ?? '';
-    request.expectedHead = status.headHash ?? '';
-  }
-  return request;
+function applyDiffSelection(state: GitPanelState, hunk?: number): void {
+  const selection = state.selection;
+  if (
+    selection?.kind !== 'file' ||
+    !selection.diff?.canSelectLines ||
+    !state.status ||
+    state.operations.busy ||
+    state.operations.pending
+  )
+    return;
+  if (hunk !== undefined && !Number.isInteger(hunk)) return;
+  void performMutation(
+    state,
+    buildGitSelectionRequest(
+      state.sessionId,
+      state.status.repoRoot,
+      selection.path,
+      selection.scope === 'staged',
+      selection.diff,
+      state.diffUi.selected,
+      hunk,
+    ),
+  );
 }
 
 async function performMutation(state: GitPanelState, request: GitOperationRequest): Promise<void> {
   const pending = executeGitOperation(state.operations, request);
+  delete state.inspectorSelection;
   renderPanel(state);
   const result = await pending;
   if (result?.status) {
     state.status = result.status;
-    if (result.state === 'completed' && request.action === 'stage')
+    if (result.state === 'completed' && request.action.startsWith('stage'))
       state.expandedSections.add('staged');
-    if (result.state === 'completed' && request.action === 'unstage') {
+    if (result.state === 'completed' && request.action.startsWith('unstage')) {
       state.expandedSections.add('changes');
       state.expandedSections.add('untracked');
     }
     syncHistoryFromStatus(state, result.status);
     syncSelectionAfterStatus(state);
   }
+  if (result?.state === 'completed') clearDiffSelection(state.diffUi);
+  delete state.inspectorSelection;
   renderPanel(state);
   if (result?.state === 'completed' && state.selection?.kind === 'file')
     await openFileSelection(state, state.selection, true);
@@ -1121,7 +1174,10 @@ async function openFileSelection(
 ): Promise<void> {
   const existing = getExistingFileSelection(state, selection);
   state.detailActive = true;
-  if (!existing) state.scrollPositions.delete('inspector');
+  if (!existing) {
+    clearDiffSelection(state.diffUi);
+    state.scrollPositions.delete('inspector');
+  }
 
   if (existing && !existing.loading && existing.diff && !force) {
     renderPanel(state);
@@ -1143,6 +1199,7 @@ async function openFileSelection(
     return;
   }
 
+  if (diff?.patchVersion !== existing?.diff?.patchVersion) clearDiffSelection(state.diffUi);
   state.selection = createResolvedFileSelection(selection, currentSelection, diff);
   renderPanel(state);
 }
@@ -1197,6 +1254,10 @@ function createResolvedFileSelection(
     loading: false,
     error: diff ? null : 'Unable to load diff.',
   };
+}
+
+function openCommitFromButton(state: GitPanelState, data: DOMStringMap): void {
+  if (data.hash) void openCommitSelection(state, data.hash);
 }
 
 async function openCommitSelection(state: GitPanelState, hash: string): Promise<void> {

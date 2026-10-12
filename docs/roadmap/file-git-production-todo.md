@@ -1187,9 +1187,26 @@ Wortmarkierung; ein fälschlich angehängter leerer Patch-Kontext wurde entfernt
 bei 250/400/600px besteht für Koordinaten, Wortmarkierung, CRLF/Unicode,
 Tab-/Leerzeicheneinzug, Wrap/Scroll/DOM-Erhalt und unveränderte Diskbytes ohne
 Schreibaktionen/Terminaleingaben. `git-task-36-projection-native-final` und
-`git-task-36-reading-first` enthalten die Nachweise. Aufgabe bleibt offen:
-Side-by-side, Änderungsnavigation, selektives Hunk-/Zeilenstaging und dessen
-vollständige Git-/Stale-/Parallelitätsabnahme sind noch erforderlich.
+`git-task-36-reading-first` enthalten die Nachweise. Dieser frühe Teilstand
+deckte Side-by-side, Änderungsnavigation und selektives Staging noch nicht ab.
+
+**Implementiert und lokal geprüft 13.10.2026:** Side-by-side nutzt die volle
+Dockbreite mit Rückweg zur Liste; Backend-Zuordnung hält Alt-/Neu-Zeilen und
+Wortmarkierungen zusammen. Vorherige/nächste Änderung fokussiert echte Hunks.
+Zeilenauswahl per Klick/Ctrl/Shift/Tastatur erhält DOM-Identität. Hunk-/Zeilen-
+Stage und Unstage erzeugen serverseitig einen versionierten Patch und prüfen
+ihn mit Git im gesperrten temporären Index vor Veröffentlichung. 39 native
+Tests bestehen, zwei explizite Unix-Skips; darunter neun echte Gitfälle für
+CRLF/Unicode, neue/gelöschte/umbenannte Dateien, veraltete Diffs/Indizes,
+Parallelität, leeres Repository und Replay ohne doppelte Anwendung. Sechs
+Browserabläufe und 15 Diff-/Commit-/New-File-Regressionsabläufe bestehen;
+Screenshots nach Korrektur der Side-by-side-Breite geprüft. 709 Frontendtests
+plus Typecheck/Lints bestehen. Nachweise: `git-task-36-partial-wide`,
+`git-task-36-selection-native-final`, `git-task-36-regression-*`, Side-Verify-Logs.
+Layout-/Navigationsregression besteht zusätzlich mit drei realen Abläufen für
+Back/Cache/Scroll/Fokus, wiederholtes Keyboard-/Pointer-Resizing und 390px-Overlay
+mit Desktop-Rückkehr (`git-task-36-layout-navigation`). Abschluss bleibt offen
+bis Plattform-/LocalSystem-CI verifiziert ist. Der Designpass bleibt Aufgabe 43.
 
 ### 37. [ ] Merge-Commits nachvollziehbar gegen Parents vergleichen
 

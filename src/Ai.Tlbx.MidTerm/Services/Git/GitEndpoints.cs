@@ -243,14 +243,23 @@ public static class GitEndpoints
             return await RunForGitCallerAsync(sessionId, sessionManager, settings, async () =>
             {
                 var status = await GitCommandRunner.GetStatusAsync(resolvedRepoRoot!).ConfigureAwait(false);
+                var snapshot = await GitPatchSelection.ReadAsync(resolvedRepoRoot!, path, normalizedScope == "staged", status).ConfigureAwait(false);
                 GitDiffViewResponse response;
                 if (normalizedScope == "worktree" && status.Untracked.Any(file => file.Path == path))
-                    response = await GitNewFileReview.ReadAsync(resolvedRepoRoot!, path, ct).ConfigureAwait(false);
-                else
                 {
-                    var (patch, isTruncated) = await GitCommandRunner.GetDiffPatchAsync(resolvedRepoRoot!, path, normalizedScope == "staged").ConfigureAwait(false);
-                    response = GitPatchParser.ParseDiff(normalizedScope, patch, isTruncated);
+                    response = await GitNewFileReview.ReadAsync(resolvedRepoRoot!, path, ct).ConfigureAwait(false);
+                    response.PatchVersion = snapshot.View.PatchVersion;
+                    response.IndexVersion = snapshot.View.IndexVersion;
+                    response.CanSelectLines = snapshot.View.CanSelectLines && !response.IsTruncated && !response.Files[0].IsBinary;
+                    if (response.CanSelectLines)
+                    {
+                        // Selection coordinates and their version must describe the same native snapshot.
+                        response.Files[0].Hunks = snapshot.View.Files[0].Hunks;
+                        response.Files[0].Additions = snapshot.View.Files[0].Additions;
+                    }
                 }
+                else
+                    response = snapshot.View;
                 return Results.Json(response, GitJsonContext.Default.GitDiffViewResponse);
             }).ConfigureAwait(false);
         });

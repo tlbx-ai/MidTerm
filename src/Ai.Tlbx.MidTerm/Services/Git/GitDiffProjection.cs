@@ -26,16 +26,21 @@ internal static partial class GitDiffProjection
                 line.OldLine = line.Kind is "del" or "context" ? oldLine++ : null;
                 line.NewLine = line.Kind is "add" or "context" ? newLine++ : null;
             }
+            var visualRow = 0;
             for (var offset = 0; offset < hunk.Lines.Length;)
             {
-                if (hunk.Lines[offset].Kind is not ("add" or "del")) { offset++; continue; }
+                if (hunk.Lines[offset].Kind is not ("add" or "del"))
+                { hunk.Lines[offset++].VisualRow = visualRow++; continue; }
                 var end = offset;
                 while (end < hunk.Lines.Length && hunk.Lines[end].Kind is "add" or "del") end++;
                 var block = hunk.Lines[offset..end];
                 var deleted = block.Where(line => line.Kind == "del").ToArray();
                 var added = block.Where(line => line.Kind == "add").ToArray();
+                for (var pair = 0; pair < deleted.Length; pair++) deleted[pair].VisualRow = visualRow + pair;
+                for (var pair = 0; pair < added.Length; pair++) added[pair].VisualRow = visualRow + pair;
                 for (var pair = 0; pair < Math.Min(deleted.Length, added.Length); pair++)
                     CompareWords(deleted[pair], added[pair]);
+                visualRow += Math.Max(deleted.Length, added.Length);
                 offset = end;
             }
         }

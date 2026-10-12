@@ -57,7 +57,14 @@ internal sealed class GitOperationService
     {
         if (request.Paths is null) throw new GitOperationException(400, "invalid_paths", "Paths must be an array.");
         if (!Guid.TryParseExact(request.OperationId, "D", out _)) throw new GitOperationException(400, "invalid_operation", "A unique operation ID is required.");
-        if (request.Action is not ("stage" or "unstage" or "commit")) throw new GitOperationException(400, "invalid_action", "Unsupported Git operation.");
+        if (request.Action is not ("stage" or "unstage" or "commit" or "stage-selection" or "unstage-selection")) throw new GitOperationException(400, "invalid_action", "Unsupported Git operation.");
+        if (request.Action is "stage-selection" or "unstage-selection")
+        {
+            if (request.All || request.Paths.Length != 1 || string.IsNullOrEmpty(request.ExpectedIndexVersion) || string.IsNullOrEmpty(request.ExpectedPatchVersion))
+                throw new GitOperationException(400, "review_required", "Review one file before selecting changes to stage or unstage.");
+            if (request.SelectedHunks is null || request.SelectedLines is null || request.SelectedLines.Any(line => line is null) || request.SelectedLines.Length > 10000 || request.SelectedHunks.Length > 10000)
+                throw new GitOperationException(400, "invalid_selection", "Select at most 10000 changed lines or hunks.");
+        }
         if (request.Action == "commit" && (string.IsNullOrWhiteSpace(request.Message) || request.Message.Length > 65536))
             throw new GitOperationException(400, "commit_message_required", "Enter a commit message of at most 65536 characters.");
         if (request.Action == "commit" && (string.IsNullOrEmpty(request.ExpectedIndexVersion) || request.ExpectedHead is null))
@@ -87,9 +94,10 @@ internal sealed class GitOperationService
                 throw new GitOperationException(409, "conflict_unresolved", "Resolve conflicted files before staging or committing them.");
             transaction.CopyOriginal();
             var paths = request.Action == "commit" ? [] : SelectPaths(info.RepoRoot, request, before);
-            var args = BuildArguments(request, before, paths);
             var environment = new Dictionary<string, string?>(StringComparer.Ordinal) { ["GIT_INDEX_FILE"] = temporary, ["GIT_TERMINAL_PROMPT"] = "0", ["GCM_INTERACTIVE"] = "never" };
-            var (exitCode, stdout, stderr) = await GitCommandRunner.ExecuteAsync(info.RepoRoot, args, environment, ct).ConfigureAwait(false);
+            var (exitCode, stdout, stderr) = request.Action is "stage-selection" or "unstage-selection"
+                ? await ApplySelectionAsync(info.RepoRoot, request, before, temporary, environment, ct).ConfigureAwait(false)
+                : await GitCommandRunner.ExecuteAsync(info.RepoRoot, BuildArguments(request, before, paths), environment, ct).ConfigureAwait(false);
             result = new GitOperationResponse { OperationId = request.OperationId, RepoRoot = info.RepoRoot, Action = request.Action, State = "completed" };
             if (request.Action == "commit")
             {
@@ -115,7 +123,7 @@ internal sealed class GitOperationService
     private static string[] SelectPaths(string root, GitOperationRequest request, GitStatusResponse status)
     {
         if (request.All) return ["."];
-        var files = request.Action == "unstage" ? status.Staged : status.Modified.Concat(status.Untracked).Concat(status.Staged).ToArray();
+        var files = request.Action is "unstage" or "unstage-selection" ? status.Staged : status.Modified.Concat(status.Untracked).Concat(status.Staged).ToArray();
         var result = new HashSet<string>(PathComparer);
         foreach (var input in request.Paths)
         {
@@ -130,6 +138,23 @@ internal sealed class GitOperationService
             if (file.OriginalPath is { } original) result.Add(original);
         }
         return result.ToArray();
+    }
+
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> ApplySelectionAsync(string root,
+        GitOperationRequest request, GitStatusResponse before, string index,
+        Dictionary<string, string?> environment, CancellationToken ct)
+    {
+        var snapshot = await GitPatchSelection.ReadAsync(root, request.Paths[0], request.Action == "unstage-selection", before).ConfigureAwait(false);
+        var patch = GitPatchSelection.Build(snapshot, request);
+        var patchPath = index + ".patch";
+        try
+        {
+            await File.WriteAllTextAsync(patchPath, patch, new UTF8Encoding(false), ct).ConfigureAwait(false);
+            var check = await GitCommandRunner.ExecuteAsync(root, ["apply", "--cached", "--check", "--whitespace=nowarn", "--", patchPath], environment, ct).ConfigureAwait(false);
+            if (check.ExitCode != 0) throw new GitOperationException(409, "patch_conflict", "Git could not apply the selected changes to the reviewed index. " + check.Stderr);
+            return await GitCommandRunner.ExecuteAsync(root, ["apply", "--cached", "--whitespace=nowarn", "--", patchPath], environment, ct).ConfigureAwait(false);
+        }
+        finally { if (File.Exists(patchPath)) File.Delete(patchPath); }
     }
 
     private static string[] BuildArguments(GitOperationRequest request, GitStatusResponse before, string[] paths)

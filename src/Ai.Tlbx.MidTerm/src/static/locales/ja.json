@@ -1259,5 +1259,18 @@
   "fileBrowser.recoveryEmpty": "復元できる項目はありません。",
   "fileBrowser.recoveryHelp": "削除または置換した項目を選択してください。既存の項目は保持されます。",
   "fileBrowser.deletedEntry": "削除した項目",
-  "fileBrowser.nextPage": "次のページ"
+  "fileBrowser.nextPage": "次のページ",
+  "git.sideBySide": "並列表示",
+  "git.previousChange": "前の変更",
+  "git.nextChange": "次の変更",
+  "git.stageSelectedLines": "選択行をステージ",
+  "git.unstageSelectedLines": "選択行をステージ解除",
+  "git.stageHunk": "変更ブロックをステージ",
+  "git.unstageHunk": "変更ブロックをステージ解除",
+  "git.selectChangedLines": "変更行を選択",
+  "git.headVersion": "HEAD",
+  "git.indexVersion": "インデックス",
+  "git.workingVersion": "作業ツリー",
+  "git.previousVersion": "変更前",
+  "git.currentVersion": "変更後"
 }

@@ -1259,5 +1259,18 @@
   "fileBrowser.recoveryEmpty": "没有可恢复的项目。",
   "fileBrowser.recoveryHelp": "选择已删除或替换的项目。现有项目将被保留。",
   "fileBrowser.deletedEntry": "已移除项目",
-  "fileBrowser.nextPage": "下一页"
+  "fileBrowser.nextPage": "下一页",
+  "git.sideBySide": "并排显示",
+  "git.previousChange": "上一处更改",
+  "git.nextChange": "下一处更改",
+  "git.stageSelectedLines": "暂存选中行",
+  "git.unstageSelectedLines": "取消暂存选中行",
+  "git.stageHunk": "暂存更改块",
+  "git.unstageHunk": "取消暂存更改块",
+  "git.selectChangedLines": "选择更改行",
+  "git.headVersion": "HEAD",
+  "git.indexVersion": "暂存区",
+  "git.workingVersion": "工作区",
+  "git.previousVersion": "更改前",
+  "git.currentVersion": "更改后"
 }

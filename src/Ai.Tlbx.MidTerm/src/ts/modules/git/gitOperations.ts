@@ -1,6 +1,40 @@
 import { t } from '../i18n';
 import { escapeHtml } from '../../utils';
-import type { GitOperationRequest, GitOperationResponse, GitStatusResponse } from './types';
+import type {
+  GitOperationRequest,
+  GitOperationResponse,
+  GitStatusResponse,
+  GitDiffViewResponse,
+} from './types';
+
+export function buildGitSelectionRequest(
+  sessionId: string,
+  root: string,
+  path: string,
+  staged: boolean,
+  diff: GitDiffViewResponse,
+  selected: ReadonlySet<string>,
+  hunk?: number,
+): GitOperationRequest {
+  return {
+    sessionId,
+    repoRoot: root,
+    operationId: crypto.randomUUID(),
+    action: staged ? 'unstage-selection' : 'stage-selection',
+    paths: [path],
+    all: false,
+    expectedIndexVersion: diff.indexVersion ?? '',
+    expectedPatchVersion: diff.patchVersion ?? '',
+    selectedHunks: hunk === undefined ? [] : [hunk],
+    selectedLines:
+      hunk === undefined
+        ? [...selected].map((id) => {
+            const [selectedHunk, line] = id.split(':').map(Number);
+            return { hunk: selectedHunk ?? -1, line: line ?? -1 };
+          })
+        : [],
+  };
+}
 
 export interface GitOperationsUi {
   message: string;
@@ -88,7 +122,8 @@ export async function executeGitOperation(
       if (request.action === 'commit') {
         setGitCommitMessage(state, '');
         state.confirmed = `${t('git.commitCreated')}: ${result.commitHash ?? ''}`;
-      } else state.confirmed = t(request.action === 'stage' ? 'git.staged' : 'git.unstaged');
+      } else
+        state.confirmed = t(request.action.startsWith('stage') ? 'git.staged' : 'git.unstaged');
       state.pending = null;
     }
     return result;
@@ -98,4 +133,45 @@ export async function executeGitOperation(
   } finally {
     state.busy = false;
   }
+}
+
+export function buildGitMutationRequest(
+  sessionId: string,
+  message: string,
+  data: DOMStringMap,
+  status: GitStatusResponse,
+): GitOperationRequest {
+  let action: GitOperationRequest['action'] =
+    data.action === 'commit-staged'
+      ? 'commit'
+      : data.action?.startsWith('unstage')
+        ? 'unstage'
+        : 'stage';
+  let paths = data.path ? [data.path] : [];
+  if (data.action === 'stage-section') {
+    const section = data.section;
+    action = section === 'staged' ? 'unstage' : 'stage';
+    const entries =
+      section === 'staged'
+        ? status.staged
+        : section === 'untracked'
+          ? status.untracked
+          : status.modified;
+    paths = entries.map((file) => file.path);
+  }
+  const root = status.repoRoot;
+  const request: GitOperationRequest = {
+    sessionId: sessionId,
+    repoRoot: root,
+    operationId: crypto.randomUUID(),
+    action,
+    paths,
+    all: data.action === 'stage-all' || data.action === 'unstage-all',
+  };
+  if (action === 'commit') {
+    request.message = message;
+    request.expectedIndexVersion = status.indexVersion ?? '';
+    request.expectedHead = status.headHash ?? '';
+  }
+  return request;
 }

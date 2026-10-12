@@ -1303,5 +1303,18 @@
   "fileBrowser.recoveryEmpty": "Keine wiederherstellbaren Einträge für diesen Ordner.",
   "fileBrowser.recoveryHelp": "Wähle einen gelöschten oder ersetzten Eintrag zur Wiederherstellung. Vorhandene Einträge bleiben erhalten.",
   "fileBrowser.deletedEntry": "Entfernter Eintrag",
-  "fileBrowser.nextPage": "Nächste Seite"
+  "fileBrowser.nextPage": "Nächste Seite",
+  "git.sideBySide": "Nebeneinander",
+  "git.previousChange": "Vorherige Änderung",
+  "git.nextChange": "Nächste Änderung",
+  "git.stageSelectedLines": "Ausgewählte Zeilen stagen",
+  "git.unstageSelectedLines": "Ausgewählte Zeilen unstagen",
+  "git.stageHunk": "Hunk stagen",
+  "git.unstageHunk": "Hunk unstagen",
+  "git.selectChangedLines": "Geänderte Zeilen auswählen",
+  "git.headVersion": "HEAD",
+  "git.indexVersion": "Index",
+  "git.workingVersion": "Arbeitskopie",
+  "git.previousVersion": "Vorher",
+  "git.currentVersion": "Nachher"
 }

@@ -65,6 +65,30 @@ public sealed class FileServiceIdentityTests
                 Assert.Equal(0, committedText.ExitCode); Assert.Equal("caller data", committedText.Stdout);
                 using var afterMutation = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterMutation.User!.Value);
 
+                var selectedPath = Path.Combine(root, "selected ä.txt");
+                await File.WriteAllTextAsync(selectedPath, "Caller first ä\nCaller second 字\n");
+                var newFile = Assert.Single((await GitNewFileReview.ReadAsync(root, "selected ä.txt", default)).Files);
+                Assert.Equal(2, newFile.Additions); Assert.False(newFile.IsBinary);
+                var selectedStatus = await GitCommandRunner.GetStatusAsync(root);
+                var snapshot = await GitPatchSelection.ReadAsync(root, "selected ä.txt", false, selectedStatus);
+                var selected = new Ai.Tlbx.MidTerm.Models.Git.GitOperationRequest
+                {
+                    Action = "stage-selection", OperationId = Guid.NewGuid().ToString("D"), Paths = ["selected ä.txt"],
+                    ExpectedIndexVersion = selectedStatus.IndexVersion, ExpectedPatchVersion = snapshot.View.PatchVersion,
+                    SelectedLines = [new() { Hunk = 0, Line = 0 }]
+                };
+                Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, selected, default)).State);
+                var selectedText = await GitCommandRunner.ExecuteAsync(root, ["show", ":selected ä.txt"], default);
+                Assert.Equal(0, selectedText.ExitCode); Assert.Equal("Caller first ä\n", selectedText.Stdout.Replace("\r\n", "\n", StringComparison.Ordinal));
+                selectedStatus = await GitCommandRunner.GetStatusAsync(root);
+                snapshot = await GitPatchSelection.ReadAsync(root, "selected ä.txt", true, selectedStatus);
+                selected.Action = "unstage-selection"; selected.OperationId = Guid.NewGuid().ToString("D");
+                selected.ExpectedIndexVersion = selectedStatus.IndexVersion; selected.ExpectedPatchVersion = snapshot.View.PatchVersion;
+                selected.SelectedLines = []; selected.SelectedHunks = [0];
+                Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, selected, default)).State);
+                Assert.Equal("Caller first ä\nCaller second 字\n", await File.ReadAllTextAsync(selectedPath));
+                using var afterSelection = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterSelection.User!.Value);
+
                 var create = Request("createFolder"); create.DestinationDirectory = root; create.Name = "destination";
                 Assert.True(Assert.Single((await service.ExecuteAsync(create, Accessible, [root], default)).Items).Success);
                 var duplicate = Assert.Single((await service.ExecuteAsync(Request("duplicate", source), Accessible, [root], default)).Items);

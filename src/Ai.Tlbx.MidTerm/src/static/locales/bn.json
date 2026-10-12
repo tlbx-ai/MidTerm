@@ -1259,5 +1259,18 @@
   "fileBrowser.recoveryEmpty": "পুনরুদ্ধারযোগ্য আইটেম নেই।",
   "fileBrowser.recoveryHelp": "মোছা বা প্রতিস্থাপিত আইটেম বেছে নিন। বিদ্যমান আইটেম রাখা হবে।",
   "fileBrowser.deletedEntry": "সরানো আইটেম",
-  "fileBrowser.nextPage": "পরের পৃষ্ঠা"
+  "fileBrowser.nextPage": "পরের পৃষ্ঠা",
+  "git.sideBySide": "পাশাপাশি",
+  "git.previousChange": "আগের পরিবর্তন",
+  "git.nextChange": "পরের পরিবর্তন",
+  "git.stageSelectedLines": "নির্বাচিত লাইন স্টেজ করুন",
+  "git.unstageSelectedLines": "নির্বাচিত লাইন আনস্টেজ করুন",
+  "git.stageHunk": "পরিবর্তনের অংশ স্টেজ করুন",
+  "git.unstageHunk": "পরিবর্তনের অংশ আনস্টেজ করুন",
+  "git.selectChangedLines": "পরিবর্তিত লাইন নির্বাচন করুন",
+  "git.headVersion": "HEAD",
+  "git.indexVersion": "ইনডেক্স",
+  "git.workingVersion": "কাজের কপি",
+  "git.previousVersion": "আগে",
+  "git.currentVersion": "পরে"
 }

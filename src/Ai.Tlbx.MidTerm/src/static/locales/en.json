@@ -1407,5 +1407,18 @@
   "fileBrowser.recoveryEmpty": "No recoverable entries for this folder.",
   "fileBrowser.recoveryHelp": "Choose a removed or replaced entry to restore. Existing entries are kept.",
   "fileBrowser.deletedEntry": "Removed entry",
-  "fileBrowser.nextPage": "Next page"
+  "fileBrowser.nextPage": "Next page",
+  "git.sideBySide": "Side by side",
+  "git.previousChange": "Previous change",
+  "git.nextChange": "Next change",
+  "git.stageSelectedLines": "Stage selected lines",
+  "git.unstageSelectedLines": "Unstage selected lines",
+  "git.stageHunk": "Stage hunk",
+  "git.unstageHunk": "Unstage hunk",
+  "git.selectChangedLines": "Select changed lines",
+  "git.headVersion": "HEAD",
+  "git.indexVersion": "Index",
+  "git.workingVersion": "Working tree",
+  "git.previousVersion": "Before",
+  "git.currentVersion": "After"
 }

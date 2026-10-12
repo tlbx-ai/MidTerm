@@ -13,6 +13,15 @@ public sealed class GitOperationRequest
     public string? Message { get; set; }
     public string? ExpectedIndexVersion { get; set; }
     public string? ExpectedHead { get; set; }
+    public string? ExpectedPatchVersion { get; set; }
+    public int[] SelectedHunks { get; set; } = [];
+    public GitSelectedLine[] SelectedLines { get; set; } = [];
+}
+
+public sealed class GitSelectedLine
+{
+    public int Hunk { get; set; }
+    public int Line { get; set; }
 }
 
 public sealed class GitOperationResponse

@@ -1259,5 +1259,18 @@
   "fileBrowser.recoveryEmpty": "Nenhum item recuperável.",
   "fileBrowser.recoveryHelp": "Escolha um item excluído ou substituído. Os itens existentes são mantidos.",
   "fileBrowser.deletedEntry": "Item removido",
-  "fileBrowser.nextPage": "Próxima página"
+  "fileBrowser.nextPage": "Próxima página",
+  "git.sideBySide": "Lado a lado",
+  "git.previousChange": "Alteração anterior",
+  "git.nextChange": "Próxima alteração",
+  "git.stageSelectedLines": "Preparar linhas selecionadas",
+  "git.unstageSelectedLines": "Retirar linhas selecionadas do índice",
+  "git.stageHunk": "Preparar bloco",
+  "git.unstageHunk": "Retirar bloco do índice",
+  "git.selectChangedLines": "Selecionar linhas alteradas",
+  "git.headVersion": "HEAD",
+  "git.indexVersion": "Índice",
+  "git.workingVersion": "Cópia de trabalho",
+  "git.previousVersion": "Antes",
+  "git.currentVersion": "Depois"
 }

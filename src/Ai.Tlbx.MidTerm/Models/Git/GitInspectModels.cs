@@ -5,6 +5,9 @@ public sealed class GitDiffViewResponse
     public string Scope { get; set; } = "";
     public string Title { get; set; } = "";
     public bool IsTruncated { get; set; }
+    public string PatchVersion { get; set; } = "";
+    public string IndexVersion { get; set; } = "";
+    public bool CanSelectLines { get; set; }
     public GitDiffFileView[] Files { get; set; } = [];
 }
 
@@ -56,6 +59,7 @@ public sealed class GitDiffLine
     public string Text { get; set; } = "";
     public int? OldLine { get; set; }
     public int? NewLine { get; set; }
+    public int VisualRow { get; set; }
     public GitDiffSegment[] Segments { get; set; } = [];
 }
 

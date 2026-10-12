@@ -29,12 +29,15 @@ export interface GitOperationRequest {
   sessionId: string;
   repoRoot: string;
   operationId: string;
-  action: 'stage' | 'unstage' | 'commit';
+  action: 'stage' | 'unstage' | 'commit' | 'stage-selection' | 'unstage-selection';
   paths: string[];
   all: boolean;
   message?: string;
   expectedIndexVersion?: string;
   expectedHead?: string;
+  expectedPatchVersion?: string;
+  selectedHunks?: number[];
+  selectedLines?: Array<{ hunk: number; line: number }>;
 }
 
 export interface GitOperationResponse {
@@ -82,6 +85,7 @@ export interface GitDiffLine {
   text: string;
   oldLine?: number | null;
   newLine?: number | null;
+  visualRow?: number;
   segments?: Array<{ text: string; changed: boolean }>;
 }
 
@@ -113,6 +117,9 @@ export interface GitDiffViewResponse {
   scope: string;
   title: string;
   isTruncated: boolean;
+  patchVersion?: string;
+  indexVersion?: string;
+  canSelectLines?: boolean;
   files: GitDiffFileView[];
 }
 

@@ -1259,5 +1259,18 @@
   "fileBrowser.recoveryEmpty": "Нет элементов для восстановления.",
   "fileBrowser.recoveryHelp": "Выберите удалённый или заменённый элемент. Существующие элементы сохраняются.",
   "fileBrowser.deletedEntry": "Удалённый элемент",
-  "fileBrowser.nextPage": "Следующая страница"
+  "fileBrowser.nextPage": "Следующая страница",
+  "git.sideBySide": "Рядом",
+  "git.previousChange": "Предыдущее изменение",
+  "git.nextChange": "Следующее изменение",
+  "git.stageSelectedLines": "Добавить выбранные строки в индекс",
+  "git.unstageSelectedLines": "Убрать выбранные строки из индекса",
+  "git.stageHunk": "Добавить блок в индекс",
+  "git.unstageHunk": "Убрать блок из индекса",
+  "git.selectChangedLines": "Выбрать изменённые строки",
+  "git.headVersion": "HEAD",
+  "git.indexVersion": "Индекс",
+  "git.workingVersion": "Рабочая копия",
+  "git.previousVersion": "До",
+  "git.currentVersion": "После"
 }

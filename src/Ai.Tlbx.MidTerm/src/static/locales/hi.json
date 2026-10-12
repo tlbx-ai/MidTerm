@@ -1259,5 +1259,18 @@
   "fileBrowser.recoveryEmpty": "कोई पुनर्प्राप्त करने योग्य आइटम नहीं।",
   "fileBrowser.recoveryHelp": "हटाया या बदला गया आइटम चुनें। मौजूदा आइटम रखे जाएँगे।",
   "fileBrowser.deletedEntry": "हटाया गया आइटम",
-  "fileBrowser.nextPage": "अगला पृष्ठ"
+  "fileBrowser.nextPage": "अगला पृष्ठ",
+  "git.sideBySide": "साथ-साथ",
+  "git.previousChange": "पिछला परिवर्तन",
+  "git.nextChange": "अगला परिवर्तन",
+  "git.stageSelectedLines": "चयनित पंक्तियाँ स्टेज करें",
+  "git.unstageSelectedLines": "चयनित पंक्तियाँ अनस्टेज करें",
+  "git.stageHunk": "परिवर्तन खंड स्टेज करें",
+  "git.unstageHunk": "परिवर्तन खंड अनस्टेज करें",
+  "git.selectChangedLines": "बदली हुई पंक्तियाँ चुनें",
+  "git.headVersion": "HEAD",
+  "git.indexVersion": "इंडेक्स",
+  "git.workingVersion": "कार्य प्रति",
+  "git.previousVersion": "पहले",
+  "git.currentVersion": "बाद में"
 }

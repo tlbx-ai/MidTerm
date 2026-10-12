@@ -427,13 +427,19 @@ internal static class GitCommandRunner
     internal static async Task<(string Patch, bool IsTruncated)> GetDiffPatchAsync(
         string repoRoot,
         string path,
-        bool staged)
+        bool staged,
+        string? originalPath = null,
+        bool untracked = false)
     {
-        var args = staged
-            ? new[] { "--literal-pathspecs", "diff", "--cached", "--find-renames", "--unified=3", "--no-color", "--", path }
-            : new[] { "--literal-pathspecs", "diff", "--find-renames", "--unified=3", "--no-color", "--", path };
-        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, args);
-        if (exitCode != 0)
+        var args = new List<string> { "--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", "--unified=3", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", "--no-relative" };
+        if (untracked) args.Add("--no-index");
+        else { args.Add("--find-renames"); if (staged) args.Add("--cached"); }
+        args.Add("--");
+        if (untracked) args.Add("/dev/null");
+        args.Add(path);
+        if (!untracked && originalPath is not null && originalPath != path) args.Add(originalPath);
+        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, args.ToArray());
+        if (exitCode != 0 && !(untracked && exitCode == 1))
         {
             return (string.Empty, false);
         }
