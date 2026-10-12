@@ -1169,7 +1169,7 @@ und Lost-ACK-Replay. 31 native Tests bestanden, zwei explizite Unix-Skips;
 709 Frontendtests plus Typecheck/Lints bestanden. Evidenz `git-task-35-third`,
 `git-task-35-commit-regression`, `git-task-35-native-final` und Verify-Logs.
 
-### 36. [~] Diffprüfung und selektives Staging vervollständigen
+### 36. [x] Diffprüfung und selektives Staging vervollständigen
 
 **Befund (mittel, Erwartungslücke):** Unified Patch ohne Alt-/Neuansicht,
 Zeilennummern, Wortmarkierung, Änderungsnavigation oder Hunk-/Zeilenstaging.
@@ -1205,10 +1205,19 @@ plus Typecheck/Lints bestehen. Nachweise: `git-task-36-partial-wide`,
 `git-task-36-selection-native-final`, `git-task-36-regression-*`, Side-Verify-Logs.
 Layout-/Navigationsregression besteht zusätzlich mit drei realen Abläufen für
 Back/Cache/Scroll/Fokus, wiederholtes Keyboard-/Pointer-Resizing und 390px-Overlay
-mit Desktop-Rückkehr (`git-task-36-layout-navigation`). Abschluss bleibt offen
-bis Plattform-/LocalSystem-CI verifiziert ist. Der Designpass bleibt Aufgabe 43.
+mit Desktop-Rückkehr (`git-task-36-layout-navigation`).
 
-### 37. [ ] Merge-Commits nachvollziehbar gegen Parents vergleichen
+**Plattform-/Caller-Abnahme 13.10.2026:** CI `38321427219` auf `7bce66ca` ist
+erfolgreich: Windows 138/148, Linux 141/148, macOS 138/148; jeweils 10/7/10
+explizite Plattform-/Fixture-Skips und null Fehler. Alle neun selektiven Gitfälle
+bestehen auf jedem Betriebssystem. Echte Shellquotierung besteht mit 20 Windows-
+und je 28 Linux-/macOS-Fällen. Zusätzlich tatsächliche LocalSystem-Ausführung
+1/1 einschließlich privater New-File-Vorschau und selektivem Stage/Unstage unter
+dem verifizierten Caller, anschließend weiterhin kein Systemzugriff auf dessen
+Datei. TRX/Quoting-Nachweise: `git-task-36-platform-*`; kompakte geprüfte Zähler:
+`git-task-36-platform-counters.json`. Der endgültige Designpass bleibt Aufgabe 43.
+
+### 37. [~] Merge-Commits nachvollziehbar gegen Parents vergleichen
 
 **Befund (mittel, reproduziert/Code):** Merge 786357d2 zeigt Metadaten/Text ohne
 Patches, obwohl first-parent-Vergleich Dateien enthält. Normales git show erklärt
