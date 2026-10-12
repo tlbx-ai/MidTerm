@@ -21,6 +21,9 @@ public sealed class GitCommitDetailsResponse
     public string AuthoredDate { get; set; } = "";
     public string CommittedDate { get; set; } = "";
     public string[] ParentHashes { get; set; } = [];
+    public int? ComparedParentIndex { get; set; }
+    public string? ComparedParentHash { get; set; }
+    public bool IsRootCommit { get; set; }
     public int TotalAdditions { get; set; }
     public int TotalDeletions { get; set; }
     public bool IsTruncated { get; set; }

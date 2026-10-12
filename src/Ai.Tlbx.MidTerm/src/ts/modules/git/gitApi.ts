@@ -152,11 +152,13 @@ export async function fetchCommitDetails(
   sessionId: string,
   repoRootOrHash: string | undefined,
   hashOrUndefined?: string,
+  parentIndex = 0,
 ): Promise<GitCommitDetailsResponse | null> {
   try {
     const repoRoot = hashOrUndefined ? repoRootOrHash : undefined;
     const hash = hashOrUndefined ?? repoRootOrHash ?? '';
     const params = new URLSearchParams({ sessionId, hash });
+    if (parentIndex !== 0) params.set('parentIndex', String(parentIndex));
     appendRepoRoot(params, repoRoot);
     const res = await fetch(`/api/git/commit?${params}`);
     if (!res.ok) return null;

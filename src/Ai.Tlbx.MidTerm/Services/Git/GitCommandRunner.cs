@@ -449,14 +449,18 @@ internal static class GitCommandRunner
 
     internal static async Task<GitCommitMetadata?> GetCommitMetadataAsync(string repoRoot, string hash)
     {
+        var (resolvedCode, resolved, _) = await RunGitAsync(repoRoot, "rev-parse", "--verify", "--end-of-options", hash + "^{commit}").ConfigureAwait(false);
+        if (resolvedCode != 0) return null;
+        hash = resolved.TrimEnd('\r', '\n');
+        if (hash.Length is not (40 or 64) || !hash.All(char.IsAsciiHexDigit)) return null;
         const string format = "%H%x00%h%x00%s%x00%b%x00%an%x00%aI%x00%cI%x00%P";
-        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, "show", "--no-patch", $"--format={format}", hash);
+        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, "show", "--no-patch", $"--format={format}", hash, "--");
         if (exitCode != 0)
         {
             return null;
         }
 
-        var parts = stdout.TrimEnd('\r', '\n', '\0').Split('\0');
+        var parts = stdout.TrimEnd('\r', '\n').Split('\0');
         if (parts.Length < 8)
         {
             return null;
@@ -476,19 +480,15 @@ internal static class GitCommandRunner
         };
     }
 
-    internal static async Task<(string Patch, bool IsTruncated)> GetCommitPatchAsync(string repoRoot, string hash)
+    internal static async Task<(string Patch, bool IsTruncated)> GetCommitPatchAsync(string repoRoot, string hash, string? parentHash)
     {
-        var (exitCode, stdout, _) = await RunGitAsync(
-            repoRoot,
-            "show",
-            "--find-renames",
-            "--unified=3",
-            "--no-color",
-            "--format=",
-            hash);
+        var args = parentHash is null
+            ? new[] { "diff-tree", "--root", "-r", "--no-commit-id", "-p", "--find-renames", "--unified=3", "--no-ext-diff", "--no-textconv", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", "--no-relative", hash, "--" }
+            : ["diff", "--find-renames", "--unified=3", "--no-ext-diff", "--no-textconv", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", "--no-relative", parentHash, hash, "--"];
+        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, args).ConfigureAwait(false);
         if (exitCode != 0)
         {
-            return (string.Empty, false);
+            throw new IOException("Unable to read the selected commit comparison. " + stderr[..Math.Min(stderr.Length, 16000)]);
         }
 
         return TrimOutput(stdout, MaxPatchOutputChars);

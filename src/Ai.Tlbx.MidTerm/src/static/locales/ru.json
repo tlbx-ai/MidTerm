@@ -1272,5 +1272,9 @@
   "git.indexVersion": "Индекс",
   "git.workingVersion": "Рабочая копия",
   "git.previousVersion": "До",
-  "git.currentVersion": "После"
+  "git.currentVersion": "После",
+  "git.compareWith": "Сравнить с",
+  "git.parentVersion": "Родитель",
+  "git.emptyTree": "Пустое дерево",
+  "git.noComparedChanges": "По сравнению с этой базой изменений нет."
 }

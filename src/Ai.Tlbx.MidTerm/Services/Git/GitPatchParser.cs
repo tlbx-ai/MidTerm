@@ -30,7 +30,8 @@ internal static class GitPatchParser
     internal static GitCommitDetailsResponse ParseCommitDetails(
         GitCommitMetadata metadata,
         string patch,
-        bool isTruncated)
+        bool isTruncated,
+        int parentIndex = 0)
     {
         var files = ParseFiles(patch, isTruncated);
 
@@ -44,6 +45,9 @@ internal static class GitPatchParser
             AuthoredDate = metadata.AuthoredDate,
             CommittedDate = metadata.CommittedDate,
             ParentHashes = metadata.ParentHashes,
+            IsRootCommit = metadata.ParentHashes.Length == 0,
+            ComparedParentIndex = metadata.ParentHashes.Length == 0 ? null : parentIndex,
+            ComparedParentHash = metadata.ParentHashes.Length == 0 ? null : metadata.ParentHashes[parentIndex],
             TotalAdditions = files.Sum(file => file.Additions),
             TotalDeletions = files.Sum(file => file.Deletions),
             IsTruncated = isTruncated,

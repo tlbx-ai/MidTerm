@@ -17315,6 +17315,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .git-panel-side-comparison.git-panel-detail-active .git-panel-list { display: none; }
 .git-panel-side-comparison:not(.git-panel-detail-active) .git-panel-inspector { display: none; }
 .git-panel-side-comparison .git-inspector-back { display: inline-flex; }
+.git-commit-comparison { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--text-secondary); }
+.git-commit-parent { min-width: 0; max-width: 100%; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 6px 8px; background: var(--workspace-pane-chrome-background); color: var(--text-primary); font: inherit; }
+.git-commit-parent:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 1px; }
 .git-diff-line-meta .git-diff-code { grid-column: 1 / -1; }
 .git-panel-shell[data-diff-wrap="true"] .git-diff-lines { white-space: pre-wrap; overflow-wrap: anywhere; }
 .git-panel-shell[data-diff-wrap="true"] .git-diff-line { min-width: 0; }

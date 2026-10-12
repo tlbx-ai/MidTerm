@@ -1272,5 +1272,9 @@
   "git.indexVersion": "इंडेक्स",
   "git.workingVersion": "कार्य प्रति",
   "git.previousVersion": "पहले",
-  "git.currentVersion": "बाद में"
+  "git.currentVersion": "बाद में",
+  "git.compareWith": "इससे तुलना करें",
+  "git.parentVersion": "पैरेंट",
+  "git.emptyTree": "खाली ट्री",
+  "git.noComparedChanges": "इस आधार की तुलना में कोई परिवर्तन नहीं है।"
 }

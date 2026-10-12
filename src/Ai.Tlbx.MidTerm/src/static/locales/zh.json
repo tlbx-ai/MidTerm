@@ -1272,5 +1272,9 @@
   "git.indexVersion": "暂存区",
   "git.workingVersion": "工作区",
   "git.previousVersion": "更改前",
-  "git.currentVersion": "更改后"
+  "git.currentVersion": "更改后",
+  "git.compareWith": "比较对象",
+  "git.parentVersion": "父提交",
+  "git.emptyTree": "空目录树",
+  "git.noComparedChanges": "与此基准相比没有更改。"
 }

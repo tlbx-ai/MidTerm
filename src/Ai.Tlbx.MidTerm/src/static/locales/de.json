@@ -1316,5 +1316,9 @@
   "git.indexVersion": "Index",
   "git.workingVersion": "Arbeitskopie",
   "git.previousVersion": "Vorher",
-  "git.currentVersion": "Nachher"
+  "git.currentVersion": "Nachher",
+  "git.compareWith": "Vergleich mit",
+  "git.parentVersion": "Parent",
+  "git.emptyTree": "Leere Basis",
+  "git.noComparedChanges": "Keine Änderungen gegenüber dieser Basis."
 }

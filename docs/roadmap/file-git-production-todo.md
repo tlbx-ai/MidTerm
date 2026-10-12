@@ -1229,6 +1229,29 @@ Rootcommit und normale Commits ebenfalls verständlich behandeln.
 **Abnahme:** Normaler/Merge-/Rootcommit, beide Parents und leerer Vergleich;
 Dateiliste/Statistik/Diff entsprechen tatsächlichem Gitvergleich.
 
+**Teilstand 13.10.2026:** Backend vergleicht explizit mit dem gewählten echten
+Parent, Root-Commits rekursiv mit der leeren Basis. Ursache für verworfene Root-
+Metadaten behoben: das leere Parent-Feld bleibt beim NUL-Parsen erhalten.
+Commitreferenzen werden sicher zu einem tatsächlichen Commit aufgelöst; Git-
+Lesefehler werden nicht als leere erfolgreiche Vergleiche ausgegeben. 21 native
+Tests bestehen, darunter Root in SHA-1/SHA-256, Normal/Leer, beide Merge-Parents,
+benutzerkonfigurierte Präfixe und ein Optionsinjektionsversuch. Parentwahl und
+Vergleichsbeschriftung sind im Frontend implementiert; Browser-/Focus-/Race-
+Abnahme und abschließende Frontend-/Plattformprüfung stehen noch aus.
+
+**Lokale Abnahme 13.10.2026:** Sieben reale Browserabläufe bestehen für Root,
+Normal, beide Merge-Parents per Tastatur mit erhaltenem Fokus, leeren Vergleich,
+ungültigen Parent/Optionsreferenz und verspätete Parent-Antwort. Kopierter
+Vergleichsbefehl wurde in PowerShell ausgeführt und entspricht der angezeigten
+leeren Basis beziehungsweise dem gewählten zweiten Parent. Keine Git-Schreib-
+API, Terminaleingabe oder Browserfehler; Index/HEAD/Worktree unverändert.
+Screenshots geprüft. Sechs selektive Git- und drei Layout-/Navigationsregressionen
+bestehen nach Extraktion der Tree-/Commit-Metadatenrenderer; 709 Frontendtests,
+Typecheck und Lints bestehen. `git-task-37-browser-complete`, `git-task-37-native-final`,
+`git-task-37-regression-*` und Verify-/Lint-Logs enthalten die Nachweise.
+LocalSystem-Fixture um private Commit-Metadaten-/Patchleseprüfung erweitert;
+Plattform-/Caller-CI steht noch aus, daher Aufgabe noch nicht abgeschlossen.
+
 ### 38. [ ] Git-Dateilisten flexibel und effizient bedienen
 
 **Befund (mittel, Erwartungslücke):** Nur Tree; Ordnerzeilen nicht einklappbar,

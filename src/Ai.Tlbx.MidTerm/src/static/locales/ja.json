@@ -1272,5 +1272,9 @@
   "git.indexVersion": "インデックス",
   "git.workingVersion": "作業ツリー",
   "git.previousVersion": "変更前",
-  "git.currentVersion": "変更後"
+  "git.currentVersion": "変更後",
+  "git.compareWith": "比較対象",
+  "git.parentVersion": "親コミット",
+  "git.emptyTree": "空のツリー",
+  "git.noComparedChanges": "この比較対象との差分はありません。"
 }

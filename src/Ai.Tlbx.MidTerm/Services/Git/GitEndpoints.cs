@@ -278,7 +278,7 @@ public static class GitEndpoints
             return Results.Json(entries, GitJsonContext.Default.GitLogEntryArray);
         });
 
-        app.MapGet("/api/git/commit", async (string? sessionId, string? repoRoot, string? hash, CancellationToken ct) =>
+        app.MapGet("/api/git/commit", async Task<IResult> (string? sessionId, string? repoRoot, string? hash, int? parentIndex, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(hash))
             {
@@ -288,15 +288,18 @@ public static class GitEndpoints
             var (resolvedRepoRoot, error) = await ResolveRepoAsync(sessionId, repoRoot, gitWatcher, gitMetadata, ct);
             if (error is not null) return error;
 
-            var metadata = await GitCommandRunner.GetCommitMetadataAsync(resolvedRepoRoot!, hash);
-            if (metadata is null)
+            return await RunForGitCallerAsync(sessionId, sessionManager, settings, async () =>
             {
-                return Results.NotFound("Commit not found");
-            }
-
-            var (patch, isTruncated) = await GitCommandRunner.GetCommitPatchAsync(resolvedRepoRoot!, hash);
-            var response = GitPatchParser.ParseCommitDetails(metadata, patch, isTruncated);
-            return Results.Json(response, GitJsonContext.Default.GitCommitDetailsResponse);
+                var metadata = await GitCommandRunner.GetCommitMetadataAsync(resolvedRepoRoot!, hash).ConfigureAwait(false);
+                if (metadata is null) return Results.NotFound("Commit not found");
+                var comparison = parentIndex ?? 0;
+                if (comparison < 0 || comparison >= Math.Max(1, metadata.ParentHashes.Length))
+                    return Results.BadRequest("Select an actual parent of this commit.");
+                var parent = metadata.ParentHashes.Length == 0 ? null : metadata.ParentHashes[comparison];
+                var (patch, isTruncated) = await GitCommandRunner.GetCommitPatchAsync(resolvedRepoRoot!, metadata.Hash, parent).ConfigureAwait(false);
+                var response = GitPatchParser.ParseCommitDetails(metadata, patch, isTruncated, comparison);
+                return Results.Json(response, GitJsonContext.Default.GitCommitDetailsResponse);
+            }).ConfigureAwait(false);
         });
     }
 

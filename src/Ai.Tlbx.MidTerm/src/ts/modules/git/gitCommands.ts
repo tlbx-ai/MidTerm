@@ -63,15 +63,23 @@ export function buildFileCommandSuggestions(
 }
 
 export function buildCommitCommandSuggestions(
-  commit: Pick<GitCommitDetailsResponse, 'hash'>,
+  commit: Pick<
+    GitCommitDetailsResponse,
+    'hash' | 'parentHashes' | 'comparedParentHash' | 'comparedParentIndex'
+  >,
   repoRoot: string,
   shell: string,
 ): GitCommandSuggestion[] {
   const quotedRoot = quoteGitPath(repoRoot, shell);
   if (quotedRoot === null || !repoRoot || !/^[0-9a-f]{7,64}$/i.test(commit.hash)) return [];
   const git = `git -C ${quotedRoot}`;
+  const parent = commit.comparedParentHash ?? commit.parentHashes[commit.comparedParentIndex ?? 0];
+  if (parent && !/^[0-9a-f]{7,64}$/i.test(parent)) return [];
+  const comparison = parent
+    ? `${git} diff ${parent} ${commit.hash}`
+    : `${git} diff-tree --root -r --no-commit-id -p ${commit.hash}`;
   return [
     { label: 'Show commit', command: `${git} show ${commit.hash}` },
-    { label: 'Diff commit', command: `${git} diff ${commit.hash}^ ${commit.hash}` },
+    { label: 'Diff commit', command: comparison },
   ];
 }

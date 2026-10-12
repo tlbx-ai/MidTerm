@@ -132,6 +132,9 @@ export interface GitCommitDetailsResponse {
   authoredDate: string;
   committedDate: string;
   parentHashes: string[];
+  comparedParentIndex?: number | null;
+  comparedParentHash?: string | null;
+  isRootCommit?: boolean;
   totalAdditions: number;
   totalDeletions: number;
   isTruncated: boolean;

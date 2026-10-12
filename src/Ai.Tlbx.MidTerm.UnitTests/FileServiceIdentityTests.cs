@@ -63,6 +63,10 @@ public sealed class FileServiceIdentityTests
                 Assert.Equal("completed", committed.State); Assert.False(string.IsNullOrEmpty(committed.CommitHash));
                 var committedText = await GitCommandRunner.ExecuteAsync(root, ["show", "HEAD:caller.txt"], default);
                 Assert.Equal(0, committedText.ExitCode); Assert.Equal("caller data", committedText.Stdout);
+                var callerMetadata = await GitCommandRunner.GetCommitMetadataAsync(root, committed.CommitHash!);
+                Assert.NotNull(callerMetadata);
+                var callerPatch = await GitCommandRunner.GetCommitPatchAsync(root, callerMetadata.Hash, callerMetadata.ParentHashes.FirstOrDefault());
+                Assert.Contains(GitPatchParser.ParseCommitDetails(callerMetadata, callerPatch.Patch, callerPatch.IsTruncated).Files, file => file.Path == "caller.txt");
                 using var afterMutation = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterMutation.User!.Value);
 
                 var selectedPath = Path.Combine(root, "selected ä.txt");

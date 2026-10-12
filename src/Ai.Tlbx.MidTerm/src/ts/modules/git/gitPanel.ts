@@ -20,6 +20,14 @@ import { buildCommitCommandSuggestions, buildFileCommandSuggestions } from './gi
 import { pasteToTerminal } from '../terminal';
 import { escapeHtml } from '../../utils';
 import { renderPatchFile } from './gitDiffView';
+import { renderGitFileTree } from './gitFileTree';
+import {
+  renderCommitComparison,
+  captureCommitParentFocus,
+  renderEmptyComparison,
+  renderCommitMetadata,
+  formatGitDate as formatDate,
+} from './gitCommitComparison';
 import {
   createGitDiffUi,
   clearDiffSelection,
@@ -41,7 +49,6 @@ import {
   buildGitMutationRequest,
   buildGitSelectionRequest,
   renderGitOperations,
-  gitFileAction,
   gitSectionAction,
   executeGitOperation,
   setGitCommitMessage,
@@ -73,6 +80,7 @@ interface GitFileSelection {
 interface GitCommitSelection {
   kind: 'commit';
   hash: string;
+  parentIndex: number;
   details: GitCommitDetailsResponse | null;
   loading: boolean;
   error: string | null;
@@ -95,14 +103,6 @@ interface GitPanelState extends GitPanelLayoutState {
   hasMoreHistory: boolean;
   inspectorSelection?: GitSelection;
   inspectorHtml?: string;
-}
-
-interface TreeNode {
-  name: string;
-  path: string;
-  children: Map<string, TreeNode>;
-  file: GitFileEntry | null;
-  scope: FileScope;
 }
 
 const panelStates = new Map<string, GitPanelState>();
@@ -352,80 +352,6 @@ function panelShellClass(state: GitPanelState): string {
   return `git-panel-shell${state.selection && state.detailActive ? ' git-panel-detail-active' : ''}${state.diffUi.sideBySide ? ' git-panel-side-comparison' : ''}`;
 }
 
-function buildFileTree(files: GitFileEntry[], scope: FileScope): TreeNode {
-  const root: TreeNode = { name: '', path: '', children: new Map(), file: null, scope };
-  for (const file of files) {
-    const parts = file.path.split('/');
-    let node = root;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const part = parts[i];
-      if (part === undefined) continue;
-      if (!node.children.has(part)) {
-        node.children.set(part, {
-          name: part,
-          path: parts.slice(0, i + 1).join('/'),
-          children: new Map(),
-          file: null,
-          scope,
-        });
-      }
-      const child = node.children.get(part);
-      if (!child) continue;
-      node = child;
-    }
-    const fileName = parts[parts.length - 1];
-    if (fileName === undefined) continue;
-    node.children.set(fileName, {
-      name: fileName,
-      path: file.path,
-      children: new Map(),
-      file,
-      scope,
-    });
-  }
-  return root;
-}
-
-function renderTreeNode(
-  node: TreeNode,
-  depth: number,
-  selection: GitSelection,
-  repoRoot: string,
-  busy: boolean,
-): string {
-  let html = '';
-  const sorted = [...node.children.values()].sort((a, b) => {
-    const aIsDir = a.children.size > 0 && !a.file;
-    const bIsDir = b.children.size > 0 && !b.file;
-    if (aIsDir !== bIsDir) return aIsDir ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-
-  for (const child of sorted) {
-    const indent = depth * 16;
-    if (child.file) {
-      const presentation = fileStatusPresentation(child.file.status);
-      const statusId = `git-file-status-${encodeURIComponent(`${repoRoot}:${child.scope}:${child.file.path}`)}`;
-      const isSelected =
-        selection?.kind === 'file' &&
-        selection.path === child.file.path &&
-        selection.scope === child.scope;
-      const fullPath = escapeHtml(repositoryFilePath(repoRoot, child.file.path));
-      html += `<div class="git-tree-file-row" data-path="${escapeHtml(child.file.path)}" data-scope="${child.scope}"><button class="git-tree-file${isSelected ? ' git-tree-file-selected' : ''}" title="${fullPath}" aria-label="${fullPath}"${presentation ? ` aria-describedby="${escapeHtml(statusId)}"` : ''} data-action="open-file" data-path="${escapeHtml(child.file.path)}" data-status="${escapeHtml(child.file.status)}" data-scope="${child.scope}"${child.file.originalPath ? ` data-original-path="${escapeHtml(child.file.originalPath)}"` : ''} style="padding-left:${12 + indent}px" type="button">
-        <span class="git-tree-name">${escapeHtml(child.name)}</span>
-        ${renderEntryStatistics(child.file)}
-        ${presentation ? `<span class="git-file-indicator" id="${escapeHtml(statusId)}" data-git-status="${presentation.status}" role="img" title="${escapeHtml(presentation.label)}" aria-label="${escapeHtml(presentation.label)}">${presentation.letter}</span>` : ''}
-      </button>${child.file.status === 'conflicted' ? '' : gitFileAction(child.file.path, child.scope === 'staged', busy)}</div>`;
-    } else {
-      html += `<div class="git-tree-dir" style="padding-left:${12 + indent}px">
-        <span class="git-tree-dir-name">${escapeHtml(child.name)}/</span>
-      </div>`;
-      html += renderTreeNode(child, depth + 1, selection, repoRoot, busy);
-    }
-  }
-  return html;
-}
-
 function tallyLoc(files: GitFileEntry[]): { add: number; del: number } {
   let add = 0;
   let del = 0;
@@ -657,11 +583,10 @@ function renderSection(
     </button>${gitSectionAction(sectionId, state.operations.busy || state.operations.pending !== null)}</div>`;
 
   if (isExpanded) {
-    const tree = buildFileTree(files, scope);
     html += `<div class="git-section-body">`;
-    html += renderTreeNode(
-      tree,
-      0,
+    html += renderGitFileTree(
+      files,
+      scope,
       state.selection,
       state.status?.repoRoot ?? state.repoRoot ?? '',
       state.operations.busy || state.operations.pending !== null,
@@ -829,33 +754,12 @@ function renderCommitInspector(
     root,
     $sessions.get()[sessionId]?.shellType ?? '',
   );
-  const bodyHtml = commit.body.trim()
-    ? `<pre class="git-commit-body">${escapeHtml(commit.body.trim())}</pre>`
-    : '';
-  const parentsHtml =
-    commit.parentHashes.length > 0
-      ? `<div class="git-commit-detail-row"><span class="git-commit-detail-label">Parents</span><span>${escapeHtml(commit.parentHashes.join(' '))}</span></div>`
-      : '';
-
-  let html = `<div class="git-inspector-summary">
-    <div class="git-inspector-title-row">
-      <span class="git-inspector-title">${escapeHtml(commit.subject || commit.shortHash)}</span>
-      <span class="git-summary-pill">${escapeHtml(commit.shortHash)}</span>
-    </div>
-    <div class="git-commit-detail-row"><span class="git-commit-detail-label">Author</span><span>${escapeHtml(commit.author)}</span></div>
-    <div class="git-commit-detail-row"><span class="git-commit-detail-label">Authored</span><span>${escapeHtml(formatDate(commit.authoredDate))}</span></div>
-    <div class="git-commit-detail-row"><span class="git-commit-detail-label">Committed</span><span>${escapeHtml(formatDate(commit.committedDate))}</span></div>
-    ${parentsHtml}
-  </div>`;
-  html += bodyHtml;
+  let html = renderCommitMetadata(commit);
+  html += renderCommitComparison(commit);
+  html += renderEmptyComparison(commit);
   html += `<div class="git-commit-patch-list">${commit.files.map((file) => renderPatchFile(file, { ui: diffUi, historical: true })).join('')}</div>`;
   html += renderCommandSuggestions(suggestions, sessionId);
   return html;
-}
-
-function renderEntryStatistics(file: GitFileEntry): string {
-  if (file.status === 'untracked') return `<span class="git-file-loc">${t('git.newFile')}</span>`;
-  return `<span class="git-file-loc"><span class="git-loc-add">+${file.additions}</span> <span class="git-loc-del">-${file.deletions}</span></span>`;
 }
 
 function renderCommandSuggestions(
@@ -965,6 +869,17 @@ function bindPanelEvents(container: HTMLElement): void {
       const commit = container.querySelector<HTMLButtonElement>('[data-action="commit-staged"]');
       if (commit && !commit.disabled) commit.click();
     }
+  });
+  container.addEventListener('change', (event) => {
+    const state = activePanels.get(container);
+    if (
+      !state ||
+      !(event.target instanceof HTMLSelectElement) ||
+      event.target.dataset.gitCommitParent !== 'true'
+    )
+      return;
+    if (event.target.dataset.commitHash)
+      void openCommitSelection(state, event.target.dataset.commitHash, Number(event.target.value));
   });
 }
 
@@ -1260,9 +1175,21 @@ function openCommitFromButton(state: GitPanelState, data: DOMStringMap): void {
   if (data.hash) void openCommitSelection(state, data.hash);
 }
 
-async function openCommitSelection(state: GitPanelState, hash: string): Promise<void> {
+async function openCommitSelection(
+  state: GitPanelState,
+  hash: string,
+  parentIndex = 0,
+): Promise<void> {
+  const restoreParentFocus = captureCommitParentFocus(
+    state.container,
+    () => activePanels.get(state.container) === state,
+  );
   const existing =
-    state.selection?.kind === 'commit' && state.selection.hash === hash ? state.selection : null;
+    state.selection?.kind === 'commit' &&
+    state.selection.hash === hash &&
+    state.selection.parentIndex === parentIndex
+      ? state.selection
+      : null;
   state.detailActive = true;
   if (!existing) state.scrollPositions.delete('inspector');
 
@@ -1271,29 +1198,33 @@ async function openCommitSelection(state: GitPanelState, hash: string): Promise<
     return;
   }
 
-  state.selection = {
+  const pendingSelection: GitCommitSelection = {
     kind: 'commit',
     hash,
+    parentIndex,
     details: existing?.details ?? null,
     loading: true,
     error: null,
   };
+  state.selection = pendingSelection;
   renderPanel(state);
 
-  const details = await fetchCommitDetails(state.sessionId, state.repoRoot, hash);
+  const details = await fetchCommitDetails(state.sessionId, state.repoRoot, hash, parentIndex);
   const currentSelection = panelStates.get(getPanelKey(state.sessionId, state.repoRoot))?.selection;
-  if (!currentSelection || currentSelection.kind !== 'commit' || currentSelection.hash !== hash) {
+  if (currentSelection !== pendingSelection) {
     return;
   }
 
   state.selection = {
     kind: 'commit',
     hash,
+    parentIndex,
     details,
     loading: false,
     error: details ? null : 'Unable to load commit details.',
   };
   renderPanel(state);
+  restoreParentFocus();
 }
 
 async function loadMoreHistory(state: GitPanelState): Promise<void> {
@@ -1309,13 +1240,4 @@ async function loadMoreHistory(state: GitPanelState): Promise<void> {
   state.historyCount = nextCount;
   state.hasMoreHistory = entries.length >= nextCount;
   renderPanel(state);
-}
-
-function formatDate(value: string): string {
-  if (!value) return '';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return parsed.toLocaleString();
 }
