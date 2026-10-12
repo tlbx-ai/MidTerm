@@ -1,4 +1,5 @@
 {
+  "git.commandShellUnsupported": "此 Shell 不提供终端命令。请使用上方的仓库操作。",
   "terminalLinks.title": "打开终端链接？",
   "terminalLinks.message": "此链接将在新标签页中打开。",
   "terminalLinks.rememberHint": "“不再显示”也会打开此链接。你可以在设置 → 安全中重新启用确认。",

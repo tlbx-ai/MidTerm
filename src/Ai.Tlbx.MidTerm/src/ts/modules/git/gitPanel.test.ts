@@ -60,11 +60,13 @@ describe('Git panel update ownership', () => {
     body.querySelector = vi.fn((selector: string) =>
       selector === '.git-panel-inspector' ? inspector : null,
     ) as typeof body.querySelector;
-    $sessions.set({ a: { id: 'a', isRunning: true, appServerControlOnly: true } as Session });
+    $sessions.set({
+      a: { id: 'a', shellType: 'Pwsh', isRunning: true, appServerControlOnly: true } as Session,
+    });
     sessionTerminals.set('a', {} as TerminalState);
     vi.mocked(fetchCommitDetails).mockResolvedValue({
-      hash: 'abc',
-      shortHash: 'abc',
+      hash: 'abcdef0123456789abcdef0123456789abcdef01',
+      shortHash: 'abcdef0',
       subject: 'Fixture',
       body: '',
       author: 'Author',
@@ -78,7 +80,7 @@ describe('Git panel update ownership', () => {
     });
     createGitPanel(body, 'a', 'repo');
     updateGitStatus('a', status('main'));
-    await showCommitInGitPanel('a', 'abc', 'repo');
+    await showCommitInGitPanel('a', 'abcdef0123456789abcdef0123456789abcdef01', 'repo');
     const html =
       vi
         .mocked(syncGitPanelDom)
@@ -101,6 +103,20 @@ describe('Git panel update ownership', () => {
     expect(syncGitPanelDom).not.toHaveBeenCalled();
     await renderGitPanelInto(body, 'a', 'repo');
     expect(syncGitPanelDom).toHaveBeenCalledWith(body, expect.stringContaining('latest'));
+  });
+
+  it('updates a default panel only from the repository resolved by its initial fetch', async () => {
+    const body = container();
+    vi.mocked(fetchGitStatus).mockResolvedValueOnce(status('initial'));
+    await renderGitPanelInto(body, 'a');
+    vi.mocked(syncGitPanelDom).mockClear();
+    updateGitStatus('a', { ...status('other repository'), repoRoot: 'other' });
+    expect(syncGitPanelDom).not.toHaveBeenCalled();
+    updateGitStatus('a', status('same repository updated'));
+    expect(syncGitPanelDom).toHaveBeenCalledWith(
+      body,
+      expect.stringContaining('same repository updated'),
+    );
   });
 
   it('does not let a delayed fetch or background session overwrite the shared dock', async () => {

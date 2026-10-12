@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
+[Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class GitOperationServiceTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "tlbx_git_ops_" + Guid.NewGuid().ToString("N"));
@@ -159,5 +160,44 @@ public sealed class GitOperationServiceTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_root, ".git", "index.tlbx-" + request.OperationId)));
         var replay = await Execute(request); Assert.Equal(result.CommitHash, replay.CommitHash); Assert.Equal("unknown", replay.State);
         var count = await GitCommandRunner.ExecuteAsync(_root, ["rev-list", "--count", "HEAD"], default); Assert.Equal("2", count.Stdout.Trim());
+    }
+
+    [Fact]
+    public async Task InheritedRepositoryEnvironmentCannotRedirectStatusStagingOrCommits()
+    {
+        await Init(); Write("a.txt", "Selected change\n");
+        var other = Path.Combine(_root, "other"); Directory.CreateDirectory(other);
+        var init = await GitCommandRunner.ExecuteAsync(other, ["init", "--quiet"], default); Assert.Equal(0, init.ExitCode);
+        await File.WriteAllTextAsync(Path.Combine(other, "a.txt"), "Other change\n");
+        var otherIndex = Path.Combine(other, ".git", "index");
+        var overrides = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["GIT_DIR"] = Path.Combine(other, ".git"), ["GIT_WORK_TREE"] = other,
+            ["GIT_INDEX_FILE"] = otherIndex, ["GIT_COMMON_DIR"] = Path.Combine(other, ".git"),
+            ["GIT_NAMESPACE"] = "unexpected", ["GIT_CONFIG_COUNT"] = "1",
+            ["GIT_CONFIG_KEY_0"] = "core.worktree", ["GIT_CONFIG_VALUE_0"] = other
+        };
+        var saved = overrides.Keys.ToDictionary(key => key, Environment.GetEnvironmentVariable, StringComparer.Ordinal);
+        try
+        {
+            foreach (var pair in overrides) Environment.SetEnvironmentVariable(pair.Key, pair.Value);
+            var state = await GitCommandRunner.GetStatusAsync(_root); Assert.Equal(_root, state.RepoRoot);
+            var staged = await Execute(Request("stage", "a.txt")); Assert.Equal("completed", staged.State);
+            var committed = await Execute(await Commit("Correct selected repository")); Assert.Equal("completed", committed.State);
+            var content = await GitCommandRunner.ExecuteAsync(_root, ["show", "HEAD:a.txt"], default); Assert.Equal("Selected change\n", content.Stdout.Replace("\r\n", "\n", StringComparison.Ordinal));
+            Assert.False(File.Exists(otherIndex)); Assert.Equal("Other change\n", await File.ReadAllTextAsync(Path.Combine(other, "a.txt")));
+        }
+        finally { foreach (var pair in saved) Environment.SetEnvironmentVariable(pair.Key, pair.Value); }
+    }
+
+    [Fact]
+    public async Task RemovedBindingRejectsQueuedMutationBeforeCreatingReceiptOrChangingIndex()
+    {
+        await Init(); Write("a.txt", "Untouched change\n"); var before = await GitCommandRunner.GetStatusAsync(_root);
+        var request = Request("stage", "a.txt");
+        var error = await Assert.ThrowsAsync<GitOperationException>(() => _operations.ExecuteAsync(_root, request, default, () => false));
+        Assert.Equal("repository_unbound", error.Code);
+        Assert.Equal(before.IndexVersion, (await GitCommandRunner.GetStatusAsync(_root)).IndexVersion);
+        Assert.False(Directory.Exists(Path.Combine(_root, ".git", "tlbx-operation-receipts")));
     }
 }

@@ -1,4 +1,5 @@
 {
+  "git.commandShellUnsupported": "Terminal commands are unavailable for this shell. Use the repository actions above.",
   "terminalLinks.title": "Open terminal link?",
   "terminalLinks.message": "This link will open in a new tab.",
   "terminalLinks.rememberHint": "Never show again also opens this link. You can restore confirmations in Settings → Security.",

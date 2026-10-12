@@ -1,4 +1,5 @@
 {
+  "git.commandShellUnsupported": "このシェルではターミナルコマンドを利用できません。上のリポジトリ操作を使用してください。",
   "terminalLinks.title": "ターミナルのリンクを開きますか？",
   "terminalLinks.message": "このリンクは新しいタブで開きます。",
   "terminalLinks.rememberHint": "「今後表示しない」でもリンクが開きます。設定 → セキュリティで確認を再び有効にできます。",

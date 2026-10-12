@@ -1360,7 +1360,8 @@ public static class TtyHostSpawner
         string? runAsUser,
         CancellationToken ct,
         uint? preferredSessionId = null,
-        string? runAsUserSid = null)
+        string? runAsUserSid = null,
+        IReadOnlyDictionary<string, string?>? environmentOverrides = null)
     {
         if (preferredSessionId.HasValue)
         {
@@ -1368,7 +1369,7 @@ public static class TtyHostSpawner
             {
                 try
                 {
-                    return await RunCommandWithTokenAsync(fileName, args, workingDir, preferredToken, ct);
+                    return await RunCommandWithTokenAsync(fileName, args, workingDir, preferredToken, ct, environmentOverrides);
                 }
                 finally
                 {
@@ -1386,7 +1387,7 @@ public static class TtyHostSpawner
 
         try
         {
-            return await RunCommandWithTokenAsync(fileName, args, workingDir, userToken, ct);
+            return await RunCommandWithTokenAsync(fileName, args, workingDir, userToken, ct, environmentOverrides);
         }
         finally
         {
@@ -1449,9 +1450,11 @@ public static class TtyHostSpawner
             return (-1, "", string.Create(CultureInfo.InvariantCulture, $"CreateEnvironmentBlock failed: {Marshal.GetLastWin32Error()}"));
         }
 
-        var mergedEnvironment = environmentOverrides is null ? IntPtr.Zero : BuildWindowsEnvironmentBlock(envBlock, environmentOverrides, pathPrependEntries: null);
+        var mergedEnvironment = IntPtr.Zero;
         try
         {
+            if (environmentOverrides is not null)
+                mergedEnvironment = BuildWindowsEnvironmentBlock(envBlock, environmentOverrides, pathPrependEntries: null);
             var cmdLine = BuildCommandLine(fileName, args);
 
             var si = new STARTUPINFO();

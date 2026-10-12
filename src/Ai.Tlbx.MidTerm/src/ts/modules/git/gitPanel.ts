@@ -113,12 +113,19 @@ export function createGitPanel(container: HTMLElement, sessionId: string, repoRo
 }
 
 export function updateGitStatus(sessionId: string, status: GitStatusResponse): void {
-  const state = panelStates.get(getPanelKey(sessionId, status.repoRoot));
-  if (!state || areJsonLikeEqual(state.status, status)) return;
-  state.status = status;
-  syncHistoryFromStatus(state, status);
-  syncSelectionAfterStatus(state);
-  renderPanel(state);
+  const explicit = panelStates.get(getPanelKey(sessionId, status.repoRoot));
+  const implicit = panelStates.get(sessionId);
+  const states = new Set([
+    explicit,
+    implicit?.status?.repoRoot === status.repoRoot ? implicit : undefined,
+  ]);
+  for (const state of states) {
+    if (!state || areJsonLikeEqual(state.status, status)) continue;
+    state.status = status;
+    syncHistoryFromStatus(state, status);
+    syncSelectionAfterStatus(state);
+    renderPanel(state);
+  }
 }
 
 export async function refreshGitPanel(sessionId: string, repoRoot?: string): Promise<void> {
@@ -675,9 +682,17 @@ function renderInspector(state: GitPanelState): string {
   </div>`;
 
   if (selection?.kind === 'file') {
-    body = renderFileInspector(selection, state.sessionId);
+    body = renderFileInspector(
+      selection,
+      state.sessionId,
+      state.status?.repoRoot ?? state.repoRoot ?? '',
+    );
   } else if (selection?.kind === 'commit') {
-    body = renderCommitInspector(selection, state.sessionId);
+    body = renderCommitInspector(
+      selection,
+      state.sessionId,
+      state.status?.repoRoot ?? state.repoRoot ?? '',
+    );
   }
 
   return `<div class="git-inspector-header">
@@ -687,7 +702,7 @@ function renderInspector(state: GitPanelState): string {
     <div class="git-inspector-body">${body}</div>`;
 }
 
-function renderFileInspector(selection: GitFileSelection, sessionId: string): string {
+function renderFileInspector(selection: GitFileSelection, sessionId: string, root: string): string {
   if (selection.loading) {
     return renderInspectorFill('Loading diff...');
   }
@@ -701,7 +716,12 @@ function renderFileInspector(selection: GitFileSelection, sessionId: string): st
     diff?.files.find((candidate) => candidate.path === selection.path) ??
     createFallbackDiffFile(selection);
 
-  const suggestions = buildFileCommandSuggestions(file, selection.scope);
+  const suggestions = buildFileCommandSuggestions(
+    file,
+    selection.scope,
+    root,
+    $sessions.get()[sessionId]?.shellType ?? '',
+  );
   const pathHtml = escapeHtml(file.path);
   const originalHtml = file.originalPath
     ? `<div class="git-inspector-subtitle">from ${escapeHtml(file.originalPath)}</div>`
@@ -720,7 +740,11 @@ function renderFileInspector(selection: GitFileSelection, sessionId: string): st
   return html;
 }
 
-function renderCommitInspector(selection: GitCommitSelection, sessionId: string): string {
+function renderCommitInspector(
+  selection: GitCommitSelection,
+  sessionId: string,
+  root: string,
+): string {
   if (selection.loading) {
     return renderInspectorFill('Loading commit...');
   }
@@ -730,7 +754,11 @@ function renderCommitInspector(selection: GitCommitSelection, sessionId: string)
   }
 
   const commit = selection.details;
-  const suggestions = buildCommitCommandSuggestions(commit);
+  const suggestions = buildCommitCommandSuggestions(
+    commit,
+    root,
+    $sessions.get()[sessionId]?.shellType ?? '',
+  );
   const bodyHtml = commit.body.trim()
     ? `<pre class="git-commit-body">${escapeHtml(commit.body.trim())}</pre>`
     : '';
@@ -804,6 +832,8 @@ function renderCommandSuggestions(
   suggestions: Array<{ label: string; command: string }>,
   sessionId: string,
 ): string {
+  if (suggestions.length === 0)
+    return `<p class="git-panel-hint">${t('git.commandShellUnsupported')}</p>`;
   const insertAllowed = canInsertCommand(sessionId);
   return `<section class="git-command-section">
     <div class="git-command-section-title">Suggested terminal commands</div>

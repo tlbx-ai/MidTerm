@@ -94,7 +94,7 @@ internal static class GitCommandRunner
     {
         var (exitCode, stdout, _) = await RunGitAsync(workingDir, "rev-parse", "--show-toplevel");
         if (exitCode != 0) return null;
-        var root = stdout.Trim();
+        var root = stdout.TrimEnd('\r', '\n');
         return string.IsNullOrEmpty(root) ? null : root;
     }
 
@@ -116,9 +116,9 @@ internal static class GitCommandRunner
             ?? gitDir;
 
         return new GitRepositoryInfo(
-            Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-            Path.GetFullPath(gitDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-            Path.GetFullPath(commonGitDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(repoRoot)),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(gitDir)),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(commonGitDir)));
     }
 
     internal static async Task<IReadOnlyList<GitWorktreeInfo>> ListWorktreesAsync(string workingDir)
@@ -560,7 +560,7 @@ internal static class GitCommandRunner
             return null;
         }
 
-        var rawPath = stdout.Trim();
+        var rawPath = stdout.TrimEnd('\r', '\n');
         if (string.IsNullOrWhiteSpace(rawPath))
         {
             return null;
@@ -621,6 +621,19 @@ internal static class GitCommandRunner
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         cts.CancelAfter(timeout);
+        // A server inherited from a Git hook must not address that hook's repository.
+        // Only explicit internal overrides (such as our transaction index) may redirect Git.
+        var repositoryEnvironment = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["GIT_DIR"] = null, ["GIT_WORK_TREE"] = null, ["GIT_COMMON_DIR"] = null,
+            ["GIT_INDEX_FILE"] = null, ["GIT_OBJECT_DIRECTORY"] = null,
+            ["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = null, ["GIT_NAMESPACE"] = null,
+            ["GIT_PREFIX"] = null, ["GIT_CONFIG"] = null, ["GIT_CONFIG_PARAMETERS"] = null,
+            ["GIT_CONFIG_COUNT"] = null, ["GIT_CEILING_DIRECTORIES"] = null,
+            ["GIT_DISCOVERY_ACROSS_FILESYSTEM"] = null
+        };
+        if (environment is not null)
+            foreach (var pair in environment) repositoryEnvironment[pair.Key] = pair.Value;
 
         try
         {
@@ -629,14 +642,14 @@ internal static class GitCommandRunner
             {
                 using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
                 var result = identity.ImpersonationLevel != System.Security.Principal.TokenImpersonationLevel.None
-                    ? await TtyHostSpawner.RunCommandAsCurrentIdentityAsync("git", fullArgs, AppContext.BaseDirectory, environment, cts.Token)
-                    : await TtyHostSpawner.RunCommandAsUserAsync("git", fullArgs, AppContext.BaseDirectory, _runAsUser, cts.Token);
+                    ? await TtyHostSpawner.RunCommandAsCurrentIdentityAsync("git", fullArgs, AppContext.BaseDirectory, repositoryEnvironment, cts.Token)
+                    : await TtyHostSpawner.RunCommandAsUserAsync("git", fullArgs, AppContext.BaseDirectory, _runAsUser, cts.Token, environmentOverrides: repositoryEnvironment);
                 RecordCommand(workingDir, fullArgs, result.ExitCode, result.Stdout, result.Stderr);
                 return result;
             }
 #endif
 
-            return await RunGitDirectAsync(workingDir, fullArgs, environment, cts.Token);
+            return await RunGitDirectAsync(workingDir, fullArgs, repositoryEnvironment, cts.Token);
         }
         catch (OperationCanceledException)
         {
@@ -669,7 +682,10 @@ internal static class GitCommandRunner
         {
             psi.ArgumentList.Add(arg);
         }
-        if (environment is not null) foreach (var pair in environment) psi.Environment[pair.Key] = pair.Value;
+        if (environment is not null)
+            foreach (var pair in environment)
+                if (pair.Value is null) psi.Environment.Remove(pair.Key);
+                else psi.Environment[pair.Key] = pair.Value;
 
         using var process = Process.Start(psi);
         if (process is null)

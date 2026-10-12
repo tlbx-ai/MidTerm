@@ -1,4 +1,5 @@
 {
+  "git.commandShellUnsupported": "Für diese Shell stehen keine Terminalbefehle bereit. Verwende die Repository-Aktionen oben.",
   "terminalLinks.title": "Terminal-Link öffnen?",
   "terminalLinks.message": "Dieser Link wird in einem neuen Tab geöffnet.",
   "terminalLinks.rememberHint": "„Nie wieder anzeigen“ öffnet diesen Link ebenfalls. Unter Einstellungen → Sicherheit kannst du Bestätigungen wieder aktivieren.",

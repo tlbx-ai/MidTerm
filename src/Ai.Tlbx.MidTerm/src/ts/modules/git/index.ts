@@ -178,6 +178,7 @@ function cacheRepos(sessionId: string, repos: GitRepoBinding[]): void {
   for (const repo of repos) {
     if (repo.status) {
       cachedStatuses.set(makeRepoStatusKey(sessionId, repo.repoRoot), repo.status);
+      updateGitStatus(sessionId, repo.status);
     }
   }
   notifyGitRepoCacheChanged(sessionId);

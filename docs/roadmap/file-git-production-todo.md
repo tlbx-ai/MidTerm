@@ -1015,7 +1015,7 @@ zusätzlichen Codeanalysatoren, nachdem der normale csc-Build über eine Stunde
 CPU-Zeit verbraucht hatte; Releaseprüfung bleibt regulär und dieser Hänger muss
 vor Veröffentlichung geklärt werden. Keine LocalSystem-Schreibabnahme behauptet.
 
-### 31. [~] Git-Aktionen und Befehle an das ausgewählte Repository binden
+### 31. [x] Git-Aktionen und Befehle an das ausgewählte Repository binden
 
 **Befund (hoch, Code):** Multi-Repo-Sidebar erzeugt relative git-Befehle ohne -C.
 Inspector zeigt tlbx-2, Terminal-CWD Jpa: Ausführung arbeitet im falschen Repo.
@@ -1026,7 +1026,27 @@ Copybefehle explizit -C. Auswahlwechsel darf laufende Aktionen nicht umadressier
 **Abnahme:** Zwei Repos mit gleichen Pfaden, abweichende CWDs, Switch während
 Request, manipuliertes Repo und nicht gebundener Root: exakt ein erlaubtes Ziel.
 
-### 32. [ ] Unsichere Send-to-Terminal-Automatik ersetzen
+**Nachweis 12.10.2026:** Copy-/Insertbefehle tragen den gewählten absoluten Root
+als `git -C`; Dateibefehle nutzen Literal-Pathspecs. Die nötige PowerShell-/Bash-
+Quotierung ist als Voraussetzung umgesetzt; unbekannte/noch nicht unterstützte
+Shells zeigen eine lokalisierte Begrenzung. Native Aufrufe entfernen geerbte
+Git-Repository-/Index-/Config-Umleitungen und behalten nur ausdrücklich interne
+Overrides. Rootseparatoren und echte Randspaces werden korrekt erhalten.
+16 native Git-/Parsertests bestehen, inklusive absichtlich falscher Umgebungs-
+Roots und zurückgezogener Bindung vor dem Schreiben. Drei echte Browserabläufe
+mit A/B/C und gleichnamigen Dateien bestehen: aus A ausgeführter Clipboard-Diff
+zeigt exakt B; verzögerte B-Stage bleibt bei Wechsel zu A auf B und überschreibt
+die A-Ansicht nicht; ungebundener C-Root, manipulierter Unterroot und entfernte
+B-Bindung werden mit 403 ohne Index-/Diskmutation abgewiesen. Null Terminalinput
+und Browserfehler; Screenshot geprüft. 708 Frontendtests mit Kitty/Typecheck/
+ESLint/Stylelint bestehen. Die Index-Lebensdauer wurde in einem kleinen Besitzer
+gebündelt; native Prüfungen und Source-Dev-Loop bauen wieder mit regulären
+Analysatoren, ohne die temporäre Suppression. Evidenz: `git-task-31-second`,
+`git-task-31-native/git-task-31.trx`, `git-task-31-verify-accepted.*.log` unter
+`.dev/file-git-production`; Source-Logs im JPA-Run `20261012T140957371Z-fcf474c6`.
+Die gesamte PowerShell-/Bash-Sonderzeichenmatrix bleibt ausdrücklich Aufgabe 33.
+
+### 32. [~] Unsichere Send-to-Terminal-Automatik ersetzen
 
 **Befund (hoch, Code):** Send pastet Text und Return an aktives Terminalprogramm;
 bei Codex/Claude/TUI ist das keine Shellausführung. Discard kann als Send erscheinen.
@@ -1122,6 +1142,10 @@ Daten nicht als aktuell ausgeben, Fehlerdetails sinnvoll übersetzen.
 
 **Abnahme:** Verzögerung, 401/403/404/500, Offline/Reconnect und Repoentfernung;
 kein falsches No-Repo, Retry funktioniert und Authablauf bleibt korrekt.
+
+Zusätzlich: ein fehlgeschlagener Status-/HEADread nach einer Schreibaktion darf
+keinen leeren Hash als bestätigten Commit ausgeben. Die tatsächliche Commit-
+Identität separat bestätigen und unsichere Ergebnisse als solche erhalten.
 
 ### 40. [ ] Branch-, Remote-, Stash- und Konfliktabläufe tatsächlich anbieten
 

@@ -70,12 +70,8 @@ internal sealed class GitOperationService
         GitOperationRequest request, CancellationToken ct)
     {
         var index = await GitCommandRunner.GetIndexPathAsync(info.RepoRoot).ConfigureAwait(false);
-        var lockPath = index + ".lock";
-        FileStream? indexLock;
-        try { indexLock = new FileStream(lockPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, FileOptions.Asynchronous); }
-        catch (IOException) when (File.Exists(lockPath)) { throw new GitOperationException(409, "git_locked", "Another Git operation is using this repository. Wait for it to finish and retry."); }
-        var temporary = index + ".tlbx-" + request.OperationId;
-        var published = false;
+        await using var transaction = new GitIndexTransaction(index, request.OperationId);
+        var temporary = transaction.TemporaryPath;
         GitOperationResponse? result = null;
         try
         {
@@ -88,7 +84,7 @@ internal sealed class GitOperationService
                 throw new GitOperationException(409, "nothing_staged", "Stage changes before creating a commit.");
             if (before.Conflicted.Length > 0 && (request.Action == "commit" || request.All || request.Paths.Any(path => before.Conflicted.Any(file => PathComparer.Equals(file.Path, path)))))
                 throw new GitOperationException(409, "conflict_unresolved", "Resolve conflicted files before staging or committing them.");
-            if (File.Exists(index)) File.Copy(index, temporary);
+            transaction.CopyOriginal();
             var paths = request.Action == "commit" ? [] : SelectPaths(info.RepoRoot, request, before);
             var args = BuildArguments(request, before, paths);
             var environment = new Dictionary<string, string?>(StringComparer.Ordinal) { ["GIT_INDEX_FILE"] = temporary, ["GIT_TERMINAL_PROMPT"] = "0", ["GCM_INTERACTIVE"] = "never" };
@@ -101,14 +97,7 @@ internal sealed class GitOperationService
                 else if (exitCode == 0) throw new GitOperationException(409, "commit_unconfirmed", "Git returned without a new commit. Inspect repository status before retrying.");
             }
             if (exitCode != 0 && result.CommitHash is null) throw GitFailure(stderr, stdout, exitCode);
-            if (!File.Exists(temporary)) throw new GitOperationException(409, "index_unavailable", "Git did not return a complete index.");
-            await using (var prepared = new FileStream(temporary, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.Asynchronous))
-            { await prepared.CopyToAsync(indexLock, CancellationToken.None).ConfigureAwait(false); }
-            await indexLock.FlushAsync(CancellationToken.None).ConfigureAwait(false); indexLock.Flush(flushToDisk: true);
-            await indexLock.DisposeAsync().ConfigureAwait(false);
-            indexLock = null;
-            if (!OperatingSystem.IsWindows() && File.Exists(index)) File.SetUnixFileMode(lockPath, File.GetUnixFileMode(index));
-            await PublishIndexAsync(lockPath, index).ConfigureAwait(false); published = true;
+            await transaction.PublishAsync().ConfigureAwait(false);
             return result;
         }
         catch (Exception error) when (result?.CommitHash is not null && error is IOException or UnauthorizedAccessException or GitOperationException)
@@ -116,15 +105,9 @@ internal sealed class GitOperationService
             result.State = "unknown";
             result.StatusCode = 409;
             result.ErrorCode = "index_publication_failed";
+            transaction.PreservePreparedIndex = true;
             result.Detail = $"Commit {result.CommitHash} exists, but its index could not be published. Do not create another commit. The prepared index remains at {temporary}. {error.Message}";
             return result;
-        }
-        finally
-        {
-            if (indexLock is not null) await indexLock.DisposeAsync().ConfigureAwait(false);
-            if (!published && File.Exists(lockPath)) File.Delete(lockPath);
-            if (File.Exists(temporary) && (published || result?.CommitHash is null)) File.Delete(temporary);
-            if (File.Exists(temporary + ".lock")) File.Delete(temporary + ".lock");
         }
     }
 
@@ -135,9 +118,10 @@ internal sealed class GitOperationService
         var result = new HashSet<string>(PathComparer);
         foreach (var input in request.Paths)
         {
-            if (string.IsNullOrEmpty(input) || input.IndexOf('\0') >= 0 || Path.IsPathRooted(input)) throw new GitOperationException(400, "invalid_path", "Git paths must be relative to the selected repository.");
+            if (string.IsNullOrEmpty(input) || input.Contains("\0", StringComparison.Ordinal) || Path.IsPathRooted(input)) throw new GitOperationException(400, "invalid_path", "Git paths must be relative to the selected repository.");
             var path = OperatingSystem.IsWindows() ? input.Replace('\\', '/') : input;
-            if (path.Split('/').Any(part => part is "." or "..") || !Path.GetFullPath(Path.Combine(root, path)).StartsWith(root + Path.DirectorySeparatorChar, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            var rootPrefix = Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar;
+            if (path.Split('/').Any(part => part is "." or "..") || !Path.GetFullPath(Path.Combine(root, path)).StartsWith(rootPrefix, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
                 throw new GitOperationException(403, "path_outside_repository", "The selected path is outside the repository.");
             var file = files.FirstOrDefault(file => PathComparer.Equals(file.Path.TrimEnd('/'), path.TrimEnd('/')))
                 ?? throw new GitOperationException(409, "path_changed", "The selected file no longer has that Git state. Refresh and retry.");
@@ -162,15 +146,6 @@ internal sealed class GitOperationService
         if (detail.Length > 16000) detail = detail[..16000];
         var identity = detail.Contains("identity unknown", StringComparison.OrdinalIgnoreCase) || detail.Contains("unable to auto-detect email", StringComparison.OrdinalIgnoreCase);
         return new GitOperationException(exitCode < 0 ? 504 : 422, identity ? "identity_missing" : exitCode < 0 ? "git_timeout" : "git_failed", detail);
-    }
-
-    private static async Task PublishIndexAsync(string prepared, string index)
-    {
-        for (var retry = 0; ; retry++)
-        {
-            try { File.Move(prepared, index, overwrite: true); return; }
-            catch (IOException) when (OperatingSystem.IsWindows() && retry < 10) { await Task.Delay(25).ConfigureAwait(false); }
-        }
     }
 
     private static async Task SaveReceiptAsync(string path, GitOperationReceipt receipt)
