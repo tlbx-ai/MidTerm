@@ -18,8 +18,9 @@ internal sealed class GitOperationService
         ValidateRequest(request);
         var info = await GitCommandRunner.GetRepositoryInfoAsync(repoRoot).ConfigureAwait(false)
             ?? throw new GitOperationException(404, "no_repository", "The selected repository is unavailable.");
-        if (!PathComparer.Equals(Path.GetFullPath(repoRoot), info.RepoRoot))
+        if (!PathComparer.Equals(Path.TrimEndingDirectorySeparator(FileDocumentService.ResolvePath(repoRoot)), info.RepoRoot))
             throw new GitOperationException(409, "repository_changed", "The selected repository changed. Refresh it before retrying.");
+        repoRoot = info.RepoRoot;
         var gate = Gates.GetOrAdd(info.GitDir, static _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try

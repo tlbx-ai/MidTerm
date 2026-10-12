@@ -44,7 +44,18 @@ try {
     assert.ok(!fs.existsSync(path.join(root, 'injected.marker')) && !fs.existsSync(path.join(base, 'injected.marker')));
     result.cases.push({ file, actualClipboard: true, exactIndex: true, unchangedDisk: true });
   }
-  assert.equal(result.inputFrames, 0); assert.deepEqual(result.errors, []); await page.screenshot({ path: path.join(out, 'literal-paths.png'), animations: 'disabled' }); result.ok = true;
+  await page.screenshot({ path: path.join(out, 'literal-paths.png'), animations: 'disabled' });
+  await dock.locator('#git-dock-close').click(); await api('DELETE', '/api/sessions/' + session); session = null;
+  session = (await api('POST', '/api/sessions', { shell: 'Cmd', workingDirectory: root, launchRequestId: crypto.randomUUID() })).id;
+  await page.locator('.session-item[data-session-id="' + session + '"] .session-title').click();
+  await page.locator('.session-wrapper[data-session-id="' + session + '"] .git-indicator').click(); await dock.locator('.git-dock-resize-grip').press('End');
+  const escaped = await page.evaluate(value => CSS.escape(value), files[0]); await dock.locator('.git-tree-file[data-path=' + escaped + '][data-scope="worktree"]').click();
+  await dock.locator('.git-panel-hint').filter({ hasText: 'Terminal commands are unavailable for this shell' }).waitFor(); assert.equal(await dock.locator('[data-action="copy-command"], [data-action="insert-command"]').count(), 0);
+  const staged = page.waitForResponse(r => new URL(r.url()).pathname === '/api/git/operations' && r.request().method() === 'POST'); await dock.locator('[data-action="stage-file"][data-path=' + escaped + ']').click(); assert.equal((await (await staged).json()).state, 'completed');
+  assert.deepEqual(git(['diff', '--cached', '--name-only', '-z']).split('\0').filter(Boolean), [files[0]]);
+  const unstaged = page.waitForResponse(r => new URL(r.url()).pathname === '/api/git/operations' && r.request().method() === 'POST'); await dock.locator('[data-action="unstage-file"][data-path=' + escaped + ']').click(); assert.equal((await (await unstaged).json()).state, 'completed');
+  result.cases.push({ shell: 'Cmd', explicitLimitation: true, noUnsafeHandoff: true, nativeActionsWork: true }); await page.screenshot({ path: path.join(out, 'unsupported-shell.png'), animations: 'disabled' });
+  assert.equal(result.inputFrames, 0); assert.deepEqual(result.errors, []); result.ok = true;
 } catch (error) { result.failure = String(error.stack || error).replaceAll(cookie, '<redacted-session-cookie>'); await page?.screenshot({ path: path.join(out, 'failure.png'), animations: 'disabled' }).catch(() => {}); process.exitCode = 1; }
 finally {
   if (context && session) await api('DELETE', '/api/sessions/' + session).catch(error => { result.cleanupFailure = String(error); result.ok = false; process.exitCode = 1; });

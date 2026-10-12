@@ -1,4 +1,5 @@
 using Ai.Tlbx.MidTerm.Models.Git;
+using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Git;
 using Xunit;
 
@@ -44,6 +45,22 @@ public sealed class GitOperationServiceTests : IDisposable
         Write("a.txt", "A staged\nLater working change\n");
         var both = await GitCommandRunner.GetStatusAsync(_root); Assert.Single(both.Staged); Assert.Single(both.Modified);
         var removed = await Execute(Request("unstage", "a.txt")); Assert.Empty(removed.Status!.Staged); Assert.Equal("A staged\nLater working change\n", Read("a.txt"));
+    }
+
+    [UnixFact]
+    public async Task LogicalRepositoryAliasSharesThePhysicalIndexAndReceipt()
+    {
+        await Init(); Write("a.txt", "Alias reviewed content\n");
+        var alias = Path.Combine(_root, "logical-alias"); Directory.CreateSymbolicLink(alias, _root);
+        var request = Request("stage", "a.txt");
+        var staged = await _operations.ExecuteAsync(alias, request, default);
+        Assert.Equal("completed", staged.State);
+        Assert.Equal(FileDocumentService.ResolvePath(_root), staged.RepoRoot);
+        var replay = await Execute(request); Assert.Equal("completed", replay.State);
+        Assert.Single(replay.Status!.Staged); Assert.Equal("a.txt", replay.Status.Staged[0].Path);
+        var removed = await _operations.ExecuteAsync(alias, Request("unstage", "a.txt"), default);
+        Assert.Equal("completed", removed.State); Assert.Empty(removed.Status!.Staged);
+        Assert.Equal("Alias reviewed content\n", Read("a.txt"));
     }
 
     [Fact]

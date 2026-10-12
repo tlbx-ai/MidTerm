@@ -116,9 +116,9 @@ internal static class GitCommandRunner
             ?? gitDir;
 
         return new GitRepositoryInfo(
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(repoRoot)),
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(gitDir)),
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(commonGitDir)));
+            Path.TrimEndingDirectorySeparator(FileDocumentService.ResolvePath(repoRoot)),
+            Path.TrimEndingDirectorySeparator(FileDocumentService.ResolvePath(gitDir)),
+            Path.TrimEndingDirectorySeparator(FileDocumentService.ResolvePath(commonGitDir)));
     }
 
     internal static async Task<IReadOnlyList<GitWorktreeInfo>> ListWorktreesAsync(string workingDir)
