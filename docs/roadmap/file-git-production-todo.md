@@ -1086,7 +1086,7 @@ Evidenz: `git-task-32-fifth/summary.json`, `git-task-32-native/git-task-32.trx`,
 `git-task-32-verify-fourth.*.log` unter `.dev/file-git-production`.
 Kein Live-Modellturn wurde zur Prüfung ausgelöst.
 
-### 33. [~] Shellabhängige Befehlsquotierung korrekt lösen
+### 33. [x] Shellabhängige Befehlsquotierung korrekt lösen
 
 **Befund (mittel, Code):** quoteGitPath backslash-escaped Sonderzeichen unabhängig
 von Shell. Dollar/Backtick/Quote sind in PowerShell anders zu behandeln als Bash.
@@ -1097,7 +1097,30 @@ bekannte Shell korrekt, unbekannte Shell ehrlich begrenzen.
 **Abnahme:** Pfade mit Spaces/Unicode/$/Backtick/Quotes und --ähnlichen Namen in
 PowerShell und Bash. Kein zusätzlicher Befehl, keine Expansion, exakt richtiger Pfad.
 
-### 34. [ ] Inhalt ungetrackter Dateien in Git prüfbar machen
+**Nachweis 13.10.2026:** Shellgerechte Literalstrings für PowerShell (einschließlich
+typografischer Apostrophe) und Bash/Zsh; keine Befehlsübergabe für nicht unterstützte
+Shells. Native Dateioperationen und dateibezogene Diffreads verwenden getrennte
+argv und Literal-Pathspecs. Git-C-quoted UTF8-Namen, Randspaces und Renameverzeichnisse
+werden erhalten; NUL-numstat vermeidet falsche Nullstatistiken. Physische Root-/Gitdir-
+Identität behandelt macOS-/Symlinkaliasse korrekt, einschließlich aliasierter
+Eltern eines Linkziels. Der generierte PowerShell-Helfer wählt genau ein natives
+Curl-Programm auch auf Unix. 11 echte Browserfälle bestehen: zehn tatsächliche
+Clipboard-/Diff-/Stage-/Unstage-/Diskprüfungen plus sichtbare CMD-Begrenzung bei
+funktionierenden nativen Aktionen; alle zehn Namen zeigen den richtigen Patch
+und +1/-1. Null Nebenbefehle, Terminalinput und JSfehler; Screenshots geprüft.
+Sechs Commitregressionen und 709 Frontendtests bleiben grün. Native Gesamtprüfung
+CI `38309365277` besteht auf `298b9e1c`: Windows 118/127, Linux 120/127, macOS
+117/127; übrige Fälle sind explizite Plattform-/Dienstskips. Reale Shellmatrix:
+Windows 20, Linux/macOS je 28 Fälle; letztere prüfen zusätzliche auf Windows
+unzulässige Doublequote-/Backslash-/Pathspecnamen. Der echte LocalSystem-Test
+besteht 1/1 einschließlich Stage/Unstage/Commit mit geschütztem Caller-Token.
+Lokale erweiterte Files-/Git-/CLI-Regressionssuite: 135 bestanden, acht Skips.
+Evidenz: `git-task-33-browser-complete`, `git-task-33-final-{windows,linux,macos-refreshed}`,
+`git-task-33-native-nested-final`, `git-task-33-final-commit-regression` unter
+`.dev/file-git-production`. Frühere fehlgeschlagene CIläufe bleiben als Diagnose
+erhalten; keine Prüfungen wurden abgeschwächt.
+
+### 34. [~] Inhalt ungetrackter Dateien in Git prüfbar machen
 
 **Befund (hoch, reproduziert):** WhatsAppPermissions.md zeigt No patch text available
 und +0/-0. Show diff schlägt git diff vor, das untracked-Inhalt nicht zeigt.
