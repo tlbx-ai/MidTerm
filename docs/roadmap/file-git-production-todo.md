@@ -222,7 +222,7 @@ Evidenz: `.dev/file-git-production/task-9-native-ui/summary.json`,
 `task-9-keyboard-regression/summary.json`, `task-9-native/task-9-parser.trx`,
 `task-9-verify.*.log`. Breite/Touchdetails wurden visuell geprüft.
 
-### 10. [~] Dateistatus in Files und Git einheitlich codieren
+### 10. [x] Dateistatus in Files und Git einheitlich codieren
 
 **Befund (mittel, reproduziert):** Files zeigt M grün und Untracked als ?, Git M
 orange und Untracked als A. Derselbe Zustand hat verschiedene Farben/Buchstaben.
@@ -232,6 +232,32 @@ added, deleted, renamed und conflict; verständliche Labels neben Farbcodierung.
 
 **Abnahme:** Alle Zustände in echten Git-Fixtures erzeugen und in beiden Views
 vergleichen; Farbenblindheit/Screenreaderinformation berücksichtigen.
+
+**Nachweis 12.10.2026:** Gemeinsame Darstellung für Files und Git: M geändert,
+U ungetrackt, A hinzugefügt, D gelöscht, R umbenannt und ! Konflikt; auch C/T
+werden eindeutig behandelt. Gemeinsame semantische Themefarben, ausgeschriebene
+lokalisierte Tooltip-/ARIA-Beschreibungen und Status im tastatur-/touchbedienbaren
+Detailsdialog. Ordnerstatus beschreibt enthaltene Änderungen; gelöschte Dateien
+bleiben aus dem physischen Dateibaum entfernt und markieren den vorhandenen
+Elternordner, während Git den gelöschten Eintrag zeigt. Backend-Aggregation
+priorisiert Konflikte und bewahrt Unix-Backslashes sowie Case-Unterschiede.
+48 echte Zustandspaare in vier Themes und Deutsch/Englisch bestehen inklusive
+echtem Mergekonflikt, Unicode-Rename und separaten Index-/Worktree-Einträgen.
+Chrome-AX bestätigt volle Pfadnamen und ausgeschriebene Statusbeschreibungen.
+390-px-Touch und tatsächliches Stage/Unstage unterscheiden U/A; keine vom UI
+ausgelösten Datei-Mutationsrequests. Die Bildprüfung fand einen zusätzlichen
+Dialogfehler in hellen Themes: alte dunkle Dialogflächen und transparente
+Buttontextfarben passten nicht zur Lesepalette. Details-/Dateioperations-,
+Unsaved- und Vergleichsflächen verwenden jetzt die geschützte Lesefläche;
+Dangeraktionen behalten eine rote Text-/Randmarkierung. 84 tatsächliche
+Dialogtext-/Button-Kontrastmessungen bestehen, Minimum 7,277336:1; Screenshots
+von hell/dunkel und Touch sind geprüft. 707 Frontendtests plus Kitty/Typecheck/
+ESLint/Stylelint und sechs C#-Status-/Pfadtests bestehen. Native CI nimmt die
+neuen Git-Statusprüfungen in ihre Windows/Linux/macOS-Matrix auf.
+Evidenz: `.dev/file-git-production/task-10-final/summary.json`,
+`task-10-native/task-10-status.trx`, `task-10-verify.*.log`,
+`task-10-dialog-css.*.log`. Git-Aufgabe 35 bleibt bis zur eigenen Workflow-
+Abnahme mit Review/Diff und Stagingaktionen offen.
 
 ### 11. [x] Ausgewählte Dateien auf schmalen Bildschirmen sichtbar öffnen
 

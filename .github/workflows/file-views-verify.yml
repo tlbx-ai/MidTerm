@@ -5,9 +5,12 @@ on:
     paths:
       - 'src/Ai.Tlbx.MidTerm/Services/File*.cs'
       - 'src/Ai.Tlbx.MidTerm/Services/Git/GitCommandRunner.cs'
+      - 'src/Ai.Tlbx.MidTerm/Services/Git/GitFileStatusMapBuilder.cs'
       - 'src/Ai.Tlbx.MidTerm/Services/Sessions/SessionCallerIdentity.cs'
       - 'src/Ai.Tlbx.MidTerm/Services/Sessions/TtyHostSpawner.cs'
       - 'src/Ai.Tlbx.MidTerm.UnitTests/File*Tests.cs'
+      - 'src/Ai.Tlbx.MidTerm.UnitTests/GitStatusParserTests.cs'
+      - 'src/Ai.Tlbx.MidTerm.UnitTests/GitFileStatusMapTests.cs'
       - 'scripts/test-file-service-identity.ps1'
       - '.github/workflows/file-views-verify.yml'
 permissions:
@@ -40,7 +43,7 @@ jobs:
       - name: Real filesystem acceptance
         shell: pwsh
         run: |
-          dotnet test src/Ai.Tlbx.MidTerm.UnitTests/Ai.Tlbx.MidTerm.UnitTests.csproj -c Release -p:SkipFrontendBuild=true -p:RestoreLockedMode=true --filter 'FullyQualifiedName~FileOperationServiceTests|FullyQualifiedName~FileDocumentServiceTests|FullyQualifiedName~FileNavigationServiceTests|FullyQualifiedName~FileDirectoryServiceTests|FullyQualifiedName~FileServiceTests|FullyQualifiedName~SessionCallerIdentityTests' --logger 'trx;LogFileName=files-native.trx' --results-directory .dev/file-native-results -v:q
+          dotnet test src/Ai.Tlbx.MidTerm.UnitTests/Ai.Tlbx.MidTerm.UnitTests.csproj -c Release -p:SkipFrontendBuild=true -p:RestoreLockedMode=true --filter 'FullyQualifiedName~FileOperationServiceTests|FullyQualifiedName~FileDocumentServiceTests|FullyQualifiedName~FileNavigationServiceTests|FullyQualifiedName~FileDirectoryServiceTests|FullyQualifiedName~FileServiceTests|FullyQualifiedName~SessionCallerIdentityTests|FullyQualifiedName~GitStatusParserTests|FullyQualifiedName~GitFileStatusMapTests' --logger 'trx;LogFileName=files-native.trx' --results-directory .dev/file-native-results -v:q
           if ($LASTEXITCODE -ne 0) { throw 'Native filesystem acceptance failed.' }
       - name: Real LocalSystem caller boundary
         if: runner.os == 'Windows'

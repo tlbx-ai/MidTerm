@@ -6,7 +6,9 @@ internal static class GitFileStatusMapBuilder
 {
     internal static Dictionary<string, string> Build(GitStatusResponse status)
     {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, string>(OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal);
 
         AddEntries(result, status.Conflicted);
         AddEntries(result, status.Staged);
@@ -20,8 +22,9 @@ internal static class GitFileStatusMapBuilder
     {
         foreach (var entry in entries)
         {
-            var relativePath = entry.Path.Replace('\\', '/');
-            if (string.IsNullOrWhiteSpace(relativePath))
+            // Porcelain paths already use '/'; a backslash may be a literal Unix filename.
+            var relativePath = entry.Path;
+            if (string.IsNullOrEmpty(relativePath))
             {
                 continue;
             }
@@ -29,11 +32,12 @@ internal static class GitFileStatusMapBuilder
             var badge = StatusToBadge(entry.Status);
             SetIfStronger(map, relativePath, badge);
 
-            var directory = Path.GetDirectoryName(relativePath)?.Replace('\\', '/');
-            while (!string.IsNullOrWhiteSpace(directory))
+            var slash = relativePath.LastIndexOf('/');
+            while (slash > 0)
             {
+                var directory = relativePath[..slash];
                 SetIfStronger(map, directory, badge);
-                directory = Path.GetDirectoryName(directory)?.Replace('\\', '/');
+                slash = directory.LastIndexOf('/');
             }
         }
     }
@@ -53,8 +57,10 @@ internal static class GitFileStatusMapBuilder
             "conflicted" or "unmerged" => "!",
             "deleted" => "D",
             "renamed" => "R",
+            "copied" => "C",
+            "type-changed" => "T",
             "added" => "A",
-            "untracked" => "?",
+            "untracked" => "U",
             _ => "M"
         };
     }
@@ -66,9 +72,11 @@ internal static class GitFileStatusMapBuilder
             "!" => 5,
             "D" => 4,
             "R" => 3,
+            "C" => 3,
+            "T" => 3,
             "M" => 3,
             "A" => 2,
-            "?" => 1,
+            "U" => 1,
             _ => 0
         };
     }

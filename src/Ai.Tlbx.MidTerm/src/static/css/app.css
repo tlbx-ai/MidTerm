@@ -16346,8 +16346,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   border-radius: 3px;
   font-size: var(--fs-xs);
   font-weight: 500;
-  color: var(--accent-green);
-  background: var(--accent-green-15);
+  font-family: var(--font-mono);
 }
 
 .tree-empty {
@@ -16994,14 +16993,32 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   margin-left: 8px;
 }
 
-.git-indicator-green {
+.tree-git-badge[data-git-status="added"],
+.tree-git-badge[data-git-status="untracked"],
+.git-file-indicator[data-git-status="added"],
+.git-file-indicator[data-git-status="untracked"] {
   color: var(--accent-green);
 }
-.git-indicator-yellow {
+
+.tree-git-badge[data-git-status="modified"],
+.tree-git-badge[data-git-status="type-changed"],
+.git-file-indicator[data-git-status="modified"],
+.git-file-indicator[data-git-status="type-changed"] {
   color: var(--accent-orange);
 }
-.git-indicator-red {
+
+.tree-git-badge[data-git-status="deleted"],
+.tree-git-badge[data-git-status="conflicted"],
+.git-file-indicator[data-git-status="deleted"],
+.git-file-indicator[data-git-status="conflicted"] {
   color: var(--accent-red);
+}
+
+.tree-git-badge[data-git-status="renamed"],
+.tree-git-badge[data-git-status="copied"],
+.git-file-indicator[data-git-status="renamed"],
+.git-file-indicator[data-git-status="copied"] {
+  color: var(--accent-blue);
 }
 
 /* --- Commits --- */
@@ -20970,8 +20987,21 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 .file-context-menu button:hover { background: var(--hover-bg); }
 .file-context-menu button:disabled { opacity: 0.45; cursor: default; }
 .file-operation-status { padding: 8px; font-size: var(--fs-xs); white-space: pre-wrap; overflow-wrap: anywhere; }
-.file-operation-status[role="alert"] { color: var(--danger-color, #f88); }
+.file-operation-status[role="alert"] { color: var(--accent-red); }
 .file-operation-overlay { z-index: 2000; }
+:is(.file-operation-overlay, .file-unsaved-overlay) .dialog-content, .file-conflict-dialog {
+  background: var(--workspace-pane-background);
+  color: var(--text-primary);
+}
+:is(.file-operation-overlay, .file-unsaved-overlay) :is(.btn-primary, .btn-secondary, .btn-danger) {
+  background: var(--workspace-pane-chrome-background);
+  color: var(--text-primary);
+}
+:is(.file-operation-overlay, .file-unsaved-overlay) .btn-primary { border: 1px solid var(--accent-blue); }
+:is(.file-operation-overlay, .file-unsaved-overlay) .btn-danger { color: var(--accent-red); border: 1px solid var(--accent-red); }
+:is(.file-operation-overlay, .file-unsaved-overlay) :is(.btn-primary, .btn-secondary, .btn-danger):hover {
+  background: var(--workspace-pane-background);
+}
 .file-operation-message { max-height: 35vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .file-operation-input {
   display: block;
@@ -21215,7 +21245,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 .file-path-details:focus-visible, .git-path-details:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
 
 /* Reading palettes protect metadata against wallpaper, hover and selection. */
-:where(.file-browser, .file-viewer-modal-content, .file-viewer-dock, .git-dock, .git-panel, .git-panel-shell, .file-context-menu, .file-operation-overlay .modal, .file-conflict-dialog) {
+:where(.file-browser, .file-viewer-modal-content, .file-viewer-dock, .git-dock, .git-panel, .git-panel-shell, .file-context-menu, .file-operation-overlay .modal, .file-unsaved-overlay .modal, .file-conflict-dialog) {
   --workspace-pane-background: var(--workspace-reading-background, var(--bg-primary));
   --workspace-pane-chrome-background: var(--workspace-reading-chrome-background, var(--bg-elevated));
   --text-primary: var(--workspace-reading-text-primary);

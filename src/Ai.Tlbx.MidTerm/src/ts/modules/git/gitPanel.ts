@@ -21,6 +21,7 @@ import { t } from '../i18n';
 import { areJsonLikeEqual } from '../../stores';
 import { syncGitPanelDom } from './gitPanelDom';
 import { showPathDetails, repositoryFilePath } from '../fileViewer/pathDetails';
+import { fileStatusPresentation } from './fileStatus';
 
 type SectionId = 'conflicts' | 'staged' | 'changes' | 'untracked';
 type PanelSectionId = SectionId | 'commits';
@@ -232,37 +233,6 @@ function getAllFiles(status: GitStatusResponse): GitFileEntry[] {
   return [...status.conflicted, ...status.staged, ...status.modified, ...status.untracked];
 }
 
-function statusToLetter(status: string): string {
-  switch (status) {
-    case 'added':
-    case 'untracked':
-      return 'A';
-    case 'deleted':
-      return 'D';
-    case 'renamed':
-      return 'R';
-    case 'conflicted':
-    case 'unmerged':
-      return '!';
-    default:
-      return 'M';
-  }
-}
-
-function statusToColor(status: string): string {
-  switch (status) {
-    case 'added':
-    case 'untracked':
-      return 'green';
-    case 'deleted':
-    case 'conflicted':
-    case 'unmerged':
-      return 'red';
-    default:
-      return 'yellow';
-  }
-}
-
 function hasGitRepoStatus(status: GitStatusResponse | null): status is GitStatusResponse {
   return Boolean(status && (status.repoRoot || status.branch));
 }
@@ -327,17 +297,17 @@ function renderTreeNode(
   for (const child of sorted) {
     const indent = depth * 16;
     if (child.file) {
-      const letter = statusToLetter(child.file.status);
-      const color = statusToColor(child.file.status);
+      const presentation = fileStatusPresentation(child.file.status);
+      const statusId = `git-file-status-${encodeURIComponent(`${repoRoot}:${child.scope}:${child.file.path}`)}`;
       const isSelected =
         selection?.kind === 'file' &&
         selection.path === child.file.path &&
         selection.scope === child.scope;
       const fullPath = escapeHtml(repositoryFilePath(repoRoot, child.file.path));
-      html += `<button class="git-tree-file${isSelected ? ' git-tree-file-selected' : ''}" title="${fullPath}" aria-label="${fullPath}" data-action="open-file" data-path="${escapeHtml(child.file.path)}" data-status="${escapeHtml(child.file.status)}" data-scope="${child.scope}"${child.file.originalPath ? ` data-original-path="${escapeHtml(child.file.originalPath)}"` : ''} style="padding-left:${12 + indent}px" type="button">
+      html += `<button class="git-tree-file${isSelected ? ' git-tree-file-selected' : ''}" title="${fullPath}" aria-label="${fullPath}"${presentation ? ` aria-describedby="${escapeHtml(statusId)}"` : ''} data-action="open-file" data-path="${escapeHtml(child.file.path)}" data-status="${escapeHtml(child.file.status)}" data-scope="${child.scope}"${child.file.originalPath ? ` data-original-path="${escapeHtml(child.file.originalPath)}"` : ''} style="padding-left:${12 + indent}px" type="button">
         <span class="git-tree-name">${escapeHtml(child.name)}</span>
         <span class="git-file-loc"><span class="git-loc-add">+${child.file.additions}</span> <span class="git-loc-del">-${child.file.deletions}</span></span>
-        <span class="git-file-indicator git-indicator-${color}">${letter}</span>
+        ${presentation ? `<span class="git-file-indicator" id="${escapeHtml(statusId)}" data-git-status="${presentation.status}" role="img" title="${escapeHtml(presentation.label)}" aria-label="${escapeHtml(presentation.label)}">${presentation.letter}</span>` : ''}
       </button>`;
     } else {
       html += `<div class="git-tree-dir" style="padding-left:${12 + indent}px">
@@ -667,7 +637,7 @@ function renderFileInspector(selection: GitFileSelection): string {
     <div class="git-inspector-title-row">
       <span class="git-inspector-title" title="${pathHtml}">${pathHtml}</span>
       <span class="git-summary-pill">${escapeHtml(selection.scope)}</span>
-      <button class="git-path-details" data-action="path-details" data-path="${pathHtml}"${file.originalPath ? ` data-original-path="${escapeHtml(file.originalPath)}"` : ''} type="button">${t('fileBrowser.details')}</button>
+      <button class="git-path-details" data-action="path-details" data-path="${pathHtml}" data-status="${escapeHtml(selection.status)}"${file.originalPath ? ` data-original-path="${escapeHtml(file.originalPath)}"` : ''} type="button">${t('fileBrowser.details')}</button>
     </div>
     ${originalHtml}
   </div>`;
@@ -852,7 +822,7 @@ function showGitPathDetails(state: GitPanelState, data: DOMStringMap): void {
   if (!root || !data.path) return;
   const paths = [repositoryFilePath(root, data.path)];
   if (data.originalPath) paths.push(repositoryFilePath(root, data.originalPath));
-  void showPathDetails(paths);
+  void showPathDetails(paths, [fileStatusPresentation(data.status)?.label ?? '']);
 }
 
 function runPanelCommand(state: GitPanelState, data: DOMStringMap): void {

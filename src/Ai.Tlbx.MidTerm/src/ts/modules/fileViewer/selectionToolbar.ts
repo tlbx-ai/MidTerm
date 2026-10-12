@@ -1,10 +1,12 @@
 import { t } from '../i18n';
 import { downloadFile, writeTextToClipboard } from './shared';
 import { showPathDetails } from './pathDetails';
+import { fileStatusPresentation } from '../git/fileStatus';
 
 export interface SelectedFile {
   path: string;
   isDirectory: boolean;
+  gitStatus?: string | null | undefined;
 }
 
 export function createSelectionToolbar(
@@ -29,7 +31,12 @@ export function createSelectionToolbar(
       const first = files[0];
       if (action === 'open' && files.length === 1 && first) open(first.path);
       else if (action === 'details') {
-        void showPathDetails(files.map((file) => file.path));
+        void showPathDetails(
+          files.map((file) => file.path),
+          files.map(
+            (file) => fileStatusPresentation(file.gitStatus, file.isDirectory)?.label ?? '',
+          ),
+        );
       } else if (action === 'copyPaths') {
         void writeTextToClipboard(files.map((file) => file.path).join('\n')).then((copied) => {
           if (!copied) count.textContent = t('fileBrowser.copyFailed');

@@ -7,6 +7,7 @@
 import type { FileTreeEntry, FileTreeResponse } from './treeApi';
 import { fetchTree } from './treeApi';
 import { t } from '../i18n';
+import { patchFileStatusBadge } from '../git/fileStatus';
 import { getFileVisibility } from '../fileViewer/visibility';
 import { getFileIcon, formatSize } from '../fileViewer/rendering';
 import { reconcileKeyedChildren } from '../../utils/domReconcile';
@@ -122,6 +123,7 @@ export function createTreeView(
       [...surface.selection.paths].map((path) => ({
         path,
         isDirectory: findEntry(state, path)?.isDirectory ?? true,
+        gitStatus: findEntry(state, path)?.gitStatus,
       })),
     (path) => {
       openSelectedPath(state, path);
@@ -490,7 +492,8 @@ function patchTreeMetadata(node: HTMLElement, entry: FileTreeEntry): void {
       .filter(Boolean)
       .join(', '),
   );
-  text('.tree-git-badge', entry.gitStatus ?? '');
+  const gitBadge = node.querySelector<HTMLElement>('.tree-git-badge');
+  if (gitBadge) patchFileStatusBadge(gitBadge, node, entry.gitStatus, entry.isDirectory);
   text('.tree-type', fileType(entry));
   text('.tree-modified', modifiedLabel(entry));
   text('.tree-size', !entry.isDirectory && entry.size != null ? formatSize(entry.size) : '');

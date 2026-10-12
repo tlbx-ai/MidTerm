@@ -8,12 +8,12 @@ export function repositoryFilePath(root: string, path: string): string {
 }
 
 /** Full selectable paths remain readable on touch and with keyboard focus. */
-export async function showPathDetails(paths: string[]): Promise<void> {
+export async function showPathDetails(paths: string[], descriptions?: string[]): Promise<void> {
   if (paths.length === 0) return;
   const message = paths
     .map(
-      (path) =>
-        `${t('fileBrowser.name')}: ${getFileName(path)}\n${t('fileBrowser.fullPath')}: ${path}`,
+      (path, index) =>
+        `${t('fileBrowser.name')}: ${getFileName(path)}\n${t('fileBrowser.fullPath')}: ${path}${descriptions?.[index] ? `\n${descriptions[index]}` : ''}`,
     )
     .join('\n\n');
   const choice = await operationDialog(t('fileBrowser.details'), message, [
