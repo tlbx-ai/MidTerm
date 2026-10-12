@@ -1,4 +1,5 @@
 {
+  "git.insertShellOnly": "セッションがシェルにある場合のみ挿入できます。アプリやエージェントの実行中はコピーを使用してください。",
   "git.commandShellUnsupported": "このシェルではターミナルコマンドを利用できません。上のリポジトリ操作を使用してください。",
   "terminalLinks.title": "ターミナルのリンクを開きますか？",
   "terminalLinks.message": "このリンクは新しいタブで開きます。",

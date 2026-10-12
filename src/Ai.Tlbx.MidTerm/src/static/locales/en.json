@@ -1,4 +1,5 @@
 {
+  "git.insertShellOnly": "Insert is available only while the session is at its shell. Use Copy while an application or agent is running.",
   "git.commandShellUnsupported": "Terminal commands are unavailable for this shell. Use the repository actions above.",
   "terminalLinks.title": "Open terminal link?",
   "terminalLinks.message": "This link will open in a new tab.",

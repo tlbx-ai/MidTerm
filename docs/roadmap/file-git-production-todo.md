@@ -1046,7 +1046,14 @@ Analysatoren, ohne die temporäre Suppression. Evidenz: `git-task-31-second`,
 `.dev/file-git-production`; Source-Logs im JPA-Run `20261012T140957371Z-fcf474c6`.
 Die gesamte PowerShell-/Bash-Sonderzeichenmatrix bleibt ausdrücklich Aufgabe 33.
 
-### 32. [~] Unsichere Send-to-Terminal-Automatik ersetzen
+**Integrierte Regression:** Vollständige Repo-Pushes aktualisieren nun auch das
+passende offene/defaultaufgelöste Panel. Der Badge konnte vorher neuer sein als
+die Liste. Ein zusätzlicher Grenztest verhindert Updates aus einem anderen Root.
+Alle sechs Commitabläufe und drei Multi-Repoabläufe bestehen erneut;
+709 Frontendtests bestehen. Evidenz: `git-task-31-commit-accepted`,
+`git-task-31-repository-accepted`, `git-task-31-verify-complete-final.*.log`.
+
+### 32. [x] Unsichere Send-to-Terminal-Automatik ersetzen
 
 **Befund (hoch, Code):** Send pastet Text und Return an aktives Terminalprogramm;
 bei Codex/Claude/TUI ist das keine Shellausführung. Discard kann als Send erscheinen.
@@ -1061,7 +1068,25 @@ Eigene Git-Schreibverträge und echte Busy-TUI-/Controller-Abnahme fehlen noch.
 **Abnahme:** Shell, beschäftigtes TUI und Agent Controller; direkte Gitaktion
 funktioniert unabhängig davon, keine fremden Prompts/Keys/unerwarteten Mutationen.
 
-### 33. [ ] Shellabhängige Befehlsquotierung korrekt lösen
+**Nachweis 12.10.2026:** Git-Schreibaktionen verwenden die eigenen repo-bound
+Backendverträge aus 30/31. Optionales Einfügen bleibt ohne Enter und ist im UI
+nur für den Shell-Vordergrund verfügbar; Prozesswechsel aktualisieren die Buttons.
+Der Server liest vor Git-Paste zusätzlich einen frischen Hostsnapshot und weist
+Vordergrundanwendungen und explizite Controller vor dem Schreiben ab.
+28 native Tests inklusive sechs Vordergrund-/Shellgrenzen und vorhandener Paste-/
+Gitverträge sowie 709 Frontendtests mit Kitty/Typecheck/ESLint/Stylelint bestehen.
+Drei reale Browserabläufe bestehen: Shell mit Stage/Unstage und bestätigtem
+Paste ohne CR/LF; echte Raw-Mode-/Alternate-Screen-TUI mit null aufgenommenen
+Eingabebytes trotz Copy, erzwungenem Insert-Klick und Stage/Unstage; echter Codex-
+Agent Controller mit Session-CWD JPA und gebundenem Fixturetarget, ebenfalls
+Stage/Unstage ohne Paste oder Provider-Turn-Requests. Direkte Git-Pasteversuche
+gegen TUI und Controller liefern 409. Null Mux-Inputframes und Browserfehler.
+Screenshots sind geprüft; alle Test-Sessions/Browser werden geschlossen.
+Evidenz: `git-task-32-fifth/summary.json`, `git-task-32-native/git-task-32.trx`,
+`git-task-32-verify-fourth.*.log` unter `.dev/file-git-production`.
+Kein Live-Modellturn wurde zur Prüfung ausgelöst.
+
+### 33. [~] Shellabhängige Befehlsquotierung korrekt lösen
 
 **Befund (mittel, Code):** quoteGitPath backslash-escaped Sonderzeichen unabhängig
 von Shell. Dollar/Backtick/Quote sind in PowerShell anders zu behandeln als Bash.

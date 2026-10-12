@@ -10,6 +10,22 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class SessionApiEndpointsTests
 {
 
+    [Theory]
+    [InlineData(null, null, true)]
+    [InlineData(10, "shell", true)]
+    [InlineData(10, "pwsh.exe", true)]
+    [InlineData(20, "node", false)]
+    [InlineData(20, "pwsh", false)]
+    [InlineData(null, "unknown", false)]
+    public void GitCommandPasteRequiresTheFreshShellProcess(int? foregroundPid, string? foregroundName, bool expected)
+    {
+        var session = new SessionInfo { Pid = 10, ShellType = "Pwsh", IsRunning = true, ForegroundPid = foregroundPid, ForegroundName = foregroundName };
+        Assert.Equal(expected, SessionApiEndpoints.IsShellForeground(session));
+        session.IsRunning = false;
+        Assert.False(SessionApiEndpoints.IsShellForeground(session));
+        Assert.False(SessionApiEndpoints.IsShellForeground(null));
+    }
+
     [Fact]
     public void TryGetInputBytes_Base64AppendNewline_UsesCarriageReturn()
     {

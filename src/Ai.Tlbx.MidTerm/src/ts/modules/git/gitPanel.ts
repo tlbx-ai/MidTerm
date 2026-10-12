@@ -15,6 +15,7 @@ import type {
   GitStatusResponse,
   GitOperationRequest,
 } from './types';
+import type { Session } from '../../types';
 import { fetchCommitDetails, fetchDiffView, fetchGitLog, fetchGitStatus } from './gitApi';
 import { buildCommitCommandSuggestions, buildFileCommandSuggestions } from './gitCommands';
 import { pasteToTerminal } from '../terminal';
@@ -26,6 +27,7 @@ import { showPathDetails, repositoryFilePath } from '../fileViewer/pathDetails';
 import { fileStatusPresentation } from './fileStatus';
 import { writeTextToClipboard } from '../fileViewer/shared';
 import { sessionTerminals } from '../../state';
+import { addProcessStateListener, getProcessState } from '../process';
 import {
   createGitOperationsUi,
   renderGitOperations,
@@ -99,6 +101,19 @@ const nowrapScroll = new WeakMap<HTMLElement, number>();
 // Only one panel may own a shared dock body, including while fetches are pending.
 const activePanels = new WeakMap<HTMLElement, GitPanelState>();
 const boundPanelContainers = new WeakSet<HTMLElement>();
+
+addProcessStateListener((sessionId) => {
+  for (const state of panelStates.values()) {
+    if (state.sessionId !== sessionId || activePanels.get(state.container) !== state) continue;
+    const allowed = canInsertCommand(sessionId);
+    for (const button of state.container.querySelectorAll<HTMLButtonElement>(
+      '[data-action="insert-command"]',
+    )) {
+      button.disabled = !allowed || button.getAttribute('aria-busy') === 'true';
+      button.title = t(allowed ? 'git.insertHint' : 'git.insertShellOnly');
+    }
+  }
+});
 
 export function suspendGitPanel(container: HTMLElement): void {
   disconnectGitPanelLayout(container);
@@ -847,7 +862,7 @@ function renderCommandSuggestions(
             </div>
             <div class="git-command-actions">
               <button class="git-action-button" data-action="copy-command" data-command="${escapeHtml(suggestion.command)}" title="${t('git.copyCommand')}" type="button">${t('git.copy')}</button>
-              <button class="git-action-button" data-action="insert-command" data-command="${escapeHtml(suggestion.command)}" title="${t(insertAllowed ? 'git.insertHint' : 'git.insertUnsupported')}"${insertAllowed ? '' : ' disabled'} type="button">${t('git.insert')}</button>
+              <button class="git-action-button" data-action="insert-command" data-command="${escapeHtml(suggestion.command)}" title="${t(insertAllowed ? 'git.insertHint' : 'git.insertShellOnly')}"${insertAllowed ? '' : ' disabled'} type="button">${t('git.insert')}</button>
             </div>
             <div class="git-action-status" role="status" aria-live="polite"></div>
           </div>`,
@@ -859,8 +874,26 @@ function renderCommandSuggestions(
 
 function canInsertCommand(sessionId: string): boolean {
   const session = $sessions.get()[sessionId];
+  if (
+    !session ||
+    !session.isRunning ||
+    session.appServerControlOnly ||
+    !sessionTerminals.has(sessionId)
+  )
+    return false;
+  return isSessionShellForeground(sessionId, session);
+}
+
+function isSessionShellForeground(sessionId: string, session: Session): boolean {
+  const process = getProcessState(sessionId);
+  const foreground = process.foregroundName ?? session.foregroundName;
+  const foregroundPid = process.foregroundPid ?? session.foregroundPid;
+  const name = foreground?.replace(/\.exe$/i, '').toLowerCase();
+  const shell = session.shellType;
+  const expected = shell === 'Pwsh' ? 'pwsh' : shell.toLowerCase();
   return (
-    session?.isRunning === true && !session.appServerControlOnly && sessionTerminals.has(sessionId)
+    (foregroundPid == null && name === undefined) ||
+    (foregroundPid === session.pid && (name === 'shell' || name === expected))
   );
 }
 

@@ -1,4 +1,5 @@
 {
+  "git.insertShellOnly": "Insertar solo está disponible cuando la sesión está en su shell. Usa Copiar mientras se ejecuta una aplicación o un agente.",
   "git.commandShellUnsupported": "Los comandos de terminal no están disponibles para este shell. Usa las acciones del repositorio de arriba.",
   "terminalLinks.title": "¿Abrir enlace del terminal?",
   "terminalLinks.message": "Este enlace se abrirá en una pestaña nueva.",

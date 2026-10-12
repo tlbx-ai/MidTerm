@@ -657,6 +657,14 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
+            if (string.Equals(request.HistorySource, InputHistorySources.GitPanelInsert, StringComparison.Ordinal))
+            {
+                var selected = GetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id);
+                var fresh = await sessionManager.GetSessionFreshAsync(id, ct).ConfigureAwait(false);
+                if (selected.AppServerControlOnly || !IsShellForeground(fresh))
+                    return Results.Text("Git commands can only be inserted at the session's shell. Use Copy while an application or agent is running.", statusCode: 409);
+            }
+
             if (!TryGetPasteInputBytes(request, out var data, out var error))
             {
                 return Results.BadRequest(error);
@@ -1201,6 +1209,18 @@ public static partial class SessionApiEndpoints
             error = "base64 is invalid.";
             return false;
         }
+    }
+
+    internal static bool IsShellForeground(SessionInfo? session)
+    {
+        if (session is null || !session.IsRunning) return false;
+        // A fresh host snapshot leaves child metadata empty when the shell itself owns the PTY.
+        if (session.ForegroundPid is null && string.IsNullOrEmpty(session.ForegroundName)) return true;
+        if (session.ForegroundPid != session.Pid) return false;
+        var name = session.ForegroundName;
+        return string.Equals(name, "shell", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(name, session.ShellType, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(name, session.ShellType + ".exe", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static bool TryGetPasteInputBytes(
