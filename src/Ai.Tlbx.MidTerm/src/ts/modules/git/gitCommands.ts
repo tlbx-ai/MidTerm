@@ -6,7 +6,7 @@ export interface GitCommandSuggestion {
 }
 
 export function quoteGitPath(path: string, shell: string): string | null {
-  if (shell === 'Pwsh' || shell === 'PowerShell') return `'${path.replace(/'/g, "''")}'`;
+  if (shell === 'Pwsh' || shell === 'PowerShell') return `'${path.replace(/['‘’]/g, '$&$&')}'`;
   if (shell === 'Bash' || shell === 'Zsh') return `'${path.replace(/'/g, "'\"'\"'")}'`;
   return null;
 }

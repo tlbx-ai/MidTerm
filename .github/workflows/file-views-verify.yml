@@ -6,11 +6,16 @@ on:
       - 'src/Ai.Tlbx.MidTerm/Services/File*.cs'
       - 'src/Ai.Tlbx.MidTerm/Services/Git/GitCommandRunner.cs'
       - 'src/Ai.Tlbx.MidTerm/Services/Git/GitFileStatusMapBuilder.cs'
+      - 'src/Ai.Tlbx.MidTerm/Services/Git/**'
+      - 'src/Ai.Tlbx.MidTerm/src/ts/modules/git/gitCommands.ts'
       - 'src/Ai.Tlbx.MidTerm/Services/Sessions/SessionCallerIdentity.cs'
       - 'src/Ai.Tlbx.MidTerm/Services/Sessions/TtyHostSpawner.cs'
       - 'src/Ai.Tlbx.MidTerm.UnitTests/File*Tests.cs'
       - 'src/Ai.Tlbx.MidTerm.UnitTests/GitStatusParserTests.cs'
       - 'src/Ai.Tlbx.MidTerm.UnitTests/GitFileStatusMapTests.cs'
+      - 'src/Ai.Tlbx.MidTerm.UnitTests/Git*Tests.cs'
+      - 'src/Ai.Tlbx.MidTerm.UnitTests/SessionApiEndpointsTests.cs'
+      - 'scripts/perf/tlbx-git-command-quoting.mjs'
       - 'scripts/test-file-service-identity.ps1'
       - '.github/workflows/file-views-verify.yml'
 permissions:
@@ -43,8 +48,17 @@ jobs:
       - name: Real filesystem acceptance
         shell: pwsh
         run: |
-          dotnet test src/Ai.Tlbx.MidTerm.UnitTests/Ai.Tlbx.MidTerm.UnitTests.csproj -c Release -p:SkipFrontendBuild=true -p:RestoreLockedMode=true --filter 'FullyQualifiedName~FileOperationServiceTests|FullyQualifiedName~FileDocumentServiceTests|FullyQualifiedName~FileNavigationServiceTests|FullyQualifiedName~FileDirectoryServiceTests|FullyQualifiedName~FileServiceTests|FullyQualifiedName~SessionCallerIdentityTests|FullyQualifiedName~GitStatusParserTests|FullyQualifiedName~GitFileStatusMapTests' --logger 'trx;LogFileName=files-native.trx' --results-directory .dev/file-native-results -v:q
+          dotnet test src/Ai.Tlbx.MidTerm.UnitTests/Ai.Tlbx.MidTerm.UnitTests.csproj -c Release -p:SkipFrontendBuild=true -p:RestoreLockedMode=true --filter 'FullyQualifiedName~FileOperationServiceTests|FullyQualifiedName~FileDocumentServiceTests|FullyQualifiedName~FileNavigationServiceTests|FullyQualifiedName~FileDirectoryServiceTests|FullyQualifiedName~FileServiceTests|FullyQualifiedName~SessionCallerIdentityTests|FullyQualifiedName~Git|FullyQualifiedName~SessionApiEndpointsTests' --logger 'trx;LogFileName=files-native.trx' --results-directory .dev/file-native-results -v:q
           if ($LASTEXITCODE -ne 0) { throw 'Native filesystem acceptance failed.' }
+      - name: Install locked command transpiler dependencies
+        working-directory: src/Ai.Tlbx.MidTerm
+        run: npm ci --ignore-scripts
+      - name: Real PowerShell and Bash command quoting
+        shell: pwsh
+        run: |
+          $env:TLBX_PERF_ARTIFACT_ROOT = '.dev/file-native-results/git-command-quoting'
+          node scripts/perf/tlbx-git-command-quoting.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Git command quoting acceptance failed.' }
       - name: Real LocalSystem caller boundary
         if: runner.os == 'Windows'
         shell: pwsh
@@ -55,6 +69,7 @@ jobs:
           name: file-native-${{ matrix.os }}
           path: |
             .dev/file-native-results/*.trx
+            .dev/file-native-results/git-command-quoting/summary.json
             .dev/file-service-identity/*.log
             .dev/file-service-identity/*.trx
           retention-days: 7

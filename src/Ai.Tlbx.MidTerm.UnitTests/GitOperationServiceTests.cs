@@ -141,10 +141,9 @@ public sealed class GitOperationServiceTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_root, ".git", "index.lock")));
     }
 
-    [Fact]
+    [WindowsFact]
     public async Task CreatedCommitWithBlockedIndexPublicationReportsItsHashAndNeverRecommits()
     {
-        if (!OperatingSystem.IsWindows()) return;
         await Init(); Write("a.txt", "Reviewed change\n"); await Execute(Request("stage", "a.txt"));
         var hooks = Path.Combine(_root, ".git", "acceptance-hooks"); Directory.CreateDirectory(hooks);
         await File.WriteAllTextAsync(Path.Combine(hooks, "post-commit"), "#!/bin/sh\nprintf 'ready' > publication-ready.marker\nsleep 1\n");

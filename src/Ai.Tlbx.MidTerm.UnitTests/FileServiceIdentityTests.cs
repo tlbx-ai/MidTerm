@@ -44,6 +44,27 @@ public sealed class FileServiceIdentityTests
                 Assert.NotNull(ignored); Assert.Contains("ignored.tmp", ignored); Assert.DoesNotContain("caller.txt", ignored);
                 using var afterGit = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterGit.User!.Value);
 
+                foreach (var args in new[] {
+                    new[] { "config", "user.name", "Caller Git acceptance" },
+                    new[] { "config", "user.email", "caller@tlbx.invalid" },
+                    new[] { "config", "commit.gpgSign", "false" } })
+                    Assert.Equal(0, (await GitCommandRunner.ExecuteAsync(root, args, default)).ExitCode);
+                var gitOperations = new GitOperationService();
+                Ai.Tlbx.MidTerm.Models.Git.GitOperationRequest GitRequest(string action) => new()
+                { Action = action, OperationId = Guid.NewGuid().ToString("D"), Paths = ["caller.txt"] };
+                Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, GitRequest("stage"), default)).State);
+                Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, GitRequest("unstage"), default)).State);
+                Assert.Equal("caller data", File.ReadAllText(source));
+                Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, GitRequest("stage"), default)).State);
+                var reviewed = await GitCommandRunner.GetStatusAsync(root);
+                var commit = GitRequest("commit"); commit.Message = "Caller identity commit";
+                commit.ExpectedIndexVersion = reviewed.IndexVersion; commit.ExpectedHead = reviewed.HeadHash;
+                var committed = await gitOperations.ExecuteAsync(root, commit, default);
+                Assert.Equal("completed", committed.State); Assert.False(string.IsNullOrEmpty(committed.CommitHash));
+                var committedText = await GitCommandRunner.ExecuteAsync(root, ["show", "HEAD:caller.txt"], default);
+                Assert.Equal(0, committedText.ExitCode); Assert.Equal("caller data", committedText.Stdout);
+                using var afterMutation = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterMutation.User!.Value);
+
                 var create = Request("createFolder"); create.DestinationDirectory = root; create.Name = "destination";
                 Assert.True(Assert.Single((await service.ExecuteAsync(create, Accessible, [root], default)).Items).Success);
                 var duplicate = Assert.Single((await service.ExecuteAsync(Request("duplicate", source), Accessible, [root], default)).Items);

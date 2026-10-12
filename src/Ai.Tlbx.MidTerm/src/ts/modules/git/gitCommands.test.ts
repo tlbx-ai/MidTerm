@@ -8,6 +8,7 @@ describe('gitCommands', () => {
     expect(quoteGitPath('src/"quoted".ts', 'Pwsh')).toBe('\'src/"quoted".ts\'');
     expect(quoteGitPath("src/it's $file`.ts", 'Pwsh')).toBe("'src/it''s $file`.ts'");
     expect(quoteGitPath("src/it's $file`.ts", 'Bash')).toBe("'src/it'\"'\"'s $file`.ts'");
+    expect(quoteGitPath('src/smart‘quote’.ts', 'Pwsh')).toBe("'src/smart‘‘quote’’.ts'");
     expect(quoteGitPath('file.ts', 'Unknown')).toBeNull();
   });
 });
