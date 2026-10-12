@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "Восстановить",
   "fileBrowser.apply": "Применить",
   "fileBrowser.name": "Имя",
+  "fileBrowser.resizeTree": "Изменить ширину дерева файлов",
+  "fileViewer.resizeDock": "Изменить ширину просмотра файла",
   "fileBrowser.folder": "Папка",
   "fileBrowser.file": "Файл",
   "fileBrowser.type": "Тип",

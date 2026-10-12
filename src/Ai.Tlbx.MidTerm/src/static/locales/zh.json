@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "恢复文件",
   "fileBrowser.apply": "应用",
   "fileBrowser.name": "名称",
+  "fileBrowser.resizeTree": "调整文件树宽度",
+  "fileViewer.resizeDock": "调整文件查看器宽度",
   "fileBrowser.folder": "文件夹",
   "fileBrowser.file": "文件",
   "fileBrowser.type": "类型",

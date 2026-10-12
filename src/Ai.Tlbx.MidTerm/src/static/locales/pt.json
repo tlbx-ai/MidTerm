@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "Restaurar",
   "fileBrowser.apply": "Aplicar",
   "fileBrowser.name": "Nome",
+  "fileBrowser.resizeTree": "Redimensionar árvore de arquivos",
+  "fileViewer.resizeDock": "Redimensionar visualizador",
   "fileBrowser.folder": "Pasta",
   "fileBrowser.file": "Arquivo",
   "fileBrowser.type": "Tipo",

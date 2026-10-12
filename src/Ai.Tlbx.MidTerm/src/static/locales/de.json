@@ -1214,6 +1214,8 @@
   "fileBrowser.restore": "Wiederherstellen",
   "fileBrowser.apply": "Anwenden",
   "fileBrowser.name": "Name",
+  "fileBrowser.resizeTree": "Dateibaumgröße ändern",
+  "fileViewer.resizeDock": "Dateiviewergröße ändern",
   "fileBrowser.folder": "Ordner",
   "fileBrowser.file": "Datei",
   "fileBrowser.type": "Typ",

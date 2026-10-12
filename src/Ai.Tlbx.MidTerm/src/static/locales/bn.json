@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "ফিরিয়ে আনুন",
   "fileBrowser.apply": "প্রয়োগ করুন",
   "fileBrowser.name": "নাম",
+  "fileBrowser.resizeTree": "ফাইল ট্রির প্রস্থ বদলান",
+  "fileViewer.resizeDock": "ফাইল ভিউয়ারের প্রস্থ বদলান",
   "fileBrowser.folder": "ফোল্ডার",
   "fileBrowser.file": "ফাইল",
   "fileBrowser.type": "ধরন",

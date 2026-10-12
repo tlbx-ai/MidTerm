@@ -605,7 +605,7 @@ Screenshots von Details, Symbolen und Directory-Dock wurden geprüft.
 Evidenz: `.dev/file-git-production/task-22-responsive/summary.json`,
 `task-22-selection-regression/summary.json` und `task-22-verify.*.log`.
 
-### 23. [~] Files-Trennflächen und Viewer-Dock anpassbar machen
+### 23. [x] Files-Trennflächen und Viewer-Dock anpassbar machen
 
 **Befund (mittel, Code/reproduziert):** Baum fix 280 px, File-Dock fix 400 px ohne
 Resize; Git hat dagegen einen Griff. Lange Namen und breite Inhalte leiden.
@@ -616,7 +616,23 @@ Tastaturzugang und sauberem schmalem Layout.
 **Abnahme:** Resize, Reload, kleine Fenster, kombinierte Panels und Terminal-
 Geometrie prüfen; keine Inhalte über Rand, keine unerwartete Session-Übernahme.
 
-### 24. [ ] Einheitliche Vorschau-/Editmodi anbieten
+**Nachweis 12.10.2026:** Files-Baum und Viewer-Dock haben begrenzte, gespeicherte
+Breiten und fokussierbare ARIA-Separatoren. Pointer-Capture, Pfeile (Shift für
+größeren Schritt), Home/End, Escape-Abbruch und Doppelklick-Reset funktionieren.
+Die aktuelle Panelbreite begrenzt die Darstellung, ohne die gespeicherte
+Präferenz beim temporären Verkleinern zu überschreiben. Schmale Files bleiben
+bei Baum/Detail-Navigation; der Viewer verwendet bei zu wenig Platz oder auf
+Mobilgeräten eine Vollfläche. Ein bestehender CSS-Fehler reservierte dabei
+weiter 400 px Terminalplatz; Overlay-Docks reservieren jetzt keinen Seitenraum.
+Sieben reale Chromium-Szenarien prüfen Reload, 390 px, gemeinsame Browser-/File-
+Docks, Begrenzung und Abbruch. Ein zweiter Browser verändert weder die
+kanonischen Terminalspalten/-zeilen des ersten noch fordert er Größenownership
+an. Kombinierte Panels und Overlay wurden visuell geprüft. 689 Frontendtests,
+Kitty, Typecheck, ESLint und Stylelint bestehen.
+Evidenz: `.dev/file-git-production/task-23-final/summary.json`,
+`task-23-verify.*.log`, `combined-docks.png`, `dock-overlay-390.png`.
+
+### 24. [~] Einheitliche Vorschau-/Editmodi anbieten
 
 **Befund (mittel, reproduziert/Code):** Markdown in Files sofort Editor, andere
 Texte Readonly mit Edit, Modal stets Textarea; Markdown bleibt Quelltext.

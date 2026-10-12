@@ -11362,7 +11362,7 @@ body.shared-session-mode .session-tab-bar {
   top: var(--bar-height);
   right: 0;
   bottom: 0;
-  width: 400px;
+  width: var(--file-pane-width, 400px);
   background: var(--workspace-pane-background);
   border-left: 1px solid var(--border-color);
   display: flex;
@@ -16122,7 +16122,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .file-browser-tree {
-  width: 280px;
+  width: var(--file-pane-width, 280px);
   flex-shrink: 0;
   overflow: auto;
   border-right: 1px solid var(--border-color);
@@ -21110,4 +21110,30 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     min-width: 0;
   }
   .file-listing-details :is(.tree-size, .file-size) { font-size: var(--fs-xs); }
+}
+
+.file-pane-resize-grip {
+  flex: 0 0 8px;
+  position: relative;
+  z-index: 2;
+  width: 8px;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+.file-pane-resize-grip[hidden] { display: none; }
+.file-pane-resize-grip:hover, .file-pane-resize-grip.active { background: var(--accent-blue); }
+.file-pane-resize-grip:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.file-dock-resize-grip { position: absolute; top: 0; bottom: 0; left: -4px; }
+.file-viewer-dock[data-file-overlay="true"] {
+  position: fixed;
+  inset: 0 !important;
+  width: 100% !important;
+  z-index: 200;
+}
+.terminal-page.file-viewer-docked:has(.file-viewer-dock[data-file-overlay="true"]) .session-tab-panels {
+  margin-right: 0;
+}
+@container file-browser (max-width: 768px) {
+  .file-pane-resize-grip { display: none; }
 }

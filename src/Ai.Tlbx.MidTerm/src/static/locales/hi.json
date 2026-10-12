@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "बहाल करें",
   "fileBrowser.apply": "लागू करें",
   "fileBrowser.name": "नाम",
+  "fileBrowser.resizeTree": "फ़ाइल ट्री की चौड़ाई बदलें",
+  "fileViewer.resizeDock": "फ़ाइल व्यूअर की चौड़ाई बदलें",
   "fileBrowser.folder": "फ़ोल्डर",
   "fileBrowser.file": "फ़ाइल",
   "fileBrowser.type": "प्रकार",

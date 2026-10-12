@@ -24,6 +24,7 @@ import { beginFileOpen, isFileOpenCurrent } from '../fileViewer/loadState';
 import { t } from '../i18n';
 import { BrowserNavigation } from './navigation';
 import type { FileTreeEntry } from './treeApi';
+import { resizeFilePane } from '../fileViewer/paneResize';
 
 const log = createLogger('fileBrowser');
 
@@ -31,6 +32,7 @@ const initializedSessions = new Set<string>();
 const sessionCwds = new Map<string, string>();
 const previewContainers = new Map<string, HTMLElement>();
 const navigators = new Map<string, BrowserNavigation>();
+const paneResizers = new Map<string, ReturnType<typeof resizeFilePane>>();
 
 export function initFileBrowser(): void {
   onTabActivated('files', (sessionId, panel) => {
@@ -72,6 +74,7 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
     previewContainers.set(sessionId, previewContainer);
     const browser = panel.querySelector<HTMLElement>('.file-browser');
     const detail = panel.querySelector<HTMLElement>('.file-browser-detail');
+    setupTreeResize(panel, treeContainer, sessionId);
     let treeScroll = 0;
     let detailScroll: Array<{ element: HTMLElement; top: number; left: number }> = [];
     if (browser && detail) {
@@ -182,7 +185,36 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
   }
 }
 
+function setupTreeResize(panel: HTMLElement, tree: HTMLElement, sessionId: string): void {
+  const layout = panel.querySelector<HTMLElement>('.file-browser-layout');
+  if (!layout) return;
+  const grip = document.createElement('div');
+  grip.className = 'file-pane-resize-grip';
+  grip.setAttribute('aria-label', t('fileBrowser.resizeTree'));
+  tree.id = `file-tree-${sessionId}`;
+  grip.setAttribute('aria-controls', tree.id);
+  tree.after(grip);
+  paneResizers.set(
+    sessionId,
+    resizeFilePane({
+      panel: tree,
+      grip,
+      key: `tlbx-file-tree-width:${sessionId}`,
+      defaultWidth: 280,
+      direction: 1,
+      bounds: () => ({
+        min: 220,
+        max: Math.max(220, Math.min(900, layout.clientWidth - 260)),
+        enabled: layout.clientWidth > 768,
+      }),
+      observe: [layout, tree],
+    }),
+  );
+}
+
 export function destroyFileBrowser(sessionId: string): void {
+  paneResizers.get(sessionId)?.dispose();
+  paneResizers.delete(sessionId);
   navigators.get(sessionId)?.dispose();
   navigators.delete(sessionId);
   const preview = previewContainers.get(sessionId);

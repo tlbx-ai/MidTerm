@@ -84,7 +84,8 @@ export function updateAllDockMargins(): void {
   let total = 0;
   for (const id of ['git-dock', 'commands-dock', 'file-viewer-dock', 'web-preview-dock']) {
     const el = document.getElementById(id);
-    if (el && !el.classList.contains('hidden')) total += el.offsetWidth;
+    if (el && !el.classList.contains('hidden') && el.dataset.fileOverlay !== 'true')
+      total += el.offsetWidth;
   }
   document.querySelectorAll<HTMLElement>('.session-tab-panels').forEach((p) => {
     p.style.marginRight = total > 0 ? `${total}px` : '';

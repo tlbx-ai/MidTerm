@@ -1318,6 +1318,8 @@
   "fileBrowser.restore": "Restore",
   "fileBrowser.apply": "Apply",
   "fileBrowser.name": "Name",
+  "fileBrowser.resizeTree": "Resize file tree",
+  "fileViewer.resizeDock": "Resize file viewer",
   "fileBrowser.folder": "Folder",
   "fileBrowser.file": "File",
   "fileBrowser.type": "Type",

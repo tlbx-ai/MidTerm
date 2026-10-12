@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "復元する",
   "fileBrowser.apply": "適用",
   "fileBrowser.name": "名前",
+  "fileBrowser.resizeTree": "ファイルツリーの幅を変更",
+  "fileViewer.resizeDock": "ファイルビューアーの幅を変更",
   "fileBrowser.folder": "フォルダー",
   "fileBrowser.file": "ファイル",
   "fileBrowser.type": "種類",

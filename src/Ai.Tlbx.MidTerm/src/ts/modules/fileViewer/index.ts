@@ -51,6 +51,8 @@ import { FileNavigationHistory, type FileNavigationSnapshot } from './navigation
 import type { Schemas } from '../../api/types';
 import { createFileVisibilityControls, getFileVisibility } from './visibility';
 import { DirectoryListing } from './directoryListing';
+import { resizeFilePane } from './paneResize';
+import { getWebPreviewDockWidth } from '../web/webDock';
 
 const log = createLogger('fileViewer');
 
@@ -122,6 +124,7 @@ export function initFileViewer(): void {
   // Dock panel buttons
   const dockPanel = document.getElementById('file-viewer-dock');
   if (dockPanel) {
+    setupFileDockResize(dockPanel);
     dockPanel.querySelector('#dock-close')?.addEventListener('click', () => {
       void requestCloseFileViewerDock();
     });
@@ -162,6 +165,37 @@ export function initFileViewer(): void {
   });
 
   log.info(() => 'File viewer initialized');
+}
+
+function setupFileDockResize(panel: HTMLElement): void {
+  const parent = panel.parentElement;
+  if (!parent) return;
+  const grip = document.createElement('div');
+  grip.className = 'file-pane-resize-grip file-dock-resize-grip';
+  grip.setAttribute('aria-label', t('fileViewer.resizeDock'));
+  grip.setAttribute('aria-controls', panel.id);
+  panel.prepend(grip);
+  const web = document.getElementById('web-preview-dock');
+  resizeFilePane({
+    panel,
+    grip,
+    key: 'tlbx-file-dock-width',
+    defaultWidth: 400,
+    direction: -1,
+    bounds: () => {
+      const available = parent.clientWidth - getWebPreviewDockWidth();
+      const overlay = window.innerWidth <= 768 || available < 500;
+      panel.dataset.fileOverlay = String(overlay);
+      const max = Math.max(250, Math.min(1000, available - 260));
+      return { min: 250, max, enabled: !overlay };
+    },
+    observe: [parent, panel, ...(web ? [web] : [])],
+    changed: () => {
+      adjustInnerDockPositions();
+      updateAllDockMargins();
+      handleDockLayoutChange();
+    },
+  });
 }
 
 function initViewerNavigation(viewer: HTMLElement): void {

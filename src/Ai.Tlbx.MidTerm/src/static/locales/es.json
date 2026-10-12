@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "Restaurar",
   "fileBrowser.apply": "Aplicar",
   "fileBrowser.name": "Nombre",
+  "fileBrowser.resizeTree": "Cambiar tamaño del árbol de archivos",
+  "fileViewer.resizeDock": "Cambiar tamaño del visor",
   "fileBrowser.folder": "Carpeta",
   "fileBrowser.file": "Archivo",
   "fileBrowser.type": "Tipo",
