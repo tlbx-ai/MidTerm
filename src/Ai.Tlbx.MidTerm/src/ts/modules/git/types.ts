@@ -96,6 +96,12 @@ export interface GitDiffFileView {
   isBinary: boolean;
   isTruncated: boolean;
   hunks: GitDiffHunk[];
+  isNewFile?: boolean;
+  hasLineStats?: boolean;
+  sizeBytes?: number | null;
+  mimeType?: string | null;
+  encoding?: string | null;
+  contentVersion?: string | null;
 }
 
 export interface GitDiffViewResponse {

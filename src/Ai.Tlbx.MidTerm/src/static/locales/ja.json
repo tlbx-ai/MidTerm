@@ -1,4 +1,10 @@
 {
+  "git.newFile": "新規",
+  "git.newFileHint": "空の基準と比較した新しいファイル。",
+  "git.newFileBinary": "新しいバイナリファイル。",
+  "git.newFileEmpty": "新しい空のファイル。",
+  "git.openFilePreview": "ファイルビューアーを開く",
+  "git.newFileTruncated": "制限されたプレビューです。残りの内容はファイルビューアーで確認してください。",
   "git.insertShellOnly": "セッションがシェルにある場合のみ挿入できます。アプリやエージェントの実行中はコピーを使用してください。",
   "git.commandShellUnsupported": "このシェルではターミナルコマンドを利用できません。上のリポジトリ操作を使用してください。",
   "terminalLinks.title": "ターミナルのリンクを開きますか？",

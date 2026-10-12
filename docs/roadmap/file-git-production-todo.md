@@ -5,6 +5,9 @@ einschließlich echter Backendfunktionen, konsistenter Bedienung und
 Ende-zu-Ende-Abnahme. Die Nummern entsprechen unverändert der Liste im Chat.
 Ausgangsstand: installiert `10.17.35-dev`, Commit `786357d2`.
 
+Ergänzung vom 13.10.2026: abschließender strenger UI-/UX-Designpass für Files
+und Git als Aufgabe 43. Bestehende Nummern und Abnahmen bleiben erhalten.
+
 ## Arbeitsweise und Abschluss
 
 - `[ ]` offen; `[~]` in Arbeit; `[x]` implementiert und mit den genannten
@@ -17,11 +20,13 @@ Ausgangsstand: installiert `10.17.35-dev`, Commit `786357d2`.
   -Bump minor` veröffentlichen. Versionsnummer erst beim Release bestimmen.
 - Git-Reihenfolge: 1, 2, 7, 8, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
   41, 42. Gemeinsame Aufgaben 3–6, 9–10 anschließend ausdrücklich in Git prüfen.
-- Danach Git vollständig integriert prüfen und einen zweiten Dev-Minor-Release
+- Vor der abschließenden integrierten Abnahme Aufgabe 43 für Files und Git
+  umsetzen; die laufende Funktionsarbeit wird dafür nicht unterbrochen.
+- Danach Git und die visuell überarbeiteten Files vollständig integriert prüfen und einen zweiten Dev-Minor-Release
   veröffentlichen. PR, Tag, CI, Archive/SBOMs und Release-Ausgang nachweisen.
 - Der vollständige Auftrag umfasst mindestens sieben Stunden sorgfältige Arbeit
   ab Auftragsstart. Zeit ersetzt keine Funktionsnachweise. Vor Abschluss alle
-  42 Aufgaben, beide Releases, Cleanup und tatsächliche Laufzeit erneut prüfen.
+  43 Aufgaben, beide Releases, Cleanup und tatsächliche Laufzeit erneut prüfen.
 - Bestehender Supervisor bleibt während der Entwicklung verfügbar. Isolierten
   Source-Dev-Loop mit getrennten stdout/stderr-Logs verwenden; Testdaten und
   Browserprofile isolieren. Keine Aktionen auf produktiven Benutzerdateien testen.
@@ -1120,7 +1125,7 @@ Evidenz: `git-task-33-browser-complete`, `git-task-33-final-{windows,linux,macos
 `.dev/file-git-production`. Frühere fehlgeschlagene CIläufe bleiben als Diagnose
 erhalten; keine Prüfungen wurden abgeschwächt.
 
-### 34. [~] Inhalt ungetrackter Dateien in Git prüfbar machen
+### 34. [x] Inhalt ungetrackter Dateien in Git prüfbar machen
 
 **Befund (hoch, reproduziert):** WhatsAppPermissions.md zeigt No patch text available
 und +0/-0. Show diff schlägt git diff vor, das untracked-Inhalt nicht zeigt.
@@ -1130,6 +1135,15 @@ passende Vorschau/Metadaten; Stage nach tatsächlicher Inhaltsprüfung.
 
 **Abnahme:** Text/Binär/leer/groß/untracked-Verzeichnis, keine Nullstatistik als
 scheinbar inhaltslose Datei; Review→Stage→Commit Ende zu Ende.
+
+**Verifiziert 13.10.2026:** Sechs reale Browserabläufe bestehen für Unicode-Text,
+leere Datei, decodierte PNG-Vorschau, begrenzte große Textdatei und Dateien in
+untracked-Verzeichnissen; anschließend Stage/Commit mit bytegenauem HEAD-/Disk-
+Vergleich aller Dateien. Keine Terminaleingabe oder Browserfehler. Gerenderte
+Text-/Binärvorschau geprüft; Gestaltung bleibt ausdrücklich Aufgabe 43.
+26 native Tests bestanden, zwei Unix-Fälle unter Windows ausdrücklich übersprungen.
+Frontendprüfung: 709 Tests plus Typecheck/Lints bestanden. Evidenz:
+`git-task-34-third/summary.json`, Screenshots und `git-task-34-native-final`.
 
 ### 35. [ ] Untracked und Added in Git unterscheiden
 
@@ -1229,6 +1243,36 @@ Titel priorisieren, redundante Pfadboxen entfernen, Hashdetails bei Bedarf errei
 **Abnahme:** Englisch/Deutsch/lange Übersetzungen, schmale Panels, vollständiger
 Betreff/Pfad/Hash erreichbar; keine Platzhalter oder technischen Backendlabels.
 
+### 43. [ ] Strengen UI-/UX-Designpass für Files und Git abschließen
+
+**Verbindlicher Zusatzauftrag 13.10.2026:** Files und Git müssen am Ende als
+bewusst gestaltete, konsistente tlbx-Oberflächen wirken. Funktionsprüfungen
+allein schließen diese Aufgabe nicht ab. Johannes beanstandet übermäßige
+Buttonflächen, schwer erkennbare Buttons, fehlende Hierarchie und inkongruenten
+Stil. Datei-Checkboxen werden aus diesem Poweruser-Werkzeug entfernt.
+
+**Aufgabe:** Bestehende tlbx-Designmuster anhand gerenderter Referenzflächen
+übernehmen; Navigation, Inhalt und Aktionen klar priorisieren. Seltene Aktionen
+kontextuell unterbringen, häufige Aktionen kompakt und eindeutig gestalten;
+keine dauerhaften großflächigen Bedienfelder ohne belegten Nutzwert. Einheitliche
+Button-, Icon-, Fokus-, Hover-, Auswahl-, Abstands- und Typografiesprache herstellen.
+Dateiauswahl ohne Checkboxen über OS-konforme Klick-/Ctrl-/Cmd-/Shift- und
+Tastaturinteraktionen anbieten. Dieselbe harte Prüfung auf Git anwenden,
+einschließlich Stage/Review/Commit, Verlauf, Diff und schmalen Panels.
+
+**Abnahme:** Reale visuelle Prüfung und Interaktion in Files und Git bei Desktop,
+schmalem Dock und Touch-Emulation; vorhandene tlbx-Flächen als konkreter Vergleich.
+Erkennbare Aktionen, sinnvolle Flächennutzung, geringe visuelle Unruhe, vollständige
+Poweruser-/Tastaturbedienung und erhaltene Mehrfach-/Bulkaktionen nachweisen.
+Screenshots und Arbeitsabläufe prüfen; ein grüner Funktionstest genügt nicht.
+Erst danach integrierte Schlussabnahme und zweiter Minor-Dev-Release.
+
+**Prozessreparatur:** Nach vollständiger Funktionsabnahme ist die gerenderte
+Gestaltung ein eigenes verbindliches Abschlusskriterium. Nicht allein aus
+funktionierenden Buttons, DOMgeometrie oder bestandenen Tests Designqualität
+ableiten. Bestehende Kriterien für Auswahl bleiben wirksam; checkboxspezifische
+alte Abnahmen werden durch die ausdrücklich angeordnete Poweruserauswahl ersetzt.
+
 ## Release- und Abschlussnachweise
 
 - Files-Minor: `v10.18.0-dev` veröffentlicht, Gesamtabnahme bestanden. 17 serialisierte
@@ -1251,7 +1295,7 @@ Betreff/Pfad/Hash erreichbar; keine Platzhalter oder technischen Backendlabels.
   Installation des Supervisors. `finish-task.ps1` hat den exklusiven sauberen
   Files-Branch beendet; Git arbeitet nun in `feat/git-workspace-production`.
 - Git-Minor: offen. PR / Version / Commit / CI / Assets / E2E-Nachweise ergänzen.
-- Finale 42-Punkte-Abnahme: offen; Code, gerenderte UI und echte Dateisystem-/Git-
+- Finale 43-Punkte-Abnahme: offen; Code, gerenderte UI und echte Dateisystem-/Git-
   Ergebnisse je Aufgabe prüfen. Fehlende Nachweise bleiben offen.
 - Cleanup: offene Devprozesse, Browser, Testsessions und Branches prüfen;
   sichere unmittelbare Bereinigungen erledigen, echte Folgepunkte gezielt erfassen.

@@ -1,4 +1,10 @@
 {
+  "git.newFile": "Novo",
+  "git.newFileHint": "Arquivo novo comparado com uma base vazia.",
+  "git.newFileBinary": "Arquivo binário novo.",
+  "git.newFileEmpty": "Arquivo vazio novo.",
+  "git.openFilePreview": "Abrir visualizador",
+  "git.newFileTruncated": "Prévia limitada. Abra o visualizador para conferir o restante do conteúdo.",
   "git.insertShellOnly": "Inserir só está disponível enquanto a sessão está no shell. Use Copiar enquanto um aplicativo ou agente estiver em execução.",
   "git.commandShellUnsupported": "Os comandos do terminal não estão disponíveis para este shell. Use as ações do repositório acima.",
   "terminalLinks.title": "Abrir link do terminal?",

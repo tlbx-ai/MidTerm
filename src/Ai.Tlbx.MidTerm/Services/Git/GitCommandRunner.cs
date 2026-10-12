@@ -226,7 +226,7 @@ internal static class GitCommandRunner
     internal static async Task<GitStatusResponse> GetStatusAsync(string repoRoot)
     {
         var response = new GitStatusResponse { RepoRoot = repoRoot };
-        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, "status", "--porcelain=v2", "-z", "-b", "--ahead-behind");
+        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, "status", "--porcelain=v2", "-z", "-b", "--ahead-behind", "--untracked-files=all");
 
         if (exitCode != 0)
         {

@@ -49,6 +49,7 @@ public static class GitEndpoints
         SessionGitMetadataService gitMetadata)
     {
         GitOperationEndpoints.Map(app, gitWatcher, sessionManager, gitMetadata);
+        var settings = app.Services.GetRequiredService<SettingsService>();
         app.MapGet("/api/git/debug", async (string? sessionId) =>
         {
             var session = string.IsNullOrEmpty(sessionId) ? null : sessionManager.GetSession(sessionId);
@@ -225,7 +226,7 @@ public static class GitEndpoints
             return Results.Text(diff, "text/plain");
         });
 
-        app.MapGet("/api/git/diff-view", async (string? sessionId, string? repoRoot, string? path, string? scope, CancellationToken ct) =>
+        app.MapGet("/api/git/diff-view", async Task<IResult> (string? sessionId, string? repoRoot, string? path, string? scope, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(path))
             {
@@ -239,13 +240,19 @@ public static class GitEndpoints
             var (resolvedRepoRoot, error) = await ResolveRepoAsync(sessionId, repoRoot, gitWatcher, gitMetadata, ct);
             if (error is not null) return error;
 
-            var (patch, isTruncated) = await GitCommandRunner.GetDiffPatchAsync(
-                resolvedRepoRoot!,
-                path,
-                normalizedScope == "staged");
-
-            var response = GitPatchParser.ParseDiff(normalizedScope, patch, isTruncated);
-            return Results.Json(response, GitJsonContext.Default.GitDiffViewResponse);
+            return await RunForGitCallerAsync(sessionId, sessionManager, settings, async () =>
+            {
+                var status = await GitCommandRunner.GetStatusAsync(resolvedRepoRoot!).ConfigureAwait(false);
+                GitDiffViewResponse response;
+                if (normalizedScope == "worktree" && status.Untracked.Any(file => file.Path == path))
+                    response = await GitNewFileReview.ReadAsync(resolvedRepoRoot!, path, ct).ConfigureAwait(false);
+                else
+                {
+                    var (patch, isTruncated) = await GitCommandRunner.GetDiffPatchAsync(resolvedRepoRoot!, path, normalizedScope == "staged").ConfigureAwait(false);
+                    response = GitPatchParser.ParseDiff(normalizedScope, patch, isTruncated);
+                }
+                return Results.Json(response, GitJsonContext.Default.GitDiffViewResponse);
+            }).ConfigureAwait(false);
         });
 
         app.MapGet("/api/git/log", async (string? sessionId, string? repoRoot, int? count, CancellationToken ct) =>
@@ -294,6 +301,21 @@ public static class GitEndpoints
         }
 
         return Results.Problem(result.Error, statusCode: result.StatusCode);
+    }
+
+    private static async Task<IResult> RunForGitCallerAsync(string sessionId, TtyHostSessionManager sessions,
+        SettingsService settings, Func<Task<IResult>> action)
+    {
+        try
+        {
+            if (!OperatingSystem.IsWindows() || !settings.IsRunningAsService) return await action().ConfigureAwait(false);
+            var host = sessions.GetVerifiedHostIdentity(sessionId);
+            if (host is null) return Results.Text("The session identity is unavailable.", statusCode: 409);
+            return await SessionCallerIdentity.RunForSessionAsync(host.Value.Pid, host.Value.Started, action).ConfigureAwait(false);
+        }
+        catch (UnauthorizedAccessException error) { return Results.Text(error.Message, statusCode: 403); }
+        catch (Exception error) when (error is IOException or SessionCallerIdentityException)
+        { return Results.Text(error.Message, statusCode: 409); }
     }
 
     private static async Task<(string? RepoRoot, IResult? Error)> ResolveRepoAsync(

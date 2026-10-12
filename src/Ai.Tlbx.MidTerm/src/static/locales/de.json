@@ -1,4 +1,10 @@
 {
+  "git.newFile": "Neu",
+  "git.newFileHint": "Neue Datei im Vergleich zu einer leeren Basis.",
+  "git.newFileBinary": "Neue Binärdatei.",
+  "git.newFileEmpty": "Neue leere Datei.",
+  "git.openFilePreview": "Dateivorschau öffnen",
+  "git.newFileTruncated": "Begrenzte Vorschau. Öffne die Dateivorschau, um den restlichen Inhalt zu prüfen.",
   "git.insertShellOnly": "Einfügen ist nur verfügbar, wenn die Session in ihrer Shell ist. Verwende Kopieren, während eine Anwendung oder ein Agent läuft.",
   "git.commandShellUnsupported": "Für diese Shell stehen keine Terminalbefehle bereit. Verwende die Repository-Aktionen oben.",
   "terminalLinks.title": "Terminal-Link öffnen?",

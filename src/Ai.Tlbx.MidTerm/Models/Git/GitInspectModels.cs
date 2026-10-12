@@ -34,6 +34,12 @@ public sealed class GitDiffFileView
     public bool IsBinary { get; set; }
     public bool IsTruncated { get; set; }
     public GitDiffHunk[] Hunks { get; set; } = [];
+    public bool IsNewFile { get; set; }
+    public bool HasLineStats { get; set; } = true;
+    public long? SizeBytes { get; set; }
+    public string? MimeType { get; set; }
+    public string? Encoding { get; set; }
+    public string? ContentVersion { get; set; }
 }
 
 public sealed class GitDiffHunk

@@ -1,4 +1,10 @@
 {
+  "git.newFile": "新建",
+  "git.newFileHint": "与空白基准比较的新文件。",
+  "git.newFileBinary": "新的二进制文件。",
+  "git.newFileEmpty": "新的空文件。",
+  "git.openFilePreview": "打开文件查看器",
+  "git.newFileTruncated": "预览内容有限。请打开文件查看器检查剩余内容。",
   "git.insertShellOnly": "仅当会话停留在 Shell 时可插入命令。应用或代理运行时请使用复制。",
   "git.commandShellUnsupported": "此 Shell 不提供终端命令。请使用上方的仓库操作。",
   "terminalLinks.title": "打开终端链接？",

@@ -389,7 +389,7 @@ function renderTreeNode(
       const fullPath = escapeHtml(repositoryFilePath(repoRoot, child.file.path));
       html += `<div class="git-tree-file-row" data-path="${escapeHtml(child.file.path)}" data-scope="${child.scope}"><button class="git-tree-file${isSelected ? ' git-tree-file-selected' : ''}" title="${fullPath}" aria-label="${fullPath}"${presentation ? ` aria-describedby="${escapeHtml(statusId)}"` : ''} data-action="open-file" data-path="${escapeHtml(child.file.path)}" data-status="${escapeHtml(child.file.status)}" data-scope="${child.scope}"${child.file.originalPath ? ` data-original-path="${escapeHtml(child.file.originalPath)}"` : ''} style="padding-left:${12 + indent}px" type="button">
         <span class="git-tree-name">${escapeHtml(child.name)}</span>
-        <span class="git-file-loc"><span class="git-loc-add">+${child.file.additions}</span> <span class="git-loc-del">-${child.file.deletions}</span></span>
+        ${renderEntryStatistics(child.file)}
         ${presentation ? `<span class="git-file-indicator" id="${escapeHtml(statusId)}" data-git-status="${presentation.status}" role="img" title="${escapeHtml(presentation.label)}" aria-label="${escapeHtml(presentation.label)}">${presentation.letter}</span>` : ''}
       </button>${child.file.status === 'conflicted' ? '' : gitFileAction(child.file.path, child.scope === 'staged', busy)}</div>`;
     } else {
@@ -798,6 +798,21 @@ function renderCommitInspector(
   return html;
 }
 
+function renderEntryStatistics(file: GitFileEntry): string {
+  if (file.status === 'untracked') return `<span class="git-file-loc">${t('git.newFile')}</span>`;
+  return `<span class="git-file-loc"><span class="git-loc-add">+${file.additions}</span> <span class="git-loc-del">-${file.deletions}</span></span>`;
+}
+
+function renderNewFileMetadata(file: GitDiffFileView): string {
+  if (!file.isNewFile) return '';
+  const size = file.sizeBytes == null ? '' : `${new Intl.NumberFormat().format(file.sizeBytes)} B`;
+  return `<div class="git-new-file-metadata">
+    <p>${t('git.newFileHint')}</p>
+    <p>${escapeHtml([size, file.mimeType, file.encoding].filter(Boolean).join(' · '))}</p>
+    ${file.mimeType === 'inode/symlink' ? '' : `<button class="git-action-button" data-action="open-file-viewer" data-path="${escapeHtml(file.path)}" type="button">${t('git.openFilePreview')}</button>`}
+  </div>`;
+}
+
 function renderPatchFile(file: GitDiffFileView): string {
   const title = escapeHtml(file.path);
   const subtitle = file.originalPath
@@ -805,9 +820,9 @@ function renderPatchFile(file: GitDiffFileView): string {
     : '';
 
   const body = file.isBinary
-    ? `<div class="git-patch-empty">Binary file changed.</div>`
+    ? `<div class="git-patch-empty">${file.isNewFile ? t('git.newFileBinary') : 'Binary file changed.'}</div>`
     : file.hunks.length === 0
-      ? `<div class="git-patch-empty">No patch text available.</div>`
+      ? `<div class="git-patch-empty">${file.isNewFile ? t('git.newFileEmpty') : 'No patch text available.'}</div>`
       : file.hunks
           .map((hunk) => {
             const lines = hunk.lines.map(renderDiffLine).join('\n');
@@ -819,7 +834,7 @@ function renderPatchFile(file: GitDiffFileView): string {
           .join('');
 
   const truncatedHtml = file.isTruncated
-    ? `<div class="git-panel-hint">Patch output was truncated.</div>`
+    ? `<div class="git-panel-hint">${file.isNewFile ? t('git.newFileTruncated') : 'Patch output was truncated.'}</div>`
     : '';
 
   return `<section class="git-inspector-patch">
@@ -828,8 +843,9 @@ function renderPatchFile(file: GitDiffFileView): string {
         <div class="git-inspector-file-title">${title}</div>
         ${subtitle}
       </div>
-      <div class="git-file-loc"><span class="git-loc-add">+${file.additions}</span> <span class="git-loc-del">-${file.deletions}</span></div>
+      ${file.hasLineStats === false || file.isBinary ? '' : `<div class="git-file-loc"><span class="git-loc-add">+${file.additions}</span> <span class="git-loc-del">-${file.deletions}</span></div>`}
     </div>
+    ${renderNewFileMetadata(file)}
     ${body}
     ${truncatedHtml}
   </section>`;
@@ -975,6 +991,9 @@ function handlePanelAction(state: GitPanelState, element: HTMLElement): void {
       showGitPathDetails(state, data);
       break;
     }
+    case 'open-file-viewer':
+      void openReviewFileInViewer(state, data.path);
+      break;
     case 'load-more-history':
       void loadMoreHistory(state);
       break;
@@ -1074,6 +1093,13 @@ async function performMutation(state: GitPanelState, request: GitOperationReques
   renderPanel(state);
 }
 
+async function openReviewFileInViewer(state: GitPanelState, path?: string): Promise<void> {
+  if (!path || !state.status) return;
+  const { openFile } = await import('../fileViewer');
+  if (activePanels.get(state.container) !== state) return;
+  await openFile(repositoryFilePath(state.status.repoRoot, path));
+}
+
 function openFileFromButton(state: GitPanelState, data: DOMStringMap): void {
   if (!data.path || !data.scope || !data.status) return;
   void openFileSelection(state, {
@@ -1146,12 +1172,6 @@ async function openFileSelection(
   state.selection = createLoadingFileSelection(selection, existing?.diff ?? null);
   renderPanel(state);
 
-  if (selection.status === 'untracked') {
-    state.selection = createUntrackedFileSelection(selection);
-    renderPanel(state);
-    return;
-  }
-
   const diff = await fetchDiffView(
     state.sessionId,
     state.repoRoot,
@@ -1196,22 +1216,6 @@ function createLoadingFileSelection(
     diff,
     loading: true,
     error: null,
-  };
-}
-
-function createUntrackedFileSelection(
-  selection: Pick<GitFileSelection, 'path' | 'scope' | 'status' | 'originalPath'>,
-): GitFileSelection {
-  const fileSelection = createLoadingFileSelection(selection, null);
-  return {
-    ...fileSelection,
-    diff: {
-      scope: selection.scope,
-      title: 'Working tree diff',
-      isTruncated: false,
-      files: [createFallbackDiffFile(fileSelection)],
-    },
-    loading: false,
   };
 }
 

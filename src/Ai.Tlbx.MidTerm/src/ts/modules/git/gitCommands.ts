@@ -37,7 +37,13 @@ export function buildFileCommandSuggestions(
     return suggestions;
   }
 
-  suggestions.push({ label: 'Show diff', command: `${git} diff -- ${quotedPath}` });
+  suggestions.push({
+    label: 'Show diff',
+    command:
+      file.status === 'untracked'
+        ? `${git} diff --no-index -- /dev/null ${quotedPath}`
+        : `${git} diff -- ${quotedPath}`,
+  });
 
   if (file.status === 'untracked') {
     suggestions.push({ label: 'Stage file', command: `${git} add -- ${quotedPath}` });
