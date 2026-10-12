@@ -27,7 +27,6 @@ import {
   formatSize,
   formatViewerHeaderSubtitle,
   formatBinaryDump,
-  createLineNumberedEditor,
   createLineNumberedViewer,
 } from './rendering';
 import {
@@ -53,6 +52,7 @@ import { createFileVisibilityControls, getFileVisibility } from './visibility';
 import { DirectoryListing } from './directoryListing';
 import { resizeFilePane } from './paneResize';
 import { getWebPreviewDockWidth } from '../web/webDock';
+import { createTextView, getDocumentViewMode } from './textView';
 
 const log = createLogger('fileViewer');
 
@@ -857,6 +857,7 @@ function renderTextDocument(
   snapshot: FileDocument,
   previousOffsets: number[] = [],
 ): void {
+  const previousMode = getDocumentViewMode(load.container);
   resetEditState();
   const container = load.container;
   let version = snapshot.version;
@@ -893,18 +894,18 @@ function renderTextDocument(
     `${snapshot.encoding} | ${snapshot.lineEnding.toUpperCase()} | ${formatSize(snapshot.size)}`,
   );
   const stack = createCodeStack();
-  const editor = createLineNumberedEditor(snapshot.content);
-  const textarea = editor.textarea;
-  textarea.readOnly = snapshot.readOnly;
+  const view = createTextView({
+    path: load.path,
+    edit,
+    readOnly: snapshot.readOnly,
+    mode: previousMode,
+    save: saveFile,
+  });
   edit.subscribe(() => {
     if (currentEdit !== edit) return;
-    if (textarea.value !== edit.content) editor.setText(edit.content);
     currentContent = edit.content;
     isDirty = edit.dirty;
     updateSaveButtonVisibility(isDirty);
-  });
-  textarea.addEventListener('input', () => {
-    edit.content = textarea.value;
   });
   const status = createFileSaveStatus(edit, {
     readLatest: () => readFileDocument(load.path, load.sessionId, true, load.signal),
@@ -914,7 +915,7 @@ function renderTextDocument(
       snapshot = latest;
       isFullContentLoaded = !latest.isTruncated;
       currentContentIsPartial = latest.isTruncated;
-      textarea.readOnly = latest.readOnly;
+      view.setReadOnly(latest.readOnly);
       edit.replaceFromDisk(latest.content);
       const updatedNotice = createNotice();
       notice.replaceWith(updatedNotice);
@@ -936,7 +937,7 @@ function renderTextDocument(
       },
     });
   let notice = createNotice();
-  stack.append(notice, status, editor.root);
+  stack.append(notice, status, view.root);
   container.replaceChildren(stack);
   updateSaveButtonVisibility(false);
 }

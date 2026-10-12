@@ -52,7 +52,7 @@ try {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const toolbar = tree.locator('.file-selection-toolbar');
   const selected = async root => root.locator('[aria-selected="true"]').evaluateAll(rows => rows.map(row => row.dataset.path));
-  await node('a.md').click(); const editor = preview.locator('textarea'); await editor.fill('# Selection draft\n');
+  await node('a.md').click(); await preview.locator('.file-document-mode[data-mode="edit"]').click(); const editor = preview.locator('textarea'); await editor.fill('# Selection draft\n');
   await node('b.md').click({ modifiers: ['Control'] });
   await node('d.md').click({ modifiers: ['Shift'] });
   assert.deepEqual(await selected(tree), ['b.md', 'c.md', 'd.md'].map(n => path.join(fixtures, n)));
@@ -89,6 +89,7 @@ try {
   const dialog = page.locator('.file-unsaved-overlay'); await dialog.waitFor(); await dialog.locator('[data-file-decision="cancel"]').click();
   assert.equal(await editor.inputValue(), '# Selection draft\n');
   await toolbar.locator('[data-selection-action="open"]').click(); await dialog.waitFor(); await dialog.locator('[data-file-decision="save"]').click();
+  await preview.locator('.file-document-mode[data-mode="edit"]').click();
   await page.waitForFunction(() => document.querySelector('.file-browser-preview textarea')?.value === '# Original b.md\n');
   assert.equal(fs.readFileSync(path.join(fixtures, 'a.md'), 'utf8'), '# Selection draft\n');
   result.cases.push('Explicit Enter/Open respects Cancel and writes the previous draft before changing the preview');
@@ -115,7 +116,7 @@ try {
   await modal.locator('[data-selection-action="copyPaths"]').click();
   assert.deepEqual((await page.evaluate(() => navigator.clipboard.readText())).split(/\r?\n/).sort(), ['a.md','c.md'].map(n => path.join(fixtures, n)).sort());
   result.cases.push('Directory single click selects only; Shift/Ctrl and clipboard follow the same exact selection model');
-  await item('Ünicode space.md').dblclick(); await modal.locator('textarea').waitFor();
+  await item('Ünicode space.md').dblclick(); await modal.locator('.file-document-mode[data-mode="edit"]').click(); await modal.locator('textarea').waitFor();
   assert.equal(await modal.locator('textarea').inputValue(), '# Original Ünicode space.md\n');
   await modal.locator('[data-file-navigation="back"]').click(); await item('Ünicode space.md').waitFor();
   assert.deepEqual(await selected(list), [path.join(fixtures, 'Ünicode space.md')]);
@@ -151,6 +152,7 @@ try {
   assert.equal(await preview.isVisible(), false);
   await node('c.md').locator('input').tap();
   await toolbar.locator('[data-selection-action="open"]').tap();
+  await preview.locator('.file-document-mode[data-mode="edit"]').tap();
   await editor.waitFor(); assert.equal(await editor.inputValue(), '# Selection draft\n');
   await wrapper.locator('.file-browser-back').tap();
   await node('d.md').locator('input').tap();

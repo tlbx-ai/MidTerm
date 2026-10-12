@@ -632,7 +632,7 @@ Kitty, Typecheck, ESLint und Stylelint bestehen.
 Evidenz: `.dev/file-git-production/task-23-final/summary.json`,
 `task-23-verify.*.log`, `combined-docks.png`, `dock-overlay-390.png`.
 
-### 24. [~] Einheitliche Vorschau-/Editmodi anbieten
+### 24. [x] Einheitliche Vorschau-/Editmodi anbieten
 
 **Befund (mittel, reproduziert/Code):** Markdown in Files sofort Editor, andere
 Texte Readonly mit Edit, Modal stets Textarea; Markdown bleibt Quelltext.
@@ -642,6 +642,27 @@ erkennbare Schreibbarkeit und Dirtyzustand in Tab/Modal/Dock.
 
 **Abnahme:** Markdown/Code/Text/Readonly, Modewechsel mit Entwurf, Syntaxanzeige,
 keine unbeabsichtigten Writes; Tastatur und Screenreader-Modusinformation prüfen.
+
+**Nachweis 12.10.2026:** Alle Textdateien starten in einer expliziten Vorschau.
+Files, Modal und Dock verwenden denselben Preview/Edit-Vertrag; Markdown bietet
+gerenderte Überschriften/Tabellen/Code und zusätzlichen Quelltext. Code-/Text-
+Vorschau erhält Zeilennummern und Syntaxfarben. Rohes HTML und unsichere Links
+werden durch den bestehenden Markdownrenderer entschärft. Schreibbarkeit,
+Dirtyzustand und aktiver Modus sind sichtbar und per ARIA zugänglich; readonly
+und partielle Dokumente erlauben keinen Editwechsel. Der Editor entsteht erst
+bei ausdrücklichem Editieren. Moduswechsel erhalten dieselbe Editorinstanz,
+Entwurf, Auswahl und Scroll; Dockwechsel verschieben diese Instanz unverändert.
+Eine Vorschau des Entwurfs speichert nichts; Ctrl/Cmd-S und Save bleiben
+ausdrückliche Aktionen. Veraltete Editorbuttons/-stile sind entfernt.
+Vier neue echte Chromium-Szenarien prüfen Markdown/Sicherheit, Text/Code,
+Readonly in allen Views, fünf wiederholte Modewechsel, Tastatur-Save und 390 px.
+37 Dirty-/Konflikt-/Late-Response-Fälle, 13 Auswahl-/Touchfälle und acht große-
+Datei-/UTF-16-/Paging-/Diskfälle bestehen weiterhin mit explizitem Editwechsel.
+689 Frontendtests, Kitty, Typecheck, ESLint und Stylelint bestehen. Screenshots
+von gerenderter Vorschau und schmalem Modal wurden visuell geprüft.
+Evidenz: `.dev/file-git-production/task-24-final/summary.json`,
+`task-24-{edit,large}-regression/summary.json`,
+`task-24-selection-final/summary.json`, `task-24-verify-final.*.log`.
 
 ### 25. [x] Gleichzeitige Dateiveränderungen beim Speichern schützen
 
@@ -721,7 +742,7 @@ Screenshots wurden visuell geprüft; DOM-Vorschau und HTTP-Inhalte bleiben begre
 Artefakte: `.dev/file-git-production/task-27-final/summary.json`,
 `task-27-regression/summary.json`, `task-27-unit/task-27-pages.trx`.
 
-### 28. [ ] Dateinavigation und Viewer vollständig per Tastatur bedienen
+### 28. [~] Dateinavigation und Viewer vollständig per Tastatur bedienen
 
 **Befund (mittel, reproduziert/Code):** Baum/Liste bestehen aus klickbaren divs
 ohne Fokus/Tree-Semantik/Pfeile. Modal hat keine Dialogsemantik/Fokusführung;

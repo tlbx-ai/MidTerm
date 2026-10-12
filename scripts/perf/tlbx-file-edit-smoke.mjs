@@ -71,16 +71,23 @@ try {
     await page.locator('.tree-node').filter({ has: page.locator('.tree-name', { hasText: new RegExp('^' + name.replace('.', '\\.') + '$') }) }).click();
   };
   const editor = page.locator('.file-browser-preview textarea');
+  const activateEdit = async selector => {
+    const button = page.locator(selector + ' .file-document-mode[data-mode="edit"]');
+    await button.waitFor();
+    if (await button.getAttribute('aria-pressed') !== 'true') await button.click();
+  };
   const selected = page.locator('.tree-node.selected .tree-name');
   const dialog = page.locator('.file-unsaved-overlay');
 
   await choose('A.md');
+  await activateEdit('.file-browser-preview');
   await editor.fill('# unsaved A\n');
   await choose('B.md');
   await dialog.waitFor();
   assert.equal(await selected.innerText(), 'A.md');
   await page.screenshot({ path: path.join(out, 'cancel-dialog.png') });
   await dialog.locator('[data-file-decision="cancel"]').click();
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# unsaved A\n');
   assert.equal(fs.readFileSync(path.join(fixtures, 'A.md'), 'utf8'), '# A\n');
   result.cases.push('Cancel preserves document, selection and disk');
@@ -92,6 +99,7 @@ try {
   assert.equal(await selected.innerText(), 'B.md');
   result.cases.push('Save writes actual file before navigating');
 
+  await activateEdit('.file-browser-preview');
   await editor.fill('# discarded B\n');
   await choose('A.md');
   await dialog.locator('[data-file-decision="discard"]').click();
@@ -99,12 +107,14 @@ try {
   assert.equal(fs.readFileSync(path.join(fixtures, 'B.md'), 'utf8'), '# B\n');
   result.cases.push('Discard leaves disk unchanged and navigates');
 
+  await activateEdit('.file-browser-preview');
   await editor.fill('# permission failure draft\n');
   await page.route('**/api/files/save**', route => route.fulfill({ status: 403, body: 'Denied by test fixture' }));
   await choose('B.md');
   await dialog.locator('[data-file-decision="save"]').click();
   await dialog.locator('.file-unsaved-error:not([hidden])').waitFor();
   assert.equal(await selected.innerText(), 'A.md');
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# permission failure draft\n');
   assert.equal(fs.readFileSync(path.join(fixtures, 'A.md'), 'utf8'), '# unsaved A\n');
   await page.screenshot({ path: path.join(out, 'save-error.png') });
@@ -126,10 +136,12 @@ try {
   await openFile('A.md');
   const modal = page.locator('#file-viewer-modal');
   const modalEditor = modal.locator('textarea');
+  await activateEdit('#file-viewer-modal');
   await modalEditor.fill('# modal unsaved\n');
   await openFile('B.md');
   await dialog.waitFor();
   await dialog.locator('[data-file-decision="cancel"]').click();
+  await activateEdit('#file-viewer-modal');
   assert.equal(await modalEditor.inputValue(), '# modal unsaved\n');
   assert.equal(await modal.locator('.file-viewer-title').innerText(), 'A.md');
   result.cases.push('Modal cancel preserves document and content');
@@ -145,6 +157,7 @@ try {
     if (['/api/files/view', '/api/files/document'].includes(requestUrl.pathname) && requestUrl.searchParams.get('path')?.endsWith('C.md')) documentReads++;
   });
   await openFile('C.md');
+  await activateEdit('#file-viewer-modal');
   await modalEditor.fill(longText + '\nUNSAVED_DOCK_DRAFT');
   const expectedPosition = await modalEditor.evaluate(e => {
     window.fileEditProbe = e;
@@ -155,8 +168,10 @@ try {
   });
   await page.locator('#file-viewer-dock-btn').click();
   const dockEditor = page.locator('#file-viewer-dock textarea');
+  await activateEdit('#file-viewer-dock');
   await dockEditor.waitFor();
   await sleep(100);
+  await activateEdit('#file-viewer-dock');
   assert.equal(await dockEditor.inputValue(), longText + '\nUNSAVED_DOCK_DRAFT');
   const dockPosition = await dockEditor.evaluate(e => ({ same: window.fileEditProbe === e, top: e.scrollTop, left: e.scrollLeft, start: e.selectionStart, end: e.selectionEnd }));
   assert.equal(dockPosition.same, true);
@@ -164,9 +179,11 @@ try {
   assert.equal(await page.locator('#dock-save').isVisible(), true);
   await page.screenshot({ path: path.join(out, 'docked-draft.png') });
   await page.locator('#dock-undock').click();
+  await activateEdit('#file-viewer-modal');
   await modalEditor.waitFor();
   await sleep(100);
   assert.equal(await modalEditor.evaluate(e => window.fileEditProbe === e), true);
+  await activateEdit('#file-viewer-modal');
   assert.equal(await modalEditor.inputValue(), longText + '\nUNSAVED_DOCK_DRAFT');
   assert.equal(documentReads, 1);
   result.cases.push('Dock and undock preserve the same editor, draft, caret and scroll without refetch');
@@ -175,15 +192,18 @@ try {
   await page.waitForFunction(() => !!document.fullscreenElement);
   await page.locator('#file-viewer-dock-btn').click();
   await page.waitForFunction(() => !document.fullscreenElement);
+  await activateEdit('#file-viewer-dock');
   assert.equal(await dockEditor.inputValue(), longText + '\nUNSAVED_DOCK_DRAFT');
   result.cases.push('Fullscreen to dock retains the dirty document');
   await page.goBack();
   await dialog.locator('[data-file-decision="cancel"]').click();
+  await activateEdit('#file-viewer-dock');
   assert.equal(await dockEditor.inputValue(), longText + '\nUNSAVED_DOCK_DRAFT');
   assert.equal(documentReads, 1);
   result.cases.push('Browser Back in the dock asks before closing and Cancel retains the draft');
   await page.locator('#dock-refresh').click();
   await dialog.locator('[data-file-decision="cancel"]').click();
+  await activateEdit('#file-viewer-dock');
   assert.equal(await dockEditor.inputValue(), longText + '\nUNSAVED_DOCK_DRAFT');
   assert.equal(documentReads, 1);
   result.cases.push('Cancel refresh preserves draft without requesting a replacement');
@@ -191,6 +211,7 @@ try {
   await page.locator('#dock-refresh').click();
   await dialog.locator('[data-file-decision="save"]').click();
   await dialog.locator('.file-unsaved-error:not([hidden])').waitFor();
+  await activateEdit('#file-viewer-dock');
   assert.equal(await dockEditor.inputValue(), longText + '\nUNSAVED_DOCK_DRAFT');
   assert.equal(documentReads, 1);
   await dialog.locator('[data-file-decision="cancel"]').click();
@@ -198,10 +219,12 @@ try {
   result.cases.push('Failed save blocks refresh and retains original editor');
   await page.locator('#dock-refresh').click();
   await dialog.locator('[data-file-decision="discard"]').click();
+  await activateEdit('#file-viewer-dock');
   await page.waitForFunction(text => document.querySelector('#file-viewer-dock textarea')?.value === text, longText);
   assert.equal(documentReads, 2);
   assert.equal(fs.readFileSync(path.join(fixtures, 'C.md'), 'utf8'), longText);
   result.cases.push('Explicit discard refresh loads disk without saving the draft');
+  await activateEdit('#file-viewer-dock');
   await dockEditor.fill('# saved before refresh\n');
   await page.locator('#dock-refresh').click();
   const replacementRead = page.waitForResponse(response => {
@@ -210,6 +233,7 @@ try {
   });
   await dialog.locator('[data-file-decision="save"]').click();
   assert.equal((await replacementRead).ok(), true);
+  await activateEdit('#file-viewer-dock');
   await page.waitForFunction(() => document.querySelector('#file-viewer-dock textarea')?.value === '# saved before refresh\n');
   assert.equal(fs.readFileSync(path.join(fixtures, 'C.md'), 'utf8'), '# saved before refresh\n');
   assert.equal(documentReads, 3);
@@ -218,12 +242,14 @@ try {
 
   await page.locator(`.session-wrapper[data-session-id="${session}"] .session-tab[data-tab="files"]`).click();
   await choose('A.md');
+  await activateEdit('.file-browser-preview');
   await editor.fill('# do not close this draft\n');
   const row = page.locator(`.session-item[data-session-id="${session}"]`);
   await row.hover();
   await sleep(250);
   await row.locator('.session-close').click();
   await dialog.locator('[data-file-decision="cancel"]').click();
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# do not close this draft\n');
   assert.equal((await api('GET', '/api/sessions')).sessions.some(s => s.id === session), true);
   result.cases.push('Session close is cancelled before terminal or file teardown');
@@ -235,6 +261,7 @@ try {
   await otherRow.locator('.session-title').click();
   await dialog.locator('[data-file-decision="cancel"]').click();
   assert.equal(await page.evaluate(() => window.mmDebug.activeId), session);
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# do not close this draft\n');
   result.cases.push('Session switch cancellation retains active session and draft');
   await otherRow.locator('.session-title').click();
@@ -242,16 +269,19 @@ try {
   await page.waitForFunction(id => window.mmDebug.activeId === id, otherSession);
   await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click();
   await page.waitForFunction(id => window.mmDebug.activeId === id, session);
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# modal unsaved\n');
   result.cases.push('Discarded session draft is removed from both state and editor');
 
   await choose('B.md');
   await page.waitForFunction(() => document.querySelector('.preview-toolbar-name')?.textContent === 'B.md');
 
+  await activateEdit('.file-browser-preview');
   await editor.fill('# retained across tabs and reload\n');
   const tabBar = page.locator(`.session-wrapper[data-session-id="${session}"]`);
   await tabBar.locator('.session-tab[data-tab="terminal"]').click();
   await tabBar.locator('.session-tab[data-tab="files"]').click();
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# retained across tabs and reload\n');
   result.cases.push('Tab switching retains the unsaved editor');
   let unloadDialogType;
@@ -263,6 +293,7 @@ try {
     if (unloadDialogType !== 'beforeunload') throw error;
   });
   assert.equal(unloadDialogType, 'beforeunload');
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# retained across tabs and reload\n');
   result.cases.push('Browser reload cancellation preserves the unsaved document');
   await choose('A.md');
@@ -282,7 +313,9 @@ try {
   await page.waitForFunction(() => document.querySelector('.preview-toolbar-name')?.textContent === 'B.md');
   await sleep(700);
   assert.equal(await selected.innerText(), 'B.md');
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# B\n');
+  await activateEdit('.file-browser-preview');
   await editor.fill('# latest B after race\n');
   await page.locator('.preview-save-btn').click();
   await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'saved');
@@ -294,6 +327,7 @@ try {
   await choose('E.md');
   await page.waitForFunction(() => document.querySelector('.preview-toolbar-name')?.textContent === 'E.md');
   await sleep(700);
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# E.md\n');
   result.cases.push('Late binary preview cannot replace a newer text document');
   await choose('A.md');
@@ -304,6 +338,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.preview-toolbar-name')?.textContent === 'E.md');
   await sleep(700);
   assert.equal(await selected.innerText(), 'E.md');
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# E.md\n');
   result.cases.push('Rapid text to binary to text selection resolves only the latest document');
 
@@ -317,9 +352,11 @@ try {
   await openFile('D.md');
   await delayedMetadata;
   await openFile('E.md');
+  await activateEdit('#file-viewer-modal');
   await modalEditor.waitFor();
   await sleep(700);
   assert.equal(await modal.locator('.file-viewer-title').innerText(), 'E.md');
+  await activateEdit('#file-viewer-modal');
   assert.equal(await modalEditor.inputValue(), '# E.md\n');
   result.cases.push('Late terminal-link metadata cannot reopen an obsolete file');
   await page.unroute('**/api/files/check**');
@@ -334,6 +371,7 @@ try {
   await openFile('E.md');
   await sleep(700);
   assert.equal(await modal.locator('.file-viewer-title').innerText(), 'E.md');
+  await activateEdit('#file-viewer-modal');
   assert.equal(await modalEditor.inputValue(), '# E.md\n');
   result.cases.push('Late modal content cannot replace a newer document');
 
@@ -350,6 +388,7 @@ try {
   await openFile('H.md');
   await pending;
   await page.locator('#file-viewer-dock-btn').click();
+  await activateEdit('#file-viewer-dock');
   await page.waitForFunction(() => document.querySelector('#file-viewer-dock textarea')?.value === '# H.md\n');
   assert.equal(await modal.locator('textarea').count(), 0);
   assert.equal(await page.locator('.file-viewer-dock-title').innerText(), 'H.md');
@@ -360,10 +399,12 @@ try {
 
   await tabBar.locator('.session-tab[data-tab="files"]').click();
   await choose('M.md');
+  await activateEdit('.file-browser-preview');
   await editor.fill('# my conflicting draft\n');
   fs.writeFileSync(path.join(fixtures, 'M.md'), '# external version two\n');
   await page.locator('.preview-save-btn').click();
   await page.locator('.file-save-status-error [data-file-conflict-action="compare"]').waitFor();
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# my conflicting draft\n');
   assert.equal(fs.readFileSync(path.join(fixtures, 'M.md'), 'utf8'), '# external version two\n');
   result.cases.push('External file modification yields a visible conflict without losing either version');
@@ -389,6 +430,7 @@ try {
   assert.equal(fs.readFileSync(path.join(fixtures, 'M.md'), 'utf8'), '# my conflicting draft\n');
   assert.equal(await page.locator('.preview-save-btn').isDisabled(), true);
   result.cases.push('Explicit reviewed overwrite publishes the actual draft and updates its version');
+  await activateEdit('.file-browser-preview');
   await editor.fill('# draft to discard on reload\n');
   fs.writeFileSync(path.join(fixtures, 'M.md'), '# latest disk reload\n');
   await page.locator('.preview-save-btn').click();
@@ -396,6 +438,7 @@ try {
   await page.locator('.modal-overlay [data-role="confirm"]').click();
   await page.waitForFunction(() => document.querySelector('.file-browser-preview textarea')?.value === '# latest disk reload\n');
   assert.equal(fs.readFileSync(path.join(fixtures, 'M.md'), 'utf8'), '# latest disk reload\n');
+  await activateEdit('.file-browser-preview');
   await editor.fill('# saved using reloaded version\n');
   await page.locator('.preview-save-btn').click();
   await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'saved');
@@ -403,11 +446,13 @@ try {
   result.cases.push('Reload replaces the draft only after confirmation and subsequent save uses the new disk version');
 
   await choose('N.md');
+  await activateEdit('.file-browser-preview');
   await editor.fill('# retained after external deletion\n');
   fs.unlinkSync(path.join(fixtures, 'N.md'));
   await page.locator('.preview-save-btn').click();
   await page.locator('.file-save-status-error').waitFor();
   assert.equal(fs.existsSync(path.join(fixtures, 'N.md')), false);
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# retained after external deletion\n');
   result.cases.push('Deleting a document externally does not silently recreate it on save');
   await choose('M.md');
@@ -428,6 +473,7 @@ try {
   result.cases.push('A request missing the required version is rejected before filesystem mutation');
 
   await choose('S.md');
+  await activateEdit('.file-browser-preview');
   await editor.fill('# status draft\n');
   const status = page.locator('.file-browser-preview .file-save-status');
   const save = page.locator('.preview-save-btn');
@@ -436,6 +482,7 @@ try {
     await save.click();
     await page.waitForFunction(code => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileErrorCode === code, code);
     assert.match(await status.innerText(), new RegExp(message, 'i'));
+  await activateEdit('.file-browser-preview');
     assert.equal(await editor.inputValue(), '# status draft\n');
     assert.equal(fs.readFileSync(path.join(fixtures, 'S.md'), 'utf8'), '# base statuses\n');
     await page.unroute('**/api/files/save**');
@@ -461,13 +508,16 @@ try {
   await page.unroute('**/api/files/save**');
   result.cases.push('A delayed save shows Saving and suppresses a concurrent keyboard submit');
 
+  await activateEdit('.file-browser-preview');
   await editor.fill('# snapshot while saving\n');
   await page.route('**/api/files/save**', async route => { await sleep(700); await route.continue(); });
   await save.click();
   await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'saving');
+  await activateEdit('.file-browser-preview');
   await editor.fill('# newer unsaved keystrokes\n');
   await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'unsaved');
   assert.equal(fs.readFileSync(path.join(fixtures, 'S.md'), 'utf8'), '# snapshot while saving\n');
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# newer unsaved keystrokes\n');
   assert.equal(await save.isDisabled(), false);
   await page.unroute('**/api/files/save**');
@@ -475,6 +525,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'saved');
   result.cases.push('Keystrokes arriving during Save remain Unsaved until their own confirmed write');
 
+  await activateEdit('.file-browser-preview');
   await editor.fill('# committed before lost acknowledgement\n');
   await page.route('**/api/files/save**', async route => {
     const committed = await route.fetch();
@@ -485,6 +536,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.file-browser-preview .file-save-status')?.dataset.fileSaveState === 'unknown');
   assert.equal(await save.innerText(), 'Save');
   assert.equal(fs.readFileSync(path.join(fixtures, 'S.md'), 'utf8'), '# committed before lost acknowledgement\n');
+  await activateEdit('.file-browser-preview');
   assert.equal(await editor.inputValue(), '# committed before lost acknowledgement\n');
   await page.screenshot({ path: path.join(out, 'save-outcome-unknown.png') });
   await page.unroute('**/api/files/save**');

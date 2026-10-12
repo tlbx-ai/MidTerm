@@ -45,6 +45,15 @@ class FakeElement {
     return child;
   }
 
+  public append(...children: FakeElement[]): void {
+    children.forEach((child) => this.appendChild(child));
+  }
+
+  public replaceChildren(...children: FakeElement[]): void {
+    this.innerHTML = '';
+    this.append(...children);
+  }
+
   public replaceWith(next: FakeElement): void {
     if (!this.parentElement) return;
     const parent = this.parentElement;
@@ -137,6 +146,9 @@ const renderingMocks = vi.hoisted(() => {
       type: '',
       value: '',
       spellcheck: true,
+      setAttribute() {},
+      focus() {},
+      setSelectionRange() {},
       style: {},
       children: [] as any[],
       classList: {
@@ -251,6 +263,8 @@ vi.mock('../i18n', () => ({
 }));
 
 vi.mock('../fileViewer/rendering', () => ({
+  renderMarkdown: (text: string) => text,
+  getFileName: (path: string) => path.split(/[\\/]/).at(-1),
   formatSize: (size: number) => `${size}`,
   getExtension: (name: string) => name.slice(name.lastIndexOf('.')).toLowerCase(),
   formatViewerHeaderSubtitle: (path: string, metadata?: string | null) =>
@@ -340,7 +354,8 @@ describe('filePreview', () => {
       );
       await flushPromises();
       expect(container.querySelector('.preview-toolbar-name')?.textContent).toBe('B.md');
-      expect(container.querySelector('textarea')?.value).toBe('# Latest B');
+      expect(container.querySelector('.file-document-markdown')?.innerHTML).toBe('# Latest B');
+      expect(container.querySelector('textarea')).toBeNull();
       expect(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
     },
   );
@@ -369,6 +384,11 @@ describe('filePreview', () => {
     renderPreview(container as unknown as HTMLElement, entry, 'session-1');
     await flushPromises();
 
+    expect(container.querySelector('textarea')).toBeNull();
+    container
+      .querySelector('.file-document-modes')
+      ?.children.find((button) => button.dataset.mode === 'edit')
+      ?.click();
     const textarea = container.querySelector('textarea');
     const saveBtn = container.querySelector('.preview-save-btn');
 
