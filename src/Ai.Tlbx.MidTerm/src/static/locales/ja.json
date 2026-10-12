@@ -508,6 +508,8 @@
   "git.fileStatus.contains": "変更を含む",
   "git.backToList": "一覧に戻る",
   "git.resizeDock": "Gitパネルのサイズ変更",
+  "git.wrapLines": "行を折り返す",
+  "git.diffHunk": "差分ブロック",
   "git.notARepo": "Gitリポジトリではありません",
   "git.notARepoHint": "ステータスを表示するにはGitリポジトリに移動してください",
   "git.stagedChanges": "ステージされた変更",

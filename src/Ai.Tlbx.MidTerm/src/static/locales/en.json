@@ -777,6 +777,8 @@
   "git.fileStatus.contains": "Contains changes",
   "git.backToList": "Back to list",
   "git.resizeDock": "Resize Git panel",
+  "git.wrapLines": "Wrap lines",
+  "git.diffHunk": "Diff hunk",
   "git.notARepo": "Not a git repository",
   "git.notARepoHint": "Navigate to a git repository to see status",
   "git.stagedChanges": "Staged Changes",

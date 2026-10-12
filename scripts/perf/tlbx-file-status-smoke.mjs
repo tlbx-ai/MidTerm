@@ -95,8 +95,8 @@ try {
     const decision = page.locator('.file-unsaved-overlay'); await decision.waitFor(); await dialogContrast(`${language}-${theme}-unsaved`, '.file-unsaved-overlay');
     await page.screenshot({ path: path.join(out, `${language}-${theme}-unsaved.png`), animations: 'disabled' }); await decision.locator('[data-file-decision="discard"]').click(); await decision.waitFor({ state: 'hidden' });
     assert.equal(fs.readFileSync(path.join(fixture, 'modified/change.txt'), 'utf8'), 'Modified\n');
-    await page.evaluate(() => localStorage.setItem('mt-git-dock-width', '600')); await wrapper.locator('.git-indicator').click();
-    const dock = page.locator('#git-dock'); await dock.locator('.git-tree-file').first().waitFor();
+    await wrapper.locator('.git-indicator').click();
+    const dock = page.locator('#git-dock'); await dock.locator('.git-dock-resize-grip').press('End'); await dock.locator('.git-tree-file').first().waitFor();
     for (const state of expected) {
       const row = dock.locator(`.git-tree-file[data-path="${state.file}"]`), badge = row.locator('.git-file-indicator'), actual = await badgeSnapshot(badge);
       assert.equal(actual.letter, state.letter); assert.equal(actual.status, state.status); assert.equal(actual.color, files[state.status].color); assert.ok(files[state.status].label.endsWith(actual.label));

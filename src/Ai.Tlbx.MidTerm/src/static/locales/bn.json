@@ -508,6 +508,8 @@
   "git.fileStatus.contains": "পরিবর্তন রয়েছে",
   "git.backToList": "তালিকায় ফিরে যান",
   "git.resizeDock": "Git প্যানেলের আকার পরিবর্তন করুন",
+  "git.wrapLines": "লাইন মোড়ানো",
+  "git.diffHunk": "পার্থক্যের অংশ",
   "git.notARepo": "Git রিপোজিটরি নয়",
   "git.notARepoHint": "স্ট্যাটাস দেখতে Git রিপোজিটরিতে যান",
   "git.stagedChanges": "স্টেজ করা পরিবর্তন",

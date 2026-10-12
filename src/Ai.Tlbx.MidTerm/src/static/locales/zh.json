@@ -511,6 +511,8 @@
   "git.fileStatus.contains": "包含更改",
   "git.backToList": "返回列表",
   "git.resizeDock": "调整 Git 面板大小",
+  "git.wrapLines": "自动换行",
+  "git.diffHunk": "差异块",
   "git.notARepo": "不是 Git 仓库",
   "git.notARepoHint": "导航到 Git 仓库以查看状态",
   "git.stagedChanges": "已暂存的更改",

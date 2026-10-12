@@ -205,7 +205,7 @@ https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html.
 Evidenz: `.dev/file-git-production/task-6-final/summary.json`,
 `task-6-{surface,policy}-regression/summary.json`, `task-6-verify.*.log`.
 
-### 7. [~] Git-Diffs lesbar umbrechen oder horizontal scrollen lassen
+### 7. [x] Git-Diffs lesbar umbrechen oder horizontal scrollen lassen
 
 **Befund (mittel, reproduziert):** pre-wrap und overflow-wrap:anywhere zerlegen
 lange Codezeilen im schmalen Inspector innerhalb von Wörtern. Einrückungen und
@@ -217,7 +217,27 @@ Scrollen; lange Zeilen, Tabs und Unicode korrekt darstellen.
 **Abnahme:** Breite Code-/Markdownzeilen in mehreren Dockbreiten; vollständiger
 Inhalt, erhaltene Einrückung und stabile Alt-/Neu-Zeilenzuordnung.
 
-### 8. [ ] Beschriftete Git-Aktionen mit passenden Buttons darstellen
+**Nachweis 12.10.2026:** Default ist No-Wrap mit fokussierbaren horizontalen
+Scrollregionen; ein lokalisierter, gespeicherter Umbruchschalter gilt für alle
+Hunks der Ansicht. Änderungszeichen haben eine eigene beim Scrollen sichtbare
+Spalte; Code beginnt an seiner eigenen Tabposition (4), ohne Präfixverschiebung.
+Wrap toggelt ausschließlich CSS/ARIA; gleiche DOMzeilen/Hunkheader und exactes
+Difftext-/Kind-Ordering bleiben erhalten. Der vorige horizontale Offset kehrt
+beim Abschalten des Umbruchs zurück. Reale CRLF-/Tab-/Unicode-/Literal-HTML-
+Fixtures in 250/400/600 px bestehen: gleiches Tab-/Vier-Space-Glyph-X, einzeiliges
+No-Wrap, echte Mehrzeilen-Wrap-Geometrie, native Tastaturscrolls, unveränderte
+Diskbytes, null Gitwrites und null Terminal-Input. Reload erhält den Modus.
+Screenshots sind visuell geprüft. Drei Navigation-/Cache-/Resizefälle und 720
+echte Kontrastmessungen bestehen (Minimum 4,979355:1), außerdem 707 Frontendtests
+mit Kitty/Typecheck/ESLint/Stylelint. Die Surface-/Pfad-/Statusharnesses nutzen
+nun den echten Git-Resize-Griff statt nach Appstart localStorage zu manipulieren;
+damit sind auch beim ersten Matrixfall Git-Metadaten und Liste sichtbar.
+Evidenz: `.dev/file-git-production/git-task-7-accepted/summary.json`,
+`git-task-7-navigation-regression`, `git-task-7-contrast-complete`,
+`git-task-7-verify.*.log`. Sichtbare Zeilennummern/Side-by-side und partielle
+Stagingaktionen bleiben der ausdrücklich weiter offenen Aufgabe 36 zugeordnet.
+
+### 8. [~] Beschriftete Git-Aktionen mit passenden Buttons darstellen
 
 **Befund (mittel, reproduziert):** Copy und Send sind 26×26 px; Text benötigt
 bereits etwa 29 px und läuft aus der Iconklasse heraus. Schmal wirkt es wie CopySend.

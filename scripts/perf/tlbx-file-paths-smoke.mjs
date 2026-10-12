@@ -54,8 +54,8 @@ try {
   const modal = page.locator('#file-viewer-modal'); await modal.locator('.file-document-view').waitFor(); await modal.locator('[data-path-details]').click(); await copyDetails(paths[0]);
   await modal.locator('#file-viewer-dock-btn').click(); const dock = page.locator('#file-viewer-dock'); await dock.locator('[data-path-details]').click(); await copyDetails(paths[0]); await dock.locator('#dock-close').click();
   result.cases.push('Preview, modal and dock all show and copy the same complete Unicode path without content mutations');
-  await page.evaluate(() => localStorage.setItem('mt-git-dock-width', '600')); await wrapper.locator('.git-indicator').click();
-  const gitDock = page.locator('#git-dock'); await gitDock.locator('.git-tree-file').first().waitFor();
+  await wrapper.locator('.git-indicator').click();
+  const gitDock = page.locator('#git-dock'); await gitDock.locator('.git-dock-resize-grip').press('End'); await gitDock.locator('.git-tree-file').first().waitFor();
   result.gitPaths = await gitDock.locator('.git-tree-file').evaluateAll(rows => rows.map(row => ({ path: row.dataset.path, title: row.title })));
   for (const full of paths) {
     const relative = path.relative(fixture, full).replaceAll('\\', '/');

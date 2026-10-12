@@ -508,6 +508,8 @@
   "git.fileStatus.contains": "Contém alterações",
   "git.backToList": "Voltar à lista",
   "git.resizeDock": "Redimensionar o painel Git",
+  "git.wrapLines": "Quebrar linhas",
+  "git.diffHunk": "Bloco de diferenças",
   "git.notARepo": "Não é um repositório Git",
   "git.notARepoHint": "Navegue até um repositório Git para ver o status",
   "git.stagedChanges": "Alterações preparadas",

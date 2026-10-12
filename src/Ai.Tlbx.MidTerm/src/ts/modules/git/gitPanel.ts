@@ -8,6 +8,7 @@
 import type {
   GitCommitDetailsResponse,
   GitDiffFileView,
+  GitDiffLine,
   GitDiffViewResponse,
   GitFileEntry,
   GitLogEntry,
@@ -55,6 +56,7 @@ interface GitCommitSelection {
 type GitSelection = GitFileSelection | GitCommitSelection | null;
 
 interface GitPanelState extends GitPanelLayoutState {
+  wrapDiff: boolean;
   sessionId: string;
   repoRoot?: string | undefined;
   container: HTMLElement;
@@ -78,6 +80,8 @@ interface TreeNode {
 
 const panelStates = new Map<string, GitPanelState>();
 const HISTORY_PAGE_SIZE = 20;
+const DIFF_WRAP_KEY = 'tlbx-git-diff-wrap';
+const nowrapScroll = new WeakMap<HTMLElement, number>();
 // Only one panel may own a shared dock body, including while fetches are pending.
 const activePanels = new WeakMap<HTMLElement, GitPanelState>();
 const boundPanelContainers = new WeakSet<HTMLElement>();
@@ -187,12 +191,38 @@ function createPanelState(
     status: null,
     expandedSections: new Set<PanelSectionId>(),
     selection: null,
+    wrapDiff: readDiffWrap(),
     detailActive: true,
     scrollPositions: new Map(),
     historyEntries: [],
     historyCount: HISTORY_PAGE_SIZE,
     hasMoreHistory: false,
   };
+}
+
+function readDiffWrap(): boolean {
+  try {
+    return localStorage.getItem(DIFF_WRAP_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function toggleDiffWrap(state: GitPanelState): void {
+  const panes = state.container.querySelectorAll<HTMLElement>('.git-diff-lines');
+  state.wrapDiff = !state.wrapDiff;
+  if (state.wrapDiff) for (const pane of panes) nowrapScroll.set(pane, pane.scrollLeft);
+  const shell = state.container.querySelector<HTMLElement>('.git-panel-shell');
+  if (shell) shell.dataset.diffWrap = String(state.wrapDiff);
+  if (!state.wrapDiff) for (const pane of panes) pane.scrollLeft = nowrapScroll.get(pane) ?? 0;
+  state.container
+    .querySelector('[data-action="toggle-diff-wrap"]')
+    ?.setAttribute('aria-pressed', String(state.wrapDiff));
+  try {
+    localStorage.setItem(DIFF_WRAP_KEY, String(state.wrapDiff));
+  } catch {
+    /* The current reading mode still works without storage. */
+  }
 }
 
 function getPanelKey(sessionId: string, repoRoot?: string): string {
@@ -454,7 +484,7 @@ function renderPanel(state: GitPanelState): void {
   const sectionCount = [hasConflicts, hasStaged, hasChanges, hasUntracked].filter(Boolean).length;
   const singleFillSection = sectionCount === 1;
 
-  let html = `<div class="${panelShellClass(state)}">`;
+  let html = `<div class="${panelShellClass(state)}" data-diff-wrap="${state.wrapDiff}">`;
   html += '<div class="git-panel-list">';
   html += renderSummary(status);
   html += '<div class="git-panel-content">';
@@ -521,6 +551,9 @@ function renderPanel(state: GitPanelState): void {
   syncGitPanelDom(container, html);
   const inspector = container.querySelector<HTMLElement>('.git-panel-inspector');
   if (inspector) syncGitPanelDom(inspector, state.inspectorHtml);
+  container
+    .querySelector('[data-action="toggle-diff-wrap"]')
+    ?.setAttribute('aria-pressed', String(state.wrapDiff));
   bindPanelEvents(container);
   connectGitPanelLayout(container, () => activePanels.get(container))?.update();
 }
@@ -625,6 +658,7 @@ function renderInspector(state: GitPanelState): string {
 
   return `<div class="git-inspector-header">
       <button class="git-inspector-back" data-action="show-list" type="button">${t('git.backToList')}</button>
+      <button class="git-diff-wrap" data-action="toggle-diff-wrap" aria-pressed="${state.wrapDiff}" type="button">${t('git.wrapLines')}</button>
     </div>
     <div class="git-inspector-body">${body}</div>`;
 }
@@ -709,15 +743,10 @@ function renderPatchFile(file: GitDiffFileView): string {
       ? `<div class="git-patch-empty">No patch text available.</div>`
       : file.hunks
           .map((hunk) => {
-            const lines = hunk.lines
-              .map(
-                (line) =>
-                  `<span class="git-diff-line git-diff-line-${escapeHtml(line.kind)}">${escapeHtml(line.text)}</span>`,
-              )
-              .join('\n');
+            const lines = hunk.lines.map(renderDiffLine).join('\n');
             return `<section class="git-diff-hunk-block">
           <div class="git-diff-hunk-header">${escapeHtml(hunk.header)}</div>
-          <pre class="git-diff-lines">${lines}</pre>
+          <pre class="git-diff-lines" tabindex="0" role="region" aria-label="${escapeHtml(`${t('git.diffHunk')}: ${file.path} ${hunk.header}`)}"><code class="git-diff-table">${lines}</code></pre>
         </section>`;
           })
           .join('');
@@ -737,6 +766,14 @@ function renderPatchFile(file: GitDiffFileView): string {
     ${body}
     ${truncatedHtml}
   </section>`;
+}
+
+function renderDiffLine(line: GitDiffLine): string {
+  const changeLine = ['add', 'del', 'context'].includes(line.kind);
+  const content = changeLine
+    ? `<span class="git-diff-sign">${escapeHtml(line.text.slice(0, 1))}</span><span class="git-diff-code">${escapeHtml(line.text.slice(1))}</span>`
+    : `<span class="git-diff-code">${escapeHtml(line.text)}</span>`;
+  return `<span class="git-diff-line git-diff-line-${escapeHtml(line.kind)}">${content}</span>`;
 }
 
 function renderCommandSuggestions(suggestions: Array<{ label: string; command: string }>): string {
@@ -792,6 +829,9 @@ function bindPanelEvents(container: HTMLElement): void {
 
 function handlePanelAction(state: GitPanelState, data: DOMStringMap): void {
   switch (data.action) {
+    case 'toggle-diff-wrap':
+      toggleDiffWrap(state);
+      break;
     case 'toggle-section': {
       const section = data.section as PanelSectionId;
       if (state.expandedSections.has(section)) state.expandedSections.delete(section);
@@ -800,14 +840,7 @@ function handlePanelAction(state: GitPanelState, data: DOMStringMap): void {
       break;
     }
     case 'open-file':
-      if (data.path && data.scope && data.status) {
-        void openFileSelection(state, {
-          path: data.path,
-          scope: data.scope as FileScope,
-          status: data.status,
-          originalPath: data.originalPath,
-        });
-      }
+      openFileFromButton(state, data);
       break;
     case 'open-commit':
       if (data.hash) void openCommitSelection(state, data.hash);
@@ -832,6 +865,16 @@ function handlePanelAction(state: GitPanelState, data: DOMStringMap): void {
     default:
       break;
   }
+}
+
+function openFileFromButton(state: GitPanelState, data: DOMStringMap): void {
+  if (!data.path || !data.scope || !data.status) return;
+  void openFileSelection(state, {
+    path: data.path,
+    scope: data.scope as FileScope,
+    status: data.status,
+    originalPath: data.originalPath,
+  });
 }
 
 function showGitPathDetails(state: GitPanelState, data: DOMStringMap): void {

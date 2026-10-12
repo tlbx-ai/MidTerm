@@ -156,8 +156,8 @@ try {
         await wrapper.locator('.file-document-source').waitFor();
         await measureContrast(label + '-files', `.session-wrapper[data-session-id="${session}"] .tree-size, .session-wrapper[data-session-id="${session}"] .file-visibility-badge, .session-wrapper[data-session-id="${session}"] .preview-toolbar-subtitle, .session-wrapper[data-session-id="${session}"] .file-document-metadata, .session-wrapper[data-session-id="${session}"] .file-document-mode-status, .session-wrapper[data-session-id="${session}"] .hl-comment, .session-wrapper[data-session-id="${session}"] .hl-string, .session-wrapper[data-session-id="${session}"] .hl-keyword`);
         await row.hover(); await measureContrast(label + '-hover', `.session-wrapper[data-session-id="${session}"] .tree-node[data-name="tracked.txt"] .tree-size`);
-        await terminal.click(); await page.evaluate(() => localStorage.setItem('mt-git-dock-width', '600')); await wrapper.locator('.git-indicator').click();
-        const gitDock = page.locator('#git-dock'); await gitDock.locator('.git-tree-file[data-path="tracked.txt"]').click(); await gitDock.locator('.git-diff-lines').waitFor();
+        await terminal.click(); await wrapper.locator('.git-indicator').click();
+        const gitDock = page.locator('#git-dock'); await gitDock.locator('.git-dock-resize-grip').press('End'); await gitDock.locator('.git-tree-file[data-path="tracked.txt"]').click(); await gitDock.locator('.git-diff-lines').waitFor();
         await measureContrast(label + '-git', '#git-dock .git-panel-summary-subtitle, #git-dock .git-tree-file-selected .git-loc-add, #git-dock .git-tree-file-selected .git-loc-del, #git-dock .git-diff-line-add, #git-dock .git-diff-line-del');
         if (pattern === 'structured' && transparency === 90) await page.screenshot({ path: path.join(out, label + '-git.png'), animations: 'disabled' });
         await gitDock.locator('#git-dock-close').click();
@@ -265,9 +265,8 @@ try {
     const dock = page.locator('#file-viewer-dock'); await dock.locator('.file-document-source').waitFor();
     await sample(label + '-dock', '#file-viewer-dock .file-document-source .file-viewer-text', '#file-viewer-dock', imageColor);
     await dock.locator('#dock-close').click();
-    await page.evaluate(() => localStorage.setItem('mt-git-dock-width', '600'));
     await wrapper.locator('.git-indicator').click();
-    const gitDock = page.locator('#git-dock'); await gitDock.locator('.git-tree-file[data-path="tracked.txt"]').click();
+    const gitDock = page.locator('#git-dock'); await gitDock.locator('.git-dock-resize-grip').press('End'); await gitDock.locator('.git-tree-file[data-path="tracked.txt"]').click();
     await gitDock.locator('.git-diff-lines').waitFor();
     await sample(label + '-git-list', '#git-dock .git-panel-list', '.git-panel-shell', imageColor);
     await sample(label + '-git-inspector', '#git-dock .git-panel-inspector', '.git-panel-shell', imageColor);
