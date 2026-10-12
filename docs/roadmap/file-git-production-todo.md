@@ -982,7 +982,7 @@ Evidenz: `.dev/file-git-production/task-29-touch-accepted/summary.json`,
 `task-29-resize-accepted/summary.json`, `task-29-actions-final/summary.json`,
 `task-29-verify-final.*.log`. Konkrete Smartphonehardware bleibt Feldabnahme.
 
-### 30. [~] Vollständigen Stage–Review–Commit-Ablauf in Git implementieren
+### 30. [x] Vollständigen Stage–Review–Commit-Ablauf in Git implementieren
 
 **Befund (hoch, Erwartungslücke):** Keine direkten Datei-/Gruppenaktionen zum
 Stage/Unstage und kein Commitfeld/Button; nur vorgeschlagene Terminalbefehle.
@@ -993,7 +993,29 @@ Identitäts-/Fehler-/Busybehandlung; Review und Stagingzustand nachvollziehbar h
 **Abnahme:** Echte Repos mit gemischt staged/unstaged/untracked, selektiver Commit,
 Committext, fehlender Gitidentität, Hooks/Fehlern und Statusaktualisierung prüfen.
 
-### 31. [ ] Git-Aktionen und Befehle an das ausgewählte Repository binden
+**Nachweis 12.10.2026:** Native repo-bound Stage/Unstage/Commit-API mit echtem
+Indexlock, separatem Transaktionsindex, geprüfter Index-/HEADversion und dauerhaftem
+Operationsbeleg. Datei-/Gruppenaktionen, Commitentwurf, Busy/Fehler/Retry und
+bestätigter Commithash sind angebunden. Native Hooks und Identitätsfehler bleiben
+wirksam. 14 Git-/Parsertests bestehen einschließlich externem Lock, konkurrierender
+Wiederholung, Abbruch sowie bereits erstelltem Commit mit fehlgeschlagener
+Indexveröffentlichung; letzterer nennt den Hash und behält den vorbereiteten Index.
+Sechs echte Browserabläufe bestehen: selektiver Indexreview/Commit bei nachträglich
+geänderter Arbeitskopie; Unicode Stage/Unstage ohne Diskänderung; fehlende Identität
+mit erhaltenem Entwurf; echter abweisender Hook und korrigierter Retry; verlorene
+Commitantwort mit gesperrten neuen Mutationen und gleicher Operations-ID ohne
+zweiten Commit; Stage-all/Unstage-all. Null Terminal-Inputframes und Browserfehler.
+Neu entstandene Zielgruppen öffnen sich; das wiederverwendete Commitfeld wird nach
+bestätigtem Erfolg tatsächlich geleert. Screenshots sind geprüft. 30 Inspector-
+Geometrien sowie 708 Frontendtests, Kitty/Typecheck/ESLint/Stylelint bestehen.
+Evidenz: `git-task-30-accepted/summary.json`, `git-task-30-layout-regression`,
+`git-task-30-native/git-task-30.trx`, `git-task-30-verify-accepted.*.log` unter
+`.dev/file-git-production`. Sourceprüfung läuft mit prozesslokal deaktivierten
+zusätzlichen Codeanalysatoren, nachdem der normale csc-Build über eine Stunde
+CPU-Zeit verbraucht hatte; Releaseprüfung bleibt regulär und dieser Hänger muss
+vor Veröffentlichung geklärt werden. Keine LocalSystem-Schreibabnahme behauptet.
+
+### 31. [~] Git-Aktionen und Befehle an das ausgewählte Repository binden
 
 **Befund (hoch, Code):** Multi-Repo-Sidebar erzeugt relative git-Befehle ohne -C.
 Inspector zeigt tlbx-2, Terminal-CWD Jpa: Ausführung arbeitet im falschen Repo.

@@ -1,0 +1,195 @@
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Ai.Tlbx.MidTerm.Models.Git;
+
+namespace Ai.Tlbx.MidTerm.Services.Git;
+
+/// <summary>Native Git operations against one validated repository and its locked index.</summary>
+internal sealed class GitOperationService
+{
+    private static readonly StringComparer PathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> Gates = new(PathComparer);
+
+    internal async Task<GitOperationResponse> ExecuteAsync(string repoRoot, GitOperationRequest request,
+        CancellationToken ct, Func<bool>? stillAuthorized = null)
+    {
+        ValidateRequest(request);
+        var info = await GitCommandRunner.GetRepositoryInfoAsync(repoRoot).ConfigureAwait(false)
+            ?? throw new GitOperationException(404, "no_repository", "The selected repository is unavailable.");
+        if (!PathComparer.Equals(Path.GetFullPath(repoRoot), info.RepoRoot))
+            throw new GitOperationException(409, "repository_changed", "The selected repository changed. Refresh it before retrying.");
+        var gate = Gates.GetOrAdd(info.GitDir, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (stillAuthorized?.Invoke() == false) throw new GitOperationException(403, "repository_unbound", "This repository is no longer bound to the session.");
+            var fingerprint = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(request, GitJsonContext.Default.GitOperationRequest)));
+            var folder = Path.Combine(info.GitDir, "tlbx-operation-receipts");
+            var receiptPath = Path.Combine(folder, request.OperationId + ".json");
+            if (File.Exists(receiptPath))
+            {
+                var saved = JsonSerializer.Deserialize(await File.ReadAllTextAsync(receiptPath, ct).ConfigureAwait(false), GitJsonContext.Default.GitOperationReceipt)
+                    ?? throw new IOException("Invalid Git operation receipt.");
+                if (saved.Fingerprint != fingerprint) throw new GitOperationException(409, "operation_reused", "This operation ID belongs to another request.");
+                saved.Result.StatusCode = saved.StatusCode;
+                if (saved.Result.State == "running") { saved.Result.State = "unknown"; saved.Result.StatusCode = 409; saved.Result.ErrorCode = "outcome_unknown"; saved.Result.Detail = "The previous Git operation did not return a confirmed result. Inspect repository status before continuing."; }
+                saved.Result.Status = await GitCommandRunner.GetStatusAsync(repoRoot).ConfigureAwait(false);
+                return saved.Result;
+            }
+            Directory.CreateDirectory(folder);
+            var receipt = new GitOperationReceipt { Fingerprint = fingerprint, Result = new() { OperationId = request.OperationId, RepoRoot = repoRoot, Action = request.Action, State = "running" } };
+            await SaveReceiptAsync(receiptPath, receipt).ConfigureAwait(false);
+            try { receipt.Result = await ExecuteLockedIndexAsync(info, request, ct).ConfigureAwait(false); }
+            catch (GitOperationException error) { receipt.Result.State = "error"; receipt.Result.StatusCode = error.StatusCode; receipt.Result.ErrorCode = error.Code; receipt.Result.Detail = error.Message; }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException)
+            { receipt.Result.State = "error"; receipt.Result.StatusCode = error is UnauthorizedAccessException ? 403 : 409; receipt.Result.ErrorCode = error is UnauthorizedAccessException ? "permission_denied" : "git_io_error"; receipt.Result.Detail = error.Message; }
+            await SaveReceiptAsync(receiptPath, receipt).ConfigureAwait(false);
+            receipt.Result.Status = await GitCommandRunner.GetStatusAsync(repoRoot).ConfigureAwait(false);
+            return receipt.Result;
+        }
+        finally { gate.Release(); }
+    }
+
+    private static void ValidateRequest(GitOperationRequest request)
+    {
+        if (request.Paths is null) throw new GitOperationException(400, "invalid_paths", "Paths must be an array.");
+        if (!Guid.TryParseExact(request.OperationId, "D", out _)) throw new GitOperationException(400, "invalid_operation", "A unique operation ID is required.");
+        if (request.Action is not ("stage" or "unstage" or "commit")) throw new GitOperationException(400, "invalid_action", "Unsupported Git operation.");
+        if (request.Action == "commit" && (string.IsNullOrWhiteSpace(request.Message) || request.Message.Length > 65536))
+            throw new GitOperationException(400, "commit_message_required", "Enter a commit message of at most 65536 characters.");
+        if (request.Action == "commit" && (string.IsNullOrEmpty(request.ExpectedIndexVersion) || request.ExpectedHead is null))
+            throw new GitOperationException(400, "review_required", "Refresh and review staged changes before committing.");
+        if (request.Action != "commit" && !request.All && request.Paths.Length == 0)
+            throw new GitOperationException(400, "paths_required", "Select files before changing the index.");
+        if (request.Paths.Length > 10000) throw new GitOperationException(400, "too_many_paths", "Select at most 10000 files at once.");
+    }
+
+    private static async Task<GitOperationResponse> ExecuteLockedIndexAsync(GitCommandRunner.GitRepositoryInfo info,
+        GitOperationRequest request, CancellationToken ct)
+    {
+        var index = await GitCommandRunner.GetIndexPathAsync(info.RepoRoot).ConfigureAwait(false);
+        var lockPath = index + ".lock";
+        FileStream? indexLock;
+        try { indexLock = new FileStream(lockPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, FileOptions.Asynchronous); }
+        catch (IOException) when (File.Exists(lockPath)) { throw new GitOperationException(409, "git_locked", "Another Git operation is using this repository. Wait for it to finish and retry."); }
+        var temporary = index + ".tlbx-" + request.OperationId;
+        var published = false;
+        GitOperationResponse? result = null;
+        try
+        {
+            var before = await GitCommandRunner.GetStatusAsync(info.RepoRoot).ConfigureAwait(false);
+            if (request.ExpectedIndexVersion is { } expected && expected != before.IndexVersion)
+                throw new GitOperationException(409, "index_changed", "Staged changes changed since the last review. Refresh and review them again.");
+            if (request.Action == "commit" && request.ExpectedHead != before.HeadHash)
+                throw new GitOperationException(409, "head_changed", "The repository HEAD changed. Refresh and review before committing.");
+            if (request.Action == "commit" && before.Staged.Length == 0)
+                throw new GitOperationException(409, "nothing_staged", "Stage changes before creating a commit.");
+            if (before.Conflicted.Length > 0 && (request.Action == "commit" || request.All || request.Paths.Any(path => before.Conflicted.Any(file => PathComparer.Equals(file.Path, path)))))
+                throw new GitOperationException(409, "conflict_unresolved", "Resolve conflicted files before staging or committing them.");
+            if (File.Exists(index)) File.Copy(index, temporary);
+            var paths = request.Action == "commit" ? [] : SelectPaths(info.RepoRoot, request, before);
+            var args = BuildArguments(request, before, paths);
+            var environment = new Dictionary<string, string?>(StringComparer.Ordinal) { ["GIT_INDEX_FILE"] = temporary, ["GIT_TERMINAL_PROMPT"] = "0", ["GCM_INTERACTIVE"] = "never" };
+            var (exitCode, stdout, stderr) = await GitCommandRunner.ExecuteAsync(info.RepoRoot, args, environment, ct).ConfigureAwait(false);
+            result = new GitOperationResponse { OperationId = request.OperationId, RepoRoot = info.RepoRoot, Action = request.Action, State = "completed" };
+            if (request.Action == "commit")
+            {
+                var after = await GitCommandRunner.GetStatusAsync(info.RepoRoot).ConfigureAwait(false);
+                if (after.HeadHash != before.HeadHash) result.CommitHash = after.HeadHash;
+                else if (exitCode == 0) throw new GitOperationException(409, "commit_unconfirmed", "Git returned without a new commit. Inspect repository status before retrying.");
+            }
+            if (exitCode != 0 && result.CommitHash is null) throw GitFailure(stderr, stdout, exitCode);
+            if (!File.Exists(temporary)) throw new GitOperationException(409, "index_unavailable", "Git did not return a complete index.");
+            await using (var prepared = new FileStream(temporary, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.Asynchronous))
+            { await prepared.CopyToAsync(indexLock, CancellationToken.None).ConfigureAwait(false); }
+            await indexLock.FlushAsync(CancellationToken.None).ConfigureAwait(false); indexLock.Flush(flushToDisk: true);
+            await indexLock.DisposeAsync().ConfigureAwait(false);
+            indexLock = null;
+            if (!OperatingSystem.IsWindows() && File.Exists(index)) File.SetUnixFileMode(lockPath, File.GetUnixFileMode(index));
+            await PublishIndexAsync(lockPath, index).ConfigureAwait(false); published = true;
+            return result;
+        }
+        catch (Exception error) when (result?.CommitHash is not null && error is IOException or UnauthorizedAccessException or GitOperationException)
+        {
+            result.State = "unknown";
+            result.StatusCode = 409;
+            result.ErrorCode = "index_publication_failed";
+            result.Detail = $"Commit {result.CommitHash} exists, but its index could not be published. Do not create another commit. The prepared index remains at {temporary}. {error.Message}";
+            return result;
+        }
+        finally
+        {
+            if (indexLock is not null) await indexLock.DisposeAsync().ConfigureAwait(false);
+            if (!published && File.Exists(lockPath)) File.Delete(lockPath);
+            if (File.Exists(temporary) && (published || result?.CommitHash is null)) File.Delete(temporary);
+            if (File.Exists(temporary + ".lock")) File.Delete(temporary + ".lock");
+        }
+    }
+
+    private static string[] SelectPaths(string root, GitOperationRequest request, GitStatusResponse status)
+    {
+        if (request.All) return ["."];
+        var files = request.Action == "unstage" ? status.Staged : status.Modified.Concat(status.Untracked).Concat(status.Staged).ToArray();
+        var result = new HashSet<string>(PathComparer);
+        foreach (var input in request.Paths)
+        {
+            if (string.IsNullOrEmpty(input) || input.IndexOf('\0') >= 0 || Path.IsPathRooted(input)) throw new GitOperationException(400, "invalid_path", "Git paths must be relative to the selected repository.");
+            var path = OperatingSystem.IsWindows() ? input.Replace('\\', '/') : input;
+            if (path.Split('/').Any(part => part is "." or "..") || !Path.GetFullPath(Path.Combine(root, path)).StartsWith(root + Path.DirectorySeparatorChar, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                throw new GitOperationException(403, "path_outside_repository", "The selected path is outside the repository.");
+            var file = files.FirstOrDefault(file => PathComparer.Equals(file.Path.TrimEnd('/'), path.TrimEnd('/')))
+                ?? throw new GitOperationException(409, "path_changed", "The selected file no longer has that Git state. Refresh and retry.");
+            result.Add(file.Path);
+            if (file.OriginalPath is { } original) result.Add(original);
+        }
+        return result.ToArray();
+    }
+
+    private static string[] BuildArguments(GitOperationRequest request, GitStatusResponse before, string[] paths)
+    {
+        if (request.Action == "commit") return ["commit", "--cleanup=verbatim", "-m", request.Message!];
+        if (request.Action == "stage") return ["--literal-pathspecs", "add", "-A", "--", .. paths];
+        return string.IsNullOrEmpty(before.HeadHash)
+            ? ["--literal-pathspecs", "rm", "--cached", "--force", "--ignore-unmatch", "-r", "--", .. paths]
+            : ["--literal-pathspecs", "restore", "--staged", "--", .. paths];
+    }
+
+    private static GitOperationException GitFailure(string stderr, string stdout, int exitCode)
+    {
+        var detail = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+        if (detail.Length > 16000) detail = detail[..16000];
+        var identity = detail.Contains("identity unknown", StringComparison.OrdinalIgnoreCase) || detail.Contains("unable to auto-detect email", StringComparison.OrdinalIgnoreCase);
+        return new GitOperationException(exitCode < 0 ? 504 : 422, identity ? "identity_missing" : exitCode < 0 ? "git_timeout" : "git_failed", detail);
+    }
+
+    private static async Task PublishIndexAsync(string prepared, string index)
+    {
+        for (var retry = 0; ; retry++)
+        {
+            try { File.Move(prepared, index, overwrite: true); return; }
+            catch (IOException) when (OperatingSystem.IsWindows() && retry < 10) { await Task.Delay(25).ConfigureAwait(false); }
+        }
+    }
+
+    private static async Task SaveReceiptAsync(string path, GitOperationReceipt receipt)
+    {
+        receipt.StatusCode = receipt.Result.StatusCode;
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try { await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(receipt, GitJsonContext.Default.GitOperationReceipt), Encoding.UTF8).ConfigureAwait(false); File.Move(temporary, path, overwrite: true); }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+
+    internal static async Task<GitOperationResponse> ReadReceiptAsync(string root, string operationId, CancellationToken ct)
+    {
+        if (!Guid.TryParseExact(operationId, "D", out _)) throw new GitOperationException(400, "invalid_operation", "Invalid operation ID.");
+        var info = await GitCommandRunner.GetRepositoryInfoAsync(root).ConfigureAwait(false) ?? throw new GitOperationException(404, "no_repository", "Repository unavailable.");
+        var path = Path.Combine(info.GitDir, "tlbx-operation-receipts", operationId + ".json");
+        if (!File.Exists(path)) throw new GitOperationException(404, "operation_not_found", "This Git operation has no recorded result.");
+        var receipt = JsonSerializer.Deserialize(await File.ReadAllTextAsync(path, ct).ConfigureAwait(false), GitJsonContext.Default.GitOperationReceipt) ?? throw new IOException("Invalid operation receipt.");
+        receipt.Result.StatusCode = receipt.StatusCode;
+        receipt.Result.Status = await GitCommandRunner.GetStatusAsync(root).ConfigureAwait(false);
+        return receipt.Result;
+    }
+}

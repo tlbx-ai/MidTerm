@@ -16962,6 +16962,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .git-tree-file {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
   width: 100%;
   padding: 6px 12px;
@@ -16972,6 +16974,16 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
     background-color 0.12s ease,
     transform 0.12s ease;
 }
+.git-tree-file-row, .git-section-heading { display: flex; align-items: stretch; min-width: 0; }
+.git-section-heading { flex-wrap: wrap; }
+.git-section-heading .git-section-header { flex: 1; min-width: 0; }
+.git-file-action, .git-section-action { flex-shrink: 0; margin: 4px 8px 4px 0; min-width: 0; }
+.git-operations { padding: 10px 12px; border-bottom: 1px solid var(--border-color); }
+.git-commit-message { display: block; resize: vertical; width: 100%; min-height: 64px; max-height: 160px; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--workspace-pane-chrome-background); color: var(--text-primary); font: inherit; }
+.git-operation-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.git-operation-status { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); font-size: var(--fs-sm); }
+.git-operation-status[role="alert"] { color: var(--accent-red); }
+.git-operation-status:empty { display: none; }
 
 .git-tree-file:hover {
   background-color: var(--bg-session-hover);

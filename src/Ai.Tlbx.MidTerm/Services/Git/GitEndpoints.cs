@@ -48,6 +48,7 @@ public static class GitEndpoints
         TtyHostSessionManager sessionManager,
         SessionGitMetadataService gitMetadata)
     {
+        GitOperationEndpoints.Map(app, gitWatcher, sessionManager, gitMetadata);
         app.MapGet("/api/git/debug", async (string? sessionId) =>
         {
             var session = string.IsNullOrEmpty(sessionId) ? null : sessionManager.GetSession(sessionId);

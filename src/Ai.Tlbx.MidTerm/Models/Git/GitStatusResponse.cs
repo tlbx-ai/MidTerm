@@ -7,6 +7,8 @@ public sealed class GitStatusResponse
     public string Source { get; set; } = "";
     public bool IsPrimary { get; set; }
     public string Branch { get; set; } = "";
+    public string HeadHash { get; set; } = "";
+    public string IndexVersion { get; set; } = "";
     public int Ahead { get; set; }
     public int Behind { get; set; }
     public GitFileEntry[] Staged { get; set; } = [];

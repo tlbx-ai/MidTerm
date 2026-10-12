@@ -10,6 +10,8 @@ export interface GitStatusResponse {
   source?: string | undefined;
   isPrimary?: boolean | undefined;
   branch: string;
+  headHash?: string;
+  indexVersion?: string;
   ahead: number;
   behind: number;
   staged: GitFileEntry[];
@@ -21,6 +23,29 @@ export interface GitStatusResponse {
   repoRoot: string;
   totalAdditions: number;
   totalDeletions: number;
+}
+
+export interface GitOperationRequest {
+  sessionId: string;
+  repoRoot: string;
+  operationId: string;
+  action: 'stage' | 'unstage' | 'commit';
+  paths: string[];
+  all: boolean;
+  message?: string;
+  expectedIndexVersion?: string;
+  expectedHead?: string;
+}
+
+export interface GitOperationResponse {
+  operationId: string;
+  repoRoot: string;
+  action: string;
+  state: string;
+  errorCode?: string | null;
+  detail?: string | null;
+  commitHash?: string | null;
+  status?: GitStatusResponse | null;
 }
 
 export interface GitRepoBinding {

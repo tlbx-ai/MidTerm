@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using System.Security.Cryptography;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Git;
 
@@ -233,7 +234,9 @@ internal static class GitCommandRunner
             return response;
         }
 
-        return ParseStatus(repoRoot, stdout);
+        response = ParseStatus(repoRoot, stdout);
+        response.IndexVersion = await GetIndexVersionAsync(repoRoot).ConfigureAwait(false);
+        return response;
     }
 
     internal static GitStatusResponse ParseStatus(string repoRoot, string stdout)
@@ -251,6 +254,11 @@ internal static class GitCommandRunner
             if (line.StartsWith("# branch.head ", StringComparison.Ordinal))
             {
                 response.Branch = line["# branch.head ".Length..];
+            }
+            else if (line.StartsWith("# branch.oid ", StringComparison.Ordinal))
+            {
+                var oid = line["# branch.oid ".Length..];
+                response.HeadHash = oid == "(initial)" ? "" : oid;
             }
             else if (line.StartsWith("# branch.ab ", StringComparison.Ordinal))
             {
@@ -563,6 +571,33 @@ internal static class GitCommandRunner
             : Path.GetFullPath(Path.Combine(workingDir, rawPath));
     }
 
+    internal static Task<(int ExitCode, string Stdout, string Stderr)> ExecuteAsync(
+        string workingDir, IReadOnlyList<string> args, CancellationToken ct) =>
+        ExecuteAsync(workingDir, args, null, ct);
+
+    internal static Task<(int ExitCode, string Stdout, string Stderr)> ExecuteAsync(
+        string workingDir, IReadOnlyList<string> args, IReadOnlyDictionary<string, string?>? environment, CancellationToken ct) =>
+        RunGitAsync(workingDir, args, TimeSpan.FromMinutes(2), environment, ct);
+
+    internal static async Task<string> GetIndexPathAsync(string workingDir)
+    {
+        return await GetResolvedGitPathAsync(workingDir, "rev-parse", "--git-path", "index").ConfigureAwait(false)
+            ?? throw new GitOperationException(404, "no_repository", "The repository index is unavailable.");
+    }
+
+    internal static async Task<string> GetIndexVersionAsync(string workingDir)
+    {
+        var index = await GetIndexPathAsync(workingDir).ConfigureAwait(false);
+        return await HashIndexAsync(index).ConfigureAwait(false);
+    }
+
+    internal static async Task<string> HashIndexAsync(string path)
+    {
+        if (!File.Exists(path)) return "absent";
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 65536, FileOptions.Asynchronous);
+        return Convert.ToHexString(await SHA256.HashDataAsync(stream).ConfigureAwait(false));
+    }
+
     private static Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(string workingDir, params string[] args)
     {
         return RunGitAsync(workingDir, args, CommandTimeout);
@@ -571,7 +606,9 @@ internal static class GitCommandRunner
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(
         string workingDir,
         IReadOnlyList<string> args,
-        TimeSpan timeout)
+        TimeSpan timeout,
+        IReadOnlyDictionary<string, string?>? environment = null,
+        CancellationToken cancellation = default)
     {
         var fullArgs = new string[args.Count + 3];
         fullArgs[0] = "--no-optional-locks";
@@ -582,7 +619,8 @@ internal static class GitCommandRunner
             fullArgs[i + 3] = args[i];
         }
 
-        using var cts = new CancellationTokenSource(timeout);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        cts.CancelAfter(timeout);
 
         try
         {
@@ -591,14 +629,14 @@ internal static class GitCommandRunner
             {
                 using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
                 var result = identity.ImpersonationLevel != System.Security.Principal.TokenImpersonationLevel.None
-                    ? await TtyHostSpawner.RunCommandAsCurrentIdentityAsync("git", fullArgs, AppContext.BaseDirectory, cts.Token)
+                    ? await TtyHostSpawner.RunCommandAsCurrentIdentityAsync("git", fullArgs, AppContext.BaseDirectory, environment, cts.Token)
                     : await TtyHostSpawner.RunCommandAsUserAsync("git", fullArgs, AppContext.BaseDirectory, _runAsUser, cts.Token);
                 RecordCommand(workingDir, fullArgs, result.ExitCode, result.Stdout, result.Stderr);
                 return result;
             }
 #endif
 
-            return await RunGitDirectAsync(workingDir, fullArgs, cts.Token);
+            return await RunGitDirectAsync(workingDir, fullArgs, environment, cts.Token);
         }
         catch (OperationCanceledException)
         {
@@ -613,7 +651,7 @@ internal static class GitCommandRunner
     }
 
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitDirectAsync(
-        string workingDir, string[] args, CancellationToken ct)
+        string workingDir, string[] args, IReadOnlyDictionary<string, string?>? environment, CancellationToken ct)
     {
         var psi = new ProcessStartInfo
         {
@@ -631,6 +669,7 @@ internal static class GitCommandRunner
         {
             psi.ArgumentList.Add(arg);
         }
+        if (environment is not null) foreach (var pair in environment) psi.Environment[pair.Key] = pair.Value;
 
         using var process = Process.Start(psi);
         if (process is null)
@@ -642,7 +681,12 @@ internal static class GitCommandRunner
         var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
         var stderrTask = process.StandardError.ReadToEndAsync(ct);
 
-        await process.WaitForExitAsync(ct);
+        try { await process.WaitForExitAsync(ct); }
+        catch (OperationCanceledException)
+        {
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            throw;
+        }
 
         var stdout = await stdoutTask;
         var stderr = await stderrTask;
