@@ -1,0 +1,153 @@
+import { FileSelection } from './selection';
+import { t } from '../i18n';
+import { getCurrentLocale } from '../i18n';
+
+/** Shared keyboard and touch selection. Opening is always an explicit callback. */
+export class FileSelectionSurface {
+  public readonly selection = new FileSelection();
+  public revision = 0;
+  private typed = '';
+  private typedAt = 0;
+  public constructor(
+    private rows: () => HTMLElement[],
+    private changed: () => void,
+    private open: (path: string) => void,
+  ) {}
+
+  public choose(row: HTMLElement, toggle = false, range = false): void {
+    const path = row.dataset.path;
+    if (!path) return;
+    this.revision++;
+    this.selection.select(
+      path,
+      this.rows().map((item) => item.dataset.path ?? ''),
+      toggle,
+      range,
+    );
+    row.focus({ preventScroll: true });
+    this.update();
+  }
+
+  public update(): void {
+    const rows = this.rows();
+    this.selection.retain(rows.map((row) => row.dataset.path ?? ''));
+    const current =
+      rows.find((row) => row === document.activeElement) ??
+      rows.find((row) => this.selection.paths.has(row.dataset.path ?? '')) ??
+      rows[0];
+    rows.forEach((row) => {
+      const selected = this.selection.paths.has(row.dataset.path ?? '');
+      row.classList.toggle('selected', selected);
+      row.setAttribute('aria-selected', String(selected));
+      row.tabIndex = row === current ? 0 : -1;
+      const checkbox = row.querySelector<HTMLInputElement>('.file-selection-checkbox');
+      if (checkbox) checkbox.checked = selected;
+    });
+    this.changed();
+  }
+
+  public bind(row: HTMLElement): void {
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.tabIndex = -1;
+    checkbox.className = 'file-selection-checkbox';
+    checkbox.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.choose(row, true, event.shiftKey);
+    });
+    checkbox.addEventListener('dblclick', (event) => {
+      event.stopPropagation();
+    });
+    const target = document.createElement('label');
+    target.className = 'file-selection-target';
+    target.append(checkbox);
+    target.addEventListener('click', (event) => {
+      event.stopPropagation();
+    });
+    target.addEventListener('dblclick', (event) => {
+      event.stopPropagation();
+    });
+    row.prepend(target);
+    row.addEventListener('keydown', (event) => {
+      this.key(event, row);
+    });
+  }
+
+  public label(row: HTMLElement, name: string): void {
+    row.dataset.name = name;
+    row.setAttribute('aria-label', name);
+    row
+      .querySelector('.file-selection-checkbox')
+      ?.setAttribute('aria-label', `${t('fileBrowser.select')} ${name}`);
+  }
+
+  private key(event: KeyboardEvent, row: HTMLElement): void {
+    const rows = this.rows(),
+      index = rows.indexOf(row);
+    const toggle = event.ctrlKey || event.metaKey;
+    if (toggle && event.key.toLowerCase() === 'a') {
+      this.typed = '';
+      this.revision++;
+      this.selection.restore(rows.map((item) => item.dataset.path ?? ''));
+      this.update();
+    } else if (event.key === 'Enter') {
+      this.typed = '';
+      const path = row.dataset.path;
+      if (this.selection.paths.size === 0) this.choose(row);
+      if (path && this.selection.paths.size === 1 && this.selection.paths.has(path))
+        this.open(path);
+    } else if (event.key === ' ') {
+      this.typed = '';
+      this.choose(row, toggle, event.shiftKey);
+    } else if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+      this.typed = '';
+      const next = this.nextRow(rows, index, event.key);
+      if (!next) return;
+      if (!toggle || event.shiftKey) this.choose(next, toggle, event.shiftKey);
+      next.focus();
+      this.update();
+      next.scrollIntoView({ block: 'nearest' });
+    } else if (this.isTypeKey(event)) {
+      this.typeToSelect(event.key, rows, index);
+    } else return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  private isTypeKey(event: KeyboardEvent): boolean {
+    if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return false;
+    return (
+      Array.from(
+        new Intl.Segmenter(getCurrentLocale(), { granularity: 'grapheme' }).segment(event.key),
+      ).length === 1
+    );
+  }
+
+  private typeToSelect(key: string, rows: HTMLElement[], index: number): void {
+    const now = performance.now();
+    this.typed =
+      (now - this.typedAt > 700 ? '' : this.typed) + key.toLocaleLowerCase(getCurrentLocale());
+    this.typedAt = now;
+    const normalized = key.toLocaleLowerCase(getCurrentLocale());
+    const query =
+      this.typed === normalized.repeat(this.typed.length / normalized.length)
+        ? normalized
+        : this.typed;
+    const ordered = [...rows.slice(index + 1), ...rows.slice(0, index + 1)];
+    const next = ordered.find((row) =>
+      row.dataset.name
+        ?.toLocaleLowerCase(getCurrentLocale())
+        .startsWith(query.toLocaleLowerCase(getCurrentLocale())),
+    );
+    if (next) {
+      this.choose(next);
+      next.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  private nextRow(rows: HTMLElement[], index: number, key: string): HTMLElement | undefined {
+    if (key === 'Home') return rows[0];
+    if (key === 'End') return rows[rows.length - 1];
+    return rows[Math.max(0, Math.min(rows.length - 1, index + (key === 'ArrowUp' ? -1 : 1)))];
+  }
+}

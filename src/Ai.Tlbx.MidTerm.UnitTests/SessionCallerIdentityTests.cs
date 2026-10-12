@@ -14,6 +14,17 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class SessionCallerIdentityTests
 {
     [Fact]
+    public async Task SessionIdentityRejectsAReusedPidBeforeExecutingAnyFileAction()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var process = Process.GetCurrentProcess(); var executed = false;
+        await Assert.ThrowsAsync<SessionCallerIdentityException>(() => SessionCallerIdentity.RunForSessionAsync(
+            process.Id, process.StartTime.AddSeconds(-1), () => { executed = true; return Task.FromResult(1); }));
+        Assert.False(executed);
+        Assert.Equal(7, await SessionCallerIdentity.RunForSessionAsync(process.Id, process.StartTime, () => Task.FromResult(7)));
+    }
+
+    [Fact]
     public async Task NativeCallerIdentityFlowsAcrossAwaitAndRestoresOriginalContext()
     {
         if (!OperatingSystem.IsWindows()) return;

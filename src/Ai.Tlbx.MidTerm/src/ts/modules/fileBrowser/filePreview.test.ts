@@ -2,6 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { renderPreview } from './filePreview';
 
 class FakeElement {
+  public readonly dataset: Record<string, string> = {};
+  public isConnected = true;
   public readonly tagName: string;
   public className = '';
   public textContent = '';
@@ -11,6 +13,7 @@ class FakeElement {
   public spellcheck = true;
   public readonly style: Record<string, string> = {};
   public children: FakeElement[] = [];
+  public parentElement: FakeElement | null = null;
   public readonly classList = {
     add: (...tokens: string[]) => {
       const values = new Set(this.className.split(/\s+/).filter(Boolean));
@@ -37,8 +40,26 @@ class FakeElement {
   }
 
   public appendChild<T extends FakeElement>(child: T): T {
+    child.parentElement = this;
     this.children.push(child);
     return child;
+  }
+
+  public append(...children: FakeElement[]): void {
+    children.forEach((child) => this.appendChild(child));
+  }
+
+  public replaceChildren(...children: FakeElement[]): void {
+    this.innerHTML = '';
+    this.append(...children);
+  }
+
+  public replaceWith(next: FakeElement): void {
+    if (!this.parentElement) return;
+    const parent = this.parentElement;
+    parent.children[parent.children.indexOf(this)] = next;
+    next.parentElement = parent;
+    this.parentElement = null;
   }
 
   public addEventListener(type: string, handler: (event?: any) => void): void {
@@ -90,6 +111,28 @@ function matchesSelector(element: FakeElement, selector: string): boolean {
   return element.tagName.toLowerCase() === selector.toLowerCase();
 }
 
+function documentResponse(path: string, content: string, version = 'v1'): Response {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      path,
+      content,
+      version,
+      size: content.length,
+      encoding: 'UTF-8',
+      lineEnding: 'lf',
+      isTruncated: false,
+      canLoadFull: false,
+      readOnly: false,
+      offset: 0,
+      nextOffset: content.length,
+      previewBytes: content.length,
+      editLimitBytes: 32 * 1024 * 1024,
+    }),
+  } as Response;
+}
+
 const originalDocument = globalThis.document;
 const originalFetch = globalThis.fetch;
 const renderingMocks = vi.hoisted(() => {
@@ -103,6 +146,9 @@ const renderingMocks = vi.hoisted(() => {
       type: '',
       value: '',
       spellcheck: true,
+      setAttribute() {},
+      focus() {},
+      setSelectionRange() {},
       style: {},
       children: [] as any[],
       classList: {
@@ -217,6 +263,8 @@ vi.mock('../i18n', () => ({
 }));
 
 vi.mock('../fileViewer/rendering', () => ({
+  renderMarkdown: (text: string) => text,
+  getFileName: (path: string) => path.split(/[\\/]/).at(-1),
   formatSize: (size: number) => `${size}`,
   getExtension: (name: string) => name.slice(name.lastIndexOf('.')).toLowerCase(),
   formatViewerHeaderSubtitle: (path: string, metadata?: string | null) =>
@@ -241,8 +289,9 @@ vi.mock('../fileViewer/imageView', () => ({
 }));
 
 async function flushPromises(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 describe('filePreview', () => {
@@ -280,15 +329,49 @@ describe('filePreview', () => {
     });
   });
 
+  it.each([true, false])(
+    'ignores a superseded response (ok=%s) even when its transport does not honor cancellation',
+    async (ok) => {
+      let resolveOld!: (response: Response) => void;
+      vi.mocked(globalThis.fetch)
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>((resolve) => {
+              resolveOld = resolve;
+            }),
+        )
+        .mockResolvedValueOnce(documentResponse('Q:\\fixtures\\B.md', '# Latest B'));
+      const container = new FakeElement('div');
+      const first = { name: 'A.md', fullPath: 'Q:\\fixtures\\A.md', isDirectory: false };
+      const latest = { name: 'B.md', fullPath: 'Q:\\fixtures\\B.md', isDirectory: false };
+      renderPreview(container as unknown as HTMLElement, first, 'session-1');
+      renderPreview(container as unknown as HTMLElement, latest, 'session-1');
+      await flushPromises();
+      resolveOld(
+        ok
+          ? documentResponse('Q:\\fixtures\\A.md', '# Obsolete A')
+          : ({ ok: false, status: 500, json: async () => ({ code: 'io_error' }) } as Response),
+      );
+      await flushPromises();
+      expect(container.querySelector('.preview-toolbar-name')?.textContent).toBe('B.md');
+      expect(container.querySelector('.file-document-markdown')?.innerHTML).toBe('# Latest B');
+      expect(container.querySelector('textarea')).toBeNull();
+      expect(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    },
+  );
+
   it('saves edited markdown content through the file save endpoint', async () => {
     vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(documentResponse('Q:\\repos\\MidTerm\\README.md', '# Title'))
       .mockResolvedValueOnce({
         ok: true,
-        text: async () => '# Title',
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => '',
+        json: async () => ({
+          success: true,
+          version: 'v2',
+          size: 9,
+          encoding: 'UTF-8',
+          lineEnding: 'lf',
+        }),
       } as Response);
 
     const container = new FakeElement('div');
@@ -301,6 +384,11 @@ describe('filePreview', () => {
     renderPreview(container as unknown as HTMLElement, entry, 'session-1');
     await flushPromises();
 
+    expect(container.querySelector('textarea')).toBeNull();
+    container
+      .querySelector('.file-document-modes')
+      ?.children.find((button) => button.dataset.mode === 'edit')
+      ?.click();
     const textarea = container.querySelector('textarea');
     const saveBtn = container.querySelector('.preview-save-btn');
 
@@ -323,6 +411,7 @@ describe('filePreview', () => {
         body: JSON.stringify({
           path: 'Q:\\repos\\MidTerm\\README.md',
           content: '# Updated',
+          expectedVersion: 'v1',
         }),
       }),
     );
@@ -367,6 +456,7 @@ describe('filePreview', () => {
       viewUrl: '/api/files/view?path=Q%3A%5Crepos%5CMidTerm%5Carchive.bin&sessionId=session-1',
       startOffset: 2,
       fileSize: 4,
+      signal: expect.any(AbortSignal),
     });
     expect(renderingMocks.formatBinaryDumpMock).toHaveBeenNthCalledWith(
       2,

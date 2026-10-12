@@ -225,7 +225,7 @@ internal static class GitCommandRunner
     internal static async Task<GitStatusResponse> GetStatusAsync(string repoRoot)
     {
         var response = new GitStatusResponse { RepoRoot = repoRoot };
-        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, "status", "--porcelain=v2", "-b", "--ahead-behind");
+        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, "status", "--porcelain=v2", "-z", "-b", "--ahead-behind");
 
         if (exitCode != 0)
         {
@@ -233,13 +233,21 @@ internal static class GitCommandRunner
             return response;
         }
 
+        return ParseStatus(repoRoot, stdout);
+    }
+
+    internal static GitStatusResponse ParseStatus(string repoRoot, string stdout)
+    {
+        var response = new GitStatusResponse { RepoRoot = repoRoot };
         var staged = new List<GitFileEntry>();
         var modified = new List<GitFileEntry>();
         var untracked = new List<GitFileEntry>();
         var conflicted = new List<GitFileEntry>();
 
-        foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        var records = stdout.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+        for (var index = 0; index < records.Length; index++)
         {
+            var line = records[index];
             if (line.StartsWith("# branch.head ", StringComparison.Ordinal))
             {
                 response.Branch = line["# branch.head ".Length..];
@@ -255,7 +263,8 @@ internal static class GitCommandRunner
             }
             else if (line.StartsWith("1 ", StringComparison.Ordinal) || line.StartsWith("2 ", StringComparison.Ordinal))
             {
-                ParseChangedEntry(line, staged, modified);
+                var original = line.StartsWith("2 ", StringComparison.Ordinal) && index + 1 < records.Length ? records[++index] : null;
+                ParseChangedEntry(line, original, staged, modified);
             }
             else if (line.StartsWith("u ", StringComparison.Ordinal))
             {
@@ -332,6 +341,30 @@ internal static class GitCommandRunner
         }
 
         return stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    internal static async Task<HashSet<string>?> GetIgnoredPathsAsync(string repoRoot, IReadOnlyList<string> paths)
+    {
+        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var ignored = new HashSet<string>(comparer);
+        var offset = 0;
+        while (offset < paths.Count)
+        {
+            var batch = new List<string>();
+            var chars = 0;
+            while (offset < paths.Count && (batch.Count == 0 || chars + paths[offset].Length < 6000))
+            { var path = paths[offset++]; batch.Add(path); chars += path.Length + 3; }
+            var args = new[] { "-c", "core.quotepath=false", "check-ignore", "--verbose", "--non-matching", "--" }.Concat(batch).ToArray();
+            var (code, stdout, _) = await RunGitAsync(repoRoot, args);
+            if (code is not 0 and not 1) return null;
+            var records = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            if (records.Length != batch.Count) return null;
+            // One verbose record per input, including nonmatches. C-quoted control characters
+            // remain within one record, so input order avoids lossy filename decoding.
+            for (var i = 0; i < records.Length; i++)
+                if (!records[i].StartsWith("::\t", StringComparison.Ordinal)) ignored.Add(batch[i]);
+        }
+        return ignored;
     }
 
     internal static async Task<Dictionary<string, (int Additions, int Deletions)>> GetNumStatAsync(string repoRoot)
@@ -452,10 +485,11 @@ internal static class GitCommandRunner
         return RunGitAsync(workingDir, args);
     }
 
-    private static void ParseChangedEntry(string line, List<GitFileEntry> staged, List<GitFileEntry> modified)
+    private static void ParseChangedEntry(string line, string? originalPath, List<GitFileEntry> staged, List<GitFileEntry> modified)
     {
-        var parts = line.Split(' ');
-        if (parts.Length < 9) return;
+        var count = line.StartsWith("2 ", StringComparison.Ordinal) ? 10 : 9;
+        var parts = line.Split(' ', count, StringSplitOptions.None);
+        if (parts.Length != count) return;
 
         var xy = parts[1];
         if (xy.Length < 2) return;
@@ -463,27 +497,7 @@ internal static class GitCommandRunner
         var indexStatus = xy[0];
         var worktreeStatus = xy[1];
 
-        string? originalPath = null;
-        string filePath;
-
-        if (line.StartsWith("2 ", StringComparison.Ordinal))
-        {
-            var tabIndex = line.IndexOf('\t', StringComparison.Ordinal);
-            if (tabIndex >= 0)
-            {
-                var pathParts = line[tabIndex..].Split('\t');
-                filePath = pathParts.Length >= 2 ? pathParts[1] : parts[^1];
-                originalPath = pathParts.Length >= 2 ? pathParts[0].TrimStart('\t') : null;
-            }
-            else
-            {
-                filePath = parts[^1];
-            }
-        }
-        else
-        {
-            filePath = parts[^1];
-        }
+        var filePath = parts[^1];
 
         if (indexStatus != '.')
         {
@@ -500,15 +514,16 @@ internal static class GitCommandRunner
             modified.Add(new GitFileEntry
             {
                 Path = filePath,
-                Status = MapStatusChar(worktreeStatus)
+                Status = MapStatusChar(worktreeStatus),
+                OriginalPath = originalPath
             });
         }
     }
 
     private static void ParseUnmergedEntry(string line, List<GitFileEntry> conflicted)
     {
-        var parts = line.Split(' ');
-        if (parts.Length < 2) return;
+        var parts = line.Split(' ', 11, StringSplitOptions.None);
+        if (parts.Length != 11) return;
 
         conflicted.Add(new GitFileEntry
         {
@@ -558,11 +573,13 @@ internal static class GitCommandRunner
         IReadOnlyList<string> args,
         TimeSpan timeout)
     {
-        var fullArgs = new string[args.Count + 1];
+        var fullArgs = new string[args.Count + 3];
         fullArgs[0] = "--no-optional-locks";
+        fullArgs[1] = "-C";
+        fullArgs[2] = workingDir;
         for (var i = 0; i < args.Count; i++)
         {
-            fullArgs[i + 1] = args[i];
+            fullArgs[i + 3] = args[i];
         }
 
         using var cts = new CancellationTokenSource(timeout);
@@ -572,7 +589,10 @@ internal static class GitCommandRunner
 #if WINDOWS
             if (_isServiceMode && OperatingSystem.IsWindows())
             {
-                var result = await TtyHostSpawner.RunCommandAsUserAsync("git", fullArgs, workingDir, _runAsUser, cts.Token);
+                using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+                var result = identity.ImpersonationLevel != System.Security.Principal.TokenImpersonationLevel.None
+                    ? await TtyHostSpawner.RunCommandAsCurrentIdentityAsync("git", fullArgs, AppContext.BaseDirectory, cts.Token)
+                    : await TtyHostSpawner.RunCommandAsUserAsync("git", fullArgs, AppContext.BaseDirectory, _runAsUser, cts.Token);
                 RecordCommand(workingDir, fullArgs, result.ExitCode, result.Stdout, result.Stderr);
                 return result;
             }
@@ -598,7 +618,7 @@ internal static class GitCommandRunner
         var psi = new ProcessStartInfo
         {
             FileName = "git",
-            WorkingDirectory = workingDir,
+            WorkingDirectory = AppContext.BaseDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,

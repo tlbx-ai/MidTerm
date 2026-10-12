@@ -1,0 +1,60 @@
+name: File views native acceptance
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - 'src/Ai.Tlbx.MidTerm/Services/File*.cs'
+      - 'src/Ai.Tlbx.MidTerm/Services/Git/GitCommandRunner.cs'
+      - 'src/Ai.Tlbx.MidTerm/Services/Git/GitFileStatusMapBuilder.cs'
+      - 'src/Ai.Tlbx.MidTerm/Services/Sessions/SessionCallerIdentity.cs'
+      - 'src/Ai.Tlbx.MidTerm/Services/Sessions/TtyHostSpawner.cs'
+      - 'src/Ai.Tlbx.MidTerm.UnitTests/File*Tests.cs'
+      - 'src/Ai.Tlbx.MidTerm.UnitTests/GitStatusParserTests.cs'
+      - 'src/Ai.Tlbx.MidTerm.UnitTests/GitFileStatusMapTests.cs'
+      - 'scripts/test-file-service-identity.ps1'
+      - '.github/workflows/file-views-verify.yml'
+permissions:
+  contents: read
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+concurrency:
+  group: file-views-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  native:
+    name: Files native (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: '10.0.303'
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24.14.0'
+      - name: Real filesystem acceptance
+        shell: pwsh
+        run: |
+          dotnet test src/Ai.Tlbx.MidTerm.UnitTests/Ai.Tlbx.MidTerm.UnitTests.csproj -c Release -p:SkipFrontendBuild=true -p:RestoreLockedMode=true --filter 'FullyQualifiedName~FileOperationServiceTests|FullyQualifiedName~FileDocumentServiceTests|FullyQualifiedName~FileNavigationServiceTests|FullyQualifiedName~FileDirectoryServiceTests|FullyQualifiedName~FileServiceTests|FullyQualifiedName~SessionCallerIdentityTests|FullyQualifiedName~GitStatusParserTests|FullyQualifiedName~GitFileStatusMapTests' --logger 'trx;LogFileName=files-native.trx' --results-directory .dev/file-native-results -v:q
+          if ($LASTEXITCODE -ne 0) { throw 'Native filesystem acceptance failed.' }
+      - name: Real LocalSystem caller boundary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-file-service-identity.ps1 -Configuration Release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: file-native-${{ matrix.os }}
+          path: |
+            .dev/file-native-results/*.trx
+            .dev/file-service-identity/*.log
+            .dev/file-service-identity/*.trx
+          retention-days: 7

@@ -1395,6 +1395,25 @@ public static class TtyHostSpawner
     }
 
     [SupportedOSPlatform("windows")]
+    internal static async Task<(int ExitCode, string Stdout, string Stderr)> RunCommandAsCurrentIdentityAsync(
+        string fileName, IReadOnlyList<string> args, string workingDir, CancellationToken ct)
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        if (!DuplicateCommandToken(identity.AccessToken.DangerousGetHandle(), 0x02000000, IntPtr.Zero, 2, 1, out var rawToken))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        using var token = new Microsoft.Win32.SafeHandles.SafeAccessTokenHandle(rawToken);
+        // Process creation needs service privileges, but the explicit primary token is the caller's.
+        // No desktop-user selection and no execution of git with the service account are allowed here.
+        return await WindowsIdentity.RunImpersonatedAsync(Microsoft.Win32.SafeHandles.SafeAccessTokenHandle.InvalidHandle,
+            () => RunCommandWithTokenAsync(fileName, args, workingDir, token.DangerousGetHandle(), ct));
+    }
+
+    [DllImport("advapi32.dll", EntryPoint = "DuplicateTokenEx", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DuplicateCommandToken(IntPtr existing, uint access, IntPtr attributes,
+        int impersonationLevel, int tokenType, out IntPtr primary);
+
+    [SupportedOSPlatform("windows")]
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunCommandWithTokenAsync(
         string fileName, IReadOnlyList<string> args, string workingDir, IntPtr userToken, CancellationToken ct)
     {

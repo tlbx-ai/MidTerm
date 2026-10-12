@@ -8,7 +8,6 @@ import {
   $gitPanelDocked,
   $activeSessionId,
   $fileViewerDocked,
-  $dockedFilePath,
   $commandsPanelDocked,
 } from '../../stores';
 import { handleDockLayoutChange } from '../terminal/scaling';
@@ -23,6 +22,7 @@ import { subscribeToSession } from './gitChannel';
 import { closeCommandsDock } from '../commands/dock';
 import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
 import { createLogger } from '../logging';
+import { requestCloseFileViewerDock } from '../fileViewer';
 
 const log = createLogger('gitDock');
 
@@ -33,15 +33,6 @@ const DOCK_WIDTH_KEY = 'mt-git-dock-width';
 let activeUnsub: (() => void) | null = null;
 let currentDockSessionId: string | null = null;
 let currentDockRepoRoot: string | undefined;
-
-function closeFileViewerDockIfOpen(): void {
-  if (!$fileViewerDocked.get()) return;
-  $fileViewerDocked.set(false);
-  $dockedFilePath.set(null);
-  const fvDock = document.getElementById('file-viewer-dock');
-  if (fvDock) fvDock.classList.add('hidden');
-  document.getElementById('app')?.classList.remove('file-viewer-docked');
-}
 
 function closeCommandsDockIfOpen(): void {
   if ($commandsPanelDocked.get()) {
@@ -62,7 +53,16 @@ export function toggleGitDock(sessionId: string, repoRoot?: string): void {
 }
 
 export function openGitDock(sessionId: string, repoRoot?: string): void {
-  closeFileViewerDockIfOpen();
+  void openGitDockAfterFileDecision(sessionId, repoRoot);
+}
+
+async function openGitDockAfterFileDecision(
+  sessionId: string,
+  repoRoot?: string,
+): Promise<boolean> {
+  const activeSessionId = $activeSessionId.get();
+  if ($fileViewerDocked.get() && !(await requestCloseFileViewerDock())) return false;
+  if (activeSessionId !== $activeSessionId.get()) return false;
   closeCommandsDockIfOpen();
 
   $gitPanelDocked.set(true);
@@ -72,7 +72,7 @@ export function openGitDock(sessionId: string, repoRoot?: string): void {
 
   const dockPanel = document.getElementById('git-dock');
   const app = document.getElementById('app');
-  if (!dockPanel) return;
+  if (!dockPanel) return false;
 
   dockPanel.classList.remove('hidden');
   app?.classList.add('git-docked');
@@ -110,6 +110,7 @@ export function openGitDock(sessionId: string, repoRoot?: string): void {
   });
 
   log.info(() => 'Git dock opened');
+  return true;
 }
 
 export async function openGitCommitDock(
@@ -117,7 +118,7 @@ export async function openGitCommitDock(
   hash: string,
   repoRoot?: string,
 ): Promise<void> {
-  openGitDock(sessionId, repoRoot);
+  if (!(await openGitDockAfterFileDecision(sessionId, repoRoot))) return;
   await showCommitInGitPanel(sessionId, hash, repoRoot);
 }
 

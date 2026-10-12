@@ -108,4 +108,27 @@ public sealed class FileServiceTests : IDisposable
         var refreshed = FileService.GetFileInfo(filePath);
         Assert.False(refreshed.Exists);
     }
+
+    [Fact]
+    public void FreshMetadataReflectsChangesWithoutWaitingForCacheExpiry()
+    {
+        var path = Path.Combine(_tempDir, "fresh.txt");
+        File.WriteAllText(path, "a");
+        Assert.Equal(1, FileService.GetFileInfo(path).Size);
+        File.WriteAllText(path, "abcdef");
+        Assert.Equal(6, FileService.GetFileInfo(path, fresh: true).Size);
+        Assert.Equal(6, FileService.GetFileInfo(path).Size);
+        File.Delete(path);
+        Assert.False(FileService.GetFileInfo(path, fresh: true).Exists);
+    }
+
+    [Fact]
+    public void CacheKeysFollowPlatformCaseSensitivity()
+    {
+        var upper = Path.Combine(_tempDir, "Case.txt"); var lower = Path.Combine(_tempDir, "case.txt");
+        File.WriteAllText(upper, "upper");
+        _ = FileService.GetFileInfo(upper);
+        if (!OperatingSystem.IsWindows()) { File.WriteAllText(lower, "x"); Assert.Equal(1, FileService.GetFileInfo(lower).Size); }
+        else Assert.Equal(5, FileService.GetFileInfo(lower).Size);
+    }
 }

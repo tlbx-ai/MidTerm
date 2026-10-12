@@ -597,6 +597,13 @@ public sealed class TtyHostClient : IAsyncDisposable
         return host;
     }
 
+    internal (int Pid, DateTime Started)? GetVerifiedHostIdentity()
+    {
+        if (!_hostIdentityVerified || _hostStartedAt is null || _hostPid == Environment.ProcessId) return null;
+        using var host = GetOriginalHostProcess();
+        return host is null ? null : (_hostPid, _hostStartedAt.Value);
+    }
+
     private bool IsOriginalHostRunning()
     {
         try { using var host = GetOriginalHostProcess(); return host is not null; }

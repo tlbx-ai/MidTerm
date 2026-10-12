@@ -1,5 +1,6 @@
 using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Services.Git;
 using Microsoft.AspNetCore.StaticFiles;
 
 namespace Ai.Tlbx.MidTerm.Services;
@@ -11,7 +12,8 @@ public sealed class FileService
     private const long FileInfoCacheNegativeTtlTicks = TimeSpan.TicksPerSecond * 5;
     private static readonly FileExtensionContentTypeProvider _contentTypeProvider = new();
     private static readonly Lock _fileInfoCacheLock = new();
-    private static readonly Dictionary<string, FileInfoCacheEntry> _fileInfoCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, FileInfoCacheEntry> _fileInfoCache = new(
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     private static readonly FileInfoCacheSlot[] _fileInfoCacheRing = new FileInfoCacheSlot[FileInfoCacheMaxEntries];
     private static int _fileInfoCacheRingIndex;
     private static long _fileInfoCacheGeneration;
@@ -24,11 +26,13 @@ public sealed class FileService
 
     private readonly TtyHostSessionManager _sessionManager;
     private readonly SessionPathAllowlistService _allowlistService;
+    private readonly GitWatcherService _gitWatcher;
 
-    public FileService(TtyHostSessionManager sessionManager, SessionPathAllowlistService allowlistService)
+    public FileService(TtyHostSessionManager sessionManager, SessionPathAllowlistService allowlistService, GitWatcherService gitWatcher)
     {
         _sessionManager = sessionManager;
         _allowlistService = allowlistService;
+        _gitWatcher = gitWatcher;
     }
 
     public void RegisterPaths(string sessionId, IEnumerable<string> paths)
@@ -43,6 +47,7 @@ public sealed class FileService
 
     public bool IsSessionValid(string sessionId) =>
         _sessionManager.GetSession(sessionId) is not null;
+    internal (int Pid, DateTime Started)? GetSessionHostIdentity(string sessionId) => _sessionManager.GetVerifiedHostIdentity(sessionId);
 
     public async Task<string?> GetSessionWorkingDirectoryAsync(string? sessionId)
     {
@@ -53,8 +58,36 @@ public sealed class FileService
         return fresh?.CurrentDirectory;
     }
 
-    public bool IsPathAccessible(string sessionId, string path, string? workingDirectory) =>
-        _allowlistService.IsPathAllowed(sessionId, path, workingDirectory);
+    public bool IsPathAccessible(string sessionId, string path, string? workingDirectory)
+    {
+        if (_allowlistService.IsPathAllowed(sessionId, path, workingDirectory)) return true;
+        var repos = _gitWatcher.GetRepoBindings(sessionId);
+        if (repos.Any(repo => IsWithinDirectory(path, repo.RepoRoot))) return true;
+        try
+        {
+            var physical = FileDocumentService.ResolvePath(path);
+            if (!string.IsNullOrEmpty(workingDirectory) &&
+                _allowlistService.IsPathAllowed(sessionId, physical, FileDocumentService.ResolvePath(workingDirectory))) return true;
+            return repos.Any(repo => IsWithinDirectory(physical, FileDocumentService.ResolvePath(repo.RepoRoot)));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        { return false; }
+    }
+
+    public FileNavigationRoot[] GetNavigationRoots(string sessionId, string? workingDirectory)
+    {
+        var candidates = new List<FileNavigationRoot>();
+        if (!string.IsNullOrEmpty(workingDirectory))
+            candidates.Add(new() { Path = workingDirectory, Name = FileNavigationService.LocationName(workingDirectory), Kind = "cwd" });
+        candidates.AddRange(_gitWatcher.GetRepoBindings(sessionId).Select(repo => new FileNavigationRoot
+        { Path = repo.RepoRoot, Name = repo.Label, Kind = "repo" }));
+        candidates.AddRange(_allowlistService.GetRegisteredPaths(sessionId).Where(Directory.Exists)
+            .Select(path => new FileNavigationRoot { Path = path, Name = FileNavigationService.LocationName(path), Kind = "opened" }));
+        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        return candidates.DistinctBy(root => Path.GetFullPath(root.Path), comparer)
+            .Where(root => Directory.Exists(root.Path) && IsPathAccessible(sessionId, root.Path, workingDirectory) &&
+                IsPathAccessible(sessionId, FileDocumentService.ResolvePath(root.Path), workingDirectory)).ToArray();
+    }
 
     public static bool ValidatePath(string path, out IResult? errorResult)
     {
@@ -85,8 +118,9 @@ public sealed class FileService
     {
         var normalizedPath = Path.GetFullPath(path);
         var normalizedDir = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return normalizedPath.StartsWith(normalizedDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-               normalizedPath.Equals(normalizedDir, StringComparison.OrdinalIgnoreCase);
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return normalizedPath.StartsWith(normalizedDir + Path.DirectorySeparatorChar, comparison) ||
+               normalizedPath.Equals(normalizedDir, comparison);
     }
 
     public static IEnumerable<string> GetSlashVariants(string path)
@@ -182,32 +216,33 @@ public sealed class FileService
         return null;
     }
 
-    public static FileResolveResponse BuildResolveResponse(string resolvedPath)
+    public static FileResolveResponse BuildResolveResponse(string resolvedPath, string? metadataPath = null)
     {
         var response = new FileResolveResponse { ResolvedPath = resolvedPath };
+        var inspectionPath = metadataPath ?? resolvedPath;
 
-        if (Directory.Exists(resolvedPath))
+        if (Directory.Exists(inspectionPath))
         {
-            var dirInfo = new DirectoryInfo(resolvedPath);
+            var dirInfo = new DirectoryInfo(inspectionPath);
             response.Exists = true;
             response.IsDirectory = true;
             response.Modified = dirInfo.LastWriteTimeUtc;
         }
-        else if (File.Exists(resolvedPath))
+        else if (File.Exists(inspectionPath))
         {
-            var fileInfo = new FileInfo(resolvedPath);
+            var fileInfo = new FileInfo(inspectionPath);
             response.Exists = true;
             response.IsDirectory = false;
             response.Size = fileInfo.Length;
             response.Modified = fileInfo.LastWriteTimeUtc;
             response.MimeType = GetMimeType(fileInfo.Name);
-            response.IsText = CheckIsText(resolvedPath, fileInfo.Length);
+            response.IsText = CheckIsText(inspectionPath, fileInfo.Length);
         }
 
         return response;
     }
 
-    public static FilePathInfo GetFileInfo(string path)
+    public static FilePathInfo GetFileInfo(string path, bool fresh = false)
     {
         if (string.IsNullOrWhiteSpace(path) || path.Contains("..", StringComparison.Ordinal))
         {
@@ -217,7 +252,7 @@ public sealed class FileService
         try
         {
             var fullPath = Path.GetFullPath(path);
-            if (TryGetCachedFileInfo(fullPath, out var cached))
+            if (!fresh && TryGetCachedFileInfo(fullPath, out var cached))
             {
                 return cached;
             }
@@ -262,6 +297,10 @@ public sealed class FileService
 
             using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             var bytesRead = fs.Read(buffer, 0, sampleSize);
+
+            if (buffer.AsSpan(0, bytesRead).StartsWith(new byte[] { 0xFF, 0xFE }) ||
+                buffer.AsSpan(0, bytesRead).StartsWith(new byte[] { 0xFE, 0xFF }) ||
+                buffer.AsSpan(0, bytesRead).StartsWith(new byte[] { 0, 0, 0xFE, 0xFF })) return true;
 
             for (var i = 0; i < bytesRead; i++)
             {

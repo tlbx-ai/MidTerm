@@ -2337,6 +2337,7 @@
                         <span id="setting-ui-transparency-value" class="slider-value">0%</span>
                       </div>
                     </div>
+                    <p class="setting-hint" data-i18n="settings.appearance.readingContrast">File and Git reading panes limit transparency to keep text readable.</p>
                   </div>
                 </section>
 
@@ -3807,10 +3808,10 @@ Enable terminal key log to capture Enter and modifier events.</pre
     <!-- File Viewer Modal -->
     <div id="file-viewer-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
-      <div class="modal-content file-viewer-modal-content">
+      <div class="modal-content file-viewer-modal-content" role="dialog" aria-modal="true" aria-labelledby="file-viewer-dialog-title" tabindex="-1">
         <div class="modal-header">
           <div class="file-viewer-header-info">
-            <h3 class="file-viewer-title" data-i18n="modal.file">File</h3>
+            <h3 id="file-viewer-dialog-title" class="file-viewer-title" data-i18n="modal.file">File</h3>
             <span class="file-viewer-path"></span>
           </div>
           <div class="file-viewer-header-actions">

@@ -620,6 +620,7 @@ function bindTerminalVisibilitySync(): void {
 
   $activeSessionId.subscribe(() => {
     syncMuxTerminalVisibility();
+    syncMobileTabActionState();
     reportBrowserActivity(undefined, true);
   });
 

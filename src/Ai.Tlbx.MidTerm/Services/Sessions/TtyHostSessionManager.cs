@@ -689,6 +689,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _registry.GetSession(sessionId);
     }
 
+    internal (int Pid, DateTime Started)? GetVerifiedHostIdentity(string sessionId) =>
+        _clients.TryGetValue(sessionId, out var client) ? client.GetVerifiedHostIdentity() : null;
+
     private int ResolveScrollbackBytes()
     {
         var configured = _settingsService?.Load().ScrollbackBytes ?? MidTermSettings.DefaultScrollbackBytes;

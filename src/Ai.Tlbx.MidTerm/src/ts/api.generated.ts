@@ -2671,6 +2671,8 @@ export interface paths {
         query: {
           path: string;
           sessionId?: string;
+          showHidden?: boolean;
+          showIgnored?: boolean;
         };
         header?: never;
         path?: never;
@@ -2685,6 +2687,53 @@ export interface paths {
           };
           content: {
             'application/json': components['schemas']['DirectoryListResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/files/navigation': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query: {
+          path: string;
+          sessionId?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileNavigationResponse'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
           };
         };
       };
@@ -2840,9 +2889,281 @@ export interface paths {
             'application/json': components['schemas']['FileSaveResponse'];
           };
         };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
+        /** @description Precondition Required */
+        428: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
       };
     };
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/files/document': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query: {
+          path: string;
+          sessionId?: string;
+          full?: boolean;
+          offset?: number;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentResponse'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
+        /** @description Unprocessable Entity */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/files/operations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query: {
+          sessionId: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['FileOperationRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileOperationResponse'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/files/operations/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query: {
+          sessionId: string;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileOperationResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/files/recovery': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query: {
+          directory: string;
+          sessionId: string;
+          cursor?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileRecoveryResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/files/restore': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query: {
+          sessionId: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['FileRestoreRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileOperationItem'];
+          };
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['FileDocumentErrorResponse'];
+          };
+        };
+      };
+    };
     delete?: never;
     options?: never;
     head?: never;
@@ -4361,10 +4682,13 @@ export interface components {
       /** Format: date-time */
       modified: null | string;
       mimeType: null | string;
+      isHidden: boolean;
+      isIgnored: boolean;
     };
     DirectoryListResponse: {
       path: string;
       entries: components['schemas']['DirectoryEntry'][];
+      visibility: components['schemas']['FileVisibilitySummary'];
     };
     FeatureFlags: {
       voiceChat: boolean;
@@ -4377,6 +4701,73 @@ export interface components {
         [key: string]: components['schemas']['FilePathInfo'];
       };
     };
+    FileDocumentErrorResponse: {
+      code: string;
+      message: string;
+      currentVersion: null | string;
+      recoveryPath: null | string;
+    };
+    FileDocumentResponse: {
+      path: string;
+      content: string;
+      version: null | string;
+      /** Format: int64 */
+      size: number;
+      encoding: string;
+      lineEnding: string;
+      isTruncated: boolean;
+      canLoadFull: boolean;
+      readOnly: boolean;
+      /** Format: int64 */
+      offset: number;
+      /** Format: int64 */
+      nextOffset: number;
+      /** Format: int64 */
+      previewBytes: number;
+      /** Format: int64 */
+      editLimitBytes: number;
+    };
+    FileNavigationLocation: {
+      path: string;
+      name: string;
+    };
+    FileNavigationResponse: {
+      path: string;
+      parentPath: null | string;
+      exists: boolean;
+      isDirectory: boolean;
+      workingDirectory: null | string;
+      breadcrumbs: components['schemas']['FileNavigationLocation'][];
+      roots: components['schemas']['FileNavigationRoot'][];
+      file: null | components['schemas']['FileTreeEntry'];
+    };
+    FileNavigationRoot: {
+      path: string;
+      name: string;
+      kind: string;
+    };
+    FileOperationItem: {
+      sourcePath: null | string;
+      path: null | string;
+      success: boolean;
+      code: null | string;
+      message: null | string;
+      recoveryId: null | string;
+    };
+    FileOperationRequest: {
+      requestId: string;
+      action: string;
+      paths: string[];
+      destinationDirectory?: null | string;
+      name?: null | string;
+      conflict: string;
+    };
+    FileOperationResponse: {
+      operationId: string;
+      action: string;
+      complete: boolean;
+      items: components['schemas']['FileOperationItem'][];
+    };
     FilePathInfo: {
       exists: boolean;
       /** Format: int64 */
@@ -4386,6 +4777,19 @@ export interface components {
       /** Format: date-time */
       modified: null | string;
       isText: null | boolean;
+    };
+    FileRecoveryEntry: {
+      id: string;
+      originalPath: string;
+      kind: string;
+      /** Format: date-time */
+      createdAt: string;
+      isDirectory: boolean;
+      isLink: boolean;
+    };
+    FileRecoveryResponse: {
+      entries: components['schemas']['FileRecoveryEntry'][];
+      nextCursor: null | string;
     };
     FileRegisterRequest: {
       sessionId: string;
@@ -4402,17 +4806,53 @@ export interface components {
       modified: null | string;
       isText: null | boolean;
     };
+    FileRestoreRequest: {
+      recoveryId: string;
+      conflict: string;
+    };
     FileSaveRequest: {
       path: string;
       content: string;
+      expectedVersion: string;
     };
     FileSaveResponse: {
       success: boolean;
       /** Format: int64 */
       size: number;
+      version: string;
+      encoding: string;
+      lineEnding: string;
+    };
+    FileTreeEntry: {
+      name: string;
+      fullPath: string;
+      isDirectory: boolean;
+      /** Format: int64 */
+      size: null | number;
+      mimeType: null | string;
+      isText: null | boolean;
+      gitStatus: null | string;
+      /** Format: date-time */
+      modified: null | string;
+      isHidden: boolean;
+      isIgnored: boolean;
     };
     FileUploadResponse: {
       path: string;
+    };
+    FileVisibilitySummary: {
+      /** Format: int32 */
+      totalCount: number;
+      /** Format: int32 */
+      shownCount: number;
+      /** Format: int32 */
+      hiddenCount: number;
+      /** Format: int32 */
+      ignoredCount: number;
+      /** Format: int32 */
+      excludedCount: number;
+      isGitRepo: boolean;
+      ignoreAvailable: boolean;
     };
     FirewallRuleStatusResponse: {
       supported: boolean;
