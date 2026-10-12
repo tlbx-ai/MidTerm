@@ -61,7 +61,7 @@ Scrollposition und Rückweg beim Resizen erhalten.
 **Abnahme:** Während einer Dateiprüfung Dock/Fenster mehrfach verbreitern und
 verkleinern. Inhalt, Fokus und Rückweg bleiben konsistent; kein Layoutsprungverlust.
 
-### 3. [~] Mehrfaches Stapeln transparenter Hintergründe beseitigen
+### 3. [x] Mehrfaches Stapeln transparenter Hintergründe beseitigen
 
 **Befund (mittel, reproduziert):** Bei uiTransparency=65 ergibt die Palette Alpha
 0,408. Drei Ebenen im Baum ergeben etwa 79 % Deckkraft, sechs im Editor etwa 96 %.
@@ -73,7 +73,24 @@ untergeordnete Layoutcontainer transparent halten. Files und Git einbeziehen.
 **Abnahme:** DOM-Ebenen und gerenderte Pixel bei niedriger/mittlerer/hoher
 Transparenz vergleichen; kein vom Elementnest abhängiges Verdunkeln.
 
-### 4. [ ] Leere und befüllte Vorschau visuell konsistent halten
+**Nachweis 12.10.2026:** Files-Tab, File-Dock, Modal und Git-Panel besitzen je
+einen Inhalts-Hintergrundowner; Baum, Previewbody, Textstack, Viewer/Editor,
+Scroller, Git-Inspector, Patchflächen und Commitbody tragen keine weitere
+Basisfarbe. Chrome/Controls und semantische Diff-/Auswahlmarkierungen bleiben
+eigene bewusste Flächen. Der reservierte Terminalhintergrund malt innerhalb
+der Terminal-/Agent-Panels und liegt nicht mehr unter File-/Git-Docks. 108 echte
+DOM-/Pixelproben bestehen in Dark/Light/Solarized-Dark/-Light bei 0/65/90 %:
+Baum, Source, Editor, Modal, Dock, Gitliste, Inspector, Diff und Commitbody.
+Jede Lesefläche hat eine Hintergrundebene; Screenshot-RGB stimmt mit einmaliger
+Alpha-Komposition über einem tatsächlich geladenen PNG überein (Toleranz 3/255).
+Screenshots wurden visuell geprüft; Source-Settings/Bild und Sessions sind
+zurückgesetzt. 689 Frontendtests, Kitty, Typecheck/ESLint/Stylelint bestehen.
+Evidenz: `.dev/file-git-production/task-3-full/summary.json`, `task-3-verify.*.log`.
+Zusatzbefund: der Dock-Terminal-Seam zeigt bei DPR 1,25/2 dieselben Deltas
+5/33 sowohl mit neuer als auch ursprünglicher Wrapperregel. Als vorhandener
+Renderer-Folgepunkt im Tracker erfasst; eine Seam-Reparatur wird nicht behauptet.
+
+### 4. [~] Leere und befüllte Vorschau visuell konsistent halten
 
 **Befund (mittel, reproduziert):** Leere Files-Vorschau zeigt großflächig das Bild;
 nach Textauswahl wird dieselbe Fläche fast schwarz. Der Baum bleibt deutlich heller.

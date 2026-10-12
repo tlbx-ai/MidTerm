@@ -171,7 +171,7 @@ try {
     Boolean(window.mmDebug && document.querySelector(".terminal-page")),
   );
 
-  sessionId = await ownerPage.evaluate(async () => {
+  sessionId = await ownerPage.evaluate(async (workingDirectory) => {
     const response = await fetch("/api/sessions", {
       method: "POST",
       headers: {
@@ -180,7 +180,7 @@ try {
       },
       body: JSON.stringify({
         shell: "Pwsh",
-        workingDirectory: "Q:\\repos\\Jpa",
+        workingDirectory,
         cols: 42,
         rows: 22,
         launchRequestId: crypto.randomUUID(),
@@ -192,7 +192,7 @@ try {
         `Session creation failed: ${response.status} ${JSON.stringify(body)}`,
       );
     return body?.session?.id ?? body?.id;
-  });
+  }, process.env.TLBX_GAP_CWD || "Q:\\repos\\Jpa");
 
   await waitForTerminal(ownerPage, sessionId);
   await ensureTerminalOwner(ownerPage, sessionId);
@@ -337,6 +337,14 @@ try {
     }, transparency);
     await page.reload({ waitUntil: "domcontentloaded" });
     await waitForTerminal(page, sessionId);
+    if (process.env.TLBX_GAP_DOCK_FILE) {
+      await page.evaluate((file) => {
+        window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), file);
+      }, process.env.TLBX_GAP_DOCK_FILE);
+      await page.locator('#file-viewer-modal .file-document-view').waitFor();
+      await page.locator('#file-viewer-dock-btn').click();
+      await page.locator('#file-viewer-dock').waitFor();
+    }
     await page.evaluate((targetId) => {
       document.getElementById(`terminal-${targetId}`).style.background =
         "rgb(160, 160, 160)";
@@ -359,6 +367,14 @@ try {
         );
       }, sessionId);
     const current = await readEvidence();
+    if (process.env.TLBX_GAP_WRAPPER_BASELINE) {
+      await page.evaluate((targetId) => {
+        const wrapper = document.getElementById(`terminal-${targetId}`)?.closest('.session-wrapper');
+        if (!wrapper) throw new Error('Owned test wrapper missing');
+        wrapper.style.background = 'var(--terminal-canvas-background-stack)';
+        wrapper.querySelector('.session-tab-panels').style.background = 'transparent';
+      }, sessionId);
+    }
     if (current.role !== "follower")
       throw new Error("Second browser changed terminal ownership");
     const file = path.join(
