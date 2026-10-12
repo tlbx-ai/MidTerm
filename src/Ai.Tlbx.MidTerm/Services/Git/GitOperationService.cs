@@ -118,7 +118,7 @@ internal sealed class GitOperationService
         var result = new HashSet<string>(PathComparer);
         foreach (var input in request.Paths)
         {
-            if (string.IsNullOrEmpty(input) || input.Contains("\0", StringComparison.Ordinal) || Path.IsPathRooted(input)) throw new GitOperationException(400, "invalid_path", "Git paths must be relative to the selected repository.");
+            if (string.IsNullOrEmpty(input) || input.AsSpan().IndexOf('\0') >= 0 || Path.IsPathRooted(input)) throw new GitOperationException(400, "invalid_path", "Git paths must be relative to the selected repository.");
             var path = OperatingSystem.IsWindows() ? input.Replace('\\', '/') : input;
             var rootPrefix = Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar;
             if (path.Split('/').Any(part => part is "." or "..") || !Path.GetFullPath(Path.Combine(root, path)).StartsWith(rootPrefix, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))

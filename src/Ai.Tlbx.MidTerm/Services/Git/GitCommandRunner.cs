@@ -377,10 +377,10 @@ internal static class GitCommandRunner
 
     internal static async Task<Dictionary<string, (int Additions, int Deletions)>> GetNumStatAsync(string repoRoot)
     {
-        var result = new Dictionary<string, (int, int)>(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, (int, int)>(StringComparer.Ordinal);
 
-        var unstagedTask = RunGitAsync(repoRoot, "diff", "--numstat");
-        var stagedTask = RunGitAsync(repoRoot, "diff", "--cached", "--numstat");
+        var unstagedTask = RunGitAsync(repoRoot, "diff", "--numstat", "-z");
+        var stagedTask = RunGitAsync(repoRoot, "diff", "--cached", "--numstat", "-z");
         await Task.WhenAll(unstagedTask, stagedTask);
 
         var (_, unstaged, _) = await unstagedTask;
@@ -394,16 +394,22 @@ internal static class GitCommandRunner
 
     private static void ParseNumStat(Dictionary<string, (int Additions, int Deletions)> result, string output)
     {
-        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        var records = output.Split('\0');
+        for (var i = 0; i < records.Length; i++)
         {
-            var parts = line.Split('\t');
-            if (parts.Length < 3) continue;
+            var parts = records[i].Split('\t', 3);
+            if (parts.Length != 3) continue;
+            var path = parts[2];
+            if (path.Length == 0 && i + 2 < records.Length)
+            {
+                // -z encodes renames as stats + NUL + original + NUL + destination.
+                path = records[i + 2]; i += 2;
+            }
             if (parts[0] == "-" || parts[1] == "-") continue;
 
             if (!int.TryParse(parts[0], CultureInfo.InvariantCulture, out var additions)) continue;
             if (!int.TryParse(parts[1], CultureInfo.InvariantCulture, out var deletions)) continue;
 
-            var path = parts[2];
             if (result.TryGetValue(path, out var existing))
             {
                 result[path] = (existing.Additions + additions, existing.Deletions + deletions);
@@ -418,8 +424,8 @@ internal static class GitCommandRunner
     internal static async Task<string> GetDiffAsync(string repoRoot, string path, bool staged)
     {
         var args = staged
-            ? new[] { "diff", "--cached", "--", path }
-            : new[] { "diff", "--", path };
+            ? new[] { "--literal-pathspecs", "diff", "--cached", "--", path }
+            : new[] { "--literal-pathspecs", "diff", "--", path };
         var (_, stdout, _) = await RunGitAsync(repoRoot, args);
         return stdout;
     }
@@ -430,8 +436,8 @@ internal static class GitCommandRunner
         bool staged)
     {
         var args = staged
-            ? new[] { "diff", "--cached", "--find-renames", "--unified=3", "--no-color", "--", path }
-            : new[] { "diff", "--find-renames", "--unified=3", "--no-color", "--", path };
+            ? new[] { "--literal-pathspecs", "diff", "--cached", "--find-renames", "--unified=3", "--no-color", "--", path }
+            : new[] { "--literal-pathspecs", "diff", "--find-renames", "--unified=3", "--no-color", "--", path };
         var (exitCode, stdout, _) = await RunGitAsync(repoRoot, args);
         if (exitCode != 0)
         {
@@ -630,7 +636,9 @@ internal static class GitCommandRunner
             ["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = null, ["GIT_NAMESPACE"] = null,
             ["GIT_PREFIX"] = null, ["GIT_CONFIG"] = null, ["GIT_CONFIG_PARAMETERS"] = null,
             ["GIT_CONFIG_COUNT"] = null, ["GIT_CEILING_DIRECTORIES"] = null,
-            ["GIT_DISCOVERY_ACROSS_FILESYSTEM"] = null
+            ["GIT_DISCOVERY_ACROSS_FILESYSTEM"] = null,
+            ["GIT_LITERAL_PATHSPECS"] = null, ["GIT_GLOB_PATHSPECS"] = null,
+            ["GIT_NOGLOB_PATHSPECS"] = null, ["GIT_ICASE_PATHSPECS"] = null
         };
         if (environment is not null)
             foreach (var pair in environment) repositoryEnvironment[pair.Key] = pair.Value;

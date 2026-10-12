@@ -61,6 +61,50 @@ public sealed class GitOperationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task FileDiffReadsOnlyTheLiteralSelectedPath()
+    {
+        await Init(); Write("literal[abc].txt", "Literal baseline\n"); Write("literala.txt", "Other baseline\n");
+        await Git("add", "."); await Git("commit", "--quiet", "-m", "Literal names baseline");
+        Write("literal[abc].txt", "Literal reviewed content\n"); Write("literala.txt", "Unrelated content\n");
+        var diff = await GitCommandRunner.GetDiffPatchAsync(_root, "literal[abc].txt", staged: false);
+        Assert.Contains("+Literal reviewed content", diff.Patch, StringComparison.Ordinal);
+        Assert.DoesNotContain("+Unrelated content", diff.Patch, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NativeQuotedNamesRoundTripThroughPatchAndNullSeparatedStatistics()
+    {
+        await Init();
+        var names = new List<string> { "Unicode ä字.txt", "smart‘quote’.txt", "space name.txt", "it's quoted.txt" };
+        if (!OperatingSystem.IsWindows()) names.AddRange(["double\"quote.txt", "literal\\backslash.txt", "tab\tname.txt", "line\nname.txt", "trailing .txt "]);
+        foreach (var name in names) Write(name, "Baseline\n");
+        await Git("add", "."); await Git("commit", "--quiet", "-m", "Quoted paths baseline");
+        foreach (var name in names) Write(name, "Exact reviewed content\n");
+        var statistics = await GitCommandRunner.GetNumStatAsync(_root);
+        foreach (var name in names)
+        {
+            Assert.Equal((1, 1), statistics[name]);
+            var patch = await GitCommandRunner.GetDiffPatchAsync(_root, name, staged: false);
+            var file = Assert.Single(GitPatchParser.ParseDiff("worktree", patch.Patch, patch.IsTruncated).Files);
+            Assert.Equal(name, file.Path); Assert.Null(file.OriginalPath);
+            Assert.Equal(1, file.Additions); Assert.Equal(1, file.Deletions);
+            Assert.Contains(file.Hunks.SelectMany(hunk => hunk.Lines), line => line.Text == "+Exact reviewed content");
+        }
+    }
+
+    [Fact]
+    public async Task NativeRenameMetadataPreservesRealLeadingADirectoryAndBDestination()
+    {
+        await Init(); Directory.CreateDirectory(Path.Combine(_root, "a")); Directory.CreateDirectory(Path.Combine(_root, "b"));
+        const string source = "a/source ä.txt"; const string destination = "b/destination ä.txt";
+        Write(source, "Rename content\n"); await Git("add", "."); await Git("commit", "--quiet", "-m", "Rename baseline");
+        await Git("mv", source, destination);
+        var patch = await GitCommandRunner.ExecuteAsync(_root, ["diff", "--cached", "--find-renames"], default);
+        var file = Assert.Single(GitPatchParser.ParseDiff("staged", patch.Stdout, false).Files);
+        Assert.Equal(destination, file.Path); Assert.Equal(source, file.OriginalPath); Assert.Equal("renamed", file.Status);
+    }
+
+    [Fact]
     public async Task CommitUsesOnlyReviewedIndexAndReplaysItsReceiptWithoutDuplicateCommits()
     {
         await Init(); Write("a.txt", "A selected\n"); Write("b.txt", "B unstaged\n"); await Execute(Request("stage", "a.txt"));

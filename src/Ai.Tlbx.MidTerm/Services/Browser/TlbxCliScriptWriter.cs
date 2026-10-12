@@ -1194,14 +1194,15 @@ public static class TlbxCliScriptWriter
             "https://{{host}}:{{port.ToString(CultureInfo.InvariantCulture)}}"
         }
         $script:_MK = if ($env:MT_TOKEN) { "mm-session=$($env:MT_TOKEN)" } else { "mm-session={{token}}" }
+        $script:_MCurl = (Get-Command curl -CommandType Application -ErrorAction Stop).Source
 
         function script:_MC {
             _MEnsureCliRequestContext @args
             $contextHeaders = if ($script:_MLease) { @('-H', "X-Tlbx-Cli-Context: $script:_MLease") } else { @() }
             $output = if ($env:MT_API_KEY) {
-                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @contextHeaders @args 2>&1
+                & $script:_MCurl --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @contextHeaders @args 2>&1
             } else {
-                & curl.exe --fail-with-body -sSk -b $script:_MK @contextHeaders @args 2>&1
+                & $script:_MCurl --fail-with-body -sSk -b $script:_MK @contextHeaders @args 2>&1
             }
             $exitCode = $LASTEXITCODE
             if ($exitCode -ne 0) {
@@ -1216,9 +1217,9 @@ public static class TlbxCliScriptWriter
             _MEnsureCliRequestContext @args
             $contextHeaders = if ($script:_MLease) { @('-H', "X-Tlbx-Cli-Context: $script:_MLease") } else { @() }
             $output = if ($env:MT_API_KEY) {
-                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @contextHeaders @args 2>&1
+                & $script:_MCurl --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @contextHeaders @args 2>&1
             } else {
-                & curl.exe --fail-with-body -sSk -b $script:_MK @contextHeaders @args 2>&1
+                & $script:_MCurl --fail-with-body -sSk -b $script:_MK @contextHeaders @args 2>&1
             }
             $exitCode = $LASTEXITCODE
             if ($exitCode -ne 0) {
@@ -1242,9 +1243,9 @@ public static class TlbxCliScriptWriter
                 $query = "&codexSessionId=$([Uri]::EscapeDataString($root))&codexThreadId=$([Uri]::EscapeDataString($thread))&codexHome=$([Uri]::EscapeDataString($codexHome))&fresh=$($Fresh.IsPresent.ToString().ToLowerInvariant())"
             }
             $resolvedContext = if ($env:MT_API_KEY) {
-                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>$null
+                & $script:_MCurl --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>$null
             } else {
-                & curl.exe --fail-with-body -sSk -b $script:_MK --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>$null
+                & $script:_MCurl --fail-with-body -sSk -b $script:_MK --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>$null
             }
             $resolvedContext = ($resolvedContext | Out-String).Trim()
             if ($root -or $thread) {
