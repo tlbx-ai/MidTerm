@@ -237,7 +237,7 @@ Evidenz: `.dev/file-git-production/git-task-7-accepted/summary.json`,
 `git-task-7-verify.*.log`. Sichtbare Zeilennummern/Side-by-side und partielle
 Stagingaktionen bleiben der ausdrücklich weiter offenen Aufgabe 36 zugeordnet.
 
-### 8. [~] Beschriftete Git-Aktionen mit passenden Buttons darstellen
+### 8. [x] Beschriftete Git-Aktionen mit passenden Buttons darstellen
 
 **Befund (mittel, reproduziert):** Copy und Send sind 26×26 px; Text benötigt
 bereits etwa 29 px und läuft aus der Iconklasse heraus. Schmal wirkt es wie CopySend.
@@ -249,6 +249,27 @@ geeigneten Touchzielen; Sidebar-Iconklasse hier entfernen.
 
 **Abnahme:** Desktop/schmal/Touch, lange Übersetzungen, Fokus und Busy/Errorzustand
 ohne Überlaufen oder überlappende Klickflächen.
+
+**Nachweis 12.10.2026:** Copy/Einfügen sind normale lokalisierte Textbuttons mit
+36-px-Desktop-/44-px-Coarse-Zielen; Befehle und Aktionen stehen in eigenen
+Zeilen mit erreichbaren Fokusmarkierungen. Copy und Einfügen zeigen Busy,
+bestätigten Erfolg oder konkreten Fehler und bleiben retryfähig. Lange
+Fehlertexte umbrechen vollständig im Panel. Die frühere Send-Funktion ist
+entfernt: Einfügen verwendet den bestehenden bestätigten Pastevertrag ohne
+Enter und ist für explizite Controller-/nicht verfügbare Terminals gesperrt.
+Ein zusätzlicher Grenztest schützt Controller trotz vorhandenem unbenutztem
+Terminalstate. Mobiler Git-Handler klickt den tatsächlichen Button; das zuvor
+bei sichtbaren Tabs versteckte Menü ist erreichbar. Suchbutton und Menü haben
+eigene Fläche; ein redundanter kleiner-480-px-Paddingreset ist entfernt.
+Vier reale EN/DE/Bengali-Browserabläufe bestehen: Labels bei 250 px, Keyboard-
+Clipboard, Busy/Permissionfehler/Retry, reale Paste-ACK/503 ohne Enter/Provider-
+Turn sowie echter mobiler Menü-Einstieg und mindestens 44 px bei 390 px. Desktop,
+Touch und Fehlerscreenshots sind visuell geprüft. 14 mobile Files-Regressions-
+abläufe und 708 Frontendtests plus Kitty/Typecheck/ESLint/Stylelint bestehen.
+Evidenz: `.dev/file-git-production/git-task-8-complete/summary.json`,
+`git-task-8-mobile-files-regression`, `git-task-8-verify.*.log`. Repo-bound
+Schreibaktionen und deren echte Shell/TUI/Controller-Gesamtabnahme bleiben
+Aufgaben 30–33; sie werden nicht durch Pastebuttons ersetzt.
 
 ### 9. [x] Vollständige Namen und Pfade trotz Ellipsis erreichbar machen
 
@@ -961,7 +982,7 @@ Evidenz: `.dev/file-git-production/task-29-touch-accepted/summary.json`,
 `task-29-resize-accepted/summary.json`, `task-29-actions-final/summary.json`,
 `task-29-verify-final.*.log`. Konkrete Smartphonehardware bleibt Feldabnahme.
 
-### 30. [ ] Vollständigen Stage–Review–Commit-Ablauf in Git implementieren
+### 30. [~] Vollständigen Stage–Review–Commit-Ablauf in Git implementieren
 
 **Befund (hoch, Erwartungslücke):** Keine direkten Datei-/Gruppenaktionen zum
 Stage/Unstage und kein Commitfeld/Button; nur vorgeschlagene Terminalbefehle.
@@ -990,6 +1011,10 @@ bei Codex/Claude/TUI ist das keine Shellausführung. Discard kann als Send ersch
 
 **Aufgabe:** Gitoperationen durch eigene Backendverträge ausführen. Optionale
 Terminalübergabe klar als Copy/Insert ohne verstecktes Enter und ohne Agentturn.
+
+**Teilumsetzung durch Aufgabe 8:** Source-Pastebuttons fügen ohne Enter ein und
+Controller sind gesperrt; die alte Submit-/Agent-Turn-Funktion wurde entfernt.
+Eigene Git-Schreibverträge und echte Busy-TUI-/Controller-Abnahme fehlen noch.
 
 **Abnahme:** Shell, beschäftigtes TUI und Agent Controller; direkte Gitaktion
 funktioniert unabhängig davon, keine fremden Prompts/Keys/unerwarteten Mutationen.

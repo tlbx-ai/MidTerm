@@ -1295,7 +1295,7 @@ function bindEvents(): void {
     clickActiveSessionTabBarControl('[data-action="share"]');
   });
   bindClick('btn-mobile-git', () => {
-    clickActiveSessionTabBarControl('[data-action="git"]');
+    clickActiveSessionTabBarControl('button[data-action="git"]');
   });
 
   // Fullscreen toggle (mobile) - hide button if API not supported

@@ -16,13 +16,15 @@ import type {
 } from './types';
 import { fetchCommitDetails, fetchDiffView, fetchGitLog, fetchGitStatus } from './gitApi';
 import { buildCommitCommandSuggestions, buildFileCommandSuggestions } from './gitCommands';
-import { submitSessionText } from '../input/submit';
+import { pasteToTerminal } from '../terminal';
 import { escapeHtml } from '../../utils';
 import { t } from '../i18n';
-import { areJsonLikeEqual } from '../../stores';
+import { areJsonLikeEqual, $sessions } from '../../stores';
 import { syncGitPanelDom } from './gitPanelDom';
 import { showPathDetails, repositoryFilePath } from '../fileViewer/pathDetails';
 import { fileStatusPresentation } from './fileStatus';
+import { writeTextToClipboard } from '../fileViewer/shared';
+import { sessionTerminals } from '../../state';
 import {
   connectGitPanelLayout,
   disconnectGitPanelLayout,
@@ -651,9 +653,9 @@ function renderInspector(state: GitPanelState): string {
   </div>`;
 
   if (selection?.kind === 'file') {
-    body = renderFileInspector(selection);
+    body = renderFileInspector(selection, state.sessionId);
   } else if (selection?.kind === 'commit') {
-    body = renderCommitInspector(selection);
+    body = renderCommitInspector(selection, state.sessionId);
   }
 
   return `<div class="git-inspector-header">
@@ -663,7 +665,7 @@ function renderInspector(state: GitPanelState): string {
     <div class="git-inspector-body">${body}</div>`;
 }
 
-function renderFileInspector(selection: GitFileSelection): string {
+function renderFileInspector(selection: GitFileSelection, sessionId: string): string {
   if (selection.loading) {
     return renderInspectorFill('Loading diff...');
   }
@@ -692,11 +694,11 @@ function renderFileInspector(selection: GitFileSelection): string {
     ${originalHtml}
   </div>`;
   html += renderPatchFile(file);
-  html += renderCommandSuggestions(suggestions);
+  html += renderCommandSuggestions(suggestions, sessionId);
   return html;
 }
 
-function renderCommitInspector(selection: GitCommitSelection): string {
+function renderCommitInspector(selection: GitCommitSelection, sessionId: string): string {
   if (selection.loading) {
     return renderInspectorFill('Loading commit...');
   }
@@ -727,7 +729,7 @@ function renderCommitInspector(selection: GitCommitSelection): string {
   </div>`;
   html += bodyHtml;
   html += `<div class="git-commit-patch-list">${commit.files.map((file) => renderPatchFile(file)).join('')}</div>`;
-  html += renderCommandSuggestions(suggestions);
+  html += renderCommandSuggestions(suggestions, sessionId);
   return html;
 }
 
@@ -776,7 +778,11 @@ function renderDiffLine(line: GitDiffLine): string {
   return `<span class="git-diff-line git-diff-line-${escapeHtml(line.kind)}">${content}</span>`;
 }
 
-function renderCommandSuggestions(suggestions: Array<{ label: string; command: string }>): string {
+function renderCommandSuggestions(
+  suggestions: Array<{ label: string; command: string }>,
+  sessionId: string,
+): string {
+  const insertAllowed = canInsertCommand(sessionId);
   return `<section class="git-command-section">
     <div class="git-command-section-title">Suggested terminal commands</div>
     <div class="git-command-list">
@@ -788,14 +794,22 @@ function renderCommandSuggestions(suggestions: Array<{ label: string; command: s
               <code class="git-command-text">${escapeHtml(suggestion.command)}</code>
             </div>
             <div class="git-command-actions">
-              <button class="sidebar-btn" data-action="copy-command" data-command="${escapeHtml(suggestion.command)}" title="Copy" type="button">Copy</button>
-              <button class="sidebar-btn" data-action="send-command" data-command="${escapeHtml(suggestion.command)}" title="Send to terminal" type="button">Send</button>
+              <button class="git-action-button" data-action="copy-command" data-command="${escapeHtml(suggestion.command)}" title="${t('git.copyCommand')}" type="button">${t('git.copy')}</button>
+              <button class="git-action-button" data-action="insert-command" data-command="${escapeHtml(suggestion.command)}" title="${t(insertAllowed ? 'git.insertHint' : 'git.insertUnsupported')}"${insertAllowed ? '' : ' disabled'} type="button">${t('git.insert')}</button>
             </div>
+            <div class="git-action-status" role="status" aria-live="polite"></div>
           </div>`,
         )
         .join('')}
     </div>
   </section>`;
+}
+
+function canInsertCommand(sessionId: string): boolean {
+  const session = $sessions.get()[sessionId];
+  return (
+    session?.isRunning === true && !session.appServerControlOnly && sessionTerminals.has(sessionId)
+  );
 }
 
 function renderInspectorFill(message: string): string {
@@ -823,11 +837,12 @@ function bindPanelEvents(container: HTMLElement): void {
     const element =
       event.target instanceof Element ? event.target.closest<HTMLElement>('[data-action]') : null;
     if (!state || !element || !container.contains(element)) return;
-    handlePanelAction(state, element.dataset);
+    handlePanelAction(state, element);
   });
 }
 
-function handlePanelAction(state: GitPanelState, data: DOMStringMap): void {
+function handlePanelAction(state: GitPanelState, element: HTMLElement): void {
+  const data = element.dataset;
   switch (data.action) {
     case 'toggle-diff-wrap':
       toggleDiffWrap(state);
@@ -853,8 +868,8 @@ function handlePanelAction(state: GitPanelState, data: DOMStringMap): void {
       void loadMoreHistory(state);
       break;
     case 'copy-command':
-    case 'send-command':
-      runPanelCommand(state, data);
+    case 'insert-command':
+      void runPanelCommand(state, element);
       break;
     case 'show-list':
       state.detailActive = false;
@@ -885,13 +900,42 @@ function showGitPathDetails(state: GitPanelState, data: DOMStringMap): void {
   void showPathDetails(paths, [fileStatusPresentation(data.status)?.label ?? '']);
 }
 
-function runPanelCommand(state: GitPanelState, data: DOMStringMap): void {
+async function runPanelCommand(state: GitPanelState, button: HTMLElement): Promise<void> {
+  const data = button.dataset;
   if (!data.command) return;
-  if (data.action === 'send-command') {
-    void submitSessionText(state.sessionId, data.command).catch(() => {});
-  } else if (typeof navigator.clipboard !== 'undefined') {
-    void navigator.clipboard.writeText(data.command).catch(() => {});
+  if (button.getAttribute('aria-busy') === 'true') return;
+  const copy = data.action === 'copy-command';
+  const status = button
+    .closest('.git-command-row')
+    ?.querySelector<HTMLElement>('.git-action-status');
+  button.setAttribute('aria-busy', 'true');
+  button.setAttribute('disabled', '');
+  if (status) {
+    status.textContent = t(copy ? 'git.copying' : 'git.inserting');
+    status.setAttribute('role', 'status');
   }
+  let ok = false;
+  try {
+    if (copy) ok = await writeTextToClipboard(data.command);
+    else if (canInsertCommand(state.sessionId)) {
+      await pasteToTerminal(state.sessionId, data.command, false, 'git-panel-insert');
+      ok = true;
+    }
+  } catch {
+    /* The visible result below reports failure without a false execution claim. */
+  }
+  if (!button.isConnected) return;
+  button.removeAttribute('disabled');
+  button.removeAttribute('aria-busy');
+  updateCommandResult(status ?? null, copy, ok);
+}
+
+function updateCommandResult(status: HTMLElement | null, copy: boolean, ok: boolean): void {
+  if (!status) return;
+  const success = copy ? 'git.copied' : 'git.inserted';
+  const failure = copy ? 'git.copyFailed' : 'git.insertFailed';
+  status.textContent = t(ok ? success : failure);
+  status.setAttribute('role', ok ? 'status' : 'alert');
 }
 
 async function openFileSelection(
