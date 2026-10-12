@@ -139,7 +139,7 @@ zur ausdrücklichen Entscheidung unverändert. Screenshots aller Darstellungen
 sind geprüft. Source-Settings/Bild und Sessions sind restauriert. Stylelint besteht.
 Evidenz: `.dev/file-git-production/task-5-first/summary.json`.
 
-### 6. [~] Lesbarkeit sekundärer Informationen auf Hintergrundbildern sichern
+### 6. [x] Lesbarkeit sekundärer Informationen auf Hintergrundbildern sichern
 
 **Befund (mittel, reproduziert):** Gedämpfte Größen, Pfade und Metadaten verlieren
 über hellen Wolken/Landschaften Kontrast. Der zufällige Bildausschnitt entscheidet
@@ -150,6 +150,24 @@ Hover, Lade-/Fehlerzuständen. Transparenz nicht global still deaktivieren.
 
 **Abnahme:** Helle/dunkle/strukturierte Hintergründe, Themes und Transparenzstufen;
 repräsentative Textkontraste messen und gerenderte Sichtbarkeit prüfen.
+
+**Nachweis 12.10.2026:** Files-/Git-Leseflächen und deren Chrome haben eine
+lokale Mindestdeckkraft 0,88; globale UI-/Terminaltransparenz bleibt unverändert.
+Eine reine Lesepalette erhält Themefarben soweit möglich und schützt primäre,
+sekundäre, gedämpfte, Syntax- und Statusfarben gegen Wallpaperextreme sowie
+Auswahl/Hover. Der Slider erklärt die begrenzte Leseflächentransparenz in allen
+zehn Sprachen. 16 numerische Palettefälle prüfen vier Themes und 0/65/90/100 %
+einschließlich semantischer Hintergründe. 720 tatsächliche Browsermessungen
+verwenden aufgelöste Textfarben und Screenshot-Untergründe bei hellen/dunklen/
+strukturierten Bildern, vier Themes und 0/65/90 %. Größen, Pfade, Metadaten,
+Syntax, Auswahl, Hover, Loading, Error und beide Diff-Markierungen bestehen;
+Minimum 4,979355:1 ohne Rundung der Abnahmeschwelle 4,5:1. Screenshots sind geprüft.
+108 Background-/Git-Diff-/Commitproben und 32 Modal/Dock/Fullscreen-/Entwurf-
+Regressionsproben bestehen weiter. 705 Frontendtests plus Kitty, Typecheck,
+ESLint und Stylelint bestehen. Quelle der Schwelle und Messmethode:
+https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html.
+Evidenz: `.dev/file-git-production/task-6-final/summary.json`,
+`task-6-{surface,policy}-regression/summary.json`, `task-6-verify.*.log`.
 
 ### 7. [ ] Git-Diffs lesbar umbrechen oder horizontal scrollen lassen
 
@@ -176,7 +194,7 @@ geeigneten Touchzielen; Sidebar-Iconklasse hier entfernen.
 **Abnahme:** Desktop/schmal/Touch, lange Übersetzungen, Fokus und Busy/Errorzustand
 ohne Überlaufen oder überlappende Klickflächen.
 
-### 9. [ ] Vollständige Namen und Pfade trotz Ellipsis erreichbar machen
+### 9. [~] Vollständige Namen und Pfade trotz Ellipsis erreichbar machen
 
 **Befund (mittel, reproduziert):** MidtermMultiagentOperation.md wird im 280-px-Baum
 gekürzt, ohne Tooltip. Git-Zeilen kürzen ebenfalls Namen ohne vollständigen Pfad.

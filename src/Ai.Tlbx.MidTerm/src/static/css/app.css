@@ -21202,6 +21202,29 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   cursor: pointer;
 }
 .file-selection-target .file-selection-checkbox { margin: 0; }
+
+/* Reading palettes protect metadata against wallpaper, hover and selection. */
+:where(.file-browser, .file-viewer-modal-content, .file-viewer-dock, .git-dock, .git-panel, .git-panel-shell, .file-context-menu, .file-operation-overlay .modal, .file-conflict-dialog) {
+  --workspace-pane-background: var(--workspace-reading-background, var(--bg-primary));
+  --workspace-pane-chrome-background: var(--workspace-reading-chrome-background, var(--bg-elevated));
+  --text-primary: var(--workspace-reading-text-primary);
+  --text-secondary: var(--workspace-reading-text-secondary);
+  --text-muted: var(--workspace-reading-text-muted);
+  --accent-blue: var(--workspace-reading-accent-blue);
+  --accent-cyan: var(--workspace-reading-accent-cyan);
+  --accent-green: var(--workspace-reading-accent-green);
+  --accent-orange: var(--workspace-reading-accent-orange);
+  --accent-red: var(--workspace-reading-accent-red);
+  --accent-violet: var(--workspace-reading-accent-violet);
+  --accent-warning: var(--workspace-reading-accent-warning);
+}
+:where(.file-browser, .file-viewer-modal-content, .file-viewer-dock, .git-dock) .hl-keyword { color: var(--accent-violet); }
+:where(.file-browser, .file-viewer-modal-content, .file-viewer-dock, .git-dock) .hl-string { color: var(--accent-green); }
+:where(.file-browser, .file-viewer-modal-content, .file-viewer-dock, .git-dock) .hl-number { color: var(--accent-orange); }
+:where(.file-browser, .file-viewer-modal-content, .file-viewer-dock, .git-dock) .hl-type { color: var(--accent-cyan); }
+:where(.file-browser, .file-viewer-modal-content, .file-viewer-dock, .git-dock) .hl-function { color: var(--accent-blue); }
+:where(.file-browser, .file-viewer-modal-content, .file-viewer-dock, .git-dock) .hl-comment { color: var(--text-muted); }
+:where(.file-browser, .file-viewer-modal-content, .file-viewer-dock, .git-dock) input::placeholder { color: var(--text-muted); opacity: 1; }
 .file-actions-menu summary:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
 button.tree-expand { height: 22px; padding: 0; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }
 

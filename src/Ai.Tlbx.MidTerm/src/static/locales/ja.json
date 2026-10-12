@@ -1170,6 +1170,7 @@
   "fileBrowser.restore": "復元する",
   "fileBrowser.apply": "適用",
   "fileBrowser.name": "名前",
+  "settings.appearance.readingContrast": "ファイルと Git の閲覧領域は、文字の読みやすさを保つため透明度を制限します。",
   "fileBrowser.expandFolder": "フォルダーを展開",
   "fileBrowser.collapseFolder": "フォルダーを折りたたむ",
   "fileViewer.displayMode": "表示モード",

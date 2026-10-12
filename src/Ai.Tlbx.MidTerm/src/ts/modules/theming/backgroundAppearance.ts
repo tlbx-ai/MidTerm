@@ -12,6 +12,7 @@ import {
   shouldRenderBackgroundImage,
 } from './backgroundVisibility';
 import { getTerminalThemeByName } from './terminalColorSchemes';
+import { createReadingPalette, READING_COLOR_KEYS } from './readingPalette';
 
 const UI_BACKGROUND_VARIABLES: Array<{ name: string; boost?: number }> = [
   { name: '--bg-primary', boost: 0.16 },
@@ -116,6 +117,7 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
     ? 0
     : clamp(settings.terminalTransparency ?? settings.uiTransparency, 0, 100);
   const uiBaseAlpha = Math.max(0, 1 - uiTransparency / 100);
+  applyWorkspaceReading(root, palette, uiBaseAlpha);
   for (const variable of OPAQUE_SURFACE_VARIABLES) {
     const value = palette[variable.source];
     if (!value) {
@@ -168,6 +170,37 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
     isMobileBackgroundSuppressed(settings),
   );
   document.body.classList.toggle('opaque-terminal-surfaces', terminalTransparency === 0);
+}
+
+function applyWorkspaceReading(
+  root: HTMLElement,
+  palette: Record<string, string>,
+  uiBaseAlpha: number,
+): void {
+  const readingColors: Record<string, RgbColor> = {};
+  for (const key of [
+    ...READING_COLOR_KEYS,
+    '--bg-primary',
+    '--bg-elevated',
+    '--bg-input',
+    '--bg-active',
+    '--bg-hover',
+  ]) {
+    const color = parseColor(palette[key]);
+    if (color) readingColors[key] = color;
+  }
+  const reading = createReadingPalette(readingColors, uiBaseAlpha);
+  const readingBase = readingColors['--bg-primary'];
+  const readingChrome = readingColors['--bg-elevated'];
+  if (readingBase)
+    root.style.setProperty('--workspace-reading-background', toRgba(readingBase, reading.alpha));
+  if (readingChrome)
+    root.style.setProperty(
+      '--workspace-reading-chrome-background',
+      toRgba(readingChrome, Math.max(reading.alpha, Math.min(1, uiBaseAlpha * 1.22))),
+    );
+  for (const [key, color] of Object.entries(reading.colors))
+    root.style.setProperty('--workspace-reading' + key.slice(1), toRgba(color, 1));
 }
 
 function getTerminalBackgroundColor(

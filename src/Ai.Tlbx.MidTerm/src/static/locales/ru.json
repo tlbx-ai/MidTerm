@@ -1170,6 +1170,7 @@
   "fileBrowser.restore": "Восстановить",
   "fileBrowser.apply": "Применить",
   "fileBrowser.name": "Имя",
+  "settings.appearance.readingContrast": "Области чтения файлов и Git ограничивают прозрачность для читаемости текста.",
   "fileBrowser.expandFolder": "Развернуть папку",
   "fileBrowser.collapseFolder": "Свернуть папку",
   "fileViewer.displayMode": "Режим просмотра",

@@ -26,6 +26,8 @@ for (let i = 0; i < wallpaper.data.length; i += 4) { wallpaper.data[i] = 60; wal
 const wallpaperBytes = PNG.sync.write(wallpaper); fs.writeFileSync(path.join(out, 'wallpaper.png'), wallpaperBytes);
 const mediaAcceptance = process.env.TLBX_SURFACE_MEDIA === '1';
 const policyAcceptance = process.env.TLBX_SURFACE_POLICY === '1';
+const contrastAcceptance = process.env.TLBX_SURFACE_CONTRAST === '1';
+if (contrastAcceptance) fs.writeFileSync(path.join(fixture, 'code.ts'), '// Metadata comment\nconst value = "protected text";\nif (value) console.log(value);\n');
 if (mediaAcceptance) {
   const picture = new PNG({ width: 32, height: 32 });
   for (let i = 0; i < picture.data.length; i += 4) { picture.data[i] = 200; picture.data[i + 1] = 60; picture.data[i + 2] = 80; picture.data[i + 3] = 128; }
@@ -54,6 +56,26 @@ function rgba(value) {
   const numbers = value.match(/[\d.]+/g)?.map(Number) || [0, 0, 0, 0];
   if (value.startsWith('color(')) for (let i = 0; i < 3; i++) numbers[i] *= 255;
   return [...numbers.slice(0, 3), numbers[3] ?? 1];
+}
+function contrast(fg, bg) {
+  const luminance = color => color.slice(0, 3).reduce((sum, c, i) => { const value = c / 255; return sum + [0.2126, 0.7152, 0.0722][i] * (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4); }, 0);
+  const a = luminance(fg), b = luminance(bg); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+async function measureContrast(label, selectors) {
+  const evidence = await page.locator(selectors).evaluateAll(nodes => {
+    const visible = [...new Set(nodes)].filter(el => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden');
+    window.workspaceContrastElements = visible.map(el => ({ el, style: el.getAttribute('style') }));
+    return visible.map(el => { const style = getComputedStyle(el), rect = el.getBoundingClientRect(); const record = { text: el.textContent.slice(0, 60), color: style.color, x: Math.min(innerWidth - 2, Math.max(1, rect.x + Math.min(rect.width / 2, 30))), y: Math.min(innerHeight - 2, Math.max(1, rect.y + Math.min(rect.height / 2, 8))) }; el.style.setProperty('color', 'transparent', 'important'); el.style.setProperty('text-shadow', 'none', 'important'); return record; });
+  });
+  let raster;
+  try { raster = PNG.sync.read(await page.screenshot({ animations: 'disabled' })); }
+  finally { await page.evaluate(() => { for (const { el, style } of window.workspaceContrastElements) { if (style === null) el.removeAttribute('style'); else el.setAttribute('style', style); } delete window.workspaceContrastElements; }); }
+  assert.ok(evidence.length > 0, label + ' must contain visible text');
+  for (const e of evidence) {
+    const offset = (Math.floor(e.y) * raster.width + Math.floor(e.x)) * 4, background = [...raster.data.subarray(offset, offset + 3)], foreground = rgba(e.color);
+    const ratio = contrast(foreground, background); result.samples.push({ label, text: e.text, foreground, background, ratio });
+    assert.ok(ratio >= 4.5, `${label} ${e.text}: contrast ${ratio.toFixed(4)} foreground ${foreground} background ${background}`);
+  }
 }
 async function sample(label, selector, owner, imageColor, leftCorner = false, probeSubstrate = false) {
   const evidence = await page.locator(selector).last().evaluate((element, { stop, leftCorner }) => {
@@ -114,7 +136,35 @@ try {
   const wrapper = page.locator(`.session-wrapper[data-session-id="${session}"]`), files = wrapper.locator('.session-tab[data-tab="files"]'), terminal = wrapper.locator('.session-tab[data-tab="terminal"]');
   await files.click();
   const row = wrapper.locator('.tree-node').filter({ has: page.locator('.tree-name', { hasText: /^tracked\.txt$/ }) }); await row.waitFor();
-  if (policyAcceptance) {
+  if (contrastAcceptance) {
+    for (const pattern of ['white', 'black', 'structured']) {
+      const backdrop = new PNG({ width: 64, height: 64 });
+      for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) { const i = (y * 64 + x) * 4, bright = pattern === 'white' || (pattern === 'structured' && (Math.floor(x / 8) + Math.floor(y / 8)) % 2 === 0); backdrop.data[i] = backdrop.data[i + 1] = backdrop.data[i + 2] = bright ? 255 : 0; backdrop.data[i + 3] = 255; }
+      await upload(PNG.sync.write(backdrop), pattern + '.png');
+      for (const theme of ['dark', 'light', 'solarizedDark', 'solarizedLight']) for (const transparency of [0, 65, 90]) {
+        await api('PATCH', '/api/settings', { theme, uiTransparency: transparency, terminalTransparency: transparency, backgroundImageEnabled: true });
+        await page.reload(); await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click(); await files.click(); await row.waitFor();
+        const label = `${pattern}-${theme}-${transparency}`, tree = wrapper.locator('.file-browser-tree');
+        await page.route('**/api/files/document**', async route => { await sleep(800); await route.continue(); });
+        await row.click(); await wrapper.locator('.preview-loading').waitFor();
+        await measureContrast(label + '-loading', `.session-wrapper[data-session-id="${session}"] .preview-loading`);
+        await wrapper.locator('.file-document-source').waitFor(); await page.unroute('**/api/files/document**');
+        await page.route('**/api/files/document**', route => route.fulfill({ status: 403, body: JSON.stringify({ code: 'access_denied' }) }));
+        const codeRow = wrapper.locator('.tree-node').filter({ has: page.locator('.tree-name', { hasText: /^code\.ts$/ }) }); await codeRow.click();
+        await wrapper.locator('.preview-error').waitFor(); await measureContrast(label + '-error', `.session-wrapper[data-session-id="${session}"] .preview-error`);
+        await page.unroute('**/api/files/document**'); await row.click(); await codeRow.click();
+        await wrapper.locator('.file-document-source').waitFor();
+        await measureContrast(label + '-files', `.session-wrapper[data-session-id="${session}"] .tree-size, .session-wrapper[data-session-id="${session}"] .file-visibility-badge, .session-wrapper[data-session-id="${session}"] .preview-toolbar-subtitle, .session-wrapper[data-session-id="${session}"] .file-document-metadata, .session-wrapper[data-session-id="${session}"] .file-document-mode-status, .session-wrapper[data-session-id="${session}"] .hl-comment, .session-wrapper[data-session-id="${session}"] .hl-string, .session-wrapper[data-session-id="${session}"] .hl-keyword`);
+        await row.hover(); await measureContrast(label + '-hover', `.session-wrapper[data-session-id="${session}"] .tree-node[data-name="tracked.txt"] .tree-size`);
+        await terminal.click(); await page.evaluate(() => localStorage.setItem('mt-git-dock-width', '600')); await wrapper.locator('.git-indicator').click();
+        const gitDock = page.locator('#git-dock'); await gitDock.locator('.git-tree-file[data-path="tracked.txt"]').click(); await gitDock.locator('.git-diff-lines').waitFor();
+        await measureContrast(label + '-git', '#git-dock .git-panel-summary-subtitle, #git-dock .git-tree-file-selected .git-loc-add, #git-dock .git-tree-file-selected .git-loc-del, #git-dock .git-diff-line-add, #git-dock .git-diff-line-del');
+        if (pattern === 'structured' && transparency === 90) await page.screenshot({ path: path.join(out, label + '-git.png'), animations: 'disabled' });
+        await gitDock.locator('#git-dock-close').click();
+      }
+    }
+    assert.deepEqual(result.errors, []); result.ok = true;
+  } else if (policyAcceptance) {
     for (const theme of ['dark', 'light', 'solarizedDark', 'solarizedLight']) for (const imageEnabled of [false, true]) {
       await api('PATCH', '/api/settings', { theme, uiTransparency: 65, terminalTransparency: 65, backgroundImageEnabled: imageEnabled });
       await page.reload(); await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click(); await files.click(); await row.click();

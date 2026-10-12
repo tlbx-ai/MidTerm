@@ -1170,6 +1170,7 @@
   "fileBrowser.restore": "Restaurer",
   "fileBrowser.apply": "Appliquer",
   "fileBrowser.name": "Nom",
+  "settings.appearance.readingContrast": "Les zones de lecture Fichiers et Git limitent la transparence pour garder le texte lisible.",
   "fileBrowser.expandFolder": "Développer le dossier",
   "fileBrowser.collapseFolder": "Replier le dossier",
   "fileViewer.displayMode": "Mode d’affichage",

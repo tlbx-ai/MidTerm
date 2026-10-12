@@ -1214,6 +1214,7 @@
   "fileBrowser.restore": "Wiederherstellen",
   "fileBrowser.apply": "Anwenden",
   "fileBrowser.name": "Name",
+  "settings.appearance.readingContrast": "Files und Git begrenzen die Transparenz ihrer Leseflächen, damit Texte lesbar bleiben.",
   "fileBrowser.expandFolder": "Ordner aufklappen",
   "fileBrowser.collapseFolder": "Ordner zuklappen",
   "fileViewer.displayMode": "Darstellungsmodus",

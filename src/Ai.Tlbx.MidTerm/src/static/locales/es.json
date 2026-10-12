@@ -1170,6 +1170,7 @@
   "fileBrowser.restore": "Restaurar",
   "fileBrowser.apply": "Aplicar",
   "fileBrowser.name": "Nombre",
+  "settings.appearance.readingContrast": "Los paneles de lectura de Archivos y Git limitan la transparencia para mantener el texto legible.",
   "fileBrowser.expandFolder": "Expandir carpeta",
   "fileBrowser.collapseFolder": "Contraer carpeta",
   "fileViewer.displayMode": "Modo de visualización",

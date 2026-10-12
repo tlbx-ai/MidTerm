@@ -1318,6 +1318,7 @@
   "fileBrowser.restore": "Restore",
   "fileBrowser.apply": "Apply",
   "fileBrowser.name": "Name",
+  "settings.appearance.readingContrast": "File and Git reading panes limit transparency to keep text readable.",
   "fileBrowser.expandFolder": "Expand folder",
   "fileBrowser.collapseFolder": "Collapse folder",
   "fileViewer.displayMode": "Display mode",
