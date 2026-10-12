@@ -24,6 +24,20 @@ fs.writeFileSync(documentPath, 'Changed first line\nsecond line\nthird line\n');
 const wallpaper = new PNG({ width: 64, height: 64 });
 for (let i = 0; i < wallpaper.data.length; i += 4) { wallpaper.data[i] = 60; wallpaper.data[i + 1] = 120; wallpaper.data[i + 2] = 168; wallpaper.data[i + 3] = 255; }
 const wallpaperBytes = PNG.sync.write(wallpaper); fs.writeFileSync(path.join(out, 'wallpaper.png'), wallpaperBytes);
+const mediaAcceptance = process.env.TLBX_SURFACE_MEDIA === '1';
+if (mediaAcceptance) {
+  const picture = new PNG({ width: 32, height: 32 });
+  for (let i = 0; i < picture.data.length; i += 4) { picture.data[i] = 200; picture.data[i + 1] = 60; picture.data[i + 2] = 80; picture.data[i + 3] = 128; }
+  fs.writeFileSync(path.join(fixture, 'picture.png'), PNG.sync.write(picture));
+  const wav = Buffer.alloc(44 + 8000); wav.write('RIFF', 0); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(8000, 40);
+  fs.writeFileSync(path.join(fixture, 'sound.wav'), wav);
+  const content = 'BT /F1 18 Tf 20 100 Td (Surface fixture) Tj ET';
+  const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 240 180] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>', `<< /Length ${content.length} >>\nstream\n${content}\nendstream`, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+  let pdf = '%PDF-1.4\n', offsets = [0];
+  for (let i = 0; i < objects.length; i++) { offsets.push(Buffer.byteLength(pdf)); pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`; }
+  const xref = Buffer.byteLength(pdf); pdf += `xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(n => String(n).padStart(10, '0') + ' 00000 n ').join('\n')}\ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  fs.writeFileSync(path.join(fixture, 'paper.pdf'), pdf);
+}
 const result = { ok: false, fixture, samples: [], errors: [] };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 let chrome, browser, context, page, session, savedSettings, savedImage;
@@ -40,8 +54,8 @@ function rgba(value) {
   if (value.startsWith('color(')) for (let i = 0; i < 3; i++) numbers[i] *= 255;
   return [...numbers.slice(0, 3), numbers[3] ?? 1];
 }
-async function sample(label, selector, owner, imageColor) {
-  const evidence = await page.locator(selector).last().evaluate((element, stop) => {
+async function sample(label, selector, owner, imageColor, leftCorner = false) {
+  const evidence = await page.locator(selector).last().evaluate((element, { stop, leftCorner }) => {
     const chain = []; let node = element;
     while (node) {
       const style = getComputedStyle(node);
@@ -55,8 +69,8 @@ async function sample(label, selector, owner, imageColor) {
       if (/(auto|hidden|scroll|clip)/.test(style.overflowY)) bottom = Math.min(bottom, rect.bottom);
       if (parent.matches(stop)) break;
     }
-    return { chain, owner: chain.at(-1)?.background, point: { x: right - 24, y: bottom - 24 }, box: { x: box.x, y: box.y, width: box.width, height: box.height } };
-  }, owner);
+    return { chain, owner: chain.at(-1)?.background, point: { x: leftCorner ? box.left + 24 : right - 24, y: bottom - 24 }, box: { x: box.x, y: box.y, width: box.width, height: box.height } };
+  }, { stop: owner, leftCorner });
   const painted = evidence.chain.filter(layer => rgba(layer.background)[3] > 0);
   assert.equal(painted.length, 1, `${label}: ${JSON.stringify(evidence.chain)}`);
   const expectedSurface = rgba(evidence.owner);
@@ -91,6 +105,58 @@ try {
   const wrapper = page.locator(`.session-wrapper[data-session-id="${session}"]`), files = wrapper.locator('.session-tab[data-tab="files"]'), terminal = wrapper.locator('.session-tab[data-tab="terminal"]');
   await files.click();
   const row = wrapper.locator('.tree-node').filter({ has: page.locator('.tree-name', { hasText: /^tracked\.txt$/ }) }); await row.waitFor();
+  if (mediaAcceptance) {
+    await page.bringToFront();
+    const movie = await page.evaluate(async () => {
+      const canvas = document.createElement('canvas'); canvas.width = 160; canvas.height = 90;
+      canvas.style.cssText = 'position:fixed;left:0;top:0;width:160px;height:90px;pointer-events:none'; document.body.append(canvas);
+      const ctx = canvas.getContext('2d'); ctx.fillStyle = '#805080'; ctx.fillRect(0, 0, 160, 90);
+      const stream = canvas.captureStream(10), recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' }), chunks = [];
+      recorder.ondataavailable = event => chunks.push(event.data);
+      const stopped = new Promise(resolve => { recorder.onstop = resolve; });
+      recorder.start(); let frame = 0; const draw = setInterval(() => { ctx.fillStyle = frame++ % 2 ? '#805080' : '#806080'; ctx.fillRect(0, 0, 160, 90); }, 50);
+      await new Promise(resolve => setTimeout(resolve, 1200)); recorder.stop(); await stopped; clearInterval(draw); stream.getTracks().forEach(track => track.stop()); canvas.remove();
+      const bytes = new Uint8Array(await new Blob(chunks, { type: 'video/webm' }).arrayBuffer()); return btoa(String.fromCharCode(...bytes));
+    });
+    fs.writeFileSync(path.join(fixture, 'movie.webm'), Buffer.from(movie, 'base64'));
+    for (const theme of ['dark', 'light', 'solarizedDark', 'solarizedLight']) {
+      await api('PATCH', '/api/settings', { theme, uiTransparency: 65, terminalTransparency: 65 });
+      await page.reload(); await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click(); await files.click(); await row.waitFor();
+      const prefix = `.session-wrapper[data-session-id="${session}"] .file-browser-preview`, preview = wrapper.locator('.file-browser-preview');
+      await preview.locator('.preview-empty').waitFor(); await sample(`${theme}-65-empty`, prefix, '.file-browser', imageColor, true);
+      await page.route('**/api/files/document**', async route => { await sleep(400); await route.continue(); });
+      await row.click(); await preview.locator('.preview-loading').waitFor(); await sample(`${theme}-65-loading`, prefix, '.file-browser', imageColor, true);
+      await preview.locator('.file-document-source').waitFor(); await page.unroute('**/api/files/document**');
+      await sample(`${theme}-65-text-state`, prefix + ' .file-document-source .file-viewer-text', '.file-browser', imageColor);
+      await page.route('**/api/files/document**', route => route.fulfill({ status: 403, body: JSON.stringify({ code: 'access_denied' }) }));
+      const other = wrapper.locator('.tree-node').filter({ has: page.locator('.tree-name', { hasText: /^\.gitignore$/ }) }); await other.click();
+      await preview.locator('.preview-error').waitFor(); await sample(`${theme}-65-error`, prefix, '.file-browser', imageColor, true); await page.unroute('**/api/files/document**');
+      for (const [name, selector] of [['picture.png', '.file-viewer-image-stage'], ['sound.wav', 'audio'], ['movie.webm', 'video'], ['paper.pdf', 'iframe']]) {
+        const mediaRow = wrapper.locator('.tree-node').filter({ has: page.locator('.tree-name', { hasText: name }) }); await mediaRow.click(); await preview.locator(selector).waitFor();
+        if (name === 'picture.png') await page.waitForFunction(selector => document.querySelector(selector + ' img')?.naturalWidth === 32, prefix);
+        if (name === 'sound.wav' || name === 'movie.webm') {
+          await page.waitForFunction(selector => document.querySelector(selector)?.readyState >= 2, prefix + ' ' + selector);
+          const playback = await preview.locator(selector).evaluate(async media => { media.muted = true; await media.play(); await new Promise(resolve => setTimeout(resolve, 100)); const evidence = { time: media.currentTime, duration: media.duration, width: media.videoWidth, height: media.videoHeight }; media.pause(); return evidence; });
+          assert.ok(playback.time > 0); if (name === 'movie.webm') assert.deepEqual([playback.width, playback.height], [160, 90]);
+          result.samples.push({ label: `${theme}-playback-${name}`, playback });
+        }
+        if (name === 'paper.pdf') {
+          const rect = await preview.locator('iframe').boundingBox(); let whitePixels = 0, paintedPdf;
+          for (let attempt = 0; attempt < 20; attempt++) {
+            paintedPdf = await page.screenshot({ animations: 'disabled' }); const raster = PNG.sync.read(paintedPdf); whitePixels = 0;
+            for (let y = Math.ceil(rect.y); y < Math.min(raster.height, rect.y + rect.height); y++) for (let x = Math.ceil(rect.x); x < Math.min(raster.width, rect.x + rect.width); x++) { const offset = (y * raster.width + x) * 4; if (raster.data[offset] > 245 && raster.data[offset + 1] > 245 && raster.data[offset + 2] > 245) whitePixels++; }
+            if (whitePixels > 10000) break; await sleep(150);
+          }
+          assert.ok(whitePixels > 10000, 'Native PDF must paint the actual white document page');
+          const backgrounds = await preview.locator('.preview-text-body').evaluate(el => { const output = []; for (let n = el; n; n = n.parentElement) { output.push(getComputedStyle(n).backgroundColor); if (n.matches('.file-browser')) break; } return output; });
+          assert.equal(backgrounds.filter(value => rgba(value)[3] > 0).length, 1);
+          result.samples.push({ label: `${theme}-65-pdf`, backgrounds, nativeDocumentSurface: true, whitePixels });
+          fs.writeFileSync(path.join(out, `${theme}-65-pdf.png`), paintedPdf);
+        } else await sample(`${theme}-65-${name}`, prefix + ' .preview-text-body', '.file-browser', imageColor, true);
+      }
+    }
+    assert.deepEqual(result.errors, []); result.ok = true;
+  } else {
   for (const theme of ['dark', 'light', 'solarizedDark', 'solarizedLight']) for (const transparency of [0, 65, 90]) {
     await api('PATCH', '/api/settings', { theme, uiTransparency: transparency, terminalTransparency: transparency });
     await page.reload(); await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click();
@@ -125,6 +191,7 @@ try {
     await gitDock.locator('#git-dock-close').click();
   }
   assert.deepEqual(result.errors, []); result.ok = true;
+  }
 } catch (error) {
   result.failure = String(error.stack || error).replaceAll(cookie, '<redacted-session-cookie>');
   await page?.screenshot({ path: path.join(out, 'failure.png') }).catch(() => {}); process.exitCode = 1;

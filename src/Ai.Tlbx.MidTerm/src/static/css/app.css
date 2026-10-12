@@ -21218,6 +21218,8 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   .file-document-mode,
   .preview-save-btn,
   .preview-toolbar-action-btn,
+  .file-viewer-zoom-btn,
+  .file-viewer-zoom-level,
   .file-browser-navigation button,
   .file-browser-back,
   .file-viewer-navigation button,

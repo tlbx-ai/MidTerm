@@ -90,7 +90,7 @@ Zusatzbefund: der Dock-Terminal-Seam zeigt bei DPR 1,25/2 dieselben Deltas
 5/33 sowohl mit neuer als auch ursprünglicher Wrapperregel. Als vorhandener
 Renderer-Folgepunkt im Tracker erfasst; eine Seam-Reparatur wird nicht behauptet.
 
-### 4. [~] Leere und befüllte Vorschau visuell konsistent halten
+### 4. [x] Leere und befüllte Vorschau visuell konsistent halten
 
 **Befund (mittel, reproduziert):** Leere Files-Vorschau zeigt großflächig das Bild;
 nach Textauswahl wird dieselbe Fläche fast schwarz. Der Baum bleibt deutlich heller.
@@ -102,7 +102,21 @@ Audio und Video; bewusste Unterschiede zwischen Navigation und Inhalt definieren
 **Abnahme:** Alle Zustände/Medientypen wechseln und Screenshots vergleichen.
 Keine unbeabsichtigte Änderung der Flächentransparenz beim Dateiöffnen.
 
-### 5. [ ] Transparenzpolitik für Modal, Dock und Tab vereinheitlichen
+**Nachweis 12.10.2026:** Die Hintergrundownership aus Aufgabe 3 gilt auch für
+Empty/Loading/Error und PNG/Audio/Video/PDF. 40 echte Prüfungen in vier Themes
+bei 65 % Transparenz bestehen: gleiche Root-/Pixelkomposition für leere,
+ladende, fehlerhafte und gefüllte Leseflächen sowie Bilder/Audio/Video. PNG ist
+tatsächlich decodiert; WAV und ein im Browser erzeugtes WebM werden abgespielt.
+Der native PDF-Viewer malt seine echte Dokumentseite (mehr als 90.000 weiße
+Pagepixel im Testlauf); sein App-Container besitzt dieselbe Hintergrundebene.
+PDF-Papier, Videoframes und native Playercontrols sind bewusste Dokumentflächen;
+sie werden nicht als zusätzliche Layout-Hintergründe gezählt. Screenshots von
+Bild, Video und fertigem PDF sind geprüft. Zoomcontrols bekommen auch auf
+breiten Coarse-Pointer-Geräten 44-px-Ziele. Source-Bild/Settings sind restauriert.
+Evidenz: `.dev/file-git-production/task-4-final/summary.json`; die gemeinsame
+Containeränderung ist in `0721b2a0` abgenommen. Stylelint besteht.
+
+### 5. [~] Transparenzpolitik für Modal, Dock und Tab vereinheitlichen
 
 **Befund (mittel, reproduziert):** Modalhintergrund ist deckend rgb(22,24,33),
 Dock und Files sind transparent. Andocken ändert den visuellen Charakter stark.
