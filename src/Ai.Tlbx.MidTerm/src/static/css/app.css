@@ -21169,7 +21169,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 .file-document-markdown a { color: var(--accent-blue); }
 .file-document-markdown blockquote { margin-left: 0; padding-left: 14px; border-left: 3px solid var(--border-color); color: var(--text-secondary); }
 .file-document-mode:focus-visible, .file-document-source:focus-visible, .file-document-markdown:focus-visible,
-.file-document-editor textarea:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.file-document-editor textarea:focus-visible, .file-browser-preview:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
 .file-pane-resize-grip[hidden] { display: none; }
 .file-pane-resize-grip:hover, .file-pane-resize-grip.active { background: var(--accent-blue); }
 .file-pane-resize-grip:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }

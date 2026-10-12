@@ -56,7 +56,7 @@ interface TreeState {
       scroll: number;
     }
   >;
-  onFileSelect: (entry: FileTreeEntry) => boolean | Promise<boolean>;
+  onFileSelect: (entry: FileTreeEntry, focus?: boolean) => boolean | Promise<boolean>;
   onDirectoryOpen: ((entry: FileTreeEntry) => void) | undefined;
 }
 
@@ -190,7 +190,7 @@ function openSelectedPath(state: TreeState, path: string): void {
   const entry = findEntry(state, path);
   if (!entry) return;
   if (entry.isDirectory) state.onDirectoryOpen?.(entry);
-  else void selectFile(state, entry);
+  else void selectFile(state, entry, true);
 }
 
 /** Apply a validated directory only after both navigation and listing have succeeded. */
@@ -395,12 +395,20 @@ function createTreeNode(state: TreeState): HTMLElement {
     if (!state.surface.selection.paths.has(node.dataset.path ?? '')) state.surface.choose(node);
     state.actions.showContext(event);
   });
+  node.addEventListener('keydown', (event) => {
+    if (state.view.mode !== 'tree' || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    event.stopPropagation();
+    void navigateTreeBranch(state, node, event.key);
+  });
 
   const wrapper = document.createElement('div');
   wrapper.className = 'tree-node-group';
   wrapper.appendChild(node);
   const children = document.createElement('div');
   children.className = 'tree-children';
+  children.id = `file-children-${crypto.randomUUID()}`;
   children.setAttribute('role', 'group');
   wrapper.appendChild(children);
   return wrapper;
@@ -424,6 +432,8 @@ function patchTreeNode(
   const expanded =
     state.view.mode === 'tree' && entry.isDirectory && state.expandedPaths.has(entry.fullPath);
   children.hidden = !expanded;
+  if (state.view.mode === 'tree') node.setAttribute('aria-owns', children.id);
+  else node.removeAttribute('aria-owns');
   if (expanded) renderBranch(children, state, state.treeData.get(entry.fullPath) ?? [], depth + 1);
 }
 
@@ -484,10 +494,10 @@ function hideEmptyMetadata(node: HTMLElement, selector: string): void {
   if (span) span.style.display = span.textContent ? '' : 'none';
 }
 
-async function selectFile(state: TreeState, entry: FileTreeEntry): Promise<void> {
+async function selectFile(state: TreeState, entry: FileTreeEntry, focus = false): Promise<void> {
   const request = ++state.selectionRequest;
   const revision = state.surface.revision;
-  const accepted = await state.onFileSelect(entry);
+  const accepted = await state.onFileSelect(entry, focus);
   if (!accepted || request !== state.selectionRequest) return;
   state.selectedPath = entry.fullPath;
   if (revision !== state.surface.revision) return;
@@ -495,6 +505,30 @@ async function selectFile(state: TreeState, entry: FileTreeEntry): Promise<void>
   state.viewAnchor = entry.fullPath;
   state.surface.selection.restore([entry.fullPath]);
   state.surface.update();
+}
+
+async function navigateTreeBranch(state: TreeState, node: HTMLElement, key: string): Promise<void> {
+  const entry = rowEntries.get(node);
+  if (!entry) return;
+  const expanded = state.expandedPaths.has(entry.fullPath);
+  if (
+    entry.isDirectory &&
+    ((key === 'ArrowLeft' && expanded) || (key === 'ArrowRight' && !expanded))
+  ) {
+    await toggleExpand(state, entry);
+    return;
+  }
+  const target =
+    key === 'ArrowRight'
+      ? node.parentElement?.querySelector<HTMLElement>(
+          '.tree-children > .tree-node-group > .tree-node',
+        )
+      : (node.parentElement?.parentElement?.closest('.tree-node-group')
+          ?.firstElementChild as HTMLElement | null);
+  if (target && !target.closest('.tree-children[hidden]')) {
+    state.surface.choose(target);
+    target.focus();
+  }
 }
 
 async function toggleExpand(state: TreeState, entry: FileTreeEntry): Promise<void> {

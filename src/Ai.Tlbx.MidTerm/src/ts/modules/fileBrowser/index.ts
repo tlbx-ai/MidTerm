@@ -95,7 +95,7 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
       detail.insertBefore(back, previewContainer);
     }
 
-    const selectFile = async (entry: FileTreeEntry): Promise<boolean> => {
+    const selectFile = async (entry: FileTreeEntry, focus = false): Promise<boolean> => {
       navigators.get(sessionId)?.cancelPending();
       const request = beginFileOpen(sessionId);
       const sameFile = previewContainer.dataset.selectedPath === entry.fullPath;
@@ -112,6 +112,12 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
       }
       treeScroll = treeContainer.scrollTop;
       if (browser) browser.dataset.filePane = 'detail';
+      if (focus) {
+        previewContainer.tabIndex = -1;
+        previewContainer.setAttribute('role', 'region');
+        previewContainer.setAttribute('aria-label', t('fileViewer.modePreview'));
+        previewContainer.focus({ preventScroll: true });
+      }
       requestAnimationFrame(() => {
         for (const position of detailScroll) {
           position.element.scrollTop = position.top;

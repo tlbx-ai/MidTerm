@@ -117,6 +117,8 @@ export class DirectoryListing {
   }
 
   private renderView(): void {
+    const focused = document.activeElement as HTMLElement | null;
+    const hadFocus = !!focused && this.root.contains(focused);
     const entries = sortListing(
       this.allEntries.filter((entry) => matchesListing(entry, this.view.query)),
       this.view,
@@ -149,6 +151,10 @@ export class DirectoryListing {
     this.surface.selection.restore(this.retainedSelection, this.retainedAnchor);
     this.surface.update();
     this.rendering = false;
+    if (hadFocus && !focused.isConnected) {
+      this.root.tabIndex = -1;
+      this.root.focus({ preventScroll: true });
+    }
   }
 
   private createRow(): HTMLElement {

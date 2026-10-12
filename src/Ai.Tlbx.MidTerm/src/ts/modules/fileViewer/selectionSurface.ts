@@ -1,10 +1,13 @@
 import { FileSelection } from './selection';
 import { t } from '../i18n';
+import { getCurrentLocale } from '../i18n';
 
 /** Shared keyboard and touch selection. Opening is always an explicit callback. */
 export class FileSelectionSurface {
   public readonly selection = new FileSelection();
   public revision = 0;
+  private typed = '';
+  private typedAt = 0;
   public constructor(
     private rows: () => HTMLElement[],
     private changed: () => void,
@@ -21,6 +24,7 @@ export class FileSelectionSurface {
       toggle,
       range,
     );
+    row.focus({ preventScroll: true });
     this.update();
   }
 
@@ -61,6 +65,8 @@ export class FileSelectionSurface {
   }
 
   public label(row: HTMLElement, name: string): void {
+    row.dataset.name = name;
+    row.setAttribute('aria-label', name);
     row
       .querySelector('.file-selection-checkbox')
       ?.setAttribute('aria-label', `${t('fileBrowser.select')} ${name}`);
@@ -71,23 +77,63 @@ export class FileSelectionSurface {
       index = rows.indexOf(row);
     const toggle = event.ctrlKey || event.metaKey;
     if (toggle && event.key.toLowerCase() === 'a') {
+      this.typed = '';
       this.revision++;
       this.selection.restore(rows.map((item) => item.dataset.path ?? ''));
       this.update();
     } else if (event.key === 'Enter') {
+      this.typed = '';
       const path = row.dataset.path;
+      if (this.selection.paths.size === 0) this.choose(row);
       if (path && this.selection.paths.size === 1 && this.selection.paths.has(path))
         this.open(path);
     } else if (event.key === ' ') {
+      this.typed = '';
       this.choose(row, toggle, event.shiftKey);
     } else if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+      this.typed = '';
       const next = this.nextRow(rows, index, event.key);
       if (!next) return;
       if (!toggle || event.shiftKey) this.choose(next, toggle, event.shiftKey);
       next.focus();
+      this.update();
+      next.scrollIntoView({ block: 'nearest' });
+    } else if (this.isTypeKey(event)) {
+      this.typeToSelect(event.key, rows, index);
     } else return;
     event.preventDefault();
     event.stopPropagation();
+  }
+
+  private isTypeKey(event: KeyboardEvent): boolean {
+    if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return false;
+    return (
+      Array.from(
+        new Intl.Segmenter(getCurrentLocale(), { granularity: 'grapheme' }).segment(event.key),
+      ).length === 1
+    );
+  }
+
+  private typeToSelect(key: string, rows: HTMLElement[], index: number): void {
+    const now = performance.now();
+    this.typed =
+      (now - this.typedAt > 700 ? '' : this.typed) + key.toLocaleLowerCase(getCurrentLocale());
+    this.typedAt = now;
+    const normalized = key.toLocaleLowerCase(getCurrentLocale());
+    const query =
+      this.typed === normalized.repeat(this.typed.length / normalized.length)
+        ? normalized
+        : this.typed;
+    const ordered = [...rows.slice(index + 1), ...rows.slice(0, index + 1)];
+    const next = ordered.find((row) =>
+      row.dataset.name
+        ?.toLocaleLowerCase(getCurrentLocale())
+        .startsWith(query.toLocaleLowerCase(getCurrentLocale())),
+    );
+    if (next) {
+      this.choose(next);
+      next.scrollIntoView({ block: 'nearest' });
+    }
   }
 
   private nextRow(rows: HTMLElement[], index: number, key: string): HTMLElement | undefined {

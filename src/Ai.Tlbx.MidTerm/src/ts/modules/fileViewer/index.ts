@@ -53,10 +53,12 @@ import { DirectoryListing } from './directoryListing';
 import { resizeFilePane } from './paneResize';
 import { getWebPreviewDockWidth } from '../web/webDock';
 import { createTextView, getDocumentViewMode } from './textView';
+import { createFileViewerFocus } from './modalFocus';
 
 const log = createLogger('fileViewer');
 
 let modal: HTMLElement | null = null;
+let modalFocus: ReturnType<typeof createFileViewerFocus> | null = null;
 let currentPath: string | null = null;
 let currentSessionId: string | null = null;
 const navigationHistory = new FileNavigationHistory();
@@ -98,6 +100,17 @@ export function initFileViewer(): void {
   }
 
   const backdrop = modal.querySelector('.modal-backdrop');
+  modalFocus = createFileViewerFocus(
+    modal,
+    () => {
+      if (document.fullscreenElement) void document.exitFullscreen();
+      else void requestCloseViewer();
+    },
+    () =>
+      document.querySelector<HTMLElement>(
+        `.session-wrapper[data-session-id="${CSS.escape($activeSessionId.get() ?? '')}"] .session-tab[data-tab="terminal"]`,
+      ),
+  );
   const closeBtn = modal.querySelector('.modal-close');
   const maximizeBtn = modal.querySelector('#file-viewer-maximize');
   const dockBtn = modal.querySelector('#file-viewer-dock-btn');
@@ -304,7 +317,7 @@ function dockViewer(): void {
       .querySelector('.file-viewer-dock-header')
       ?.insertAdjacentElement('afterend', navigationBar);
   transferViewerBody(source, target);
-  hideModal();
+  hideModal(false);
   registerDockBackLayer();
   updateSaveButtonVisibility(currentEdit?.dirty ?? false);
 
@@ -336,6 +349,7 @@ function hideFileDock(): void {
 
   $fileViewerDocked.set(false);
   $dockedFilePath.set(null);
+  if (modal?.classList.contains('hidden')) modalFocus?.restore();
 
   adjustInnerDockPositions();
   updateAllDockMargins();
@@ -371,7 +385,7 @@ async function restoreFileViewerDock(path: string, state?: FileNavigationSnapsho
       ?.querySelector('.file-viewer-dock-header')
       ?.insertAdjacentElement('afterend', navigationBar);
   terminalPage?.classList.add('file-viewer-docked');
-  hideModal();
+  hideModal(false);
 
   void renderInDock(path);
 
@@ -474,16 +488,19 @@ async function renderInDock(path: string): Promise<void> {
   }
 }
 
-function hideModal(): void {
+function hideModal(restoreFocus = true): void {
   releaseBackButtonLayer?.();
   releaseBackButtonLayer = null;
 
   if (modal) {
     modal.classList.add('hidden');
   }
+  if (restoreFocus) modalFocus?.restore();
 }
 
 function showModal(): void {
+  const opening = modal?.classList.contains('hidden');
+  if (opening) modalFocus?.remember($fileViewerDocked.get());
   if (navigationBar)
     modal?.querySelector('.modal-header')?.insertAdjacentElement('afterend', navigationBar);
   if (!releaseBackButtonLayer) {
@@ -493,6 +510,7 @@ function showModal(): void {
     });
   }
   modal?.classList.remove('hidden');
+  if (opening) modalFocus?.enter();
 }
 
 function closeViewer(): void {

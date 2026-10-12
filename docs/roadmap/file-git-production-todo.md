@@ -742,7 +742,7 @@ Screenshots wurden visuell geprüft; DOM-Vorschau und HTTP-Inhalte bleiben begre
 Artefakte: `.dev/file-git-production/task-27-final/summary.json`,
 `task-27-regression/summary.json`, `task-27-unit/task-27-pages.trx`.
 
-### 28. [~] Dateinavigation und Viewer vollständig per Tastatur bedienen
+### 28. [x] Dateinavigation und Viewer vollständig per Tastatur bedienen
 
 **Befund (mittel, reproduziert/Code):** Baum/Liste bestehen aus klickbaren divs
 ohne Fokus/Tree-Semantik/Pfeile. Modal hat keine Dialogsemantik/Fokusführung;
@@ -754,7 +754,25 @@ Typ-to-select, sichtbarer Fokus, Fokusreturn und korrekter Dialog-Fokusbereich.
 **Abnahme:** Kompletter Dateiablauf ohne Maus; Screenreaderstruktur, Escape/Tab,
 Modalwechsel, Resize und keine Weitergabe von Navigationskeys an Terminal prüfen.
 
-### 29. [ ] Ausreichende Bedienziele für schmale und Touchansichten schaffen
+**Nachweis 12.10.2026:** Tree/List verwenden roving focus, natürliche Pfeil-/
+Home-/End-/Space-/Enterauswahl und lokales Typ-to-select mit Unicode-Graphemen.
+Links/Rechts falten Baumordner und wechseln zu Parent/erstem Child. ARIA-owns
+verknüpft die vorhandenen Kindgruppen korrekt mit dem Treeitem; die echte Chrome-
+Accessibility-Struktur bestätigt Child unter Parent. Tastatur-Open verschiebt
+den Fokus sichtbar in die Vorschau. Listen halten Fokus auch nach Row-Entfernung.
+Der Viewer ist ein benannter modaler Dialog; Tab/Shift-Tab bleiben innerhalb,
+Escape respektiert Fullscreen/Dirtyentscheidung und stellt den Auslösefokus wieder
+her. Dock-/Undock-/Close erhalten bzw. restaurieren sinnvollen Fokus. Auch ein
+Save-Entscheidungsdialog mit deaktivierten Buttons hält den Fokus während Save.
+Sieben echte Browser-Szenarien prüfen Baum, Directory-Open/Back, 60 Tab-Schritte,
+Modal/Dock, Dirty-Save und 390 px. Baum- und Dirtydialog-Keysequenzen senden
+null Mux-Inputframes (`0x14`) an das Terminal. 689 Frontendtests und Kitty/
+Typecheck/ESLint/Stylelint bestehen. Die Accessibility-Abnahme ist echte Chrome-
+AX-Evidenz; eine konkrete NVDA-/VoiceOver-Sprachausgabe wird damit nicht behauptet.
+Evidenz: `.dev/file-git-production/task-28-final/summary.json`,
+`task-28-verify.*.log`; Resize-/Ownership-Evidenz zusätzlich aus Aufgabe 23.
+
+### 29. [~] Ausreichende Bedienziele für schmale und Touchansichten schaffen
 
 **Befund (mittel, reproduziert):** Baumzeilen circa 25 px, Viewericons 28×28 px,
 Close etwa 14×24 px. Schmale Ansicht vergrößert die Ziele nicht.

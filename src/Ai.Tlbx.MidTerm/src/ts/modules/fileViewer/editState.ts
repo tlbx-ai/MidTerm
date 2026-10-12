@@ -164,7 +164,7 @@ function showUnsavedFileDialog(edit: FileEditState): Promise<boolean> {
     overlay.className = 'modal-overlay file-unsaved-overlay';
     const titleId = 'file-unsaved-title';
     overlay.innerHTML = `
-      <div class="modal dialog-modal" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+      <div class="modal dialog-modal" role="dialog" aria-modal="true" aria-labelledby="${titleId}" tabindex="-1">
         <div class="modal-content dialog-content">
           <div class="modal-header"><h3 id="${titleId}">${escapeHtml(t('fileViewer.unsavedTitle'))}</h3></div>
           <div class="modal-body">
@@ -200,10 +200,10 @@ function showUnsavedFileDialog(edit: FileEditState): Promise<boolean> {
         event.preventDefault();
         close(false);
       } else if (event.key === 'Tab') {
+        event.preventDefault();
         const available = buttons.filter((button) => !button.disabled);
         const index = available.indexOf(document.activeElement as HTMLButtonElement);
         if (available.length) {
-          event.preventDefault();
           const next = (index + (event.shiftKey ? -1 : 1) + available.length) % available.length;
           available[next]?.focus();
         }
@@ -223,6 +223,7 @@ function showUnsavedFileDialog(edit: FileEditState): Promise<boolean> {
         buttons.forEach((button) => {
           button.disabled = true;
         });
+        overlay.querySelector<HTMLElement>('[role="dialog"]')?.focus({ preventScroll: true });
         if (error) error.hidden = true;
         void edit
           .save()

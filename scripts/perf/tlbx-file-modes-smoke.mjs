@@ -11,12 +11,15 @@ if (!url || !cookie) throw new Error('Authenticated source URL required');
 const out = path.resolve(process.env.TLBX_PERF_ARTIFACT_ROOT || '.dev/file-git-production/file-modes');
 fs.mkdirSync(out, { recursive: true });
 const fixtures = fs.mkdtempSync(path.join(os.tmpdir(), 'tlbx-file-modes-'));
+const keyboardAcceptance = process.env.TLBX_TEST_KEYBOARD === '1';
+if (keyboardAcceptance) { fs.mkdirSync(path.join(fixtures, 'nested')); fs.writeFileSync(path.join(fixtures, 'nested', 'child.txt'), 'Child\n'); }
 const original = '# Rendered heading\n\n**Bold** and [Safe](https://example.com)\n\n| Name | Value |\n| --- | --- |\n| One | 1 |\n\n```ts\nconst x = 1;\n```\n\n<script>window.fileModeUnsafe = true</script>\n[Unsafe](javascript:alert(1))\n';
 fs.writeFileSync(path.join(fixtures, 'note.md'), original);
 fs.writeFileSync(path.join(fixtures, 'code.ts'), 'const value = 42;\n// code\n');
 fs.writeFileSync(path.join(fixtures, 'plain.txt'), '<script>plain text</script>\n');
 const readOnly = path.join(fixtures, 'readonly.txt'); fs.writeFileSync(readOnly, 'Read only\n'); fs.chmodSync(readOnly, 0o444);
 const result = { ok: false, fixtures, cases: [], errors: [], writes: 0 };
+let terminalInputFrames = 0;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 let chrome, browser, context, page, session;
 async function api(method, route, data) {
@@ -36,8 +39,17 @@ try {
   if (!browser) throw new Error('Chrome did not start');
   context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 1000 }, hasTouch: true });
   const eq = cookie.indexOf('='); await context.addCookies([{ name: cookie.slice(0, eq), value: cookie.slice(eq + 1), url }]);
+  let assetsReady = false;
+  for (let i = 0; i < 40; i++) {
+    try { const response = await context.request.get(url + '/locales/en.json'); assetsReady = response.ok() && JSON.parse((await response.text()).replace(/^\uFEFF/, ''))['fileViewer.modePreview'] === 'Preview'; } catch {}
+    if (assetsReady) break; await sleep(250);
+  }
+  if (!assetsReady) throw new Error('Source static asset synchronization did not finish');
   session = (await api('POST', '/api/sessions', { shell: 'Pwsh', cols: 90, rows: 30, workingDirectory: fixtures, launchRequestId: crypto.randomUUID() })).id;
   page = await context.newPage(); page.setDefaultTimeout(15000);
+  page.on('websocket', socket => socket.on('framesent', frame => {
+    if (Buffer.isBuffer(frame.payload) && frame.payload[0] === 0x14) terminalInputFrames++;
+  }));
   page.on('pageerror', error => result.errors.push(error.message));
   page.on('request', request => { if (new URL(request.url()).pathname === '/api/files/save' && request.method() === 'PUT') result.writes++; });
   await page.goto(url); await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click();
@@ -46,6 +58,37 @@ try {
   const tree = wrapper.locator('.file-browser-tree'), preview = wrapper.locator('.file-browser-preview');
   const row = name => tree.locator('.tree-node').filter({ has: page.locator('.tree-name', { hasText: new RegExp('^' + name.replace('.', '\\.') + '$') }) });
   const mode = (root, value) => root.locator(`.file-document-mode[data-mode="${value}"]`);
+  if (keyboardAcceptance) {
+    await row('nested').waitFor(); await sleep(300);
+    const inputsBefore = terminalInputFrames;
+    await row('nested').focus(); await page.keyboard.press('Space');
+    await page.keyboard.press('ArrowRight'); await row('child.txt').waitFor();
+    assert.equal(await row('nested').getAttribute('aria-expanded'), 'true');
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await row('child.txt').evaluate(el => el === document.activeElement && el.tabIndex === 0), true);
+    assert.equal(await row('child.txt').getAttribute('aria-level'), '2');
+    const treeCdp = await context.newCDPSession(page), treeAx = await treeCdp.send('Accessibility.getFullAXTree');
+    const nestedAx = treeAx.nodes.find(n => n.role?.value === 'treeitem' && n.name?.value === 'nested');
+    let ancestor = treeAx.nodes.find(n => n.role?.value === 'treeitem' && n.name?.value === 'child.txt');
+    let ownsChild = false;
+    for (let i = 0; ancestor && i < 20; i++) { if (ancestor.nodeId === nestedAx?.nodeId) { ownsChild = true; break; } ancestor = treeAx.nodes.find(n => n.nodeId === ancestor.parentId); }
+    assert.equal(ownsChild, true); await treeCdp.detach();
+    await page.keyboard.press('ArrowLeft');
+    assert.equal(await row('nested').evaluate(el => el === document.activeElement), true);
+    await page.keyboard.press('ArrowLeft');
+    assert.equal(await row('nested').getAttribute('aria-expanded'), 'false');
+    await page.keyboard.press('Home'); await page.keyboard.type('note');
+    assert.equal(await row('note.md').evaluate(el => el === document.activeElement && el.tabIndex === 0), true);
+    await page.keyboard.press('Enter'); await preview.locator('.file-document-markdown').waitFor();
+    assert.equal(await preview.evaluate(el => el === document.activeElement), true);
+    assert.equal(terminalInputFrames, inputsBefore);
+    const cdp = await context.newCDPSession(page);
+    const ax = await cdp.send('Accessibility.getFullAXTree');
+    assert.ok(ax.nodes.some(n => n.role?.value === 'tree'));
+    assert.ok(ax.nodes.some(n => n.role?.value === 'treeitem' && n.name?.value === 'nested'));
+    await cdp.detach();
+    result.cases.push('Tree Space/Right/Left/Home/type-to-select/Enter preserve roving focus, expose AX tree semantics and send zero terminal-input frames');
+  }
   await row('note.md').click(); await preview.locator('.file-document-markdown h1').waitFor();
   assert.equal(await preview.locator('.file-document-markdown h1').innerText(), 'Rendered heading');
   assert.equal(await preview.locator('.file-document-markdown table').count(), 1);
@@ -82,8 +125,26 @@ try {
   }
   result.cases.push('Code/text default to the same preview, syntax colors preserve exact text, readonly documents cannot enter Edit');
   await wrapper.locator('.session-tab[data-tab="terminal"]').click();
+  if (keyboardAcceptance) { await sleep(100); await page.evaluate(() => { window.keyboardViewerOrigin = document.activeElement; }); }
   await page.evaluate(target => window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), target), path.join(fixtures, 'note.md'));
   const modal = page.locator('#file-viewer-modal'); await modal.locator('.file-document-markdown h1').waitFor();
+  if (keyboardAcceptance) {
+    assert.equal(await modal.locator('[role="dialog"]').getAttribute('aria-modal'), 'true');
+    for (let i = 0; i < 60; i++) { await page.keyboard.press(i < 30 ? 'Tab' : 'Shift+Tab'); assert.equal(await modal.evaluate(el => el.contains(document.activeElement)), true); }
+    await page.keyboard.press('Escape'); await modal.waitFor({ state: 'hidden' });
+    assert.equal(await page.evaluate(() => document.activeElement === window.keyboardViewerOrigin), true);
+    await page.evaluate(target => window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), target), fixtures);
+    await modal.locator('.file-list-item').first().waitFor();
+    await modal.locator('.file-list-item').first().focus(); await page.keyboard.type('plain');
+    assert.equal(await modal.locator('.file-list-item[aria-selected="true"] .file-name').innerText(), 'plain.txt');
+    await page.keyboard.press('Enter'); await modal.locator('.file-document-source').waitFor();
+    await modal.locator('[data-file-navigation="back"]').focus(); await page.keyboard.press('Enter');
+    await modal.locator('.file-list-item[aria-selected="true"]').waitFor();
+    await page.keyboard.press('Escape'); await modal.waitFor({ state: 'hidden' });
+    await page.evaluate(target => window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), target), path.join(fixtures, 'note.md'));
+    await modal.locator('.file-document-markdown').waitFor();
+    result.cases.push('Modal ARIA dialog traps Tab, Escape restores origin focus; directory list supports keyboard type/open/back');
+  }
   await mode(modal, 'edit').click(); await modal.locator('textarea').fill('# Modal draft\n');
   await modal.locator('textarea').evaluate(el => { window.modalModeEditor = el; el.setSelectionRange(2, 7); });
   await modal.locator('#file-viewer-dock-btn').click(); const dock = page.locator('#file-viewer-dock');
@@ -116,6 +177,24 @@ try {
   }
   assert.equal(result.writes, 2);
   result.cases.push('Modal/dock readonly and plain/code preview match Files and perform no implicit writes');
+  if (keyboardAcceptance) {
+    await page.evaluate(target => window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), target), path.join(fixtures, 'note.md'));
+    await mode(modal, 'edit').focus(); await page.keyboard.press('Enter');
+    await modal.locator('textarea').fill('# Keyboard save decision\n');
+    await page.route('**/api/files/save**', async route => { await sleep(500); await route.continue(); });
+    await page.evaluate(target => window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), target), path.join(fixtures, 'code.ts'));
+    const decision = page.locator('.file-unsaved-overlay'); await decision.waitFor();
+    await decision.locator('[data-file-decision="save"]').focus();
+    const beforeBusyInput = terminalInputFrames;
+    await page.keyboard.press('Enter');
+    for (let i = 0; i < 5; i++) { await page.keyboard.press('Tab'); assert.equal(await decision.evaluate(el => el.contains(document.activeElement)), true); }
+    await decision.waitFor({ state: 'hidden' }); await modal.locator('.file-document-source').waitFor();
+    assert.equal(fs.readFileSync(path.join(fixtures, 'note.md'), 'utf8'), '# Keyboard save decision\n');
+    assert.equal(terminalInputFrames, beforeBusyInput);
+    await page.unroute('**/api/files/save**');
+    await page.keyboard.press('Escape'); await modal.waitFor({ state: 'hidden' });
+    result.cases.push('Keyboard save decision holds focus during delayed Save and does not send Enter/Tab to the terminal');
+  }
   assert.deepEqual(result.errors, []); result.ok = true;
 } catch (error) {
   result.failure = String(error.stack || error).replaceAll(cookie, '<redacted-session-cookie>');
