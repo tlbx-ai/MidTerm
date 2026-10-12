@@ -32,7 +32,7 @@ try {
     const escaped = await page.evaluate(value => CSS.escape(value), file);
     const row = dock.locator('.git-tree-file[data-path=' + escaped + '][data-scope="worktree"]');
     await row.click(); await dock.locator('.git-command-text').first().waitFor();
-    await dock.locator('.git-diff-lines').waitFor(); assert.ok((await dock.locator('.git-diff-lines').innerText()).includes('+Browser exact change ' + i));
+    await dock.locator('.git-diff-lines').waitFor(); assert.ok((await dock.locator('.git-diff-lines').textContent()).includes('+Browser exact change ' + i));
     const rowText = await row.innerText(); assert.ok(rowText.includes('+1') && rowText.includes('-1'));
     const copy = dock.locator('[data-action="copy-command"]').nth(1); await copy.click(); await dock.locator('.git-action-status').nth(1).filter({ hasText: 'Copied' }).waitFor();
     const command = await page.evaluate(() => navigator.clipboard.readText()); result.commands.push({ file, command });

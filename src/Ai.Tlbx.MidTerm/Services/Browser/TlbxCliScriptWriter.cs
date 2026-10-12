@@ -1194,7 +1194,7 @@ public static class TlbxCliScriptWriter
             "https://{{host}}:{{port.ToString(CultureInfo.InvariantCulture)}}"
         }
         $script:_MK = if ($env:MT_TOKEN) { "mm-session=$($env:MT_TOKEN)" } else { "mm-session={{token}}" }
-        $script:_MCurl = (Get-Command curl -CommandType Application -ErrorAction Stop).Source
+        $script:_MCurl = (Get-Command curl -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 
         function script:_MC {
             _MEnsureCliRequestContext @args
