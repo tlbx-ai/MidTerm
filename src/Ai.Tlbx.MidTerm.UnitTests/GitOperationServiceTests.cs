@@ -38,6 +38,26 @@ public sealed class GitOperationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task NewFileStatisticsKeepIndexAndWorkingTreeChangesSeparate()
+    {
+        await Init(); await Git("config", "core.autocrlf", "false");
+        Write("new ä.txt", "Reviewed 字\n"); await Execute(Request("stage", "new ä.txt"));
+        Write("new ä.txt", "Reviewed 字\nLater working ä\n");
+        var status = await GitCommandRunner.GetStatusAsync(_root);
+        Assert.Equal("added", Assert.Single(status.Staged).Status);
+        Assert.Equal("modified", Assert.Single(status.Modified).Status);
+        var staged = await GitCommandRunner.GetNumStatAsync(_root, staged: true);
+        var working = await GitCommandRunner.GetNumStatAsync(_root, staged: false);
+        Assert.Equal((1, 0), staged["new ä.txt"]); Assert.Equal((1, 0), working["new ä.txt"]);
+        await Execute(Request("stage", "new ä.txt"));
+        Assert.Empty((await GitCommandRunner.GetStatusAsync(_root)).Modified);
+        Assert.Equal((2, 0), (await GitCommandRunner.GetNumStatAsync(_root, staged: true))["new ä.txt"]);
+        await Execute(Request("unstage", "new ä.txt"));
+        Assert.Equal("untracked", Assert.Single((await GitCommandRunner.GetStatusAsync(_root)).Untracked).Status);
+        Assert.Equal("Reviewed 字\nLater working ä\n", Read("new ä.txt"));
+    }
+
+    [Fact]
     public async Task StageAndUnstagePreserveWorkingTreeAndDistinguishIndexContent()
     {
         await Init(); Write("a.txt", "A staged\n");
@@ -97,7 +117,7 @@ public sealed class GitOperationServiceTests : IDisposable
         foreach (var name in names) Write(name, "Baseline\n");
         await Git("add", "."); await Git("commit", "--quiet", "-m", "Quoted paths baseline");
         foreach (var name in names) Write(name, "Exact reviewed content\n");
-        var statistics = await GitCommandRunner.GetNumStatAsync(_root);
+        var statistics = await GitCommandRunner.GetNumStatAsync(_root, staged: false);
         foreach (var name in names)
         {
             Assert.Equal((1, 1), statistics[name]);

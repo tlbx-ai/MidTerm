@@ -1145,7 +1145,7 @@ Text-/Binärvorschau geprüft; Gestaltung bleibt ausdrücklich Aufgabe 43.
 Frontendprüfung: 709 Tests plus Typecheck/Lints bestanden. Evidenz:
 `git-task-34-third/summary.json`, Screenshots und `git-task-34-native-final`.
 
-### 35. [ ] Untracked und Added in Git unterscheiden
+### 35. [x] Untracked und Added in Git unterscheiden
 
 **Befund (mittel, reproduziert):** statusToLetter liefert für untracked/added A;
 VS Code verwendet U für untracked. Farbe und +0/-0 verschleiern Indexzustand.
@@ -1155,6 +1155,19 @@ kongruent zu Aufgabe 10.
 
 **Abnahme:** Neue Datei vor/nach Stage, weitere Änderung nach Stage, Unstage;
 korrekte Gruppe/Buchstabe/Diff und erreichbare Statusbeschreibung.
+
+**Zusätzlich reproduziert 13.10.2026:** Index-/Worktree-Numstat wurde je Pfad
+zusammengezählt und in beiden Gruppen doppelt angezeigt. Nach erneutem Stage
+konnte der Inspector außerdem den zuvor gecachten Indexdiff behalten. Berechnung
+wird je Vergleich getrennt; Auswahl folgt ihrem tatsächlichen U/A/M-Zustand,
+Indexänderungen laden die Vorschau erneut, überholte Antworten werden verworfen.
+**Verifiziert 13.10.2026:** Fünf reale Browserabläufe U→A→A+M→A→U bestehen mit
+passenden Beschreibungen, getrennter +1-Statistik, tatsächlichen Indexbytes und
+aktuellen Vorschauen. Screenshots geprüft; keine Terminaleingaben/Browserfehler.
+Sechs Commit-Regressionsabläufe bestehen einschließlich Hook-/Identitätsfehlern
+und Lost-ACK-Replay. 31 native Tests bestanden, zwei explizite Unix-Skips;
+709 Frontendtests plus Typecheck/Lints bestanden. Evidenz `git-task-35-third`,
+`git-task-35-commit-regression`, `git-task-35-native-final` und Verify-Logs.
 
 ### 36. [ ] Diffprüfung und selektives Staging vervollständigen
 

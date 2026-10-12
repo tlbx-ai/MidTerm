@@ -658,14 +658,15 @@ public sealed class GitWatcherService : IDisposable
             var statusTask = GitCommandRunner.GetStatusAsync(repoRoot);
             var recentCommitsTask = GitCommandRunner.GetLogAsync(repoRoot);
             var stashCountTask = GitCommandRunner.GetStashCountAsync(repoRoot);
-            var numStatTask = GitCommandRunner.GetNumStatAsync(repoRoot);
+            var workingStatTask = GitCommandRunner.GetNumStatAsync(repoRoot, staged: false);
+            var stagedStatTask = GitCommandRunner.GetNumStatAsync(repoRoot, staged: true);
 
-            await Task.WhenAll(statusTask, recentCommitsTask, stashCountTask, numStatTask).ConfigureAwait(false);
+            await Task.WhenAll(statusTask, recentCommitsTask, stashCountTask, workingStatTask, stagedStatTask).ConfigureAwait(false);
 
             var status = await statusTask.ConfigureAwait(false);
             status.RecentCommits = await recentCommitsTask.ConfigureAwait(false);
             status.StashCount = await stashCountTask.ConfigureAwait(false);
-            MergeNumStat(status, await numStatTask.ConfigureAwait(false));
+            MergeNumStat(status, await workingStatTask.ConfigureAwait(false), await stagedStatTask.ConfigureAwait(false));
 
             if (_watchers.TryGetValue(repoRoot, out var watcher))
             {
@@ -687,12 +688,14 @@ public sealed class GitWatcherService : IDisposable
         }
     }
 
-    private static void MergeNumStat(GitStatusResponse status, Dictionary<string, (int Additions, int Deletions)> numStat)
+    private static void MergeNumStat(GitStatusResponse status,
+        Dictionary<string, (int Additions, int Deletions)> workingStat,
+        Dictionary<string, (int Additions, int Deletions)> stagedStat)
     {
         var totalAdd = 0;
         var totalDel = 0;
 
-        void ApplyToEntries(GitFileEntry[] entries)
+        void ApplyToEntries(GitFileEntry[] entries, Dictionary<string, (int Additions, int Deletions)> numStat)
         {
             foreach (var entry in entries)
             {
@@ -706,8 +709,8 @@ public sealed class GitWatcherService : IDisposable
             }
         }
 
-        ApplyToEntries(status.Staged);
-        ApplyToEntries(status.Modified);
+        ApplyToEntries(status.Staged, stagedStat);
+        ApplyToEntries(status.Modified, workingStat);
 
         status.TotalAdditions = totalAdd;
         status.TotalDeletions = totalDel;

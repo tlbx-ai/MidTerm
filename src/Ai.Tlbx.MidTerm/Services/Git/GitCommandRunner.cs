@@ -375,19 +375,13 @@ internal static class GitCommandRunner
         return ignored;
     }
 
-    internal static async Task<Dictionary<string, (int Additions, int Deletions)>> GetNumStatAsync(string repoRoot)
+    internal static async Task<Dictionary<string, (int Additions, int Deletions)>> GetNumStatAsync(string repoRoot, bool staged)
     {
         var result = new Dictionary<string, (int, int)>(StringComparer.Ordinal);
 
-        var unstagedTask = RunGitAsync(repoRoot, "diff", "--numstat", "-z");
-        var stagedTask = RunGitAsync(repoRoot, "diff", "--cached", "--numstat", "-z");
-        await Task.WhenAll(unstagedTask, stagedTask);
-
-        var (_, unstaged, _) = await unstagedTask;
-        ParseNumStat(result, unstaged);
-
-        var (_, staged, _) = await stagedTask;
-        ParseNumStat(result, staged);
+        var args = staged ? new[] { "diff", "--cached", "--numstat", "-z" } : ["diff", "--numstat", "-z"];
+        var (_, output, _) = await RunGitAsync(repoRoot, args).ConfigureAwait(false);
+        ParseNumStat(result, output);
 
         return result;
     }

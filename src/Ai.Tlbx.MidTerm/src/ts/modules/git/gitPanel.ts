@@ -136,10 +136,13 @@ export function updateGitStatus(sessionId: string, status: GitStatusResponse): v
   ]);
   for (const state of states) {
     if (!state || areJsonLikeEqual(state.status, status)) continue;
+    const indexChanged = state.status?.indexVersion !== status.indexVersion;
     state.status = status;
     syncHistoryFromStatus(state, status);
     syncSelectionAfterStatus(state);
     renderPanel(state);
+    if (indexChanged && state.selection?.kind === 'file')
+      void openFileSelection(state, state.selection, true);
   }
 }
 
@@ -293,22 +296,31 @@ function syncSelectionAfterStatus(state: GitPanelState): void {
 
   const selection = state.selection;
   const status = state.status;
-  const files = getAllFiles(status);
-  const exists = files.some(
-    (entry) =>
-      entry.path === selection.path &&
-      (selection.scope === 'staged'
-        ? status.staged.some((staged) => staged.path === entry.path)
-        : true),
+  const workingFiles = [...status.conflicted, ...status.modified, ...status.untracked];
+  let scope = selection.scope;
+  let entry = (scope === 'staged' ? status.staged : workingFiles).find(
+    (file) => file.path === selection.path,
   );
-
-  if (!exists) {
-    state.selection = null;
+  if (!entry) {
+    scope = scope === 'staged' ? 'worktree' : 'staged';
+    entry = (scope === 'staged' ? status.staged : workingFiles).find(
+      (file) => file.path === selection.path,
+    );
   }
-}
-
-function getAllFiles(status: GitStatusResponse): GitFileEntry[] {
-  return [...status.conflicted, ...status.staged, ...status.modified, ...status.untracked];
+  if (!entry) {
+    state.selection = null;
+  } else if (
+    scope !== selection.scope ||
+    entry.status !== selection.status ||
+    entry.originalPath !== selection.originalPath
+  ) {
+    state.selection = {
+      ...selection,
+      scope,
+      status: entry.status,
+      originalPath: entry.originalPath,
+    };
+  }
 }
 
 function hasGitRepoStatus(status: GitStatusResponse | null): status is GitStatusResponse {
@@ -1091,6 +1103,8 @@ async function performMutation(state: GitPanelState, request: GitOperationReques
     syncSelectionAfterStatus(state);
   }
   renderPanel(state);
+  if (result?.state === 'completed' && state.selection?.kind === 'file')
+    await openFileSelection(state, state.selection, true);
 }
 
 async function openReviewFileInViewer(state: GitPanelState, path?: string): Promise<void> {
@@ -1159,17 +1173,19 @@ function updateCommandResult(status: HTMLElement | null, copy: boolean, ok: bool
 async function openFileSelection(
   state: GitPanelState,
   selection: Pick<GitFileSelection, 'path' | 'scope' | 'status' | 'originalPath'>,
+  force = false,
 ): Promise<void> {
   const existing = getExistingFileSelection(state, selection);
   state.detailActive = true;
   if (!existing) state.scrollPositions.delete('inspector');
 
-  if (existing && !existing.loading && existing.diff) {
+  if (existing && !existing.loading && existing.diff && !force) {
     renderPanel(state);
     return;
   }
 
-  state.selection = createLoadingFileSelection(selection, existing?.diff ?? null);
+  const pendingSelection = createLoadingFileSelection(selection, existing?.diff ?? null);
+  state.selection = pendingSelection;
   renderPanel(state);
 
   const diff = await fetchDiffView(
@@ -1179,12 +1195,7 @@ async function openFileSelection(
     selection.scope,
   );
   const currentSelection = panelStates.get(getPanelKey(state.sessionId, state.repoRoot))?.selection;
-  if (
-    !currentSelection ||
-    currentSelection.kind !== 'file' ||
-    currentSelection.path !== selection.path ||
-    currentSelection.scope !== selection.scope
-  ) {
+  if (currentSelection !== pendingSelection) {
     return;
   }
 
