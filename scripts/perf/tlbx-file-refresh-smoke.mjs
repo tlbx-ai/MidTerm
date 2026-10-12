@@ -52,6 +52,7 @@ try {
   const node = name => tree.locator('.tree-node').filter({ has: page.locator('.tree-name', { hasText: new RegExp('^' + name.replace('.', '\\.') + '$') }) });
   const refresh = wrapper.locator('[data-browser-navigation="refresh"]');
   await node('nested').waitFor(); await node('nested').click(); await node('keep.md').click();
+  await preview.locator('.file-document-mode[data-mode="edit"]').click();
   const editor = preview.locator('textarea'); await editor.fill('# Unsaved refresh draft\n');
   await node('keep.md').evaluate(e => { e.tabIndex = 0; e.focus({ preventScroll: true }); window.keptTreeRow = e; });
   await node('file-030.txt').evaluate(e => { window.keptRootRow = e; });

@@ -65,6 +65,7 @@ try {
   assert.equal(treeDefault.visibility.ignoreAvailable, true);
   result.cases.push('Native hidden files are excluded by default while ignored and empty directories remain visible in both APIs');
   await select('visible.md').click(); const editor = wrapper.locator('.file-browser-preview textarea');
+  await wrapper.locator('.file-browser-preview .file-document-mode[data-mode="edit"]').click();
   await editor.fill('# Draft retained during filtering\n');
   await controls.locator('[data-file-visibility="showIgnored"]').uncheck();
   await select('ignored.log').waitFor({ state: 'hidden' }); assert.equal(await editor.inputValue(), '# Draft retained during filtering\n');

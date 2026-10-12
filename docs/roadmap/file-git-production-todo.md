@@ -1052,7 +1052,16 @@ Betreff/Pfad/Hash erreichbar; keine Platzhalter oder technischen Backendlabels.
 
 ## Release- und Abschlussnachweise
 
-- Files-Minor: offen. PR / Version / Commit / CI / Assets / E2E-Nachweise ergänzen.
+- Files-Minor: Gesamtabnahme bestanden, Releasevorbereitung läuft. 17 serialisierte
+  Browsergruppen bestehen mit 159 echten Funktionsabläufen plus 108 Hintergrund-,
+  40 Medien-, 32 Projektions-/Entwurf- und 720 Kontrastproben (Minimum 4,979355:1).
+  Evidenz: `.dev/file-git-production/files-integrated/summary.json` und die dort
+  verlinkten Einzelgruppen. Repräsentative finale Screenshots sind geprüft.
+  Native CI `38211188234` besteht: Windows 73/79, Linux 74/79, macOS 71/79;
+  übrige Fälle sind plattformspezifische Skips, keine Fehler. Alle sechs neuen
+  Git-Status-/Pfadprüfungen bestehen auf jeder Plattform; echte LocalSystem-
+  Caller-Abnahme zusätzlich 1/1. TRX/Logs: `task-10-platform-ci`.
+  PR / Version / Release-CI / Assets nach tatsächlicher Veröffentlichung ergänzen.
 - Git-Minor: offen. PR / Version / Commit / CI / Assets / E2E-Nachweise ergänzen.
 - Finale 42-Punkte-Abnahme: offen; Code, gerenderte UI und echte Dateisystem-/Git-
   Ergebnisse je Aufgabe prüfen. Fehlende Nachweise bleiben offen.

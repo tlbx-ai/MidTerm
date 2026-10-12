@@ -77,6 +77,7 @@ try {
     await tree.locator('.tree-node').first().waitFor();
     assert.equal(await preview.isVisible(), false);
     await choose('A.md');
+    await preview.locator('.file-document-mode[data-mode="edit"]').tap();
     const editor = preview.locator('textarea'); await editor.waitFor();
     assert.equal(await tree.isVisible(), false);
     assert.equal(await back.isVisible(), true);

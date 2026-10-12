@@ -70,7 +70,7 @@ try {
   await go(a); await waitPath(a); assert.equal(await nav.locator('[data-browser-navigation="up"]').isEnabled(), true);
   assert.equal(await nav.locator('[aria-current="location"]').innerText(), 'A');
   result.cases.push('Pasting an authorized folder changes the tree and shows server-provided breadcrumbs and Up');
-  await choose('A.md'); await editor.fill('# Address navigation draft\n');
+  await choose('A.md'); await preview.locator('.file-document-mode[data-mode="edit"]').click(); await editor.fill('# Address navigation draft\n');
   await go(b); await dialog.waitFor(); await dialog.locator('[data-file-decision="cancel"]').click(); await waitPath(a);
   assert.equal(await editor.inputValue(), '# Address navigation draft\n'); assert.equal(await tree.locator('.selected .tree-name').innerText(), 'A.md');
   result.cases.push('Cancel on folder navigation retains address, selection and unsaved editor');
@@ -82,10 +82,10 @@ try {
   assert.equal(fs.readFileSync(path.join(a, 'A.md'), 'utf8'), '# Address navigation draft\n');
   await nav.locator('[data-browser-navigation="back"]').click(); await waitPath(a);
   await tree.locator('.selected .tree-name').waitFor(); assert.equal(await tree.locator('.selected .tree-name').innerText(), 'A.md');
-  await editor.waitFor(); assert.equal(await editor.inputValue(), '# Address navigation draft\n');
+  await preview.locator('.file-document-mode[data-mode="edit"]').click(); await editor.waitFor(); assert.equal(await editor.inputValue(), '# Address navigation draft\n');
   result.cases.push('Failed save blocks navigation; confirmed save writes disk and Back restores the selected file preview');
   await nav.locator('[data-browser-navigation="forward"]').click(); await waitPath(b);
-  await go(path.join(b, 'B.md')); await editor.waitFor();
+  await go(path.join(b, 'B.md')); await preview.locator('.file-document-view').waitFor();
   await page.waitForFunction(() => document.querySelector('.file-browser-preview .preview-toolbar-name')?.textContent === 'B.md');
   assert.equal(await tree.locator('.selected .tree-name').innerText(), 'B.md'); assert.equal(await address.inputValue(), b);
   result.cases.push('An absolute file address opens its actual document and selects it in the containing folder');
@@ -114,7 +114,7 @@ try {
   assert.equal(await address.inputValue(), b); assert.equal(await tree.locator('.tree-name', { hasText: 'A.md' }).count(), 0);
   await page.unroute('**/api/files/tree**');
   result.cases.push('An old directory response cannot overwrite a newer address or tree');
-  await choose('B.md'); await editor.fill('# Retained while CWD changes\n');
+  await choose('B.md'); await preview.locator('.file-document-mode[data-mode="edit"]').click(); await editor.fill('# Retained while CWD changes\n');
   await terminal.click(); await wrapper.locator('.xterm-screen').click();
   await page.keyboard.type(`Set-Location -LiteralPath '${a.replaceAll("'", "''")}'`); await page.keyboard.press('Enter');
   await files.click();
@@ -129,7 +129,7 @@ try {
   const reposBeforeBrowse = await api('GET', '/api/git/repos?sessionId=' + session);
   await terminal.click(); await files.click();
   await page.waitForFunction(({ id, target }) => [...document.querySelectorAll(`.session-wrapper[data-session-id="${id}"] .file-browser-navigation select option`)].some(option => option.value === target), { id: session, target: extra });
-  await nav.locator('select').selectOption(extra); await waitPath(extra); await choose('extra.md'); await editor.waitFor();
+  await nav.locator('select').selectOption(extra); await waitPath(extra); await choose('extra.md'); await preview.locator('.file-document-mode[data-mode="edit"]').click(); await editor.waitFor();
   assert.equal(await editor.inputValue(), '# Extra authorized root\n');
   const reposAfterBrowse = await api('GET', '/api/git/repos?sessionId=' + session);
   assert.deepEqual(reposAfterBrowse.repos.map(repo => ({ path: repo.repoRoot, role: repo.role, primary: repo.isPrimary })),

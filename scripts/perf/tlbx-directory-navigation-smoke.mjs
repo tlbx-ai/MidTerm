@@ -66,7 +66,7 @@ try {
   const title = modal.locator('.file-viewer-title');
   const waitTitle = async text => {
     await page.waitForFunction(name => document.querySelector('#file-viewer-modal .file-viewer-title')?.textContent === name, text);
-    await body.locator('.file-list, textarea, .file-viewer-error').first().waitFor();
+    await body.locator('.file-list, .file-document-view, .file-viewer-error').first().waitFor();
   };
   const choose = async name => modal.locator('.file-list-item').filter({ has: page.locator('.file-name', { hasText: new RegExp('^' + name.replace('.', '\\.') + '$') }) }).dblclick();
   await openPath(child); await waitTitle('child');
@@ -84,6 +84,7 @@ try {
   await forward.click(); await waitTitle('child');
   result.cases.push('Back/Forward follow visits while Up follows hierarchy; a new visit drops the forward branch');
   await choose('file-060.md'); await waitTitle('file-060.md');
+  await modal.locator('.file-document-mode[data-mode="edit"]').click();
   const editor = modal.locator('textarea'); await editor.fill('# Navigation draft\n');
   await back.click();
   const dialog = page.locator('.file-unsaved-overlay'); await dialog.waitFor();
@@ -97,6 +98,7 @@ try {
   await page.screenshot({ path: path.join(out, 'restored-directory.png') });
   result.cases.push('Back from a dirty file guards the draft, writes before leaving and restores directory selection/scroll');
   await forward.click(); await waitTitle('file-060.md');
+  await modal.locator('.file-document-mode[data-mode="edit"]').click();
   assert.equal(await editor.inputValue(), '# Navigation draft\n');
   await up.click(); await waitTitle('child');
   result.cases.push('Forward reopens the actual saved document; Up from a file returns to its actual directory');
@@ -166,6 +168,7 @@ try {
   assert.equal(await modal.isVisible(), false);
   result.cases.push('A directory moves into the dock with navigation, and opening a child stays docked');
   await chooseDock('file-040.md');
+  await dock.locator('.file-document-mode[data-mode="edit"]').click();
   const dockEditor = dock.locator('textarea'); await dockEditor.waitFor();
   await dockEditor.fill('# Dock navigation draft\n');
   const dockBack = dock.locator('[data-file-navigation="back"]');
@@ -189,7 +192,7 @@ try {
   assert.equal(await modal.locator('.file-list-item.selected .file-name').innerText(), 'file-040.md');
   assert.ok(await body.evaluate(e => e.scrollTop > 300));
   assert.equal(await modal.locator('[data-file-navigation="forward"]').isEnabled(), true);
-  await forward.click(); await editor.waitFor();
+  await forward.click(); await modal.locator('.file-document-mode[data-mode="edit"]').click(); await editor.waitFor();
   assert.equal(await title.innerText(), 'file-040.md');
   result.cases.push('Undocking a directory preserves selection, scroll and history; Forward opens the prior document');
   await back.click(); await modal.locator('.file-list').waitFor();
@@ -203,7 +206,7 @@ try {
   assert.equal(await dock.locator('.file-list-item.selected .file-name').innerText(), 'file-040.md');
   assert.equal(await dockBody.evaluate(e => e.scrollTop), beforeSwitch);
   assert.equal(await dock.locator('[data-file-navigation="forward"]').isEnabled(), true);
-  await dock.locator('[data-file-navigation="forward"]').click(); await dockEditor.waitFor();
+  await dock.locator('[data-file-navigation="forward"]').click(); await dock.locator('.file-document-mode[data-mode="edit"]').click(); await dockEditor.waitFor();
   assert.equal(await dock.locator('.file-viewer-dock-title').innerText(), 'file-040.md');
   result.cases.push('Switching to another session and back restores the correct dock owner, directory selection, scroll and history');
   await dockEditor.fill('# Protected from Git dock replacement\n');
