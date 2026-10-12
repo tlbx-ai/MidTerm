@@ -14,6 +14,17 @@ import { FileSelectionSurface } from '../fileViewer/selectionSurface';
 import { createSelectionToolbar } from '../fileViewer/selectionToolbar';
 import { FileActions } from '../fileViewer/fileActions';
 import type { OperationResult } from '../fileViewer/operationsApi';
+import {
+  createListingControls,
+  createListingHeader,
+  fileType,
+  matchesListing,
+  modifiedLabel,
+  sortListing,
+  type FileViewOptions,
+  type ListingControls,
+  type ListingHeader,
+} from '../fileViewer/listingView';
 
 interface TreeState {
   rootPath: string;
@@ -24,11 +35,17 @@ interface TreeState {
   visibleEntries: Map<string, FileTreeEntry>;
   container: HTMLElement;
   rowsRoot: HTMLElement;
+  controls: ListingControls;
+  header: ListingHeader;
+  view: FileViewOptions;
   surface: FileSelectionSurface;
   actions: FileActions;
   selectionRequest: number;
   rootRequest: number;
   excludedCount: number;
+  viewSelection: string[];
+  viewAnchor: string | null;
+  rendering: boolean;
   savedRoots: Map<
     string,
     {
@@ -60,6 +77,8 @@ export function setTreeSelection(sessionId: string, path: string): void {
   const state = treeStates.get(sessionId);
   if (!state) return;
   state.selectedPath = path;
+  state.viewSelection = [path];
+  state.viewAnchor = path;
   state.surface.selection.restore([path]);
   renderTree(state);
 }
@@ -77,6 +96,7 @@ export function createTreeView(
   onOperationChanged: (result: OperationResult) => Promise<void> = async () => {},
 ): void {
   const rowsRoot = document.createElement('div');
+  rowsRoot.className = 'file-tree-rows';
   rowsRoot.setAttribute('role', 'tree');
   rowsRoot.setAttribute('aria-label', t('fileBrowser.files'));
   rowsRoot.setAttribute('aria-multiselectable', 'true');
@@ -86,6 +106,10 @@ export function createTreeView(
         (row) => !row.closest('.tree-children[hidden]'),
       ),
     () => {
+      if (!state.rendering) {
+        state.viewSelection = [...surface.selection.paths];
+        state.viewAnchor = surface.selection.anchorPath;
+      }
       toolbar.update();
       actions.update();
     },
@@ -104,7 +128,14 @@ export function createTreeView(
     },
     () => sessionId,
   );
-  container.replaceChildren(toolbar.root, rowsRoot);
+  const controls = createListingControls(`tree:${sessionId}`, true, (options) => {
+    state.view = options;
+    renderTree(state);
+  });
+  const header = createListingHeader((sort) => {
+    controls.setSort(sort);
+  });
+  container.replaceChildren(toolbar.root, controls.root, header.root, rowsRoot);
   const actions = new FileActions({
     owner: container,
     sessionId: () => sessionId,
@@ -116,6 +147,8 @@ export function createTreeView(
       })),
     changed: onOperationChanged,
     select: (paths) => {
+      state.viewSelection = [...paths];
+      state.viewAnchor = paths[0] ?? null;
       surface.selection.restore(paths);
       surface.update();
     },
@@ -129,11 +162,17 @@ export function createTreeView(
     visibleEntries: new Map(),
     container,
     rowsRoot,
+    controls,
+    header,
+    view: controls.options,
     surface,
     actions,
     selectionRequest: 0,
     rootRequest: 0,
     excludedCount: 0,
+    viewSelection: [],
+    viewAnchor: null,
+    rendering: false,
     savedRoots: new Map(),
     onFileSelect,
     onDirectoryOpen,
@@ -164,15 +203,17 @@ export function applyTreeRoot(sessionId: string, rootPath: string, data: FileTre
     state.savedRoots.set(state.rootPath, {
       expanded: new Set(state.expandedPaths),
       selected: state.selectedPath,
-      paths: [...state.surface.selection.paths],
-      anchor: state.surface.selection.anchorPath,
+      paths: [...state.viewSelection],
+      anchor: state.viewAnchor,
       scroll: state.container.scrollTop,
     });
   const saved = state.savedRoots.get(rootPath);
   state.rootPath = rootPath;
   state.expandedPaths = new Set(saved?.expanded ?? []);
   state.selectedPath = saved?.selected ?? null;
-  state.surface.selection.restore(saved?.paths ?? [], saved?.anchor ?? null);
+  state.viewSelection = [...(saved?.paths ?? [])];
+  state.viewAnchor = saved?.anchor ?? null;
+  state.surface.selection.restore(state.viewSelection, state.viewAnchor);
   state.treeData.set(rootPath, data.entries);
   state.excludedCount = data.visibility.excludedCount;
   renderTree(state);
@@ -208,6 +249,10 @@ export async function applyTreeVisibility(
     for (const page of pages) if (page.data) loaded.set(page.path, page.data.entries);
   }
   state.treeData = loaded;
+  const available = new Set(
+    [...loaded.values()].flatMap((entries) => entries.map((entry) => entry.fullPath)),
+  );
+  state.viewSelection = state.viewSelection.filter((path) => available.has(path));
   state.excludedCount = data.visibility.excludedCount;
   renderTree(state);
   state.container.scrollTop = scroll;
@@ -228,15 +273,25 @@ function renderTree(state: TreeState): void {
   const hadFocus = !!focused && state.container.contains(focused);
   const entries = state.treeData.get(state.rootPath);
   if (!entries) return;
+  const visible = filterEntries(state, entries);
+  state.rowsRoot.className = `file-tree-rows file-listing-${state.view.mode}`;
+  state.rowsRoot.setAttribute('role', state.view.mode === 'tree' ? 'tree' : 'listbox');
+  state.header.update(state.view);
+  state.controls.setCount(visible.length, entries.length);
   state.visibleEntries.clear();
-  if (entries.length === 0) {
-    state.rowsRoot.innerHTML = `<div class="tree-empty" role="status">${t(state.excludedCount ? 'fileBrowser.allFiltered' : 'fileViewer.emptyDirectory')}</div>`;
-    state.surface.update();
+  if (visible.length === 0) {
+    const message = state.view.query
+      ? 'fileBrowser.noMatches'
+      : state.excludedCount
+        ? 'fileBrowser.allFiltered'
+        : 'fileViewer.emptyDirectory';
+    state.rowsRoot.innerHTML = `<div class="tree-empty" role="status">${t(message)}</div>`;
+    updateSelection(state);
     return;
   }
 
-  renderBranch(state.rowsRoot, state, entries, 0);
-  state.surface.update();
+  renderBranch(state.rowsRoot, state, visible, 0, true);
+  updateSelection(state);
   if (hadFocus && !focused.isConnected) {
     state.container.tabIndex = -1;
     state.container.focus({ preventScroll: true });
@@ -248,8 +303,10 @@ function renderBranch(
   state: TreeState,
   entries: FileTreeEntry[],
   depth: number,
+  alreadyFiltered = false,
 ): void {
-  reconcileKeyedChildren(container, sortEntries(entries), {
+  const visible = alreadyFiltered ? entries : filterEntries(state, entries);
+  reconcileKeyedChildren(container, sortListing(visible, state.view), {
     key: (entry) => entry.fullPath,
     create: () => createTreeNode(state),
     patch: (wrapper, entry) => {
@@ -258,11 +315,25 @@ function renderBranch(
   });
 }
 
-function sortEntries(entries: FileTreeEntry[]): FileTreeEntry[] {
-  return [...entries].sort((a, b) => {
-    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-  });
+function filterEntries(state: TreeState, entries: FileTreeEntry[]): FileTreeEntry[] {
+  if (!state.view.query) return entries;
+  if (state.view.mode !== 'tree')
+    return entries.filter((entry) => matchesListing(entry, state.view.query));
+  const visited = new Set<string>();
+  const matchesTree = (entry: FileTreeEntry): boolean => {
+    if (matchesListing(entry, state.view.query)) return true;
+    if (!entry.isDirectory || visited.has(entry.fullPath)) return false;
+    visited.add(entry.fullPath);
+    return (state.treeData.get(entry.fullPath) ?? []).some(matchesTree);
+  };
+  return entries.filter(matchesTree);
+}
+
+function updateSelection(state: TreeState): void {
+  state.rendering = true;
+  state.surface.selection.restore(state.viewSelection, state.viewAnchor);
+  state.surface.update();
+  state.rendering = false;
 }
 
 function createTreeNode(state: TreeState): HTMLElement {
@@ -270,6 +341,10 @@ function createTreeNode(state: TreeState): HTMLElement {
   node.className = 'tree-node';
   node.setAttribute('role', 'treeitem');
   state.surface.bind(node);
+  const label = document.createElement('span');
+  label.className = 'file-entry-label';
+  const metadata = document.createElement('span');
+  metadata.className = 'file-entry-metadata';
   for (const className of [
     'tree-indent',
     'tree-expand',
@@ -277,12 +352,19 @@ function createTreeNode(state: TreeState): HTMLElement {
     'tree-name',
     'file-visibility-badge',
     'tree-git-badge',
+    'tree-type',
+    'tree-modified',
     'tree-size',
   ]) {
     const span = document.createElement('span');
     span.className = className;
-    node.appendChild(span);
+    if (['tree-name', 'file-visibility-badge', 'tree-git-badge'].includes(className))
+      label.append(span);
+    else if (['tree-type', 'tree-modified', 'tree-size'].includes(className)) metadata.append(span);
+    else node.appendChild(span);
   }
+  node.querySelector('.tree-icon')?.after(label);
+  node.append(metadata);
   node.addEventListener('click', (event) => {
     const entry = rowEntries.get(node);
     if (!entry) return;
@@ -291,19 +373,23 @@ function createTreeNode(state: TreeState): HTMLElement {
       node.focus({ preventScroll: true });
       return;
     }
-    if (entry.isDirectory) {
+    if (entry.isDirectory && state.view.mode === 'tree') {
       state.surface.choose(node);
       void toggleExpand(state, entry);
-    } else {
+    } else if (state.view.mode === 'tree') {
       void selectFile(state, entry);
+    } else {
+      state.surface.choose(node);
+      node.focus({ preventScroll: true });
     }
   });
   node.addEventListener('dblclick', (event) => {
     const entry = rowEntries.get(node);
-    if (!entry?.isDirectory) return;
+    if (!entry) return;
     if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (state.view.mode === 'tree' && !entry.isDirectory) return;
     event.preventDefault();
-    state.onDirectoryOpen?.(entry);
+    openSelectedPath(state, entry.fullPath);
   });
   node.addEventListener('contextmenu', (event) => {
     if (!state.surface.selection.paths.has(node.dataset.path ?? '')) state.surface.choose(node);
@@ -330,18 +416,46 @@ function patchTreeNode(
   rowEntries.set(node, entry);
   state.visibleEntries.set(entry.fullPath, entry);
   node.dataset.path = entry.fullPath;
+  node.dataset.isDir = String(entry.isDirectory);
   state.surface.label(node, entry.name);
-  node.setAttribute('aria-level', String(depth + 1));
+  patchTreePresentation(node, state, entry, depth);
+  patchTreeMetadata(node, entry);
+  const children = wrapper.lastElementChild as HTMLElement;
+  const expanded =
+    state.view.mode === 'tree' && entry.isDirectory && state.expandedPaths.has(entry.fullPath);
+  children.hidden = !expanded;
+  if (expanded) renderBranch(children, state, state.treeData.get(entry.fullPath) ?? [], depth + 1);
+}
+
+function patchTreePresentation(
+  node: HTMLElement,
+  state: TreeState,
+  entry: FileTreeEntry,
+  depth: number,
+): void {
+  node.setAttribute('role', state.view.mode === 'tree' ? 'treeitem' : 'option');
+  if (state.view.mode === 'tree') node.setAttribute('aria-level', String(depth + 1));
+  else node.removeAttribute('aria-level');
+  const indent = node.querySelector<HTMLElement>('.tree-indent');
+  if (indent) indent.style.width = state.view.mode === 'tree' ? `${depth * 16}px` : '';
+  const expanded =
+    state.view.mode === 'tree' && entry.isDirectory && state.expandedPaths.has(entry.fullPath);
+  if (state.view.mode === 'tree' && entry.isDirectory)
+    node.setAttribute('aria-expanded', String(expanded));
+  else node.removeAttribute('aria-expanded');
+  const expand = node.querySelector<HTMLElement>('.tree-expand');
+  if (expand) {
+    expand.textContent =
+      state.view.mode === 'tree' && entry.isDirectory ? (expanded ? '▾' : '▸') : '';
+    expand.classList.toggle('expandable', entry.isDirectory);
+  }
+}
+
+function patchTreeMetadata(node: HTMLElement, entry: FileTreeEntry): void {
   const text = (selector: string, value: string): void => {
     const element = node.querySelector<HTMLElement>(selector);
     if (element && element.textContent !== value) element.textContent = value;
   };
-  const indent = node.querySelector<HTMLElement>('.tree-indent');
-  if (indent) indent.style.width = `${depth * 16}px`;
-  const expanded = entry.isDirectory && state.expandedPaths.has(entry.fullPath);
-  if (entry.isDirectory) node.setAttribute('aria-expanded', String(expanded));
-  else node.removeAttribute('aria-expanded');
-  text('.tree-expand', entry.isDirectory ? (expanded ? '▾' : '▸') : '');
   text('.tree-icon', getFileIcon(entry.name, entry.isDirectory));
   text('.tree-name', entry.name);
   text(
@@ -351,14 +465,18 @@ function patchTreeNode(
       .join(', '),
   );
   text('.tree-git-badge', entry.gitStatus ?? '');
+  text('.tree-type', fileType(entry));
+  text('.tree-modified', modifiedLabel(entry));
   text('.tree-size', !entry.isDirectory && entry.size != null ? formatSize(entry.size) : '');
-  for (const selector of ['.file-visibility-badge', '.tree-git-badge', '.tree-size']) {
+  for (const selector of [
+    '.file-visibility-badge',
+    '.tree-git-badge',
+    '.tree-type',
+    '.tree-modified',
+    '.tree-size',
+  ]) {
     hideEmptyMetadata(node, selector);
   }
-  node.querySelector('.tree-expand')?.classList.toggle('expandable', entry.isDirectory);
-  const children = wrapper.lastElementChild as HTMLElement;
-  children.hidden = !expanded;
-  if (expanded) renderBranch(children, state, state.treeData.get(entry.fullPath) ?? [], depth + 1);
 }
 
 function hideEmptyMetadata(node: HTMLElement, selector: string): void {
@@ -373,6 +491,8 @@ async function selectFile(state: TreeState, entry: FileTreeEntry): Promise<void>
   if (!accepted || request !== state.selectionRequest) return;
   state.selectedPath = entry.fullPath;
   if (revision !== state.surface.revision) return;
+  state.viewSelection = [entry.fullPath];
+  state.viewAnchor = entry.fullPath;
   state.surface.selection.restore([entry.fullPath]);
   state.surface.update();
 }

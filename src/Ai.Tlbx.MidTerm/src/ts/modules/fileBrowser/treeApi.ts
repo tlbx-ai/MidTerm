@@ -12,6 +12,7 @@ export interface FileTreeEntry {
   isDirectory: boolean;
   size?: number | null;
   mimeType?: string | null;
+  modified?: string | null;
   isText?: boolean | null;
   gitStatus?: string | null;
   isHidden?: boolean;

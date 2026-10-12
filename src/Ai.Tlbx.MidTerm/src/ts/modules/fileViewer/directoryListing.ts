@@ -6,6 +6,17 @@ import { getFileIcon, formatSize, joinPath } from './rendering';
 import { t } from '../i18n';
 import { FileActions } from './fileActions';
 import type { OperationResult } from './operationsApi';
+import {
+  createListingControls,
+  createListingHeader,
+  fileType,
+  matchesListing,
+  modifiedLabel,
+  sortListing,
+  type FileViewOptions,
+  type ListingControls,
+  type ListingHeader,
+} from './listingView';
 
 export class DirectoryListing {
   public readonly root = document.createElement('div');
@@ -14,6 +25,14 @@ export class DirectoryListing {
   private list = document.createElement('div');
   private toolbar: ReturnType<typeof createSelectionToolbar>;
   private actions: FileActions;
+  private controls: ListingControls;
+  private header: ListingHeader;
+  private view: FileViewOptions;
+  private allEntries: DirectoryEntry[] = [];
+  private visibilityFiltered = false;
+  private retainedSelection: string[] = [];
+  private retainedAnchor: string | null = null;
+  private rendering = false;
 
   public constructor(
     public readonly path: string,
@@ -29,6 +48,10 @@ export class DirectoryListing {
     this.surface = new FileSelectionSurface(
       () => [...this.list.querySelectorAll<HTMLElement>('.file-list-item')],
       () => {
+        if (!this.rendering) {
+          this.retainedSelection = [...this.surface.selection.paths];
+          this.retainedAnchor = this.surface.selection.anchorPath;
+        }
         this.toolbar.update();
         this.actions.update();
       },
@@ -43,7 +66,19 @@ export class DirectoryListing {
       open,
       () => sessionId,
     );
-    this.root.append(this.toolbar.root, this.list);
+    this.controls = createListingControls(
+      `directory:${sessionId ?? 'shared'}`,
+      false,
+      (options) => {
+        this.view = options;
+        this.renderView();
+      },
+    );
+    this.view = this.controls.options;
+    this.header = createListingHeader((sort) => {
+      this.controls.setSort(sort);
+    });
+    this.root.append(this.toolbar.root, this.controls.root, this.header.root, this.list);
     this.actions = new FileActions({
       owner: this.root,
       sessionId: () => sessionId,
@@ -55,6 +90,8 @@ export class DirectoryListing {
         })),
       changed,
       select: (paths) => {
+        this.retainedSelection = [...paths];
+        this.retainedAnchor = paths[0] ?? null;
         this.surface.selection.restore(paths);
         this.surface.update();
       },
@@ -67,7 +104,26 @@ export class DirectoryListing {
   }
 
   public render(entries: DirectoryEntry[], filtered: boolean): void {
+    const restored = [...this.surface.selection.paths];
+    if (restored.length > 0) {
+      this.retainedSelection = [...new Set([...this.retainedSelection, ...restored])];
+      this.retainedAnchor = this.surface.selection.anchorPath;
+    }
+    this.allEntries = entries;
+    this.visibilityFiltered = filtered;
     this.entries = new Map(entries.map((entry) => [joinPath(this.path, entry.name), entry]));
+    this.retainedSelection = this.retainedSelection.filter((path) => this.entries.has(path));
+    this.renderView();
+  }
+
+  private renderView(): void {
+    const entries = sortListing(
+      this.allEntries.filter((entry) => matchesListing(entry, this.view.query)),
+      this.view,
+    );
+    this.list.className = `file-list file-listing-${this.view.mode}`;
+    this.header.update(this.view);
+    this.controls.setCount(entries.length, this.allEntries.length);
     reconcileKeyedChildren(this.list, entries, {
       key: (entry) => joinPath(this.path, entry.name),
       create: () => this.createRow(),
@@ -80,20 +136,45 @@ export class DirectoryListing {
       const empty = document.createElement('div');
       empty.className = 'file-list-empty';
       empty.setAttribute('role', 'status');
-      empty.textContent = t(filtered ? 'fileBrowser.allFiltered' : 'fileViewer.emptyDirectory');
+      empty.textContent = t(
+        this.view.query
+          ? 'fileBrowser.noMatches'
+          : this.visibilityFiltered
+            ? 'fileBrowser.allFiltered'
+            : 'fileViewer.emptyDirectory',
+      );
       this.root.append(empty);
     }
+    this.rendering = true;
+    this.surface.selection.restore(this.retainedSelection, this.retainedAnchor);
     this.surface.update();
+    this.rendering = false;
   }
 
   private createRow(): HTMLElement {
     const row = document.createElement('div');
     row.setAttribute('role', 'option');
-    for (const className of ['file-icon', 'file-name', 'file-visibility-badge', 'file-size']) {
+    const label = document.createElement('span');
+    label.className = 'file-entry-label';
+    const metadata = document.createElement('span');
+    metadata.className = 'file-entry-metadata';
+    for (const className of [
+      'file-icon',
+      'file-name',
+      'file-visibility-badge',
+      'file-type',
+      'file-modified',
+      'file-size',
+    ]) {
       const span = document.createElement('span');
       span.className = className;
-      row.append(span);
+      if (className === 'file-name' || className === 'file-visibility-badge') label.append(span);
+      else if (['file-type', 'file-modified', 'file-size'].includes(className))
+        metadata.append(span);
+      else row.append(span);
     }
+    row.querySelector('.file-icon')?.after(label);
+    row.append(metadata);
     this.surface.bind(row);
     row.addEventListener('click', (event) => {
       this.surface.choose(row, event.ctrlKey || event.metaKey, event.shiftKey);
@@ -125,9 +206,18 @@ export class DirectoryListing {
       ]
         .filter(Boolean)
         .join(', '),
+      fileType(entry),
+      modifiedLabel(entry),
       !entry.isDirectory && entry.size != null ? formatSize(entry.size) : '',
     ];
-    ['file-icon', 'file-name', 'file-visibility-badge', 'file-size'].forEach((className, index) => {
+    [
+      'file-icon',
+      'file-name',
+      'file-visibility-badge',
+      'file-type',
+      'file-modified',
+      'file-size',
+    ].forEach((className, index) => {
       const span = row.querySelector<HTMLElement>(`.${className}`);
       if (span) {
         span.textContent = values[index] ?? '';

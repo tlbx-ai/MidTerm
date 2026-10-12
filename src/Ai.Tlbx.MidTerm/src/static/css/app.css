@@ -20985,3 +20985,129 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   color: var(--text-primary);
   font: inherit;
 }
+
+/* Shared file presentation: metadata belongs to the row, backgrounds to its pane. */
+.file-browser-tree, .file-directory-listing { container: file-listing / inline-size; }
+.file-entry-metadata { display: contents; }
+.file-entry-label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.file-entry-label :is(.file-name, .tree-name) { min-width: 0; }
+.file-listing-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: var(--fs-xs);
+}
+.file-listing-controls :is(input, select, button),
+.file-listing-heading {
+  min-height: 36px;
+  min-width: 36px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--text-input-background);
+  color: var(--text-primary);
+  font: inherit;
+}
+.file-listing-controls button, .file-listing-heading { cursor: pointer; }
+.file-listing-filter { flex: 1 1 160px; min-width: 0 !important; width: 100%; }
+.file-listing-sort { flex: 1 1 90px; max-width: 180px; }
+.file-listing-views { display: flex; gap: 3px; }
+.file-listing-views .active {
+  border-color: var(--accent-blue);
+  background: var(--bg-active);
+}
+.file-listing-count { flex-basis: 100%; color: var(--text-secondary); }
+.file-listing-header {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 90px 170px 80px;
+  gap: 8px;
+  min-width: 640px;
+  padding: 0 12px 0 64px;
+  font-size: var(--fs-xs);
+}
+.file-listing-header[hidden] { display: none; }
+.file-listing-heading { border: 0; background: transparent; text-align: left; }
+.file-listing-details :is(.file-list-item, .tree-node) {
+  display: grid;
+  grid-template-columns: 18px 18px minmax(180px, 1fr) 90px 170px 80px;
+  gap: 8px;
+  min-width: 640px;
+  min-height: 40px;
+  padding: 4px 12px;
+}
+.file-listing-details :is(.file-selection-checkbox, .tree-icon, .file-icon, .tree-size, .file-size) {
+  margin: 0;
+  padding: 0;
+}
+.file-listing-details :is(.tree-indent, .tree-expand) { display: none; }
+.file-listing-details :is(.file-type, .tree-type, .file-modified, .tree-modified) {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-listing-details :is(.file-size, .tree-size) { text-align: right; }
+.file-listing-tree :is(.tree-type, .tree-modified) { display: none; }
+.file-listing-icons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  align-content: start;
+  gap: 8px;
+  padding: 8px;
+}
+.file-listing-icons :is(.file-list-item, .tree-node) {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 112px;
+  padding: 12px 6px;
+  border-radius: 4px;
+  white-space: normal;
+}
+.file-listing-icons :is(.tree-indent, .tree-expand, .tree-type, .tree-modified, .file-type, .file-modified) {
+  display: none;
+}
+.file-listing-icons .file-selection-checkbox { position: absolute; top: 4px; left: 4px; margin: 0; }
+.file-listing-icons :is(.file-icon, .tree-icon) { margin: 0; font-size: 32px; }
+.file-listing-icons .file-entry-label { flex: 0; flex-wrap: wrap; justify-content: center; width: 100%; }
+.file-listing-icons :is(.file-name, .tree-name) {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal;
+}
+.file-listing-icons :is(.file-size, .tree-size) { margin: 0; padding: 0; font-size: var(--fs-xs); }
+.file-listing-controls :is(input, select, button):focus-visible,
+.file-listing-heading:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+
+@container file-listing (max-width: 639px) {
+  .file-listing-header {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+  .file-listing-heading:not(.file-listing-heading-name) { display: none; }
+  .file-listing-details :is(.file-list-item, .tree-node) {
+    grid-template-columns: 18px 18px minmax(0, 1fr);
+    min-width: 0;
+    gap: 6px 8px;
+  }
+  .file-listing-details .file-entry-metadata {
+    display: flex;
+    grid-column: 3;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    min-width: 0;
+  }
+  .file-listing-details :is(.tree-size, .file-size) { font-size: var(--fs-xs); }
+}

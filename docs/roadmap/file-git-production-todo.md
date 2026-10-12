@@ -450,7 +450,7 @@ Evidenz: `.dev/file-git-production/task-20-final-selection`,
 Reale Mobilgeräte und die vollständige ARIA-/Touch-Zielgrößen-Abnahme aus
 28/29 bleiben gesonderte Prüfungen. Kein Phasenrelease vor Files-Abschluss.
 
-### 21. [~] Echte Dateioperationen und Kontextmenüs implementieren
+### 21. [x] Echte Dateioperationen und Kontextmenüs implementieren
 
 **Befund (mittel, Erwartungslücke):** Nur Vorschau, Inhaltskopie und Download;
 keine serverseitigen Rename/Move/Duplicate/Delete/New File/New Folder/Copy-Paste.
@@ -572,7 +572,13 @@ Evidenz: CI-Runs `38132512559` / `38133598180`,
 `task-21-service-visibility/summary.json`. Punkt 21 bleibt bis zum terminalen
 Windows-Ergebnis des letzten Commits offen; beide Phasenreleases stehen aus.
 
-### 22. [ ] Dateiansicht, Sortierung, Filter und Metadaten vervollständigen
+**Abgeschlossen:** Native-CI `38133938113` ist terminal erfolgreich auf Windows,
+macOS und Linux einschließlich realem LocalSystem-Caller-Test. PR-Server,
+Frontend, CodeQL und Build-System-Prüfungen am Stand `485169f9` sind ebenfalls
+erfolgreich. UI-/Disk-/Recovery-Kriterien sind damit abgenommen; der Files-Minor
+folgt weiterhin erst nach allen verbleibenden Files-Aufgaben.
+
+### 22. [x] Dateiansicht, Sortierung, Filter und Metadaten vervollständigen
 
 **Befund (mittel, Erwartungslücke):** Nur Ordner-zuerst/Namen/Größen; kein Datum,
 Typ, Sortierung, Details-/Symbolansicht oder lokale Filterleiste.
@@ -583,7 +589,23 @@ lokaler Filter und relevante Metadaten; Zustände pro Arbeitskontext erhalten.
 **Abnahme:** Neueste Datei/PDFs finden, natürliche Namenssortierung, leere Treffer,
 große Ordner und Ansichtwechsel mit erhaltener Auswahl prüfen.
 
-### 23. [ ] Files-Trennflächen und Viewer-Dock anpassbar machen
+**Nachweis 12.10.2026:** Files bietet Baum-, Details- und Symbolansicht; Modal
+und Dock teilen Details/Symbole. Name/Datum/Typ/Größe sortieren natürlich,
+Ordner bleiben vorne, unbekannte Metadaten hinten, Nullbyte-Dateien zeigen 0 B.
+Der ausdrücklich lokale Filter berücksichtigt geladene Namen und Typen und
+zeigt leere Treffer separat. Ansicht/Sortierung/Filter bleiben pro Sessionkontext
+über Reload erhalten; Auswahl und Baumexpansion überstehen Ansichtwechsel.
+Ausgefilterte Auswahl ist für Aktionen inaktiv und wird bei Filterrücknahme
+wiederhergestellt; extern gelöschte Einträge werden entfernt. Metadaten passen
+sich der tatsächlichen Panelbreite an, ohne horizontale Verdrängung der Controls.
+689 Frontendtests, Kitty, Typecheck, ESLint und Stylelint bestehen. Vier neue
+reale Chromium-Szenarien einschließlich 600 Dateien (Filter: 22 ms im Testlauf)
+und 390-px-Touchansicht sowie 13 bestehende Auswahl-/Dirty-/Diskfälle bestehen.
+Screenshots von Details, Symbolen und Directory-Dock wurden geprüft.
+Evidenz: `.dev/file-git-production/task-22-responsive/summary.json`,
+`task-22-selection-regression/summary.json` und `task-22-verify.*.log`.
+
+### 23. [~] Files-Trennflächen und Viewer-Dock anpassbar machen
 
 **Befund (mittel, Code/reproduziert):** Baum fix 280 px, File-Dock fix 400 px ohne
 Resize; Git hat dagegen einen Griff. Lange Namen und breite Inhalte leiden.
