@@ -36,7 +36,7 @@ unter `.dev/file-git-production` als Logs, Screenshots und JSON gespeichert.
 
 ## Nummerierte Aufgaben
 
-### 1. [ ] Git-Inspector innerhalb des Docks vollständig sichtbar machen
+### 1. [x] Git-Inspector innerhalb des Docks vollständig sichtbar machen
 
 **Befund (hoch, reproduziert):** Der Standarddock ist 400 px breit, innen 399 px.
 Seine beiden Mindestspalten verlangen 260 + 280 = 540 px. Bei 1440 px Fensterbreite
@@ -49,7 +49,21 @@ vollständig erreichbar halten. Keine bloße Verkleinerung der Schrift.
 **Abnahme:** Dockbreiten 250–600 px bei Fenstern 900/1440/1920 px, lange Pfade,
 Diffs und Aktionen ohne unzugänglichen Inhalt prüfen. Pixel-/Geometrienachweis.
 
-### 2. [ ] Responsive Git-Navigation an die Panelbreite binden
+**Nachweis 12.10.2026:** Die tatsächliche Git-Dock-Bodybreite ist der CSS-Container.
+Unter 540 px zeigen Liste und Inspector einzeln den vollständig verfügbaren
+Raum; breite Panels zeigen beide Spalten. Leere Inspectorflächen bleiben in
+der schmalen Liste verborgen. Lange Dateipfade, Commitauthors und Parenthashes
+brechen innerhalb ihres eigenen Inhaltsbereichs um. 21 reale Dateilayouts bei
+250/300/400/539/540/541/600 px und drei Fensterbreiten plus neun normale Commit-
+Inspectoren bestehen: kein Inspector-/Buttonüberlauf, echter Diffinhalt und
+erreichbare Copy-/Detailsaktionen inklusive Clipboard-/Vollpfadprüfung.
+Screenshots von Datei/Commit bei schmalen/breiten Docks sind visuell geprüft.
+Null Terminal-Inputframes; 707 Frontendtests plus Kitty/Typecheck/ESLint/Stylelint
+bestehen. Evidenz: `.dev/file-git-production/git-task-1-final/summary.json`,
+`git-task-1-verify.*.log`. Die separaten Copy/Send-Buttonformate und Diff-
+Umbruchmodi bleiben ausdrücklich Aufgaben 8 beziehungsweise 7.
+
+### 2. [~] Responsive Git-Navigation an die Panelbreite binden
 
 **Befund (hoch, reproduziert):** Unter 980 px Fensterbreite funktioniert derselbe
 400-px-Dock einspaltig mit Back; im größeren Fenster wird er abgeschnitten.
@@ -1052,7 +1066,7 @@ Betreff/Pfad/Hash erreichbar; keine Platzhalter oder technischen Backendlabels.
 
 ## Release- und Abschlussnachweise
 
-- Files-Minor: Gesamtabnahme bestanden, Releasevorbereitung läuft. 17 serialisierte
+- Files-Minor: `v10.18.0-dev` veröffentlicht, Gesamtabnahme bestanden. 17 serialisierte
   Browsergruppen bestehen mit 159 echten Funktionsabläufen plus 108 Hintergrund-,
   40 Medien-, 32 Projektions-/Entwurf- und 720 Kontrastproben (Minimum 4,979355:1).
   Evidenz: `.dev/file-git-production/files-integrated/summary.json` und die dort
@@ -1061,7 +1075,16 @@ Betreff/Pfad/Hash erreichbar; keine Platzhalter oder technischen Backendlabels.
   übrige Fälle sind plattformspezifische Skips, keine Fehler. Alle sechs neuen
   Git-Status-/Pfadprüfungen bestehen auf jeder Plattform; echte LocalSystem-
   Caller-Abnahme zusätzlich 1/1. TRX/Logs: `task-10-platform-ci`.
-  PR / Version / Release-CI / Assets nach tatsächlicher Veröffentlichung ergänzen.
+
+  **Veröffentlicht 12.10.2026:** `v10.18.0-dev`, Merge `a844ebc5`, PR #274,
+  Release-CI `38227984815` erfolgreich. Nicht mehr Draft; vier vollständige
+  Archiv-/SPDX-Paare: Windows x64/x86 und Linux x64/arm64. Metadaten sind mit
+  `Assert-PublishedReleaseAssets` geprüft und als
+  `.dev/file-git-production/files-release-published.json` gesichert. macOS x64/
+  arm64 fehlen: Apple-Notarisierung HTTP403 wegen fehlender/abgelaufener
+  Entwicklervereinbarung; Native-macOS-Dateisystemtests bestanden. Keine
+  Installation des Supervisors. `finish-task.ps1` hat den exklusiven sauberen
+  Files-Branch beendet; Git arbeitet nun in `feat/git-workspace-production`.
 - Git-Minor: offen. PR / Version / Commit / CI / Assets / E2E-Nachweise ergänzen.
 - Finale 42-Punkte-Abnahme: offen; Code, gerenderte UI und echte Dateisystem-/Git-
   Ergebnisse je Aufgabe prüfen. Fehlende Nachweise bleiben offen.
