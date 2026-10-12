@@ -45,6 +45,8 @@ public sealed class GitDiffFileView
 public sealed class GitDiffHunk
 {
     public string Header { get; set; } = "";
+    public int OldStart { get; set; }
+    public int NewStart { get; set; }
     public GitDiffLine[] Lines { get; set; } = [];
 }
 
@@ -52,4 +54,13 @@ public sealed class GitDiffLine
 {
     public string Kind { get; set; } = "";
     public string Text { get; set; } = "";
+    public int? OldLine { get; set; }
+    public int? NewLine { get; set; }
+    public GitDiffSegment[] Segments { get; set; } = [];
+}
+
+public sealed class GitDiffSegment
+{
+    public string Text { get; set; } = "";
+    public bool Changed { get; set; }
 }

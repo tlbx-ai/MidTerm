@@ -40,6 +40,12 @@ try {
   const wrapper = page.locator(`.session-wrapper[data-session-id="${session}"]`), dock = page.locator('#git-dock');
   async function selectFile() { await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click(); await wrapper.locator('.git-indicator').click(); await dock.locator(`.git-tree-file[data-path="${filename}"]`).click(); await dock.locator('.git-diff-lines').first().waitFor(); }
   await selectFile();
+  const projection = await api('GET', '/api/git/diff-view?sessionId=' + encodeURIComponent(session) + '&repoRoot=' + encodeURIComponent(fixture) + '&path=' + filename + '&scope=worktree');
+  const projectedLines = projection.files.flatMap(file => file.hunks.flatMap(hunk => hunk.lines)).filter(line => ['context', 'add', 'del'].includes(line.kind));
+  assert.deepEqual(await dock.locator('.git-diff-number-old').allTextContents(), projectedLines.map(line => String(line.oldLine ?? '')));
+  assert.deepEqual(await dock.locator('.git-diff-number-new').allTextContents(), projectedLines.map(line => String(line.newLine ?? '')));
+  assert.ok(await dock.locator('.git-diff-word-change').count() > 0);
+  result.cases.push('Rendered old/new line coordinates match the actual backend patch and changed words are visibly marked');
   const wrap = dock.locator('[data-action="toggle-diff-wrap"]'), grip = dock.locator('.git-dock-resize-grip'), panes = dock.locator('.git-diff-lines');
   const snapshot = () => dock.locator('.git-diff-hunk-block').evaluateAll(hunks => hunks.map(hunk => ({ header: hunk.querySelector('.git-diff-hunk-header').textContent, lines: [...hunk.querySelectorAll('.git-diff-line')].map(line => ({ kind: line.className, text: line.textContent })) })));
   const expected = await snapshot(); assert.ok(expected.length >= 2); assert.equal(await wrap.getAttribute('aria-pressed'), 'false');
@@ -51,7 +57,15 @@ try {
     const nowrap = await panes.first().evaluate(el => ({ whiteSpace: getComputedStyle(el).whiteSpace, tabSize: getComputedStyle(el).tabSize, client: el.clientWidth, scroll: el.scrollWidth, heights: [...el.querySelectorAll('.git-diff-line')].map(line => line.getBoundingClientRect().height), lineHeight: parseFloat(getComputedStyle(el).lineHeight) }));
     assert.equal(nowrap.whiteSpace, 'pre'); assert.equal(nowrap.tabSize, '4'); assert.ok(nowrap.scroll > nowrap.client * 2); for (const height of nowrap.heights) assert.ok(Math.abs(height - nowrap.lineHeight) < 1, JSON.stringify(nowrap));
     const markers = await dock.locator('.git-diff-line-add .git-diff-code').evaluateAll(nodes => {
-      function start(el, marker) { const r = document.createRange(); const index = el.textContent.indexOf(marker); r.setStart(el.firstChild, index); r.setEnd(el.firstChild, index + 1); return r.getBoundingClientRect().x; }
+      function start(el, marker) {
+        const r = document.createRange(), walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let index = el.textContent.indexOf(marker), node;
+        while ((node = walker.nextNode())) {
+          if (index < node.textContent.length) { r.setStart(node, index); r.setEnd(node, index + 1); return r.getBoundingClientRect().x; }
+          index -= node.textContent.length;
+        }
+        throw new Error('Marker missing from rendered diff');
+      }
       return [start(nodes.find(el => el.textContent.includes('TAB_MARK')), 'TAB_MARK'), start(nodes.find(el => el.textContent.includes('SPACE_MARK')), 'SPACE_MARK')];
     }); assert.ok(Math.abs(markers[0] - markers[1]) < 0.5, JSON.stringify(markers));
     await panes.first().focus(); await panes.first().press('ArrowRight'); await page.waitForFunction(() => document.querySelector('#git-dock .git-diff-lines').scrollLeft > 0);

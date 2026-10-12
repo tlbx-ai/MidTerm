@@ -68,6 +68,8 @@ internal static class GitPatchParser
 
         foreach (var rawLine in NormalizeLines(patch))
         {
+            // A blank context line starts with a space; the split terminator is not a patch line.
+            if (rawLine.Length == 0) continue;
             if (rawLine.StartsWith("diff --git ", StringComparison.Ordinal))
             {
                 FinalizeCurrentFile(files, ref currentFile, ref currentHunks, ref currentHunk, ref currentLines);
@@ -204,6 +206,7 @@ internal static class GitPatchParser
             files[^1].IsTruncated = true;
         }
 
+        foreach (var file in files) GitDiffProjection.Apply(file);
         return files.ToArray();
     }
 

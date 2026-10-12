@@ -1169,7 +1169,7 @@ und Lost-ACK-Replay. 31 native Tests bestanden, zwei explizite Unix-Skips;
 709 Frontendtests plus Typecheck/Lints bestanden. Evidenz `git-task-35-third`,
 `git-task-35-commit-regression`, `git-task-35-native-final` und Verify-Logs.
 
-### 36. [ ] Diffprüfung und selektives Staging vervollständigen
+### 36. [~] Diffprüfung und selektives Staging vervollständigen
 
 **Befund (mittel, Erwartungslücke):** Unified Patch ohne Alt-/Neuansicht,
 Zeilennummern, Wortmarkierung, Änderungsnavigation oder Hunk-/Zeilenstaging.
@@ -1179,6 +1179,17 @@ Stage/Unstage ausgewählter Hunks/Zeilen mit verifizierter Patchanwendung.
 
 **Abnahme:** Mehrere Hunks, partielle Auswahl, CRLF/Unicode/Rename/Deletion,
 veralteter Diff und parallele Änderungen: korrekter Indexinhalt und Konflikterkennung.
+
+**Teilstand 13.10.2026:** Backendprojektion liefert echte Alt-/Neu-Zeilennummern
+und begrenzte Unicode-Wortvergleiche. Inlineansicht zeigt passende Gutter und
+Wortmarkierung; ein fälschlich angehängter leerer Patch-Kontext wurde entfernt.
+13 native Tests bestehen, ein Unix-Skip unter Windows. Reale Browserprüfung
+bei 250/400/600px besteht für Koordinaten, Wortmarkierung, CRLF/Unicode,
+Tab-/Leerzeicheneinzug, Wrap/Scroll/DOM-Erhalt und unveränderte Diskbytes ohne
+Schreibaktionen/Terminaleingaben. `git-task-36-projection-native-final` und
+`git-task-36-reading-first` enthalten die Nachweise. Aufgabe bleibt offen:
+Side-by-side, Änderungsnavigation, selektives Hunk-/Zeilenstaging und dessen
+vollständige Git-/Stale-/Parallelitätsabnahme sind noch erforderlich.
 
 ### 37. [ ] Merge-Commits nachvollziehbar gegen Parents vergleichen
 

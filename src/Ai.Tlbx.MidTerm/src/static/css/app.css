@@ -17282,12 +17282,16 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .git-diff-line {
   display: grid;
-  grid-template-columns: 1ch minmax(0, 1fr);
+  grid-template-columns: repeat(2, var(--git-diff-number-width, 4ch)) 1ch minmax(0, 1fr);
   min-width: max-content;
 }
 .git-diff-table { display: block; width: max-content; min-width: 100%; font: inherit; }
 .git-diff-code { display: block; }
-.git-diff-sign { position: sticky; left: 0; z-index: 1; background: var(--workspace-pane-chrome-background); }
+.git-diff-sign { position: sticky; left: calc(var(--git-diff-number-width, 4ch) + var(--git-diff-number-width, 4ch)); z-index: 1; background: var(--workspace-pane-chrome-background); }
+.git-diff-number { position: sticky; z-index: 1; padding-right: 1ch; text-align: right; color: var(--text-muted); background: var(--workspace-pane-chrome-background); user-select: none; }
+.git-diff-number-old { left: 0; }
+.git-diff-number-new { left: var(--git-diff-number-width, 4ch); }
+.git-diff-word-change { background: color-mix(in srgb, currentColor 20%, transparent); }
 .git-diff-line-meta .git-diff-code { grid-column: 1 / -1; }
 .git-panel-shell[data-diff-wrap="true"] .git-diff-lines { white-space: pre-wrap; overflow-wrap: anywhere; }
 .git-panel-shell[data-diff-wrap="true"] .git-diff-line { min-width: 0; }

@@ -61,5 +61,6 @@ internal static class GitNewFileReview
         var patchLines = lines.Select(line => new GitDiffLine { Kind = "add", Text = "+" + line }).ToList();
         if (!endsWithNewline && !truncated) patchLines.Add(new GitDiffLine { Kind = "meta", Text = @"\ No newline at end of file" });
         file.Hunks = [new GitDiffHunk { Header = "@@ -0,0 +1," + file.Additions.ToString(CultureInfo.InvariantCulture) + " @@", Lines = patchLines.ToArray() }];
+        GitDiffProjection.Apply(file);
     }
 }

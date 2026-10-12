@@ -80,10 +80,15 @@ export interface GitLogEntry {
 export interface GitDiffLine {
   kind: string;
   text: string;
+  oldLine?: number | null;
+  newLine?: number | null;
+  segments?: Array<{ text: string; changed: boolean }>;
 }
 
 export interface GitDiffHunk {
   header: string;
+  oldStart?: number;
+  newStart?: number;
   lines: GitDiffLine[];
 }
 
