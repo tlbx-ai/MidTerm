@@ -36,6 +36,21 @@ public sealed class FileDocumentServiceTests : IDisposable
         Assert.Empty(Directory.EnumerateFiles(_folder, ".tlbx-*"));
     }
 
+    [UnixFact]
+    public async Task LinkTargetWithAnAliasedParentReadsAndSavesThePhysicalDocument()
+    {
+        var physical = Path.Combine(_folder, "physical"); var documentFolder = Path.Combine(physical, "documents");
+        Directory.CreateDirectory(documentFolder);
+        var parentAlias = Path.Combine(_folder, "parent-alias"); Directory.CreateSymbolicLink(parentAlias, physical);
+        var targetAlias = Path.Combine(_folder, "target-alias"); Directory.CreateSymbolicLink(targetAlias, Path.Combine(parentAlias, "documents"));
+        var actual = Path.Combine(documentFolder, "notes.txt"); var logical = Path.Combine(targetAlias, "notes.txt");
+        await File.WriteAllTextAsync(actual, "Physical baseline\n");
+        var original = await _documents.ReadAsync(logical, true, default);
+        Assert.Equal("Physical baseline\n", original.Content);
+        await _documents.SaveAsync(logical, "Saved through aliases\n", original.Version!, default);
+        Assert.Equal("Saved through aliases\n", await File.ReadAllTextAsync(actual));
+    }
+
     [Fact]
     public async Task ConcurrentClients_OnlyOneDistinctDraftCanCommitTheSameBase()
     {
