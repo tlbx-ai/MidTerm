@@ -29,6 +29,7 @@ import { readFileDocument, writeFileDocument, type FileDocument } from '../fileV
 import { createFileSaveStatus } from '../fileViewer/saveStatus';
 import { createDocumentNotice } from '../fileViewer/documentNotice';
 import { createTextView, getDocumentViewMode } from '../fileViewer/textView';
+import { pathDetailsButton } from '../fileViewer/pathDetails';
 
 const log = createLogger('filePreview');
 const previewLoads = new WeakMap<HTMLElement, FileViewLoad>();
@@ -66,11 +67,13 @@ function createPreviewShell(
   const name = document.createElement('span');
   name.className = 'preview-toolbar-name';
   name.textContent = entry.name;
+  name.title = entry.fullPath;
   meta.appendChild(name);
 
   const subtitle = document.createElement('span');
   subtitle.className = 'preview-toolbar-subtitle';
   subtitle.textContent = formatViewerHeaderSubtitle(entry.fullPath, subtitleMetadata);
+  subtitle.title = entry.fullPath;
   meta.appendChild(subtitle);
 
   const actions = document.createElement('div');
@@ -140,6 +143,7 @@ function appendPreviewFileActions(
 
   actions.appendChild(copyBtn);
   actions.appendChild(downloadBtn);
+  actions.appendChild(pathDetailsButton(() => [entry.fullPath]));
 }
 
 export function renderPreview(

@@ -201,8 +201,10 @@ export class DirectoryListing {
   private patchRow(row: HTMLElement, entry: DirectoryEntry): void {
     row.className = `file-list-item ${entry.isDirectory ? 'file-list-dir' : 'file-list-file'}`;
     row.dataset.path = joinPath(this.path, entry.name);
+    row.title = row.dataset.path;
     row.dataset.isDir = String(entry.isDirectory);
     this.surface.label(row, entry.name);
+    row.setAttribute('aria-label', row.dataset.path);
     const values = [
       getFileIcon(entry.name, entry.isDirectory),
       entry.name,

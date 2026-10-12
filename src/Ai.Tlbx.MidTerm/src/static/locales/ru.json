@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "Восстановить",
   "fileBrowser.apply": "Применить",
   "fileBrowser.name": "Имя",
+  "fileBrowser.details": "Сведения",
+  "fileBrowser.fullPath": "Полный путь",
   "settings.appearance.readingContrast": "Области чтения файлов и Git ограничивают прозрачность для читаемости текста.",
   "fileBrowser.expandFolder": "Развернуть папку",
   "fileBrowser.collapseFolder": "Свернуть папку",

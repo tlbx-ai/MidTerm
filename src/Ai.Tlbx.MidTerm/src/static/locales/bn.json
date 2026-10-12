@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "ফিরিয়ে আনুন",
   "fileBrowser.apply": "প্রয়োগ করুন",
   "fileBrowser.name": "নাম",
+  "fileBrowser.details": "বিস্তারিত",
+  "fileBrowser.fullPath": "সম্পূর্ণ পাথ",
   "settings.appearance.readingContrast": "ফাইল এবং Git পড়ার প্যানেল লেখার পাঠযোগ্যতা বজায় রাখতে স্বচ্ছতা সীমিত করে।",
   "fileBrowser.expandFolder": "ফোল্ডার প্রসারিত করুন",
   "fileBrowser.collapseFolder": "ফোল্ডার সংকুচিত করুন",

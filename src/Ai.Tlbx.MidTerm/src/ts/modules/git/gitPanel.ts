@@ -20,6 +20,7 @@ import { escapeHtml } from '../../utils';
 import { t } from '../i18n';
 import { areJsonLikeEqual } from '../../stores';
 import { syncGitPanelDom } from './gitPanelDom';
+import { showPathDetails, repositoryFilePath } from '../fileViewer/pathDetails';
 
 type SectionId = 'conflicts' | 'staged' | 'changes' | 'untracked';
 type PanelSectionId = SectionId | 'commits';
@@ -309,7 +310,12 @@ function buildFileTree(files: GitFileEntry[], scope: FileScope): TreeNode {
   return root;
 }
 
-function renderTreeNode(node: TreeNode, depth: number, selection: GitSelection): string {
+function renderTreeNode(
+  node: TreeNode,
+  depth: number,
+  selection: GitSelection,
+  repoRoot: string,
+): string {
   let html = '';
   const sorted = [...node.children.values()].sort((a, b) => {
     const aIsDir = a.children.size > 0 && !a.file;
@@ -327,7 +333,8 @@ function renderTreeNode(node: TreeNode, depth: number, selection: GitSelection):
         selection?.kind === 'file' &&
         selection.path === child.file.path &&
         selection.scope === child.scope;
-      html += `<button class="git-tree-file${isSelected ? ' git-tree-file-selected' : ''}" data-action="open-file" data-path="${escapeHtml(child.file.path)}" data-status="${escapeHtml(child.file.status)}" data-scope="${child.scope}"${child.file.originalPath ? ` data-original-path="${escapeHtml(child.file.originalPath)}"` : ''} style="padding-left:${12 + indent}px" type="button">
+      const fullPath = escapeHtml(repositoryFilePath(repoRoot, child.file.path));
+      html += `<button class="git-tree-file${isSelected ? ' git-tree-file-selected' : ''}" title="${fullPath}" aria-label="${fullPath}" data-action="open-file" data-path="${escapeHtml(child.file.path)}" data-status="${escapeHtml(child.file.status)}" data-scope="${child.scope}"${child.file.originalPath ? ` data-original-path="${escapeHtml(child.file.originalPath)}"` : ''} style="padding-left:${12 + indent}px" type="button">
         <span class="git-tree-name">${escapeHtml(child.name)}</span>
         <span class="git-file-loc"><span class="git-loc-add">+${child.file.additions}</span> <span class="git-loc-del">-${child.file.deletions}</span></span>
         <span class="git-file-indicator git-indicator-${color}">${letter}</span>
@@ -336,7 +343,7 @@ function renderTreeNode(node: TreeNode, depth: number, selection: GitSelection):
       html += `<div class="git-tree-dir" style="padding-left:${12 + indent}px">
         <span class="git-tree-dir-name">${escapeHtml(child.name)}/</span>
       </div>`;
-      html += renderTreeNode(child, depth + 1, selection);
+      html += renderTreeNode(child, depth + 1, selection, repoRoot);
     }
   }
   return html;
@@ -564,7 +571,12 @@ function renderSection(
   if (isExpanded) {
     const tree = buildFileTree(files, scope);
     html += `<div class="git-section-body">`;
-    html += renderTreeNode(tree, 0, state.selection);
+    html += renderTreeNode(
+      tree,
+      0,
+      state.selection,
+      state.status?.repoRoot ?? state.repoRoot ?? '',
+    );
     html += `</div>`;
   }
 
@@ -655,6 +667,7 @@ function renderFileInspector(selection: GitFileSelection): string {
     <div class="git-inspector-title-row">
       <span class="git-inspector-title" title="${pathHtml}">${pathHtml}</span>
       <span class="git-summary-pill">${escapeHtml(selection.scope)}</span>
+      <button class="git-path-details" data-action="path-details" data-path="${pathHtml}"${file.originalPath ? ` data-original-path="${escapeHtml(file.originalPath)}"` : ''} type="button">${t('fileBrowser.details')}</button>
     </div>
     ${originalHtml}
   </div>`;
@@ -813,6 +826,10 @@ function handlePanelAction(state: GitPanelState, data: DOMStringMap): void {
     case 'open-commit':
       if (data.hash) void openCommitSelection(state, data.hash);
       break;
+    case 'path-details': {
+      showGitPathDetails(state, data);
+      break;
+    }
     case 'load-more-history':
       void loadMoreHistory(state);
       break;
@@ -828,6 +845,14 @@ function handlePanelAction(state: GitPanelState, data: DOMStringMap): void {
     default:
       break;
   }
+}
+
+function showGitPathDetails(state: GitPanelState, data: DOMStringMap): void {
+  const root = state.status?.repoRoot ?? state.repoRoot;
+  if (!root || !data.path) return;
+  const paths = [repositoryFilePath(root, data.path)];
+  if (data.originalPath) paths.push(repositoryFilePath(root, data.originalPath));
+  void showPathDetails(paths);
 }
 
 function runPanelCommand(state: GitPanelState, data: DOMStringMap): void {

@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "Restaurar",
   "fileBrowser.apply": "Aplicar",
   "fileBrowser.name": "Nome",
+  "fileBrowser.details": "Detalhes",
+  "fileBrowser.fullPath": "Caminho completo",
   "settings.appearance.readingContrast": "Os painéis de leitura de Arquivos e Git limitam a transparência para manter o texto legível.",
   "fileBrowser.expandFolder": "Expandir pasta",
   "fileBrowser.collapseFolder": "Recolher pasta",

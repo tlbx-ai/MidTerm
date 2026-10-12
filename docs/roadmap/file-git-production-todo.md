@@ -194,7 +194,7 @@ geeigneten Touchzielen; Sidebar-Iconklasse hier entfernen.
 **Abnahme:** Desktop/schmal/Touch, lange Übersetzungen, Fokus und Busy/Errorzustand
 ohne Überlaufen oder überlappende Klickflächen.
 
-### 9. [~] Vollständige Namen und Pfade trotz Ellipsis erreichbar machen
+### 9. [x] Vollständige Namen und Pfade trotz Ellipsis erreichbar machen
 
 **Befund (mittel, reproduziert):** MidtermMultiagentOperation.md wird im 280-px-Baum
 gekürzt, ohne Tooltip. Git-Zeilen kürzen ebenfalls Namen ohne vollständigen Pfad.
@@ -205,7 +205,24 @@ und sinnvoller Detailanzeige; nicht allein auf Hover verlassen.
 **Abnahme:** Gleichnamige Dateien in tiefen Ordnern per Maus, Tastatur und Touch
 eindeutig identifizieren; Pfad ohne abgeschnittene Teile kopieren können.
 
-### 10. [ ] Dateistatus in Files und Git einheitlich codieren
+**Nachweis 12.10.2026:** Files-/Directory-/Gitzeilen haben vollständige native
+Pfade als Tooltip und zugänglichen Namen. Details in Auswahlleiste, Preview,
+Modal, Dock und Git-Inspector zeigt ungekürzte auswählbare Namen/Pfade und
+kopiert die tatsächlichen Pfade; kein Hoverzwang. Gleichnamige Dateien in tiefen
+Unicode-/Space-Ordnern bestehen in vier echten Browser-Szenarien einschließlich
+390 px, Fokusreturn und Clipboardprüfung; keine Filesystem-Mutationsrequests.
+Der Test fand einen Backendfehler: Porcelain-v2 wurde an allen Spaces zerlegt.
+Status liest nun NUL-Datensätze mit begrenztem Feldsplit; Rename konsumiert die
+separate Originalpfad-Record. Drei C#-Prüfungen schützen Spaces/Unicode/Controls,
+Renamepaare und Konfliktpfade ohne Trim. Reale Git-Fixtures bestätigen beide
+vollständigen Pfade im UI. Sieben Keyboard-/Dialog-/Dirtyabläufe und 705
+Frontendtests plus Kitty/Typecheck/ESLint/Stylelint bestehen. Source-Instanz mit
+neuem Backend läuft separat; Supervisor unverändert.
+Evidenz: `.dev/file-git-production/task-9-native-ui/summary.json`,
+`task-9-keyboard-regression/summary.json`, `task-9-native/task-9-parser.trx`,
+`task-9-verify.*.log`. Breite/Touchdetails wurden visuell geprüft.
+
+### 10. [~] Dateistatus in Files und Git einheitlich codieren
 
 **Befund (mittel, reproduziert):** Files zeigt M grün und Untracked als ?, Git M
 orange und Untracked als A. Derselbe Zustand hat verschiedene Farben/Buchstaben.

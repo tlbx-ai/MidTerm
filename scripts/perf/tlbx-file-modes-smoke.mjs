@@ -106,8 +106,8 @@ try {
     assert.equal(await row('child.txt').evaluate(el => el === document.activeElement && el.tabIndex === 0), true);
     assert.equal(await row('child.txt').getAttribute('aria-level'), '2');
     const treeCdp = await context.newCDPSession(page), treeAx = await treeCdp.send('Accessibility.getFullAXTree');
-    const nestedAx = treeAx.nodes.find(n => n.role?.value === 'treeitem' && n.name?.value === 'nested');
-    let ancestor = treeAx.nodes.find(n => n.role?.value === 'treeitem' && n.name?.value === 'child.txt');
+    const nestedAx = treeAx.nodes.find(n => n.role?.value === 'treeitem' && n.name?.value === path.join(fixtures, 'nested'));
+    let ancestor = treeAx.nodes.find(n => n.role?.value === 'treeitem' && n.name?.value === path.join(fixtures, 'nested', 'child.txt'));
     let ownsChild = false;
     for (let i = 0; ancestor && i < 20; i++) { if (ancestor.nodeId === nestedAx?.nodeId) { ownsChild = true; break; } ancestor = treeAx.nodes.find(n => n.nodeId === ancestor.parentId); }
     assert.equal(ownsChild, true); await treeCdp.detach();
@@ -123,7 +123,7 @@ try {
     const cdp = await context.newCDPSession(page);
     const ax = await cdp.send('Accessibility.getFullAXTree');
     assert.ok(ax.nodes.some(n => n.role?.value === 'tree'));
-    assert.ok(ax.nodes.some(n => n.role?.value === 'treeitem' && n.name?.value === 'nested'));
+    assert.ok(ax.nodes.some(n => n.role?.value === 'treeitem' && n.name?.value === path.join(fixtures, 'nested')));
     await cdp.detach();
     result.cases.push('Tree Space/Right/Left/Home/type-to-select/Enter preserve roving focus, expose AX tree semantics and send zero terminal-input frames');
   }

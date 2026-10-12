@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "Restaurer",
   "fileBrowser.apply": "Appliquer",
   "fileBrowser.name": "Nom",
+  "fileBrowser.details": "Détails",
+  "fileBrowser.fullPath": "Chemin complet",
   "settings.appearance.readingContrast": "Les zones de lecture Fichiers et Git limitent la transparence pour garder le texte lisible.",
   "fileBrowser.expandFolder": "Développer le dossier",
   "fileBrowser.collapseFolder": "Replier le dossier",

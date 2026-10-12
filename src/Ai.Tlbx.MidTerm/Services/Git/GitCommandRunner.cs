@@ -225,7 +225,7 @@ internal static class GitCommandRunner
     internal static async Task<GitStatusResponse> GetStatusAsync(string repoRoot)
     {
         var response = new GitStatusResponse { RepoRoot = repoRoot };
-        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, "status", "--porcelain=v2", "-b", "--ahead-behind");
+        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, "status", "--porcelain=v2", "-z", "-b", "--ahead-behind");
 
         if (exitCode != 0)
         {
@@ -233,13 +233,21 @@ internal static class GitCommandRunner
             return response;
         }
 
+        return ParseStatus(repoRoot, stdout);
+    }
+
+    internal static GitStatusResponse ParseStatus(string repoRoot, string stdout)
+    {
+        var response = new GitStatusResponse { RepoRoot = repoRoot };
         var staged = new List<GitFileEntry>();
         var modified = new List<GitFileEntry>();
         var untracked = new List<GitFileEntry>();
         var conflicted = new List<GitFileEntry>();
 
-        foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        var records = stdout.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+        for (var index = 0; index < records.Length; index++)
         {
+            var line = records[index];
             if (line.StartsWith("# branch.head ", StringComparison.Ordinal))
             {
                 response.Branch = line["# branch.head ".Length..];
@@ -255,7 +263,8 @@ internal static class GitCommandRunner
             }
             else if (line.StartsWith("1 ", StringComparison.Ordinal) || line.StartsWith("2 ", StringComparison.Ordinal))
             {
-                ParseChangedEntry(line, staged, modified);
+                var original = line.StartsWith("2 ", StringComparison.Ordinal) && index + 1 < records.Length ? records[++index] : null;
+                ParseChangedEntry(line, original, staged, modified);
             }
             else if (line.StartsWith("u ", StringComparison.Ordinal))
             {
@@ -476,10 +485,11 @@ internal static class GitCommandRunner
         return RunGitAsync(workingDir, args);
     }
 
-    private static void ParseChangedEntry(string line, List<GitFileEntry> staged, List<GitFileEntry> modified)
+    private static void ParseChangedEntry(string line, string? originalPath, List<GitFileEntry> staged, List<GitFileEntry> modified)
     {
-        var parts = line.Split(' ');
-        if (parts.Length < 9) return;
+        var count = line.StartsWith("2 ", StringComparison.Ordinal) ? 10 : 9;
+        var parts = line.Split(' ', count, StringSplitOptions.None);
+        if (parts.Length != count) return;
 
         var xy = parts[1];
         if (xy.Length < 2) return;
@@ -487,27 +497,7 @@ internal static class GitCommandRunner
         var indexStatus = xy[0];
         var worktreeStatus = xy[1];
 
-        string? originalPath = null;
-        string filePath;
-
-        if (line.StartsWith("2 ", StringComparison.Ordinal))
-        {
-            var tabIndex = line.IndexOf('\t', StringComparison.Ordinal);
-            if (tabIndex >= 0)
-            {
-                var pathParts = line[tabIndex..].Split('\t');
-                filePath = pathParts.Length >= 2 ? pathParts[1] : parts[^1];
-                originalPath = pathParts.Length >= 2 ? pathParts[0].TrimStart('\t') : null;
-            }
-            else
-            {
-                filePath = parts[^1];
-            }
-        }
-        else
-        {
-            filePath = parts[^1];
-        }
+        var filePath = parts[^1];
 
         if (indexStatus != '.')
         {
@@ -524,15 +514,16 @@ internal static class GitCommandRunner
             modified.Add(new GitFileEntry
             {
                 Path = filePath,
-                Status = MapStatusChar(worktreeStatus)
+                Status = MapStatusChar(worktreeStatus),
+                OriginalPath = originalPath
             });
         }
     }
 
     private static void ParseUnmergedEntry(string line, List<GitFileEntry> conflicted)
     {
-        var parts = line.Split(' ');
-        if (parts.Length < 2) return;
+        var parts = line.Split(' ', 11, StringSplitOptions.None);
+        if (parts.Length != 11) return;
 
         conflicted.Add(new GitFileEntry
         {

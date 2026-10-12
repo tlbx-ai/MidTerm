@@ -54,6 +54,7 @@ import { resizeFilePane } from './paneResize';
 import { getWebPreviewDockWidth } from '../web/webDock';
 import { createTextView, getDocumentViewMode } from './textView';
 import { createFileViewerFocus } from './modalFocus';
+import { pathDetailsButton } from './pathDetails';
 
 const log = createLogger('fileViewer');
 
@@ -114,6 +115,7 @@ export function initFileViewer(): void {
   const closeBtn = modal.querySelector('.modal-close');
   const maximizeBtn = modal.querySelector('#file-viewer-maximize');
   const dockBtn = modal.querySelector('#file-viewer-dock-btn');
+  setupPathDetails();
 
   backdrop?.addEventListener('click', () => void requestCloseViewer());
   closeBtn?.addEventListener('click', () => void requestCloseViewer());
@@ -178,6 +180,15 @@ export function initFileViewer(): void {
   });
 
   log.info(() => 'File viewer initialized');
+}
+
+function setupPathDetails(): void {
+  const paths = (): string[] => (currentPath ? [currentPath] : []);
+  document
+    .querySelectorAll('.file-viewer-header-actions, .file-viewer-dock-actions')
+    .forEach((actions) => {
+      actions.prepend(pathDetailsButton(paths));
+    });
 }
 
 function setupFileDockResize(panel: HTMLElement): void {
@@ -780,8 +791,14 @@ function updateModalHeader(path: string, metadata?: string | null): void {
 
   const titleEl = modal.querySelector('.file-viewer-title');
   const pathEl = modal.querySelector('.file-viewer-path');
-  if (titleEl) titleEl.textContent = getFileName(path);
-  if (pathEl) pathEl.textContent = formatViewerHeaderSubtitle(path, metadata);
+  if (titleEl) {
+    titleEl.textContent = getFileName(path);
+    titleEl.setAttribute('title', path);
+  }
+  if (pathEl) {
+    pathEl.textContent = formatViewerHeaderSubtitle(path, metadata);
+    pathEl.setAttribute('title', path);
+  }
 }
 
 function updateDockHeader(path: string, metadata?: string | null): void {
@@ -792,8 +809,14 @@ function updateDockHeader(path: string, metadata?: string | null): void {
 
   const titleEl = dockPanel.querySelector('.file-viewer-dock-title');
   const pathEl = dockPanel.querySelector('.file-viewer-dock-path');
-  if (titleEl) titleEl.textContent = getFileName(path);
-  if (pathEl) pathEl.textContent = formatViewerHeaderSubtitle(path, metadata);
+  if (titleEl) {
+    titleEl.textContent = getFileName(path);
+    titleEl.setAttribute('title', path);
+  }
+  if (pathEl) {
+    pathEl.textContent = formatViewerHeaderSubtitle(path, metadata);
+    pathEl.setAttribute('title', path);
+  }
 }
 
 function updateViewerHeaders(path: string, metadata?: string | null): void {

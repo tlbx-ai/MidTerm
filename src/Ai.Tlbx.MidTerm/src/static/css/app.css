@@ -21202,6 +21202,17 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   cursor: pointer;
 }
 .file-selection-target .file-selection-checkbox { margin: 0; }
+.file-path-details, .git-path-details {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--text-input-background);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.file-path-details:focus-visible, .git-path-details:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
 
 /* Reading palettes protect metadata against wallpaper, hover and selection. */
 :where(.file-browser, .file-viewer-modal-content, .file-viewer-dock, .git-dock, .git-panel, .git-panel-shell, .file-context-menu, .file-operation-overlay .modal, .file-conflict-dialog) {
@@ -21246,6 +21257,8 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   .file-document-mode,
   .preview-save-btn,
   .preview-toolbar-action-btn,
+  .file-path-details,
+  .git-path-details,
   .file-viewer-zoom-btn,
   .file-viewer-zoom-level,
   .file-browser-navigation button,

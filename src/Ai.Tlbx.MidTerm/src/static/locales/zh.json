@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "恢复文件",
   "fileBrowser.apply": "应用",
   "fileBrowser.name": "名称",
+  "fileBrowser.details": "详细信息",
+  "fileBrowser.fullPath": "完整路径",
   "settings.appearance.readingContrast": "文件和 Git 的阅读区域会限制透明度，以保证文字清晰可读。",
   "fileBrowser.expandFolder": "展开文件夹",
   "fileBrowser.collapseFolder": "折叠文件夹",

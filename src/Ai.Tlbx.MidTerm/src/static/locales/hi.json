@@ -1170,6 +1170,8 @@
   "fileBrowser.restore": "बहाल करें",
   "fileBrowser.apply": "लागू करें",
   "fileBrowser.name": "नाम",
+  "fileBrowser.details": "विवरण",
+  "fileBrowser.fullPath": "पूरा पथ",
   "settings.appearance.readingContrast": "फ़ाइल और Git पठन पैनल पाठ पढ़ने योग्य रखने के लिए पारदर्शिता सीमित करते हैं।",
   "fileBrowser.expandFolder": "फ़ोल्डर फैलाएँ",
   "fileBrowser.collapseFolder": "फ़ोल्डर समेटें",

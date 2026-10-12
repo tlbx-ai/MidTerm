@@ -433,8 +433,10 @@ function patchTreeNode(
   rowEntries.set(node, entry);
   state.visibleEntries.set(entry.fullPath, entry);
   node.dataset.path = entry.fullPath;
+  node.title = entry.fullPath;
   node.dataset.isDir = String(entry.isDirectory);
   state.surface.label(node, entry.name);
+  node.setAttribute('aria-label', entry.fullPath);
   patchTreePresentation(node, state, entry, depth);
   patchTreeMetadata(node, entry);
   const children = wrapper.lastElementChild as HTMLElement;
