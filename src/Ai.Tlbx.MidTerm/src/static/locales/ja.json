@@ -1234,7 +1234,7 @@
   "fileBrowser.type": "種類",
   "fileBrowser.size": "サイズ",
   "fileBrowser.viewOptions": "ファイル表示設定",
-  "fileBrowser.filterPlaceholder": "読み込み済みの名前・種類を絞り込む",
+  "fileBrowser.filterPlaceholder": "名前・種類で絞り込む…",
   "fileBrowser.filterFiles": "読み込み済みファイルを絞り込む",
   "fileBrowser.sortBy": "並べ替え",
   "fileBrowser.viewMode": "表示形式",
@@ -1290,5 +1290,8 @@
   "git.repositoryUnbound": "このリポジトリは接続されていないか、アクセスが拒否されました。",
   "git.repositoryUnavailable": "リポジトリまたはセッションを利用できません。",
   "git.offlineStatus": "Git接続が切れました。再接続して更新してください。",
-  "git.readFailed": "Gitの状態を読み込めませんでした。"
+  "git.readFailed": "Gitの状態を読み込めませんでした。",
+  "fileBrowser.editAddress": "パスを編集 (Ctrl+L)",
+  "fileBrowser.locations": "場所",
+  "fileBrowser.openHint": "ダブルクリックまたは Enter で開く"
 }

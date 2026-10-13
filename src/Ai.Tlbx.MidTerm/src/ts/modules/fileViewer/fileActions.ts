@@ -63,7 +63,7 @@ export class FileActions {
   public constructor(private context: FileActionContext) {
     this.root.className = 'file-actions-menu';
     const summary = document.createElement('summary');
-    summary.textContent = '⋯';
+    summary.textContent = `${t('fileBrowser.actions')} ⌄`;
     summary.title = t('fileBrowser.actions');
     summary.setAttribute('aria-label', summary.title);
     this.root.append(summary);

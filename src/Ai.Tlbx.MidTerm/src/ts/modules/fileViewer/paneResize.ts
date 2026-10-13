@@ -8,6 +8,7 @@ interface PaneResizeOptions {
   grip: HTMLElement;
   key: string;
   defaultWidth: number;
+  responsiveDefault?: () => number;
   direction: 1 | -1;
   widthProperty?: string;
   bounds: () => PaneBounds;
@@ -23,9 +24,13 @@ export function resizeFilePane(options: PaneResizeOptions): {
   const { panel, grip } = options;
   const events = new AbortController();
   let preferred = options.defaultWidth;
+  let hasPreference = false;
   try {
     const saved = Number(localStorage.getItem(options.key));
-    if (Number.isFinite(saved) && saved >= 100 && saved <= 2000) preferred = saved;
+    if (Number.isFinite(saved) && saved >= 100 && saved <= 2000) {
+      preferred = saved;
+      hasPreference = true;
+    }
   } catch {
     /* Resizing remains available when storage is blocked. */
   }
@@ -35,6 +40,8 @@ export function resizeFilePane(options: PaneResizeOptions): {
 
   const refresh = (): void => {
     const bounds = options.bounds();
+    if (!hasPreference && !drag && options.responsiveDefault)
+      preferred = options.responsiveDefault();
     grip.hidden = !bounds.enabled;
     const width = Math.round(Math.max(bounds.min, Math.min(bounds.max, preferred)));
     panel.style.setProperty(options.widthProperty ?? '--file-pane-width', `${width}px`);
@@ -56,6 +63,7 @@ export function resizeFilePane(options: PaneResizeOptions): {
     });
   };
   const save = (): void => {
+    hasPreference = true;
     const bounds = options.bounds();
     preferred = Math.round(Math.max(bounds.min, Math.min(bounds.max, preferred)));
     try {

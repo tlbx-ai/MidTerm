@@ -1278,7 +1278,7 @@
   "fileBrowser.type": "Typ",
   "fileBrowser.size": "Größe",
   "fileBrowser.viewOptions": "Dateiansicht",
-  "fileBrowser.filterPlaceholder": "Geladene Namen oder Typen filtern",
+  "fileBrowser.filterPlaceholder": "Namen oder Typen filtern…",
   "fileBrowser.filterFiles": "Geladene Dateien filtern",
   "fileBrowser.sortBy": "Sortieren nach",
   "fileBrowser.viewMode": "Ansicht",
@@ -1417,5 +1417,8 @@
   "git.dirtyWorkingTree": "Änderungen zuerst committen oder stashen.",
   "git.commit": "Commit",
   "fileBrowser.selectMultiple": "Mehrfachauswahl",
-  "fileBrowser.visibilityOptions": "Sichtbarkeit"
+  "fileBrowser.visibilityOptions": "Sichtbarkeit",
+  "fileBrowser.editAddress": "Pfad bearbeiten (Strg+L)",
+  "fileBrowser.locations": "Orte",
+  "fileBrowser.openHint": "Doppelklick oder Enter zum Öffnen"
 }

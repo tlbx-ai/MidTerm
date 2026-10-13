@@ -70,7 +70,7 @@ export function createSelectionToolbar(
     root,
     update: () => {
       const files = selected();
-      count.textContent = String(files.length);
+      count.textContent = `${files.length} ${t('fileBrowser.selected')}`;
       count.title = `${files.length} ${t('fileBrowser.selected')}`;
       count.setAttribute('aria-label', count.title);
       count.hidden = files.length === 0;

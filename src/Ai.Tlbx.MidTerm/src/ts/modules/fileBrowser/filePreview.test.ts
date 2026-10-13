@@ -15,6 +15,12 @@ class FakeElement {
   public children: FakeElement[] = [];
   public parentElement: FakeElement | null = null;
   public readonly classList = {
+    remove: (...tokens: string[]) => {
+      this.className = this.className
+        .split(/\s+/)
+        .filter((token) => !tokens.includes(token))
+        .join(' ');
+    },
     add: (...tokens: string[]) => {
       const values = new Set(this.className.split(/\s+/).filter(Boolean));
       for (const token of tokens) {
@@ -51,7 +57,10 @@ class FakeElement {
 
   public prepend(...children: FakeElement[]): void {
     for (const child of [...children].reverse()) {
-      if (child.parentElement) child.parentElement.children = child.parentElement.children.filter(item => item !== child);
+      if (child.parentElement)
+        child.parentElement.children = child.parentElement.children.filter(
+          (item) => item !== child,
+        );
       child.parentElement = this;
       this.children.unshift(child);
     }
@@ -307,6 +316,11 @@ describe('filePreview', () => {
     Object.assign(globalThis, {
       document: {
         createElement: (tagName: string) => new FakeElement(tagName),
+        createTextNode: (text: string) => {
+          const node = new FakeElement('#text');
+          node.textContent = text;
+          return node;
+        },
       },
     });
   });

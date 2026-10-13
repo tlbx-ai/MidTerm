@@ -37,7 +37,7 @@ try {
   const wrapper = page.locator(`.session-wrapper[data-session-id="${session}"]`); await wrapper.locator('.session-tab[data-tab="files"]').click();
   const tree = wrapper.locator('.file-browser-tree'), preview = wrapper.locator('.file-browser-preview');
   const byPath = full => tree.locator('.tree-node').evaluateAll((rows, full) => rows.find(row => row.dataset.path === full)?.getAttribute('title'), full);
-  async function navigate(folder) { await wrapper.locator('.file-browser-address-form input').fill(folder); await wrapper.locator('.file-browser-address-form button').click(); await page.waitForFunction(({ session, full }) => [...document.querySelectorAll(`.session-wrapper[data-session-id="${session}"] .tree-node`)].some(row => row.dataset.path === full), { session, full: path.join(folder, name) }); }
+  async function navigate(folder) { if (!(await wrapper.locator('.file-browser-address-form input').isVisible())) await wrapper.locator('.file-browser-edit-address').click(); await wrapper.locator('.file-browser-address-form input').fill(folder); await wrapper.locator('.file-browser-address-form button').click(); await page.waitForFunction(({ session, full }) => [...document.querySelectorAll(`.session-wrapper[data-session-id="${session}"] .tree-node`)].some(row => row.dataset.path === full), { session, full: path.join(folder, name) }); }
   const info = page.locator('.file-operation-overlay');
   async function copyDetails(expected) { await info.waitFor(); assert.ok((await info.locator('.file-operation-message').innerText()).includes(expected)); await info.locator('[data-operation-choice="copy"]').click(); assert.equal(await page.evaluate(() => navigator.clipboard.readText()), expected); }
   for (const full of paths) {
@@ -49,7 +49,7 @@ try {
   }
   result.cases.push('Deep equal filenames expose exact full tooltip/AX paths; keyboard Details copies the uncut path and restores focus');
   await clickControl(tree.locator('[data-selection-action="open"]')); await preview.locator('.file-document-view').waitFor();
-  await preview.locator('[data-path-details]').click(); await copyDetails(paths[1]);
+  await clickControl(preview.locator('[data-path-details]')); await copyDetails(paths[1]);
   await wrapper.locator('.session-tab[data-tab="terminal"]').click();
   await page.evaluate(target => window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), target), paths[0]);
   const modal = page.locator('#file-viewer-modal'); await modal.locator('.file-document-view').waitFor(); await modal.locator('[data-path-details]').click(); await copyDetails(paths[0]);

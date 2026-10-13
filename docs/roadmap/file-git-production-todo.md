@@ -1421,7 +1421,13 @@ und 4 Aktionsregressionen bestehen, einschließlich Coarse-Pointer44px und Clipb
 Insert-Fehlern. 20 echte Win-Shellquotierungen und 709 Frontendtests/Typecheck/Lints
 bestehen. Evidenz `git-task-42-{browser-third,regression-*,command-quoting,frontend-final.log}`.
 
-### 43. [x] Strengen UI-/UX-Designpass für Files und Git abschließen
+### 43. [ ] Strengen UI-/UX-Designpass für Files und Git abschließen
+
+**Korrektur 13.10.2026:** Die frühere Designabnahme war unberechtigt. Der reale
+Files-Workspace zeigte weiterhin den Command Bay, schwach definierte Navigation
+und eine unausgewogene Listen-/Previewaufteilung. Funktionale Abnahmen und Releases
+bleiben belegt; sie beweisen keine abgeschlossene Gestaltung. Der aktuelle Auftrag
+repariert gezielt Files. Die umfassende Git-Designabnahme bleibt separat offen.
 
 **Verbindlicher Zusatzauftrag 13.10.2026:** Files und Git müssen am Ende als
 bewusst gestaltete, konsistente tlbx-Oberflächen wirken. Funktionsprüfungen
@@ -1448,10 +1454,14 @@ Erst danach integrierte Schlussabnahme und zweiter Minor-Dev-Release.
 **Prozessreparatur:** Nach vollständiger Funktionsabnahme ist die gerenderte
 Gestaltung ein eigenes verbindliches Abschlusskriterium. Nicht allein aus
 funktionierenden Buttons, DOMgeometrie oder bestandenen Tests Designqualität
-ableiten. Bestehende Kriterien für Auswahl bleiben wirksam; checkboxspezifische
+ableiten. Vor Abschluss vollständige Workspace-Screenshots mit den tatsächlichen
+Benutzereinstellungen ansehen: einschließlich globaler Header/Footer, leerem
+Ordner, kurzem/längeren Dokument und schmalem Bildschirm. Navigation, Cursor,
+Back/Up/Previewrückkehr und erkennbare Aktionen direkt bedienen. Bestehende Kriterien
+für Auswahl bleiben wirksam; checkboxspezifische
 alte Abnahmen werden durch die ausdrücklich angeordnete Poweruserauswahl ersetzt.
 
-**Umsetzung und lokale Abnahme 13.10.2026:** Datei-Checkboxen samt reservierter
+**Historische Funktionsabnahme 13.10.2026 (Designabnahme zurückgezogen):** Datei-Checkboxen samt reservierter
 Spalten entfernt; Klick/Ctrl/Cmd/Shift/Tastatur und kontextuelle Touchmehrfachauswahl
 erhalten. Eine gemeinsame Aktionsliste ersetzt die permanenten seltenen Buttons;
 Sortierung/Ansicht und Sichtbarkeit sind kontextuell, Navigation/Adresse verdichtet.
@@ -1473,7 +1483,7 @@ einschließlich Guttern/Wortmarkierungen, vier Themes/0-65-90%/drei Wallpapers.
 Evidenz `task-43-*`. Zusätzlich 11 Navigation-, 6 Refresh-, 37 Edit-/Konflikt-/Race-,
 8 LargeFile-, 4 Fullpath-, 40 Medienproben, 7 Parent- und 3 Terminal/TUI/Controller-
 Grenzfälle bestehen. Finale repräsentative Desktop-/Touchscreenshots geprüft.
-Kontrastminimum 4,979355:1. Abnahme der 43 UIaufgaben abgeschlossen; zweiter Minor
+Kontrastminimum 4,979355:1. Frühere Behauptung einer abgeschlossenen 43-Punkte-Designabnahme zurückgezogen; zweiter Minor
 und operativer Teardown bleiben als Releaseabschluss offen.
 
 **Plattformabnahme:** CI `38352182889`/`f38ee88e` besteht auf allen 3 OS.

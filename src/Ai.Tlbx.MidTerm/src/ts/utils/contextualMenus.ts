@@ -1,5 +1,5 @@
 const menuSelector =
-  'details.file-visibility-menu[open], details.file-listing-options[open], details.file-actions-menu[open], details.git-operation-menu[open], details.git-diff-options[open]';
+  'details.file-visibility-menu[open], details.file-listing-options[open], details.file-actions-menu[open], details.file-preview-actions-menu[open], details.git-operation-menu[open], details.git-diff-options[open]';
 
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
   document.addEventListener('pointerdown', (event) => {

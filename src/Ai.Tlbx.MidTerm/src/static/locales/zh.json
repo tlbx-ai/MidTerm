@@ -1234,7 +1234,7 @@
   "fileBrowser.type": "类型",
   "fileBrowser.size": "大小",
   "fileBrowser.viewOptions": "文件视图选项",
-  "fileBrowser.filterPlaceholder": "筛选已加载的名称或类型",
+  "fileBrowser.filterPlaceholder": "按名称或类型筛选…",
   "fileBrowser.filterFiles": "筛选已加载的文件",
   "fileBrowser.sortBy": "排序依据",
   "fileBrowser.viewMode": "视图模式",
@@ -1290,5 +1290,8 @@
   "git.repositoryUnbound": "此仓库已解除绑定或访问被拒绝。",
   "git.repositoryUnavailable": "仓库或会话不可用。",
   "git.offlineStatus": "Git 连接已断开。请重新连接以刷新。",
-  "git.readFailed": "无法读取 Git 状态。"
+  "git.readFailed": "无法读取 Git 状态。",
+  "fileBrowser.editAddress": "编辑路径 (Ctrl+L)",
+  "fileBrowser.locations": "位置",
+  "fileBrowser.openHint": "双击或按 Enter 打开"
 }

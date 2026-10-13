@@ -33,7 +33,7 @@ export function getListingView(context: string, tree: boolean): FileViewOptions 
   const cached = preferences.get(context);
   if (cached) return { ...cached };
   const defaults: FileViewOptions = {
-    mode: tree ? 'tree' : 'details',
+    mode: 'details',
     sort: 'name',
     descending: false,
     query: '',
@@ -108,7 +108,7 @@ export function createListingControls(
     const button = document.createElement('button');
     button.type = 'button';
     button.dataset.mode = mode;
-    button.textContent = symbols[mode];
+    button.textContent = `${symbols[mode]} ${t(`fileBrowser.view${capitalize(mode)}`)}`;
     button.title = t(`fileBrowser.view${capitalize(mode)}`);
     button.setAttribute('aria-label', button.title);
     button.addEventListener('click', () => {
@@ -156,7 +156,7 @@ export function createListingControls(
   const viewMenu = document.createElement('details');
   viewMenu.className = 'file-listing-options';
   const summary = document.createElement('summary');
-  summary.textContent = '☷';
+  summary.textContent = t('fileBrowser.viewMode');
   summary.title = t('fileBrowser.viewOptions');
   summary.setAttribute('aria-label', summary.title);
   const optionsPanel = document.createElement('div');

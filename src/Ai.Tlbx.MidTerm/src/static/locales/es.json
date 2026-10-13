@@ -1234,7 +1234,7 @@
   "fileBrowser.type": "Tipo",
   "fileBrowser.size": "Tamaño",
   "fileBrowser.viewOptions": "Opciones de vista",
-  "fileBrowser.filterPlaceholder": "Filtrar nombres o tipos cargados",
+  "fileBrowser.filterPlaceholder": "Filtrar nombres o tipos…",
   "fileBrowser.filterFiles": "Filtrar archivos cargados",
   "fileBrowser.sortBy": "Ordenar por",
   "fileBrowser.viewMode": "Vista",
@@ -1290,5 +1290,8 @@
   "git.repositoryUnbound": "Este repositorio ya no está vinculado o se denegó el acceso.",
   "git.repositoryUnavailable": "El repositorio o la sesión no están disponibles.",
   "git.offlineStatus": "Se perdió la conexión de Git. Reconecta para actualizar.",
-  "git.readFailed": "No se pudo leer el estado de Git."
+  "git.readFailed": "No se pudo leer el estado de Git.",
+  "fileBrowser.editAddress": "Editar ruta (Ctrl+L)",
+  "fileBrowser.locations": "Ubicaciones",
+  "fileBrowser.openHint": "Doble clic o Enter para abrir"
 }

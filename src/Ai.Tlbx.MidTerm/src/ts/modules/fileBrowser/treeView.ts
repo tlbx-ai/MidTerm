@@ -144,7 +144,19 @@ export function createTreeView(
     controls.setSort(sort);
   });
   controls.root.insertBefore(toolbar.root, controls.root.querySelector('.file-listing-count'));
-  container.replaceChildren(controls.root, header.root, rowsRoot);
+  const head = document.createElement('div');
+  head.className = 'file-browser-list-head';
+  head.append(controls.root, header.root);
+  container.replaceChildren(head, rowsRoot);
+  const footer = document.createElement('div');
+  footer.className = 'file-browser-list-footer';
+  const count = controls.root.querySelector('.file-listing-count');
+  if (count) footer.append(count);
+  const hint = document.createElement('span');
+  hint.className = 'file-browser-open-hint';
+  hint.textContent = t('fileBrowser.openHint');
+  footer.append(hint);
+  container.append(footer);
   const actions = new FileActions({
     owner: container,
     sessionId: () => sessionId,
@@ -345,6 +357,14 @@ function updateSelection(state: TreeState): void {
   state.rendering = false;
 }
 
+function shouldPreviewFile(state: TreeState, entry: FileTreeEntry): boolean {
+  return (
+    !entry.isDirectory &&
+    (state.view.mode === 'tree' ||
+      state.container.closest('.file-browser')?.getAttribute('data-file-pane') === 'detail')
+  );
+}
+
 function createTreeNode(state: TreeState): HTMLElement {
   const node = document.createElement('div');
   node.className = 'tree-node';
@@ -395,10 +415,17 @@ function createTreeNode(state: TreeState): HTMLElement {
       node.focus({ preventScroll: true });
       return;
     }
+    if (matchMedia('(pointer: coarse)').matches && state.view.mode !== 'tree') {
+      if (entry.isDirectory) {
+        state.surface.choose(node);
+        openSelectedPath(state, entry.fullPath);
+      } else void selectFile(state, entry, true);
+      return;
+    }
     if (entry.isDirectory && state.view.mode === 'tree') {
       state.surface.choose(node);
       void toggleExpand(state, entry);
-    } else if (state.view.mode === 'tree') {
+    } else if (shouldPreviewFile(state, entry)) {
       void selectFile(state, entry);
     } else {
       state.surface.choose(node);
