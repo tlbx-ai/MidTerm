@@ -9,6 +9,7 @@ interface PaneResizeOptions {
   key: string;
   defaultWidth: number;
   direction: 1 | -1;
+  widthProperty?: string;
   bounds: () => PaneBounds;
   observe: HTMLElement[];
   changed?: () => void;
@@ -36,7 +37,7 @@ export function resizeFilePane(options: PaneResizeOptions): {
     const bounds = options.bounds();
     grip.hidden = !bounds.enabled;
     const width = Math.round(Math.max(bounds.min, Math.min(bounds.max, preferred)));
-    panel.style.setProperty('--file-pane-width', `${width}px`);
+    panel.style.setProperty(options.widthProperty ?? '--file-pane-width', `${width}px`);
     grip.setAttribute('aria-valuemin', String(Math.round(bounds.min)));
     grip.setAttribute('aria-valuemax', String(Math.round(bounds.max)));
     grip.setAttribute('aria-valuenow', String(width));

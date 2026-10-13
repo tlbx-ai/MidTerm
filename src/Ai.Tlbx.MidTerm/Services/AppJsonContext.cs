@@ -339,6 +339,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(GitDebugSessionInfo))]
 [JsonSerializable(typeof(GitDebugSessionInfo[]))]
 [JsonSerializable(typeof(GitCommandLog))]
+[JsonSerializable(typeof(GitOperationRequest))]
+[JsonSerializable(typeof(GitOperationResponse))]
 
 // --- WebPreview ---
 [JsonSerializable(typeof(WebPreviewTargetRequest))]

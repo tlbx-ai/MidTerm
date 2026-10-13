@@ -26,6 +26,11 @@ namespace Ai.Tlbx.MidTerm.Services.Git;
 [JsonSerializable(typeof(GitDebugSessionInfo))]
 [JsonSerializable(typeof(GitDebugSessionInfo[]))]
 [JsonSerializable(typeof(GitCommandLog))]
+[JsonSerializable(typeof(GitOperationRequest))]
+[JsonSerializable(typeof(GitOperationResponse))]
+[JsonSerializable(typeof(GitOperationReceipt))]
+[JsonSerializable(typeof(GitWorkspaceResponse))]
+[JsonSerializable(typeof(GitConflictView))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
 public partial class GitJsonContext : JsonSerializerContext
 {

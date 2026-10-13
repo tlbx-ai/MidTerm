@@ -16,6 +16,7 @@ public static class InputHistorySources
     public const string CommandBay = "commandBay";
     public const string SessionPrompt = "sessionPrompt";
     public const string TerminalPaste = "terminalPaste";
+    public const string GitPanelInsert = "git-panel-insert";
     public const string Clipboard = "clipboard";
     public const string FileDrop = "fileDrop";
     public const string Upload = "upload";

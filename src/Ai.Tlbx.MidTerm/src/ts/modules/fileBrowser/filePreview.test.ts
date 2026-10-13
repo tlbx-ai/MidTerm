@@ -49,6 +49,14 @@ class FakeElement {
     children.forEach((child) => this.appendChild(child));
   }
 
+  public prepend(...children: FakeElement[]): void {
+    for (const child of [...children].reverse()) {
+      if (child.parentElement) child.parentElement.children = child.parentElement.children.filter(item => item !== child);
+      child.parentElement = this;
+      this.children.unshift(child);
+    }
+  }
+
   public replaceChildren(...children: FakeElement[]): void {
     this.innerHTML = '';
     this.append(...children);

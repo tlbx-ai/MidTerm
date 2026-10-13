@@ -5,6 +5,9 @@ einschließlich echter Backendfunktionen, konsistenter Bedienung und
 Ende-zu-Ende-Abnahme. Die Nummern entsprechen unverändert der Liste im Chat.
 Ausgangsstand: installiert `10.17.35-dev`, Commit `786357d2`.
 
+Ergänzung vom 13.10.2026: abschließender strenger UI-/UX-Designpass für Files
+und Git als Aufgabe 43. Bestehende Nummern und Abnahmen bleiben erhalten.
+
 ## Arbeitsweise und Abschluss
 
 - `[ ]` offen; `[~]` in Arbeit; `[x]` implementiert und mit den genannten
@@ -17,11 +20,13 @@ Ausgangsstand: installiert `10.17.35-dev`, Commit `786357d2`.
   -Bump minor` veröffentlichen. Versionsnummer erst beim Release bestimmen.
 - Git-Reihenfolge: 1, 2, 7, 8, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
   41, 42. Gemeinsame Aufgaben 3–6, 9–10 anschließend ausdrücklich in Git prüfen.
-- Danach Git vollständig integriert prüfen und einen zweiten Dev-Minor-Release
+- Vor der abschließenden integrierten Abnahme Aufgabe 43 für Files und Git
+  umsetzen; die laufende Funktionsarbeit wird dafür nicht unterbrochen.
+- Danach Git und die visuell überarbeiteten Files vollständig integriert prüfen und einen zweiten Dev-Minor-Release
   veröffentlichen. PR, Tag, CI, Archive/SBOMs und Release-Ausgang nachweisen.
 - Der vollständige Auftrag umfasst mindestens sieben Stunden sorgfältige Arbeit
   ab Auftragsstart. Zeit ersetzt keine Funktionsnachweise. Vor Abschluss alle
-  42 Aufgaben, beide Releases, Cleanup und tatsächliche Laufzeit erneut prüfen.
+  43 Aufgaben, beide Releases, Cleanup und tatsächliche Laufzeit erneut prüfen.
 - Bestehender Supervisor bleibt während der Entwicklung verfügbar. Isolierten
   Source-Dev-Loop mit getrennten stdout/stderr-Logs verwenden; Testdaten und
   Browserprofile isolieren. Keine Aktionen auf produktiven Benutzerdateien testen.
@@ -36,7 +41,7 @@ unter `.dev/file-git-production` als Logs, Screenshots und JSON gespeichert.
 
 ## Nummerierte Aufgaben
 
-### 1. [ ] Git-Inspector innerhalb des Docks vollständig sichtbar machen
+### 1. [x] Git-Inspector innerhalb des Docks vollständig sichtbar machen
 
 **Befund (hoch, reproduziert):** Der Standarddock ist 400 px breit, innen 399 px.
 Seine beiden Mindestspalten verlangen 260 + 280 = 540 px. Bei 1440 px Fensterbreite
@@ -49,7 +54,21 @@ vollständig erreichbar halten. Keine bloße Verkleinerung der Schrift.
 **Abnahme:** Dockbreiten 250–600 px bei Fenstern 900/1440/1920 px, lange Pfade,
 Diffs und Aktionen ohne unzugänglichen Inhalt prüfen. Pixel-/Geometrienachweis.
 
-### 2. [ ] Responsive Git-Navigation an die Panelbreite binden
+**Nachweis 12.10.2026:** Die tatsächliche Git-Dock-Bodybreite ist der CSS-Container.
+Unter 540 px zeigen Liste und Inspector einzeln den vollständig verfügbaren
+Raum; breite Panels zeigen beide Spalten. Leere Inspectorflächen bleiben in
+der schmalen Liste verborgen. Lange Dateipfade, Commitauthors und Parenthashes
+brechen innerhalb ihres eigenen Inhaltsbereichs um. 21 reale Dateilayouts bei
+250/300/400/539/540/541/600 px und drei Fensterbreiten plus neun normale Commit-
+Inspectoren bestehen: kein Inspector-/Buttonüberlauf, echter Diffinhalt und
+erreichbare Copy-/Detailsaktionen inklusive Clipboard-/Vollpfadprüfung.
+Screenshots von Datei/Commit bei schmalen/breiten Docks sind visuell geprüft.
+Null Terminal-Inputframes; 707 Frontendtests plus Kitty/Typecheck/ESLint/Stylelint
+bestehen. Evidenz: `.dev/file-git-production/git-task-1-final/summary.json`,
+`git-task-1-verify.*.log`. Die separaten Copy/Send-Buttonformate und Diff-
+Umbruchmodi bleiben ausdrücklich Aufgaben 8 beziehungsweise 7.
+
+### 2. [x] Responsive Git-Navigation an die Panelbreite binden
 
 **Befund (hoch, reproduziert):** Unter 980 px Fensterbreite funktioniert derselbe
 400-px-Dock einspaltig mit Back; im größeren Fenster wird er abgeschnitten.
@@ -60,6 +79,28 @@ Scrollposition und Rückweg beim Resizen erhalten.
 
 **Abnahme:** Während einer Dateiprüfung Dock/Fenster mehrfach verbreitern und
 verkleinern. Inhalt, Fokus und Rückweg bleiben konsistent; kein Layoutsprungverlust.
+
+**Nachweis 12.10.2026:** Listen-/Detailansicht ist von der Auswahl getrennt;
+Zurück erhält die ausgewählte Datei und den bereits geladenen Diff. CSS meldet
+den tatsächlichen Container-Modus; ein begrenzter Layoutcontroller erhält
+Scroller und führt den Fokus aus ausgeblendeten Bereichen zu Rückweg/Auswahl.
+Observer/Listener werden bei Suspend/Destroy beendet. Browser-Scroll-Anchoring
+ist für diese Scroller deaktiviert, damit ein Reflow die Leseposition nicht
+verschiebt. Git verwendet den vorhandenen Pane-Resize-Helper mit Pointer-
+Capture, Tastatur, Grenzen und gespeicherter Breite; alte globale Mouse/Touch-
+Listener sind entfernt. Unter 769 px ist Git ein Vollflächen-Overlay ohne
+Terminal-Marginreservierung; Rückkehr stellt die Desktopbreite wieder her.
+Drei reale Abläufe bestehen: Back/Enter mit gleicher Auswahl/DOM/Scroll und
+null Refetches; drei echte Tastatur-/Fenster-Resizezyklen mit erhaltenem Fokus;
+Pointerresize, gespeicherte 600 px, 390-px-Overlay und Desktopreturn. Null
+Terminal-Inputframes. 30 Inspector-Geometrien bleiben grün, ebenso sieben
+Files-/Resize-/Followerfälle, 19 Ordner-/Dirty-/Git-Dockwechsel und 707
+Frontendtests plus Kitty/Typecheck/ESLint/Stylelint. Mobile und Desktop-
+Screenshots sind visuell geprüft. Evidenz: `git-task-2-fourth/summary.json`,
+`git-task-2-layout-regression`, `git-task-2-files-regression`,
+`git-task-2-directory-regression`, `git-task-2-verify.*.log` unter
+`.dev/file-git-production`. Initialer Overlayfokus und umfassende Git-
+Tab-/Escape-Navigation werden zusätzlich in Aufgabe 38 abgenommen.
 
 ### 3. [x] Mehrfaches Stapeln transparenter Hintergründe beseitigen
 
@@ -169,7 +210,7 @@ https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html.
 Evidenz: `.dev/file-git-production/task-6-final/summary.json`,
 `task-6-{surface,policy}-regression/summary.json`, `task-6-verify.*.log`.
 
-### 7. [ ] Git-Diffs lesbar umbrechen oder horizontal scrollen lassen
+### 7. [x] Git-Diffs lesbar umbrechen oder horizontal scrollen lassen
 
 **Befund (mittel, reproduziert):** pre-wrap und overflow-wrap:anywhere zerlegen
 lange Codezeilen im schmalen Inspector innerhalb von Wörtern. Einrückungen und
@@ -181,7 +222,27 @@ Scrollen; lange Zeilen, Tabs und Unicode korrekt darstellen.
 **Abnahme:** Breite Code-/Markdownzeilen in mehreren Dockbreiten; vollständiger
 Inhalt, erhaltene Einrückung und stabile Alt-/Neu-Zeilenzuordnung.
 
-### 8. [ ] Beschriftete Git-Aktionen mit passenden Buttons darstellen
+**Nachweis 12.10.2026:** Default ist No-Wrap mit fokussierbaren horizontalen
+Scrollregionen; ein lokalisierter, gespeicherter Umbruchschalter gilt für alle
+Hunks der Ansicht. Änderungszeichen haben eine eigene beim Scrollen sichtbare
+Spalte; Code beginnt an seiner eigenen Tabposition (4), ohne Präfixverschiebung.
+Wrap toggelt ausschließlich CSS/ARIA; gleiche DOMzeilen/Hunkheader und exactes
+Difftext-/Kind-Ordering bleiben erhalten. Der vorige horizontale Offset kehrt
+beim Abschalten des Umbruchs zurück. Reale CRLF-/Tab-/Unicode-/Literal-HTML-
+Fixtures in 250/400/600 px bestehen: gleiches Tab-/Vier-Space-Glyph-X, einzeiliges
+No-Wrap, echte Mehrzeilen-Wrap-Geometrie, native Tastaturscrolls, unveränderte
+Diskbytes, null Gitwrites und null Terminal-Input. Reload erhält den Modus.
+Screenshots sind visuell geprüft. Drei Navigation-/Cache-/Resizefälle und 720
+echte Kontrastmessungen bestehen (Minimum 4,979355:1), außerdem 707 Frontendtests
+mit Kitty/Typecheck/ESLint/Stylelint. Die Surface-/Pfad-/Statusharnesses nutzen
+nun den echten Git-Resize-Griff statt nach Appstart localStorage zu manipulieren;
+damit sind auch beim ersten Matrixfall Git-Metadaten und Liste sichtbar.
+Evidenz: `.dev/file-git-production/git-task-7-accepted/summary.json`,
+`git-task-7-navigation-regression`, `git-task-7-contrast-complete`,
+`git-task-7-verify.*.log`. Sichtbare Zeilennummern/Side-by-side und partielle
+Stagingaktionen bleiben der ausdrücklich weiter offenen Aufgabe 36 zugeordnet.
+
+### 8. [x] Beschriftete Git-Aktionen mit passenden Buttons darstellen
 
 **Befund (mittel, reproduziert):** Copy und Send sind 26×26 px; Text benötigt
 bereits etwa 29 px und läuft aus der Iconklasse heraus. Schmal wirkt es wie CopySend.
@@ -193,6 +254,27 @@ geeigneten Touchzielen; Sidebar-Iconklasse hier entfernen.
 
 **Abnahme:** Desktop/schmal/Touch, lange Übersetzungen, Fokus und Busy/Errorzustand
 ohne Überlaufen oder überlappende Klickflächen.
+
+**Nachweis 12.10.2026:** Copy/Einfügen sind normale lokalisierte Textbuttons mit
+36-px-Desktop-/44-px-Coarse-Zielen; Befehle und Aktionen stehen in eigenen
+Zeilen mit erreichbaren Fokusmarkierungen. Copy und Einfügen zeigen Busy,
+bestätigten Erfolg oder konkreten Fehler und bleiben retryfähig. Lange
+Fehlertexte umbrechen vollständig im Panel. Die frühere Send-Funktion ist
+entfernt: Einfügen verwendet den bestehenden bestätigten Pastevertrag ohne
+Enter und ist für explizite Controller-/nicht verfügbare Terminals gesperrt.
+Ein zusätzlicher Grenztest schützt Controller trotz vorhandenem unbenutztem
+Terminalstate. Mobiler Git-Handler klickt den tatsächlichen Button; das zuvor
+bei sichtbaren Tabs versteckte Menü ist erreichbar. Suchbutton und Menü haben
+eigene Fläche; ein redundanter kleiner-480-px-Paddingreset ist entfernt.
+Vier reale EN/DE/Bengali-Browserabläufe bestehen: Labels bei 250 px, Keyboard-
+Clipboard, Busy/Permissionfehler/Retry, reale Paste-ACK/503 ohne Enter/Provider-
+Turn sowie echter mobiler Menü-Einstieg und mindestens 44 px bei 390 px. Desktop,
+Touch und Fehlerscreenshots sind visuell geprüft. 14 mobile Files-Regressions-
+abläufe und 708 Frontendtests plus Kitty/Typecheck/ESLint/Stylelint bestehen.
+Evidenz: `.dev/file-git-production/git-task-8-complete/summary.json`,
+`git-task-8-mobile-files-regression`, `git-task-8-verify.*.log`. Repo-bound
+Schreibaktionen und deren echte Shell/TUI/Controller-Gesamtabnahme bleiben
+Aufgaben 30–33; sie werden nicht durch Pastebuttons ersetzt.
 
 ### 9. [x] Vollständige Namen und Pfade trotz Ellipsis erreichbar machen
 
@@ -905,7 +987,7 @@ Evidenz: `.dev/file-git-production/task-29-touch-accepted/summary.json`,
 `task-29-resize-accepted/summary.json`, `task-29-actions-final/summary.json`,
 `task-29-verify-final.*.log`. Konkrete Smartphonehardware bleibt Feldabnahme.
 
-### 30. [ ] Vollständigen Stage–Review–Commit-Ablauf in Git implementieren
+### 30. [x] Vollständigen Stage–Review–Commit-Ablauf in Git implementieren
 
 **Befund (hoch, Erwartungslücke):** Keine direkten Datei-/Gruppenaktionen zum
 Stage/Unstage und kein Commitfeld/Button; nur vorgeschlagene Terminalbefehle.
@@ -916,7 +998,29 @@ Identitäts-/Fehler-/Busybehandlung; Review und Stagingzustand nachvollziehbar h
 **Abnahme:** Echte Repos mit gemischt staged/unstaged/untracked, selektiver Commit,
 Committext, fehlender Gitidentität, Hooks/Fehlern und Statusaktualisierung prüfen.
 
-### 31. [ ] Git-Aktionen und Befehle an das ausgewählte Repository binden
+**Nachweis 12.10.2026:** Native repo-bound Stage/Unstage/Commit-API mit echtem
+Indexlock, separatem Transaktionsindex, geprüfter Index-/HEADversion und dauerhaftem
+Operationsbeleg. Datei-/Gruppenaktionen, Commitentwurf, Busy/Fehler/Retry und
+bestätigter Commithash sind angebunden. Native Hooks und Identitätsfehler bleiben
+wirksam. 14 Git-/Parsertests bestehen einschließlich externem Lock, konkurrierender
+Wiederholung, Abbruch sowie bereits erstelltem Commit mit fehlgeschlagener
+Indexveröffentlichung; letzterer nennt den Hash und behält den vorbereiteten Index.
+Sechs echte Browserabläufe bestehen: selektiver Indexreview/Commit bei nachträglich
+geänderter Arbeitskopie; Unicode Stage/Unstage ohne Diskänderung; fehlende Identität
+mit erhaltenem Entwurf; echter abweisender Hook und korrigierter Retry; verlorene
+Commitantwort mit gesperrten neuen Mutationen und gleicher Operations-ID ohne
+zweiten Commit; Stage-all/Unstage-all. Null Terminal-Inputframes und Browserfehler.
+Neu entstandene Zielgruppen öffnen sich; das wiederverwendete Commitfeld wird nach
+bestätigtem Erfolg tatsächlich geleert. Screenshots sind geprüft. 30 Inspector-
+Geometrien sowie 708 Frontendtests, Kitty/Typecheck/ESLint/Stylelint bestehen.
+Evidenz: `git-task-30-accepted/summary.json`, `git-task-30-layout-regression`,
+`git-task-30-native/git-task-30.trx`, `git-task-30-verify-accepted.*.log` unter
+`.dev/file-git-production`. Sourceprüfung läuft mit prozesslokal deaktivierten
+zusätzlichen Codeanalysatoren, nachdem der normale csc-Build über eine Stunde
+CPU-Zeit verbraucht hatte; Releaseprüfung bleibt regulär und dieser Hänger muss
+vor Veröffentlichung geklärt werden. Keine LocalSystem-Schreibabnahme behauptet.
+
+### 31. [x] Git-Aktionen und Befehle an das ausgewählte Repository binden
 
 **Befund (hoch, Code):** Multi-Repo-Sidebar erzeugt relative git-Befehle ohne -C.
 Inspector zeigt tlbx-2, Terminal-CWD Jpa: Ausführung arbeitet im falschen Repo.
@@ -927,7 +1031,34 @@ Copybefehle explizit -C. Auswahlwechsel darf laufende Aktionen nicht umadressier
 **Abnahme:** Zwei Repos mit gleichen Pfaden, abweichende CWDs, Switch während
 Request, manipuliertes Repo und nicht gebundener Root: exakt ein erlaubtes Ziel.
 
-### 32. [ ] Unsichere Send-to-Terminal-Automatik ersetzen
+**Nachweis 12.10.2026:** Copy-/Insertbefehle tragen den gewählten absoluten Root
+als `git -C`; Dateibefehle nutzen Literal-Pathspecs. Die nötige PowerShell-/Bash-
+Quotierung ist als Voraussetzung umgesetzt; unbekannte/noch nicht unterstützte
+Shells zeigen eine lokalisierte Begrenzung. Native Aufrufe entfernen geerbte
+Git-Repository-/Index-/Config-Umleitungen und behalten nur ausdrücklich interne
+Overrides. Rootseparatoren und echte Randspaces werden korrekt erhalten.
+16 native Git-/Parsertests bestehen, inklusive absichtlich falscher Umgebungs-
+Roots und zurückgezogener Bindung vor dem Schreiben. Drei echte Browserabläufe
+mit A/B/C und gleichnamigen Dateien bestehen: aus A ausgeführter Clipboard-Diff
+zeigt exakt B; verzögerte B-Stage bleibt bei Wechsel zu A auf B und überschreibt
+die A-Ansicht nicht; ungebundener C-Root, manipulierter Unterroot und entfernte
+B-Bindung werden mit 403 ohne Index-/Diskmutation abgewiesen. Null Terminalinput
+und Browserfehler; Screenshot geprüft. 708 Frontendtests mit Kitty/Typecheck/
+ESLint/Stylelint bestehen. Die Index-Lebensdauer wurde in einem kleinen Besitzer
+gebündelt; native Prüfungen und Source-Dev-Loop bauen wieder mit regulären
+Analysatoren, ohne die temporäre Suppression. Evidenz: `git-task-31-second`,
+`git-task-31-native/git-task-31.trx`, `git-task-31-verify-accepted.*.log` unter
+`.dev/file-git-production`; Source-Logs im JPA-Run `20261012T140957371Z-fcf474c6`.
+Die gesamte PowerShell-/Bash-Sonderzeichenmatrix bleibt ausdrücklich Aufgabe 33.
+
+**Integrierte Regression:** Vollständige Repo-Pushes aktualisieren nun auch das
+passende offene/defaultaufgelöste Panel. Der Badge konnte vorher neuer sein als
+die Liste. Ein zusätzlicher Grenztest verhindert Updates aus einem anderen Root.
+Alle sechs Commitabläufe und drei Multi-Repoabläufe bestehen erneut;
+709 Frontendtests bestehen. Evidenz: `git-task-31-commit-accepted`,
+`git-task-31-repository-accepted`, `git-task-31-verify-complete-final.*.log`.
+
+### 32. [x] Unsichere Send-to-Terminal-Automatik ersetzen
 
 **Befund (hoch, Code):** Send pastet Text und Return an aktives Terminalprogramm;
 bei Codex/Claude/TUI ist das keine Shellausführung. Discard kann als Send erscheinen.
@@ -935,10 +1066,32 @@ bei Codex/Claude/TUI ist das keine Shellausführung. Discard kann als Send ersch
 **Aufgabe:** Gitoperationen durch eigene Backendverträge ausführen. Optionale
 Terminalübergabe klar als Copy/Insert ohne verstecktes Enter und ohne Agentturn.
 
+**Teilumsetzung durch Aufgabe 8:** Source-Pastebuttons fügen ohne Enter ein und
+Controller sind gesperrt; die alte Submit-/Agent-Turn-Funktion wurde entfernt.
+Eigene Git-Schreibverträge und echte Busy-TUI-/Controller-Abnahme fehlen noch.
+
 **Abnahme:** Shell, beschäftigtes TUI und Agent Controller; direkte Gitaktion
 funktioniert unabhängig davon, keine fremden Prompts/Keys/unerwarteten Mutationen.
 
-### 33. [ ] Shellabhängige Befehlsquotierung korrekt lösen
+**Nachweis 12.10.2026:** Git-Schreibaktionen verwenden die eigenen repo-bound
+Backendverträge aus 30/31. Optionales Einfügen bleibt ohne Enter und ist im UI
+nur für den Shell-Vordergrund verfügbar; Prozesswechsel aktualisieren die Buttons.
+Der Server liest vor Git-Paste zusätzlich einen frischen Hostsnapshot und weist
+Vordergrundanwendungen und explizite Controller vor dem Schreiben ab.
+28 native Tests inklusive sechs Vordergrund-/Shellgrenzen und vorhandener Paste-/
+Gitverträge sowie 709 Frontendtests mit Kitty/Typecheck/ESLint/Stylelint bestehen.
+Drei reale Browserabläufe bestehen: Shell mit Stage/Unstage und bestätigtem
+Paste ohne CR/LF; echte Raw-Mode-/Alternate-Screen-TUI mit null aufgenommenen
+Eingabebytes trotz Copy, erzwungenem Insert-Klick und Stage/Unstage; echter Codex-
+Agent Controller mit Session-CWD JPA und gebundenem Fixturetarget, ebenfalls
+Stage/Unstage ohne Paste oder Provider-Turn-Requests. Direkte Git-Pasteversuche
+gegen TUI und Controller liefern 409. Null Mux-Inputframes und Browserfehler.
+Screenshots sind geprüft; alle Test-Sessions/Browser werden geschlossen.
+Evidenz: `git-task-32-fifth/summary.json`, `git-task-32-native/git-task-32.trx`,
+`git-task-32-verify-fourth.*.log` unter `.dev/file-git-production`.
+Kein Live-Modellturn wurde zur Prüfung ausgelöst.
+
+### 33. [x] Shellabhängige Befehlsquotierung korrekt lösen
 
 **Befund (mittel, Code):** quoteGitPath backslash-escaped Sonderzeichen unabhängig
 von Shell. Dollar/Backtick/Quote sind in PowerShell anders zu behandeln als Bash.
@@ -949,7 +1102,30 @@ bekannte Shell korrekt, unbekannte Shell ehrlich begrenzen.
 **Abnahme:** Pfade mit Spaces/Unicode/$/Backtick/Quotes und --ähnlichen Namen in
 PowerShell und Bash. Kein zusätzlicher Befehl, keine Expansion, exakt richtiger Pfad.
 
-### 34. [ ] Inhalt ungetrackter Dateien in Git prüfbar machen
+**Nachweis 13.10.2026:** Shellgerechte Literalstrings für PowerShell (einschließlich
+typografischer Apostrophe) und Bash/Zsh; keine Befehlsübergabe für nicht unterstützte
+Shells. Native Dateioperationen und dateibezogene Diffreads verwenden getrennte
+argv und Literal-Pathspecs. Git-C-quoted UTF8-Namen, Randspaces und Renameverzeichnisse
+werden erhalten; NUL-numstat vermeidet falsche Nullstatistiken. Physische Root-/Gitdir-
+Identität behandelt macOS-/Symlinkaliasse korrekt, einschließlich aliasierter
+Eltern eines Linkziels. Der generierte PowerShell-Helfer wählt genau ein natives
+Curl-Programm auch auf Unix. 11 echte Browserfälle bestehen: zehn tatsächliche
+Clipboard-/Diff-/Stage-/Unstage-/Diskprüfungen plus sichtbare CMD-Begrenzung bei
+funktionierenden nativen Aktionen; alle zehn Namen zeigen den richtigen Patch
+und +1/-1. Null Nebenbefehle, Terminalinput und JSfehler; Screenshots geprüft.
+Sechs Commitregressionen und 709 Frontendtests bleiben grün. Native Gesamtprüfung
+CI `38309365277` besteht auf `298b9e1c`: Windows 118/127, Linux 120/127, macOS
+117/127; übrige Fälle sind explizite Plattform-/Dienstskips. Reale Shellmatrix:
+Windows 20, Linux/macOS je 28 Fälle; letztere prüfen zusätzliche auf Windows
+unzulässige Doublequote-/Backslash-/Pathspecnamen. Der echte LocalSystem-Test
+besteht 1/1 einschließlich Stage/Unstage/Commit mit geschütztem Caller-Token.
+Lokale erweiterte Files-/Git-/CLI-Regressionssuite: 135 bestanden, acht Skips.
+Evidenz: `git-task-33-browser-complete`, `git-task-33-final-{windows,linux,macos-refreshed}`,
+`git-task-33-native-nested-final`, `git-task-33-final-commit-regression` unter
+`.dev/file-git-production`. Frühere fehlgeschlagene CIläufe bleiben als Diagnose
+erhalten; keine Prüfungen wurden abgeschwächt.
+
+### 34. [x] Inhalt ungetrackter Dateien in Git prüfbar machen
 
 **Befund (hoch, reproduziert):** WhatsAppPermissions.md zeigt No patch text available
 und +0/-0. Show diff schlägt git diff vor, das untracked-Inhalt nicht zeigt.
@@ -960,7 +1136,16 @@ passende Vorschau/Metadaten; Stage nach tatsächlicher Inhaltsprüfung.
 **Abnahme:** Text/Binär/leer/groß/untracked-Verzeichnis, keine Nullstatistik als
 scheinbar inhaltslose Datei; Review→Stage→Commit Ende zu Ende.
 
-### 35. [ ] Untracked und Added in Git unterscheiden
+**Verifiziert 13.10.2026:** Sechs reale Browserabläufe bestehen für Unicode-Text,
+leere Datei, decodierte PNG-Vorschau, begrenzte große Textdatei und Dateien in
+untracked-Verzeichnissen; anschließend Stage/Commit mit bytegenauem HEAD-/Disk-
+Vergleich aller Dateien. Keine Terminaleingabe oder Browserfehler. Gerenderte
+Text-/Binärvorschau geprüft; Gestaltung bleibt ausdrücklich Aufgabe 43.
+26 native Tests bestanden, zwei Unix-Fälle unter Windows ausdrücklich übersprungen.
+Frontendprüfung: 709 Tests plus Typecheck/Lints bestanden. Evidenz:
+`git-task-34-third/summary.json`, Screenshots und `git-task-34-native-final`.
+
+### 35. [x] Untracked und Added in Git unterscheiden
 
 **Befund (mittel, reproduziert):** statusToLetter liefert für untracked/added A;
 VS Code verwendet U für untracked. Farbe und +0/-0 verschleiern Indexzustand.
@@ -971,7 +1156,20 @@ kongruent zu Aufgabe 10.
 **Abnahme:** Neue Datei vor/nach Stage, weitere Änderung nach Stage, Unstage;
 korrekte Gruppe/Buchstabe/Diff und erreichbare Statusbeschreibung.
 
-### 36. [ ] Diffprüfung und selektives Staging vervollständigen
+**Zusätzlich reproduziert 13.10.2026:** Index-/Worktree-Numstat wurde je Pfad
+zusammengezählt und in beiden Gruppen doppelt angezeigt. Nach erneutem Stage
+konnte der Inspector außerdem den zuvor gecachten Indexdiff behalten. Berechnung
+wird je Vergleich getrennt; Auswahl folgt ihrem tatsächlichen U/A/M-Zustand,
+Indexänderungen laden die Vorschau erneut, überholte Antworten werden verworfen.
+**Verifiziert 13.10.2026:** Fünf reale Browserabläufe U→A→A+M→A→U bestehen mit
+passenden Beschreibungen, getrennter +1-Statistik, tatsächlichen Indexbytes und
+aktuellen Vorschauen. Screenshots geprüft; keine Terminaleingaben/Browserfehler.
+Sechs Commit-Regressionsabläufe bestehen einschließlich Hook-/Identitätsfehlern
+und Lost-ACK-Replay. 31 native Tests bestanden, zwei explizite Unix-Skips;
+709 Frontendtests plus Typecheck/Lints bestanden. Evidenz `git-task-35-third`,
+`git-task-35-commit-regression`, `git-task-35-native-final` und Verify-Logs.
+
+### 36. [x] Diffprüfung und selektives Staging vervollständigen
 
 **Befund (mittel, Erwartungslücke):** Unified Patch ohne Alt-/Neuansicht,
 Zeilennummern, Wortmarkierung, Änderungsnavigation oder Hunk-/Zeilenstaging.
@@ -982,7 +1180,44 @@ Stage/Unstage ausgewählter Hunks/Zeilen mit verifizierter Patchanwendung.
 **Abnahme:** Mehrere Hunks, partielle Auswahl, CRLF/Unicode/Rename/Deletion,
 veralteter Diff und parallele Änderungen: korrekter Indexinhalt und Konflikterkennung.
 
-### 37. [ ] Merge-Commits nachvollziehbar gegen Parents vergleichen
+**Teilstand 13.10.2026:** Backendprojektion liefert echte Alt-/Neu-Zeilennummern
+und begrenzte Unicode-Wortvergleiche. Inlineansicht zeigt passende Gutter und
+Wortmarkierung; ein fälschlich angehängter leerer Patch-Kontext wurde entfernt.
+13 native Tests bestehen, ein Unix-Skip unter Windows. Reale Browserprüfung
+bei 250/400/600px besteht für Koordinaten, Wortmarkierung, CRLF/Unicode,
+Tab-/Leerzeicheneinzug, Wrap/Scroll/DOM-Erhalt und unveränderte Diskbytes ohne
+Schreibaktionen/Terminaleingaben. `git-task-36-projection-native-final` und
+`git-task-36-reading-first` enthalten die Nachweise. Dieser frühe Teilstand
+deckte Side-by-side, Änderungsnavigation und selektives Staging noch nicht ab.
+
+**Implementiert und lokal geprüft 13.10.2026:** Side-by-side nutzt die volle
+Dockbreite mit Rückweg zur Liste; Backend-Zuordnung hält Alt-/Neu-Zeilen und
+Wortmarkierungen zusammen. Vorherige/nächste Änderung fokussiert echte Hunks.
+Zeilenauswahl per Klick/Ctrl/Shift/Tastatur erhält DOM-Identität. Hunk-/Zeilen-
+Stage und Unstage erzeugen serverseitig einen versionierten Patch und prüfen
+ihn mit Git im gesperrten temporären Index vor Veröffentlichung. 39 native
+Tests bestehen, zwei explizite Unix-Skips; darunter neun echte Gitfälle für
+CRLF/Unicode, neue/gelöschte/umbenannte Dateien, veraltete Diffs/Indizes,
+Parallelität, leeres Repository und Replay ohne doppelte Anwendung. Sechs
+Browserabläufe und 15 Diff-/Commit-/New-File-Regressionsabläufe bestehen;
+Screenshots nach Korrektur der Side-by-side-Breite geprüft. 709 Frontendtests
+plus Typecheck/Lints bestehen. Nachweise: `git-task-36-partial-wide`,
+`git-task-36-selection-native-final`, `git-task-36-regression-*`, Side-Verify-Logs.
+Layout-/Navigationsregression besteht zusätzlich mit drei realen Abläufen für
+Back/Cache/Scroll/Fokus, wiederholtes Keyboard-/Pointer-Resizing und 390px-Overlay
+mit Desktop-Rückkehr (`git-task-36-layout-navigation`).
+
+**Plattform-/Caller-Abnahme 13.10.2026:** CI `38321427219` auf `7bce66ca` ist
+erfolgreich: Windows 138/148, Linux 141/148, macOS 138/148; jeweils 10/7/10
+explizite Plattform-/Fixture-Skips und null Fehler. Alle neun selektiven Gitfälle
+bestehen auf jedem Betriebssystem. Echte Shellquotierung besteht mit 20 Windows-
+und je 28 Linux-/macOS-Fällen. Zusätzlich tatsächliche LocalSystem-Ausführung
+1/1 einschließlich privater New-File-Vorschau und selektivem Stage/Unstage unter
+dem verifizierten Caller, anschließend weiterhin kein Systemzugriff auf dessen
+Datei. TRX/Quoting-Nachweise: `git-task-36-platform-*`; kompakte geprüfte Zähler:
+`git-task-36-platform-counters.json`. Der endgültige Designpass bleibt Aufgabe 43.
+
+### 37. [x] Merge-Commits nachvollziehbar gegen Parents vergleichen
 
 **Befund (mittel, reproduziert/Code):** Merge 786357d2 zeigt Metadaten/Text ohne
 Patches, obwohl first-parent-Vergleich Dateien enthält. Normales git show erklärt
@@ -994,7 +1229,37 @@ Rootcommit und normale Commits ebenfalls verständlich behandeln.
 **Abnahme:** Normaler/Merge-/Rootcommit, beide Parents und leerer Vergleich;
 Dateiliste/Statistik/Diff entsprechen tatsächlichem Gitvergleich.
 
-### 38. [ ] Git-Dateilisten flexibel und effizient bedienen
+**Teilstand 13.10.2026:** Backend vergleicht explizit mit dem gewählten echten
+Parent, Root-Commits rekursiv mit der leeren Basis. Ursache für verworfene Root-
+Metadaten behoben: das leere Parent-Feld bleibt beim NUL-Parsen erhalten.
+Commitreferenzen werden sicher zu einem tatsächlichen Commit aufgelöst; Git-
+Lesefehler werden nicht als leere erfolgreiche Vergleiche ausgegeben. 21 native
+Tests bestehen, darunter Root in SHA-1/SHA-256, Normal/Leer, beide Merge-Parents,
+benutzerkonfigurierte Präfixe und ein Optionsinjektionsversuch. Parentwahl und
+Vergleichsbeschriftung sind im Frontend implementiert; Browser-/Focus-/Race-
+Abnahme und abschließende Frontend-/Plattformprüfung stehen noch aus.
+
+**Lokale Abnahme 13.10.2026:** Sieben reale Browserabläufe bestehen für Root,
+Normal, beide Merge-Parents per Tastatur mit erhaltenem Fokus, leeren Vergleich,
+ungültigen Parent/Optionsreferenz und verspätete Parent-Antwort. Kopierter
+Vergleichsbefehl wurde in PowerShell ausgeführt und entspricht der angezeigten
+leeren Basis beziehungsweise dem gewählten zweiten Parent. Keine Git-Schreib-
+API, Terminaleingabe oder Browserfehler; Index/HEAD/Worktree unverändert.
+Screenshots geprüft. Sechs selektive Git- und drei Layout-/Navigationsregressionen
+bestehen nach Extraktion der Tree-/Commit-Metadatenrenderer; 709 Frontendtests,
+Typecheck und Lints bestehen. `git-task-37-browser-complete`, `git-task-37-native-final`,
+`git-task-37-regression-*` und Verify-/Lint-Logs enthalten die Nachweise.
+LocalSystem-Fixture um private Commit-Metadaten-/Patchleseprüfung erweitert;
+**Plattform-/Caller-Abnahme 13.10.2026:** CI `38324648126` auf `7df3b40d` ist
+erfolgreich: Windows 144/154, Linux 147/154, macOS 144/154; 10/7/10 explizite
+Plattform-/Fixture-Skips, null Fehler. Alle sechs neuen Commitvergleichsfälle
+bestehen auf jedem Betriebssystem, einschließlich SHA-256-Root und abgelehntem
+fehlerhaften Vergleich. Shellquotierung 20/28/28 Fälle erfolgreich. Zusätzliche
+tatsächliche LocalSystem-Ausführung 1/1 umfasst nun private Commit-Metadaten und
+Patchlesen. Geprüfte TRX/Quoting-Artefakte: `git-task-37-platform-*`, Zähler:
+`git-task-37-platform-counters.json`. Aufgabe 37 abgeschlossen; Designpass offen.
+
+### 38. [x] Git-Dateilisten flexibel und effizient bedienen
 
 **Befund (mittel, Erwartungslücke):** Nur Tree; Ordnerzeilen nicht einklappbar,
 keine Flatlist/Suche/Mehrfachauswahl. Tiefenpfade erzeugen lange starre Listen.
@@ -1005,7 +1270,32 @@ Tastaturnavigation; Zustände bei WebSocketaktualisierung erhalten.
 **Abnahme:** Viele Änderungen, tiefe Ordner, gleiche Namen, Filter und Bulkaktionen;
 Auswahl/Focus/Scroll stabil ohne unnötigen vollständigen DOM-Neuaufbau.
 
-### 39. [ ] Git-Laden, fehlendes Repo und Abfragefehler unterscheiden
+Zusätzlich: initialen Fokus im mobilen Git-Overlay setzen, Tab/Shift-Tab und
+Escape ohne Eingabe an das verdeckte Terminal prüfen; Fokus nach Dockclose
+sinnvoll zurückgeben.
+
+**Verifiziert 13.10.2026:** Sieben reale Browserabläufe mit 243 Änderungen
+bestehen: Tree-/Listenansicht mit vollständigen Relativpfaden, unabhängiges
+Folderfolding und ARIA-Left/Right-Navigation, Filter/Unicode, Ctrl-/Space-/Shift-
+Auswahl sowie Ctrl+A mit 230 Dateien. Selective Stage/Unstage und gefiltertes
+Group-Staging prüfen tatsächliche Indexpfade; verborgene Änderungen bleiben
+unberührt. Echte WebSocketupdates erhalten Datei-/Filter-DOM, Auswahl, Fokus und
+Scroll. 390px-Overlay prüft initialen Fokus, ersten/letzten Tab-/Shift-Tab-Umlauf,
+Escape, Rückkehr zum sichtbaren Öffner und null Terminaleingaben/Browserfehler.
+Screenshots geprüft; `git-task-38-final` enthält die Nachweise.
+
+Drei Layout-/Navigations- und sechs selektive-Stagingregressionen bestehen.
+Vier bestehende Aktionsprüfgruppen bestehen einschließlich EN/DE/BN, echter
+Clipboard-/Paste-ACKs und Touch bei 390px. Dabei Suche/Aktionsmenü-Überlappung
+im Keyboardzustand behoben: reservierte Suchfläche bleibt erhalten. Neue Hunk-
+Icons bleiben auf Desktop kompakt (24px), bei Touch mindestens 44px. Veraltete
+Harnessannahmen zu ausgeblendeten Listbuttons wurden auf sichtbare Aktionen
+korrigiert. Evidenz `git-task-38-regression-*` und `git-task-38-actions-fourth`;
+709 Frontendtests, Typecheck und Lints bestehen, finale CSSprüfung ebenfalls.
+Native Git-/Caller-Code bleibt der in Aufgaben 36/37 plattformgeprüfte Stand.
+Die abschließende Dichte-/Gestaltungsabnahme bleibt Aufgabe 43.
+
+### 39. [x] Git-Laden, fehlendes Repo und Abfragefehler unterscheiden
 
 **Befund (mittel, reproduziert/Code):** Erstöffnung von gebundenem Repo zeigt
 Not a git repository vor Antwort. RESTfehler werden null und teilen diesen Zustand.
@@ -1016,7 +1306,42 @@ Daten nicht als aktuell ausgeben, Fehlerdetails sinnvoll übersetzen.
 **Abnahme:** Verzögerung, 401/403/404/500, Offline/Reconnect und Repoentfernung;
 kein falsches No-Repo, Retry funktioniert und Authablauf bleibt korrekt.
 
-### 40. [ ] Branch-, Remote-, Stash- und Konfliktabläufe tatsächlich anbieten
+Zusätzlich: ein fehlgeschlagener Status-/HEADread nach einer Schreibaktion darf
+keinen leeren Hash als bestätigten Commit ausgeben. Die tatsächliche Commit-
+Identität separat bestätigen und unsichere Ergebnisse als solche erhalten.
+
+**Implementiert und lokal geprüft 13.10.2026:** Readstate Loading/Ready/No-Repo/
+Error/Stale plus lokalisierter Retry und letzte Empfangszeit. HTTP-/Native-Git-
+Fehler werden nicht mehr zu falschem No-Repo; letzte gute Daten bleiben markiert
+sichtbar, Schreibaktionen gesperrt. Offline/Reconnect und entfernte Bindung
+aktualisieren den Zustand; überholte Reads werden verworfen. Retryhandler werden
+bereits beim ersten Render gebunden, auch wenn noch nie ein Status erfolgreich
+war. Backend erhält den letzten guten Snapshot bei echten Lesefehlern.
+
+Commitbestätigung liest den tatsächlichen HEAD unabhängig vom Status und
+verlangt einen gültigen neuen Hash plus erfolgreichen Git-Exit. Nicht bestätigte
+Ergebnisse behalten Unknown-Receipt und vorbereiteten Index, ohne leeren Hash
+oder automatische Wiederholung. 39 native Tests bestehen, ein Unix-Skip; drei
+neue echte Gitfälle prüfen Statusfehler/NoRepo/immutable Stale, nach Commit
+gebrochenen Status und unlesbaren HEAD mit Replay ohne zweiten Commit.
+
+Neun Browserabläufe bestehen: verzögerter erster Read, 401/403/404/500 mit Stale/
+Retry, echtes Offline/Online, Bindungsentfernung, echtes No-Repo und Fehler beim
+ersten Read ohne Cache. Null Terminalinput/Browserfehler, Index/Datei unverändert.
+19 Commit-/Partial-/Dateilistenregressionen und 709 Frontendtests plus Typecheck/
+Lints bestehen. UI geprüft; `git-task-39-browser-accepted`, `git-task-39-native-final`,
+`git-task-39-regression-*` und Verify-Logs enthalten die Nachweise. Vollständige
+**Plattform-/Caller-Abnahme 13.10.2026:** CI `38333913466` auf `67a0c568`
+erfolgreich. Geprüfte TRX: Windows 147/157, Linux 150/157, macOS 147/157;
+10/7/10 explizite Plattform-/Fixture-Skips und null Fehler. Alle drei neuen
+GitReadState-Fälle bestehen auf jedem Betriebssystem. 20/28/28 reale Shell-
+Quotierungsfälle und tatsächlicher LocalSystem-Caller 1/1 bestehen ebenfalls.
+Artefakte `git-task-39-platform-*`, Zähler `git-task-39-platform-counters.json`.
+Finaler Browserrerun `git-task-39-browser-final` wartet ausdrücklich auf Ready
+nach Online; der Screenshot zeigt den tatsächlich wieder freigegebenen Zustand.
+Aufgabe 39 abgeschlossen; endgültige Designabnahme bleibt Aufgabe 43.
+
+### 40. [x] Branch-, Remote-, Stash- und Konfliktabläufe tatsächlich anbieten
 
 **Befund (mittel, Erwartungslücke):** Branch/Ahead/Behind/Stash nur Anzeigen;
 keine Branchwahl, Fetch/Pull/Push oder Konfliktauflösung im Gitworkflow.
@@ -1027,7 +1352,25 @@ Remotes/Fehlern, Stashverwaltung und echte Konfliktauflösung einschließlich Ab
 **Abnahme:** Isolierte lokale Bare-Remotes/Clones, Divergenz/Authfehler/Dirtybranch,
 Stashkonflikt und Mergeconflict. Kein Forcepush/Reset als versteckter Normalpfad.
 
-### 41. [ ] Clean-Zustand kompakt halten und Verlauf nutzbar machen
+**Lokale Umsetzung/Abnahme 13.10.2026:** Native Operationen mit Repository-/Branch-/
+HEAD-/Indexprüfung und dauerhaften Receipts; Branchkopf öffnet kontextuelle Aktionen.
+Explizite Remotes/Zielbranches, Fast-forward-Pull, Stash mit Index/untracked,
+versionierte Konfliktauflösung einschließlich gelöschter Seiten und Mergeabschluss.
+9 neue echte Gitprüfungen bestehen, zusätzlich 38 Operations-/Read-/Partialregressionen
+mit einem Plattformskip; 709 Frontendtests und Typecheck/Lints bestehen. 5 echte
+Browserabläufe bestehen einschließlich lokaler Bare-Remote, Stashbestätigung,
+Konfliktpreview/-auflösung, Zwei-Parent-Abschluss und 390px/Fokus. 0 Terminalinputs/
+Browserfehler. Evidenz `git-task-40-{native,browser-second,frontend-final.log}`.
+**Plattformabnahme:** CI `38338611212` auf `7f5ce39f` besteht auf Windows,
+Linux und macOS einschließlich aller 9 neuen Gitabläufe. Tatsächliche TRX:
+Windows 156/166 mit 10 Skips, Linux 159/166 mit 7 Skips, macOS 156/166 mit
+10 Skips; keine Fehler. Echter LocalSystem-Caller zusätzlich 1/1 einschließlich
+privater Workspaceabfrage und Brancherstellung, Rechte danach wiederhergestellt.
+Der erste macOS-Lauf fand einen `/var`-/`/private/var`-Aliasfehler in der
+Konfliktprüfung; physische Rootauflösung korrigiert, alle 5 betroffenen Fälle bestehen.
+Artefakte `git-task-40-platform-second-*`, Zähler JSON; Shellquotierung besteht.
+
+### 41. [x] Clean-Zustand kompakt halten und Verlauf nutzbar machen
 
 **Befund (mittel, reproduziert):** Working tree clean füllt große Fläche;
 Historie unten bekommt kleinen eigenen Scrollbereich, Inspector bleibt daneben.
@@ -1038,7 +1381,23 @@ bedarfsgerechter Inspector. Verlauf ohne künstliche Leerflächen durchsuchen.
 **Abnahme:** Clean/Dirty/Selectionwechsel, lange History und kleine Panels;
 Historypagination, Scroll und Fokus ohne verdrängte Inhalte.
 
-### 42. [ ] Git-Texte, Lokalisierung und Informationshierarchie vereinheitlichen
+**Lokale Umsetzung/Abnahme 13.10.2026:** Kompakte Cleanzeile, volle Listenbreite
+ohne geöffneten Inspector, bedarfsgerechter Inspector mit Back auf Desktop/schmal.
+Verlauf mit seitenweiser Abfrage an festem HEAD, eindeutigen Ladefehlern/Retry,
+roving Fokus und erhaltenen DOMzeilen/Scrollcontainern; alte Antworten nach
+Repository-/HEADwechsel verworfen. Native Logmetadaten jetzt NUL-getrennt mit
+erhaltenen leeren Betreffen, Logendpoint nutzt den verifizierten Sessioncaller.
+6 native Tests einschließlich 3 neuer Historyfälle und 709 Frontendtests bestehen.
+4 echte Browserfälle mit 56 Commits, Pagingfehler/Retry, tatsächlichem Commitwechsel
+während einer verzögerten Seite, Clean/Dirty, 250px/390px/600px, Fokus und Scroll
+bestehen; 0 Terminalinputs/Browserfehler, Screenshots geprüft. Evidenz
+`git-task-41-{native,browser,frontend-final.log}`. CI `38339547681`/`5b949695`
+besteht auf allen 3 Plattformen. Tatsächliche TRX: Windows 159/169 mit 10 Skips,
+Linux 162/169 mit 7, macOS 159/169 mit 10; keine Fehler. Alle 3 neuen Historyfälle
+bestehen je OS, echter LocalSystem-Caller inklusive privater History 1/1.
+Heruntergeladene Artefakte `git-task-41-platform-*` und Zähler JSON.
+
+### 42. [x] Git-Texte, Lokalisierung und Informationshierarchie vereinheitlichen
 
 **Befund (niedrig/mittel, Code/reproduziert):** worktree, Suggested terminal
 commands und Back fest englisch neben lokalisierten Labels; Pfade mehrfach,
@@ -1050,9 +1409,85 @@ Titel priorisieren, redundante Pfadboxen entfernen, Hashdetails bei Bedarf errei
 **Abnahme:** Englisch/Deutsch/lange Übersetzungen, schmale Panels, vollständiger
 Betreff/Pfad/Hash erreichbar; keine Platzhalter oder technischen Backendlabels.
 
+**Umsetzung/Abnahme 13.10.2026:** Lokalisierte Scopes, Metadaten, Datumsdarstellung,
+Befehlsbeschreibungen und handlungsbezogene Fehlermeldungen. Vollständige Betreffe,
+Hashes und Parents über native Tastaturdisclosures; Terminalbefehle/technische
+Fehlerdetails bei Bedarf. Wiederholten Dateiheader entfernt, Filename priorisiert,
+vollständigen Pfad weiterhin in Details erreichbar. Disclosurezustände bleiben bei
+keyed Updates erhalten. Tatsächlicher Sprachwechsel aktualisiert Git und erhält
+Dateiauswahl/Commitentwurf. 4 Browserfälle EN/DE/lange Übersetzungen/Settingswechsel
+bestehen bei 250px, 0 Terminalinputs/Fehler. 6 Commit-, 6 Partial-, 7 Parentvergleich-
+und 4 Aktionsregressionen bestehen, einschließlich Coarse-Pointer44px und Clipboard/
+Insert-Fehlern. 20 echte Win-Shellquotierungen und 709 Frontendtests/Typecheck/Lints
+bestehen. Evidenz `git-task-42-{browser-third,regression-*,command-quoting,frontend-final.log}`.
+
+### 43. [x] Strengen UI-/UX-Designpass für Files und Git abschließen
+
+**Verbindlicher Zusatzauftrag 13.10.2026:** Files und Git müssen am Ende als
+bewusst gestaltete, konsistente tlbx-Oberflächen wirken. Funktionsprüfungen
+allein schließen diese Aufgabe nicht ab. Johannes beanstandet übermäßige
+Buttonflächen, schwer erkennbare Buttons, fehlende Hierarchie und inkongruenten
+Stil. Datei-Checkboxen werden aus diesem Poweruser-Werkzeug entfernt.
+
+**Aufgabe:** Bestehende tlbx-Designmuster anhand gerenderter Referenzflächen
+übernehmen; Navigation, Inhalt und Aktionen klar priorisieren. Seltene Aktionen
+kontextuell unterbringen, häufige Aktionen kompakt und eindeutig gestalten;
+keine dauerhaften großflächigen Bedienfelder ohne belegten Nutzwert. Einheitliche
+Button-, Icon-, Fokus-, Hover-, Auswahl-, Abstands- und Typografiesprache herstellen.
+Dateiauswahl ohne Checkboxen über OS-konforme Klick-/Ctrl-/Cmd-/Shift- und
+Tastaturinteraktionen anbieten. Dieselbe harte Prüfung auf Git anwenden,
+einschließlich Stage/Review/Commit, Verlauf, Diff und schmalen Panels.
+
+**Abnahme:** Reale visuelle Prüfung und Interaktion in Files und Git bei Desktop,
+schmalem Dock und Touch-Emulation; vorhandene tlbx-Flächen als konkreter Vergleich.
+Erkennbare Aktionen, sinnvolle Flächennutzung, geringe visuelle Unruhe, vollständige
+Poweruser-/Tastaturbedienung und erhaltene Mehrfach-/Bulkaktionen nachweisen.
+Screenshots und Arbeitsabläufe prüfen; ein grüner Funktionstest genügt nicht.
+Erst danach integrierte Schlussabnahme und zweiter Minor-Dev-Release.
+
+**Prozessreparatur:** Nach vollständiger Funktionsabnahme ist die gerenderte
+Gestaltung ein eigenes verbindliches Abschlusskriterium. Nicht allein aus
+funktionierenden Buttons, DOMgeometrie oder bestandenen Tests Designqualität
+ableiten. Bestehende Kriterien für Auswahl bleiben wirksam; checkboxspezifische
+alte Abnahmen werden durch die ausdrücklich angeordnete Poweruserauswahl ersetzt.
+
+**Umsetzung und lokale Abnahme 13.10.2026:** Datei-Checkboxen samt reservierter
+Spalten entfernt; Klick/Ctrl/Cmd/Shift/Tastatur und kontextuelle Touchmehrfachauswahl
+erhalten. Eine gemeinsame Aktionsliste ersetzt die permanenten seltenen Buttons;
+Sortierung/Ansicht und Sichtbarkeit sind kontextuell, Navigation/Adresse verdichtet.
+Dateiheader enthält Lesemodi, Save nur bei Entwurf; ungenutzte Ready-/Pfadzeilen
+entfallen. Browse nutzt volle Listenfläche, Preview ist bedarfsgerecht. Git: kompakter
+Commit, kontextuelle Bulkaktionen, +/- für Gruppe/Datei/Inspector, Viewoptionen auf
+Abruf, keine verschachtelten Kartenrahmen. Cleanzustand spart Editor/Filter/Inspector.
+Native Menüs schließen außen/Escape; stabile Containerkeys reparieren tatsächlichen
+Scroll-/DOMverlust bei Clean/Dirty. Fetch/Push erhalten Auswahl. Cachelabels/rollen
+werden pro Session geklont; UTF8-Commitdatei behebt Windows-Längengrenze.
+
+Gerenderte Desktop-/250px-/390px-/Touchabläufe und tlbx-Sidebar-/Modalreferenzen
+geprüft. 13 Auswahl-, 7 Listing-/600Dateien-, 17 reale FSaktions-, 10 Sichtbarkeits-,
+6 Touch-/7 Tastatur-/4 Vollpfadfälle bestehen. Git 6 Commit-, 6 Partial-, 5 Workspace-,
+4 Aktionen-/Touch-, 3 Diffreading-, 9 Readstate-, 4 History-, 7 Filelistfälle bestehen.
+32 Hintergrund-Pixelproben und 1008 Kontrastproben bestehen (Minimum 4,979355:1),
+einschließlich Guttern/Wortmarkierungen, vier Themes/0-65-90%/drei Wallpapers.
+34 native Tests mit 1 Plattformskip und 709 Frontendtests/Typecheck/Lints bestehen.
+Evidenz `task-43-*`. Zusätzlich 11 Navigation-, 6 Refresh-, 37 Edit-/Konflikt-/Race-,
+8 LargeFile-, 4 Fullpath-, 40 Medienproben, 7 Parent- und 3 Terminal/TUI/Controller-
+Grenzfälle bestehen. Finale repräsentative Desktop-/Touchscreenshots geprüft.
+Kontrastminimum 4,979355:1. Abnahme der 43 UIaufgaben abgeschlossen; zweiter Minor
+und operativer Teardown bleiben als Releaseabschluss offen.
+
+**Plattformabnahme:** CI `38352182889`/`f38ee88e` besteht auf allen 3 OS.
+Tatsächliche TRX Windows 161/171 mit 10 Skips, Linux 164/171 mit 7, macOS 161/171
+mit 10; keine Fehler. Beide neuen Cleanupfälle bestehen je OS; echter LocalSystem-
+Caller zusätzlich 1/1. Artefakte `task-43-platform-final-*` und Zähler JSON.
+Mac-Test verwendet die vom Binding zurückgegebene physische RepoID; sein erster
+Lauf hatte einen ungebundenen `/var`-Alias im Test anstelle dieser ID benutzt.
+Native Commands/Shellquotierungen bestehen. Folder Back stellt die bereits
+geöffnete Dateivorschau wieder her; ohne Auswahl nutzt Browse weiter die volle Liste.
+
 ## Release- und Abschlussnachweise
 
-- Files-Minor: Gesamtabnahme bestanden, Releasevorbereitung läuft. 17 serialisierte
+- Files-Minor: `v10.18.0-dev` veröffentlicht, Gesamtabnahme bestanden. 17 serialisierte
   Browsergruppen bestehen mit 159 echten Funktionsabläufen plus 108 Hintergrund-,
   40 Medien-, 32 Projektions-/Entwurf- und 720 Kontrastproben (Minimum 4,979355:1).
   Evidenz: `.dev/file-git-production/files-integrated/summary.json` und die dort
@@ -1061,9 +1496,18 @@ Betreff/Pfad/Hash erreichbar; keine Platzhalter oder technischen Backendlabels.
   übrige Fälle sind plattformspezifische Skips, keine Fehler. Alle sechs neuen
   Git-Status-/Pfadprüfungen bestehen auf jeder Plattform; echte LocalSystem-
   Caller-Abnahme zusätzlich 1/1. TRX/Logs: `task-10-platform-ci`.
-  PR / Version / Release-CI / Assets nach tatsächlicher Veröffentlichung ergänzen.
+
+  **Veröffentlicht 12.10.2026:** `v10.18.0-dev`, Merge `a844ebc5`, PR #274,
+  Release-CI `38227984815` erfolgreich. Nicht mehr Draft; vier vollständige
+  Archiv-/SPDX-Paare: Windows x64/x86 und Linux x64/arm64. Metadaten sind mit
+  `Assert-PublishedReleaseAssets` geprüft und als
+  `.dev/file-git-production/files-release-published.json` gesichert. macOS x64/
+  arm64 fehlen: Apple-Notarisierung HTTP403 wegen fehlender/abgelaufener
+  Entwicklervereinbarung; Native-macOS-Dateisystemtests bestanden. Keine
+  Installation des Supervisors. `finish-task.ps1` hat den exklusiven sauberen
+  Files-Branch beendet; Git arbeitet nun in `feat/git-workspace-production`.
 - Git-Minor: offen. PR / Version / Commit / CI / Assets / E2E-Nachweise ergänzen.
-- Finale 42-Punkte-Abnahme: offen; Code, gerenderte UI und echte Dateisystem-/Git-
+- Finale 43-Punkte-Abnahme: offen; Code, gerenderte UI und echte Dateisystem-/Git-
   Ergebnisse je Aufgabe prüfen. Fehlende Nachweise bleiben offen.
 - Cleanup: offene Devprozesse, Browser, Testsessions und Branches prüfen;
   sichere unmittelbare Bereinigungen erledigen, echte Folgepunkte gezielt erfassen.

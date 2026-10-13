@@ -153,7 +153,17 @@ export function createListingControls(
   direction.addEventListener('click', () => {
     update({ descending: !options.descending });
   });
-  root.append(filter, sort, direction, views, count);
+  const viewMenu = document.createElement('details');
+  viewMenu.className = 'file-listing-options';
+  const summary = document.createElement('summary');
+  summary.textContent = '☷';
+  summary.title = t('fileBrowser.viewOptions');
+  summary.setAttribute('aria-label', summary.title);
+  const optionsPanel = document.createElement('div');
+  optionsPanel.className = 'file-listing-options-panel';
+  optionsPanel.append(sort, direction, views);
+  viewMenu.append(summary, optionsPanel);
+  root.append(filter, viewMenu, count);
   sync();
 
   return {

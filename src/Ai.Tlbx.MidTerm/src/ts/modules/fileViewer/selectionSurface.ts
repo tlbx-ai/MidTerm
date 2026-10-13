@@ -1,11 +1,11 @@
 import { FileSelection } from './selection';
-import { t } from '../i18n';
 import { getCurrentLocale } from '../i18n';
 
 /** Shared keyboard and touch selection. Opening is always an explicit callback. */
 export class FileSelectionSurface {
   public readonly selection = new FileSelection();
   public revision = 0;
+  public multiSelect = false;
   private typed = '';
   private typedAt = 0;
   public constructor(
@@ -40,34 +40,11 @@ export class FileSelectionSurface {
       row.classList.toggle('selected', selected);
       row.setAttribute('aria-selected', String(selected));
       row.tabIndex = row === current ? 0 : -1;
-      const checkbox = row.querySelector<HTMLInputElement>('.file-selection-checkbox');
-      if (checkbox) checkbox.checked = selected;
     });
     this.changed();
   }
 
   public bind(row: HTMLElement): void {
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.tabIndex = -1;
-    checkbox.className = 'file-selection-checkbox';
-    checkbox.addEventListener('click', (event) => {
-      event.stopPropagation();
-      this.choose(row, true, event.shiftKey);
-    });
-    checkbox.addEventListener('dblclick', (event) => {
-      event.stopPropagation();
-    });
-    const target = document.createElement('label');
-    target.className = 'file-selection-target';
-    target.append(checkbox);
-    target.addEventListener('click', (event) => {
-      event.stopPropagation();
-    });
-    target.addEventListener('dblclick', (event) => {
-      event.stopPropagation();
-    });
-    row.prepend(target);
     row.addEventListener('keydown', (event) => {
       this.key(event, row);
     });
@@ -76,9 +53,11 @@ export class FileSelectionSurface {
   public label(row: HTMLElement, name: string): void {
     row.dataset.name = name;
     row.setAttribute('aria-label', name);
-    row
-      .querySelector('.file-selection-checkbox')
-      ?.setAttribute('aria-label', `${t('fileBrowser.select')} ${name}`);
+  }
+
+  public toggleMultiSelect(): void {
+    this.multiSelect = !this.multiSelect;
+    this.update();
   }
 
   private key(event: KeyboardEvent, row: HTMLElement): void {

@@ -23,6 +23,9 @@ import { closeCommandsDock } from '../commands/dock';
 import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
 import { createLogger } from '../logging';
 import { requestCloseFileViewerDock } from '../fileViewer';
+import { resizeFilePane } from '../fileViewer/paneResize';
+import { t } from '../i18n';
+import { createGitDockFocus } from './gitDockFocus';
 
 const log = createLogger('gitDock');
 
@@ -33,6 +36,8 @@ const DOCK_WIDTH_KEY = 'mt-git-dock-width';
 let activeUnsub: (() => void) | null = null;
 let currentDockSessionId: string | null = null;
 let currentDockRepoRoot: string | undefined;
+let dockResize: ReturnType<typeof resizeFilePane> | null = null;
+let dockFocus: ReturnType<typeof createGitDockFocus> | null = null;
 
 function closeCommandsDockIfOpen(): void {
   if ($commandsPanelDocked.get()) {
@@ -65,6 +70,8 @@ async function openGitDockAfterFileDecision(
   if (activeSessionId !== $activeSessionId.get()) return false;
   closeCommandsDockIfOpen();
 
+  if (!$gitPanelDocked.get()) dockFocus?.remember();
+
   $gitPanelDocked.set(true);
   setActionButtonActive('git', true);
   currentDockSessionId = sessionId;
@@ -77,13 +84,7 @@ async function openGitDockAfterFileDecision(
   dockPanel.classList.remove('hidden');
   app?.classList.add('git-docked');
 
-  const savedWidth = localStorage.getItem(DOCK_WIDTH_KEY);
-  if (savedWidth) {
-    const w = parseInt(savedWidth, 10);
-    if (w >= DOCK_MIN_WIDTH && w <= DOCK_MAX_WIDTH) {
-      dockPanel.style.width = `${w}px`;
-    }
-  }
+  dockResize?.refresh();
 
   const body = dockPanel.querySelector<HTMLElement>('.git-dock-body');
   if (body) {
@@ -94,6 +95,9 @@ async function openGitDockAfterFileDecision(
   adjustInnerDockPositions();
   updateAllDockMargins();
   handleDockLayoutChange();
+
+  dockFocus?.refresh();
+  dockFocus?.enter();
 
   activeUnsub?.();
   activeUnsub = $activeSessionId.subscribe((newId) => {
@@ -147,6 +151,7 @@ export function closeGitDock(): void {
   handleDockLayoutChange();
 
   log.info(() => 'Git dock closed');
+  dockFocus?.restore();
 }
 
 export function setupGitDockResize(): void {
@@ -155,74 +160,31 @@ export function setupGitDockResize(): void {
   const refreshBtn = document.getElementById('git-dock-refresh');
   const closeBtn = document.getElementById('git-dock-close');
   if (!dockPanel || !gripEl) return;
+  dockFocus ??= createGitDockFocus(dockPanel, closeGitDock);
+  dockPanel.setAttribute('aria-label', 'Git');
 
-  const panel = dockPanel;
-  const grip = gripEl;
-  let isResizing = false;
-  let startX = 0;
-  let startWidth = 0;
-
-  function beginResize(clientX: number): void {
-    isResizing = true;
-    startX = clientX;
-    startWidth = panel.offsetWidth;
-    grip.classList.add('active');
-    document.body.style.cursor = 'ew-resize';
-    document.body.style.userSelect = 'none';
-  }
-
-  function updateResize(clientX: number): void {
-    if (!isResizing) return;
-    const delta = startX - clientX;
-    const newWidth = Math.max(DOCK_MIN_WIDTH, Math.min(DOCK_MAX_WIDTH, startWidth + delta));
-    panel.style.width = `${newWidth}px`;
-    adjustInnerDockPositions();
-    updateAllDockMargins();
-  }
-
-  function endResize(): void {
-    if (!isResizing) return;
-    isResizing = false;
-    grip.classList.remove('active');
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    localStorage.setItem(DOCK_WIDTH_KEY, String(panel.offsetWidth));
-    handleDockLayoutChange();
-  }
-
-  grip.addEventListener('mousedown', (e: MouseEvent) => {
-    beginResize(e.clientX);
-    e.preventDefault();
-  });
-  document.addEventListener('mousemove', (e: MouseEvent) => {
-    updateResize(e.clientX);
-  });
-  document.addEventListener('mouseup', endResize);
-
-  grip.addEventListener(
-    'touchstart',
-    (e: TouchEvent) => {
-      const touch = e.touches[0];
-      if (e.touches.length !== 1 || !touch) return;
-      beginResize(touch.clientX);
-      e.preventDefault();
+  dockResize?.dispose();
+  gripEl.setAttribute('aria-label', t('git.resizeDock'));
+  dockResize = resizeFilePane({
+    panel: dockPanel,
+    grip: gripEl,
+    key: DOCK_WIDTH_KEY,
+    defaultWidth: 400,
+    widthProperty: '--git-pane-width',
+    direction: -1,
+    bounds: () => {
+      const overlay = window.innerWidth <= 768;
+      dockPanel.dataset.gitOverlay = String(overlay);
+      return { min: DOCK_MIN_WIDTH, max: DOCK_MAX_WIDTH, enabled: !overlay };
     },
-    { passive: false },
-  );
-
-  document.addEventListener(
-    'touchmove',
-    (e: TouchEvent) => {
-      const touch = e.touches[0];
-      if (!isResizing || e.touches.length !== 1 || !touch) return;
-      updateResize(touch.clientX);
-      e.preventDefault();
+    observe: [document.documentElement],
+    changed: () => {
+      adjustInnerDockPositions();
+      updateAllDockMargins();
+      handleDockLayoutChange();
+      dockFocus?.refresh();
     },
-    { passive: false },
-  );
-
-  document.addEventListener('touchend', endResize);
-  document.addEventListener('touchcancel', endResize);
+  });
 
   refreshBtn?.addEventListener('click', () => {
     if (!$gitPanelDocked.get() || !currentDockSessionId) return;

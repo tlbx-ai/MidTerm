@@ -14,10 +14,16 @@ import {
 } from '../sessionTabs';
 import { $activeSessionId, $sessionList } from '../../stores';
 import { addProcessStateListener } from '../process';
-import { updateGitStatus, destroyGitPanel } from './gitPanel';
+import {
+  updateGitStatus,
+  destroyGitPanel,
+  updateGitConnection,
+  updateGitRepoBindings,
+} from './gitPanel';
 import {
   setGitReposCallback,
   setGitStatusCallback,
+  setGitConnectionCallback,
   subscribeToSession,
   unsubscribeFromSession,
   triggerGitFallback,
@@ -49,8 +55,19 @@ export function initGitPanel(): void {
   });
 
   setGitReposCallback((sessionId, repos) => {
+    updateGitRepoBindings(
+      sessionId,
+      repos.map((repo) => repo.repoRoot),
+    );
     cacheRepos(sessionId, repos);
     updateGitIndicatorForSession(sessionId, repos);
+  });
+  setGitConnectionCallback(updateGitConnection);
+  window.addEventListener('offline', () => {
+    updateGitConnection(false);
+  });
+  window.addEventListener('online', () => {
+    updateGitConnection(true);
   });
 
   $sessionList.subscribe((sessions) => {
@@ -178,6 +195,7 @@ function cacheRepos(sessionId: string, repos: GitRepoBinding[]): void {
   for (const repo of repos) {
     if (repo.status) {
       cachedStatuses.set(makeRepoStatusKey(sessionId, repo.repoRoot), repo.status);
+      updateGitStatus(sessionId, repo.status);
     }
   }
   notifyGitRepoCacheChanged(sessionId);

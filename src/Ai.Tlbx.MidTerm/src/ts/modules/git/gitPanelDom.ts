@@ -2,19 +2,27 @@ import { reconcileKeyedChildren } from '../../utils/domReconcile';
 
 const renderedMarkup = new WeakMap<HTMLElement, string>();
 
-function key(element: HTMLElement, index: number): string {
+function category(element: HTMLElement): string {
+  return element.dataset.action ?? element.classList.item(0) ?? '';
+}
+
+function key(element: HTMLElement, index: number, unique: boolean): string {
   const data = element.dataset;
   return JSON.stringify([
     element.tagName,
-    data.action ?? element.classList.item(0),
-    data.path ?? data.hash ?? data.section ?? index,
+    category(element),
+    data.path ?? data.hash ?? data.section ?? (unique ? category(element) : index),
     data.scope,
   ]);
 }
 
 function patchElement(current: HTMLElement, next: HTMLElement): void {
   for (const attribute of Array.from(current.attributes)) {
-    if (attribute.name !== 'data-reconcile-key' && !next.hasAttribute(attribute.name)) {
+    if (
+      attribute.name !== 'data-reconcile-key' &&
+      !(attribute.name === 'open' && current.tagName === 'DETAILS') &&
+      !next.hasAttribute(attribute.name)
+    ) {
       current.removeAttribute(attribute.name);
     }
   }
@@ -46,8 +54,16 @@ function patchElement(current: HTMLElement, next: HTMLElement): void {
 }
 
 function patchChildren(current: HTMLElement, next: HTMLElement): void {
-  reconcileKeyedChildren(current, Array.from(next.children) as HTMLElement[], {
-    key,
+  const children = Array.from(next.children) as HTMLElement[];
+  const counts = new Map<string, number>();
+  for (const child of children)
+    counts.set(
+      child.tagName + ':' + category(child),
+      (counts.get(child.tagName + ':' + category(child)) ?? 0) + 1,
+    );
+  reconcileKeyedChildren(current, children, {
+    key: (element, index) =>
+      key(element, index, counts.get(element.tagName + ':' + category(element)) === 1),
     create: (element) => element.cloneNode(false) as HTMLElement,
     patch: patchElement,
   });

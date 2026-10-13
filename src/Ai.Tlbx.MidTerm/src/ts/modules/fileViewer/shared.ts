@@ -1,4 +1,5 @@
 import { createLogger } from '../logging';
+import '../../utils/contextualMenus';
 import {
   PDF_MIME,
   buildViewUrl,

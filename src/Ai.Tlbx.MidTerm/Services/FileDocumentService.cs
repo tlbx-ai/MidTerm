@@ -16,8 +16,11 @@ public sealed class FileDocumentService
     private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
-    public static string ResolvePath(string path)
+    public static string ResolvePath(string path) => ResolvePath(path, 0);
+
+    private static string ResolvePath(string path, int depth)
     {
+        if (depth > 40) throw new IOException("Too many symbolic link targets while resolving the path.");
         var full = Path.GetFullPath(path);
         var root = Path.GetPathRoot(full)!;
         var current = root;
@@ -27,8 +30,10 @@ public sealed class FileDocumentService
             FileSystemInfo entry = Directory.Exists(current) ? new DirectoryInfo(current) : new FileInfo(current);
             if (entry.LinkTarget is not null)
             {
-                current = entry.ResolveLinkTarget(returnFinalTarget: true)?.FullName
+                var target = entry.ResolveLinkTarget(returnFinalTarget: true)?.FullName
                     ?? throw new FileNotFoundException("The symbolic link target no longer exists.", current);
+                // Link targets may themselves use aliases in a parent component (/var on macOS).
+                current = ResolvePath(target, depth + 1);
             }
         }
         return current;

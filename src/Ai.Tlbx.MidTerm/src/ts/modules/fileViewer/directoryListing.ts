@@ -65,6 +65,12 @@ export class DirectoryListing {
         })),
       open,
       () => sessionId,
+      {
+        active: () => this.surface.multiSelect,
+        toggle: () => {
+          this.surface.toggleMultiSelect();
+        },
+      },
     );
     this.controls = createListingControls(
       `directory:${sessionId ?? 'shared'}`,
@@ -78,7 +84,11 @@ export class DirectoryListing {
     this.header = createListingHeader((sort) => {
       this.controls.setSort(sort);
     });
-    this.root.append(this.toolbar.root, this.controls.root, this.header.root, this.list);
+    this.controls.root.insertBefore(
+      this.toolbar.root,
+      this.controls.root.querySelector('.file-listing-count'),
+    );
+    this.root.append(this.controls.root, this.header.root, this.list);
     this.actions = new FileActions({
       owner: this.root,
       sessionId: () => sessionId,
@@ -183,11 +193,15 @@ export class DirectoryListing {
     row.append(metadata);
     this.surface.bind(row);
     row.addEventListener('click', (event) => {
-      this.surface.choose(row, event.ctrlKey || event.metaKey, event.shiftKey);
+      this.surface.choose(
+        row,
+        event.ctrlKey || event.metaKey || this.surface.multiSelect,
+        event.shiftKey,
+      );
       row.focus({ preventScroll: true });
     });
     row.addEventListener('dblclick', (event) => {
-      if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.ctrlKey || event.metaKey || event.shiftKey || this.surface.multiSelect) return;
       const path = row.dataset.path;
       if (path) this.open(path);
     });

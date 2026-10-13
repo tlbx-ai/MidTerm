@@ -30,7 +30,8 @@ internal static class GitPatchParser
     internal static GitCommitDetailsResponse ParseCommitDetails(
         GitCommitMetadata metadata,
         string patch,
-        bool isTruncated)
+        bool isTruncated,
+        int parentIndex = 0)
     {
         var files = ParseFiles(patch, isTruncated);
 
@@ -44,6 +45,9 @@ internal static class GitPatchParser
             AuthoredDate = metadata.AuthoredDate,
             CommittedDate = metadata.CommittedDate,
             ParentHashes = metadata.ParentHashes,
+            IsRootCommit = metadata.ParentHashes.Length == 0,
+            ComparedParentIndex = metadata.ParentHashes.Length == 0 ? null : parentIndex,
+            ComparedParentHash = metadata.ParentHashes.Length == 0 ? null : metadata.ParentHashes[parentIndex],
             TotalAdditions = files.Sum(file => file.Additions),
             TotalDeletions = files.Sum(file => file.Deletions),
             IsTruncated = isTruncated,
@@ -68,6 +72,8 @@ internal static class GitPatchParser
 
         foreach (var rawLine in NormalizeLines(patch))
         {
+            // A blank context line starts with a space; the split terminator is not a patch line.
+            if (rawLine.Length == 0) continue;
             if (rawLine.StartsWith("diff --git ", StringComparison.Ordinal))
             {
                 FinalizeCurrentFile(files, ref currentFile, ref currentHunks, ref currentHunk, ref currentLines);
@@ -133,11 +139,8 @@ internal static class GitPatchParser
 
             if (rawLine.StartsWith("--- ", StringComparison.Ordinal))
             {
-                oldPath = NormalizePath(rawLine[4..]);
-                if (string.IsNullOrEmpty(currentFile.OriginalPath) && !string.IsNullOrEmpty(oldPath))
-                {
-                    currentFile.OriginalPath = oldPath;
-                }
+                oldPath = NormalizePath(rawLine[4..], stripDiffPrefix: true);
+                currentFile.OriginalPath = string.IsNullOrEmpty(oldPath) ? null : oldPath;
 
                 if (currentFile.Status == "deleted" && !string.IsNullOrEmpty(oldPath))
                 {
@@ -149,7 +152,7 @@ internal static class GitPatchParser
 
             if (rawLine.StartsWith("+++ ", StringComparison.Ordinal))
             {
-                newPath = NormalizePath(rawLine[4..]);
+                newPath = NormalizePath(rawLine[4..], stripDiffPrefix: true);
                 if (!string.IsNullOrEmpty(newPath))
                 {
                     currentFile.Path = newPath;
@@ -207,6 +210,7 @@ internal static class GitPatchParser
             files[^1].IsTruncated = true;
         }
 
+        foreach (var file in files) GitDiffProjection.Apply(file);
         return files.ToArray();
     }
 
@@ -217,8 +221,8 @@ internal static class GitPatchParser
             ? diffHeader[prefix.Length..]
             : diffHeader;
         var separatorIndex = header.IndexOf(" b/", StringComparison.Ordinal);
-        var oldPath = separatorIndex >= 0 ? NormalizePath(header[..separatorIndex]) : "";
-        var newPath = separatorIndex >= 0 ? NormalizePath(header[(separatorIndex + 1)..]) : "";
+        var oldPath = separatorIndex >= 0 ? NormalizePath(header[..separatorIndex], stripDiffPrefix: true) : "";
+        var newPath = separatorIndex >= 0 ? NormalizePath(header[(separatorIndex + 1)..], stripDiffPrefix: true) : "";
 
         return new GitDiffFileView
         {
@@ -234,9 +238,9 @@ internal static class GitPatchParser
             .Split('\n', StringSplitOptions.None);
     }
 
-    private static string NormalizePath(string value)
+    private static string NormalizePath(string value, bool stripDiffPrefix = false)
     {
-        var trimmed = value.Trim();
+        var trimmed = value.EndsWith('\t') ? value[..^1] : value;
         if (string.Equals(trimmed, "/dev/null", StringComparison.Ordinal))
         {
             return string.Empty;
@@ -244,15 +248,49 @@ internal static class GitPatchParser
 
         if (trimmed.Length > 1 && trimmed[0] == '"' && trimmed[^1] == '"')
         {
-            trimmed = System.Text.RegularExpressions.Regex.Unescape(trimmed[1..^1]);
+            trimmed = DecodeQuotedPath(trimmed[1..^1]);
         }
 
-        if (trimmed.StartsWith("a/", StringComparison.Ordinal) || trimmed.StartsWith("b/", StringComparison.Ordinal))
+        if (stripDiffPrefix && (trimmed.StartsWith("a/", StringComparison.Ordinal) || trimmed.StartsWith("b/", StringComparison.Ordinal)))
         {
             trimmed = trimmed[2..];
         }
 
         return trimmed;
+    }
+
+    private static string DecodeQuotedPath(string value)
+    {
+        var bytes = new List<byte>();
+        for (var i = 0; i < value.Length;)
+        {
+            if (value[i] != '\\')
+            {
+                var end = value.IndexOf('\\', i);
+                if (end < 0) end = value.Length;
+                bytes.AddRange(System.Text.Encoding.UTF8.GetBytes(value[i..end]));
+                i = end;
+                continue;
+            }
+            i++;
+            if (i == value.Length) { bytes.Add((byte)'\\'); break; }
+            if (value[i] is >= '0' and <= '7')
+            {
+                var number = 0;
+                for (var count = 0; count < 3 && i < value.Length && value[i] is >= '0' and <= '7'; count++, i++)
+                    number = number * 8 + value[i] - '0';
+                bytes.Add((byte)number);
+            }
+            else
+            {
+                bytes.Add(value[i++] switch
+                {
+                    'a' => 7, 'b' => 8, 't' => 9, 'n' => 10, 'v' => 11, 'f' => 12,
+                    'r' => 13, '\\' => (byte)'\\', '"' => (byte)'"', var character => (byte)character
+                });
+            }
+        }
+        return System.Text.Encoding.UTF8.GetString(bytes.ToArray());
     }
 
     private static void FinalizeCurrentFile(

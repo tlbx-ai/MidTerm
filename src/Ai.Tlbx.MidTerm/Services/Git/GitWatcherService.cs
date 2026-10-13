@@ -340,8 +340,8 @@ public sealed class GitWatcherService : IDisposable
     {
         var resolved = ResolveRepoRoot(sessionId, repoRoot);
         if (resolved is null) return null;
-        if (!_watchers.TryGetValue(resolved, out var watcher)) return null;
-        return watcher.CachedStatus;
+        return GetRepoBindings(sessionId).FirstOrDefault(binding => string.Equals(binding.RepoRoot, resolved,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))?.Status;
     }
 
     public string? GetRepoRoot(string sessionId)
@@ -597,13 +597,7 @@ public sealed class GitWatcherService : IDisposable
     private GitRepoBinding CreateBinding(string repoRoot, string role, string source, bool isPrimary, string? label = null)
     {
         var status = _watchers.TryGetValue(repoRoot, out var watcher) ? watcher.CachedStatus : null;
-        if (status is not null)
-        {
-            status.Label = label ?? Path.GetFileName(repoRoot);
-            status.Role = role;
-            status.Source = source;
-            status.IsPrimary = isPrimary;
-        }
+        status = status?.WithBindingMetadata(label ?? Path.GetFileName(repoRoot), role, source, isPrimary);
 
         return new GitRepoBinding
         {
@@ -658,41 +652,54 @@ public sealed class GitWatcherService : IDisposable
             var statusTask = GitCommandRunner.GetStatusAsync(repoRoot);
             var recentCommitsTask = GitCommandRunner.GetLogAsync(repoRoot);
             var stashCountTask = GitCommandRunner.GetStashCountAsync(repoRoot);
-            var numStatTask = GitCommandRunner.GetNumStatAsync(repoRoot);
+            var workingStatTask = GitCommandRunner.GetNumStatAsync(repoRoot, staged: false);
+            var stagedStatTask = GitCommandRunner.GetNumStatAsync(repoRoot, staged: true);
 
-            await Task.WhenAll(statusTask, recentCommitsTask, stashCountTask, numStatTask).ConfigureAwait(false);
+            await Task.WhenAll(statusTask, recentCommitsTask, stashCountTask, workingStatTask, stagedStatTask).ConfigureAwait(false);
 
             var status = await statusTask.ConfigureAwait(false);
+            if (status.ReadState != "ready")
+            {
+                if (_watchers.TryGetValue(repoRoot, out var previous) && previous.CachedStatus is { } cached)
+                    status = cached.WithReadFailure(status);
+                PublishStatus(repoRoot, status);
+                return;
+            }
             status.RecentCommits = await recentCommitsTask.ConfigureAwait(false);
             status.StashCount = await stashCountTask.ConfigureAwait(false);
-            MergeNumStat(status, await numStatTask.ConfigureAwait(false));
+            MergeNumStat(status, await workingStatTask.ConfigureAwait(false), await stagedStatTask.ConfigureAwait(false));
 
-            if (_watchers.TryGetValue(repoRoot, out var watcher))
-            {
-                var fingerprint = StatusFingerprint(status);
-                if (watcher.LastFingerprint == fingerprint)
-                {
-                    return;
-                }
-
-                watcher.CachedStatus = status;
-                watcher.LastFingerprint = fingerprint;
-            }
-
-            OnStatusChanged?.Invoke(repoRoot, status);
+            PublishStatus(repoRoot, status);
         }
         catch (Exception ex)
         {
             Log.Error(() => $"[Git] RefreshStatus failed for {repoRoot}: {ex.Message}");
+            var failure = new GitStatusResponse { RepoRoot = repoRoot, ReadState = "error", ErrorCode = "git_read_failed", ErrorDetail = ex.Message };
+            if (_watchers.TryGetValue(repoRoot, out var previous) && previous.CachedStatus is { } cached) failure = cached.WithReadFailure(failure);
+            PublishStatus(repoRoot, failure);
         }
     }
 
-    private static void MergeNumStat(GitStatusResponse status, Dictionary<string, (int Additions, int Deletions)> numStat)
+    private void PublishStatus(string root, GitStatusResponse status)
+    {
+        if (_watchers.TryGetValue(root, out var watcher))
+        {
+            var fingerprint = StatusFingerprint(status) + "|" + status.ReadState + "|" + status.ErrorCode + "|" + status.ErrorDetail;
+            watcher.CachedStatus = status;
+            if (watcher.LastFingerprint == fingerprint) return;
+            watcher.LastFingerprint = fingerprint;
+        }
+        OnStatusChanged?.Invoke(root, status);
+    }
+
+    private static void MergeNumStat(GitStatusResponse status,
+        Dictionary<string, (int Additions, int Deletions)> workingStat,
+        Dictionary<string, (int Additions, int Deletions)> stagedStat)
     {
         var totalAdd = 0;
         var totalDel = 0;
 
-        void ApplyToEntries(GitFileEntry[] entries)
+        void ApplyToEntries(GitFileEntry[] entries, Dictionary<string, (int Additions, int Deletions)> numStat)
         {
             foreach (var entry in entries)
             {
@@ -706,8 +713,8 @@ public sealed class GitWatcherService : IDisposable
             }
         }
 
-        ApplyToEntries(status.Staged);
-        ApplyToEntries(status.Modified);
+        ApplyToEntries(status.Staged, stagedStat);
+        ApplyToEntries(status.Modified, workingStat);
 
         status.TotalAdditions = totalAdd;
         status.TotalDeletions = totalDel;

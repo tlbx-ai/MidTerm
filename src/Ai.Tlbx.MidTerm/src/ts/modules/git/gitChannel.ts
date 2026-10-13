@@ -18,6 +18,10 @@ let browserBackgroundSuspended = false;
 const subscribedSessions = new Set<string>();
 let statusCallback: ((sessionId: string, status: GitStatusResponse) => void) | null = null;
 let reposCallback: ((sessionId: string, repos: GitRepoBinding[]) => void) | null = null;
+let connectionCallback: ((connected: boolean) => void) | null = null;
+export function setGitConnectionCallback(callback: (connected: boolean) => void): void {
+  connectionCallback = callback;
+}
 
 export type GitDiagEvent = {
   type: string;
@@ -80,6 +84,7 @@ export function connectGitWebSocket(): void {
   socket.onopen = () => {
     if (ws !== socket) return;
     gitReconnect.reset();
+    connectionCallback?.(true);
     log.info(() => 'Git WebSocket connected');
     emitDiag('ws-open', 'connected');
     for (const sessionId of subscribedSessions) {
@@ -110,6 +115,7 @@ export function connectGitWebSocket(): void {
     if (ws !== socket) return;
     log.warn(() => 'Git WebSocket error');
     emitDiag('ws-error', 'connection error');
+    connectionCallback?.(false);
   };
 
   socket.onclose = (event) => {
@@ -117,6 +123,7 @@ export function connectGitWebSocket(): void {
     log.info(() => 'Git WebSocket closed');
     emitDiag('ws-close', 'disconnected');
     ws = null;
+    connectionCallback?.(false);
     if (handleAuthenticatedWebSocketClose(event)) {
       return;
     }

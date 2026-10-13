@@ -94,7 +94,7 @@ describe('fileBrowser', () => {
 
     const treeContainer = {} as HTMLElement;
     const previewContainer = {} as HTMLElement;
-    const browser = { prepend: vi.fn() };
+    const browser = { prepend: vi.fn(), dataset: {} };
     const panel = {
       querySelector: vi.fn((selector: string) => {
         if (selector === '.file-browser-tree') return treeContainer;

@@ -1360,7 +1360,8 @@ public static class TtyHostSpawner
         string? runAsUser,
         CancellationToken ct,
         uint? preferredSessionId = null,
-        string? runAsUserSid = null)
+        string? runAsUserSid = null,
+        IReadOnlyDictionary<string, string?>? environmentOverrides = null)
     {
         if (preferredSessionId.HasValue)
         {
@@ -1368,7 +1369,7 @@ public static class TtyHostSpawner
             {
                 try
                 {
-                    return await RunCommandWithTokenAsync(fileName, args, workingDir, preferredToken, ct);
+                    return await RunCommandWithTokenAsync(fileName, args, workingDir, preferredToken, ct, environmentOverrides);
                 }
                 finally
                 {
@@ -1386,7 +1387,7 @@ public static class TtyHostSpawner
 
         try
         {
-            return await RunCommandWithTokenAsync(fileName, args, workingDir, userToken, ct);
+            return await RunCommandWithTokenAsync(fileName, args, workingDir, userToken, ct, environmentOverrides);
         }
         finally
         {
@@ -1395,8 +1396,14 @@ public static class TtyHostSpawner
     }
 
     [SupportedOSPlatform("windows")]
+    internal static Task<(int ExitCode, string Stdout, string Stderr)> RunCommandAsCurrentIdentityAsync(
+        string fileName, IReadOnlyList<string> args, string workingDir, CancellationToken ct) =>
+        RunCommandAsCurrentIdentityAsync(fileName, args, workingDir, null, ct);
+
+    [SupportedOSPlatform("windows")]
     internal static async Task<(int ExitCode, string Stdout, string Stderr)> RunCommandAsCurrentIdentityAsync(
-        string fileName, IReadOnlyList<string> args, string workingDir, CancellationToken ct)
+        string fileName, IReadOnlyList<string> args, string workingDir,
+        IReadOnlyDictionary<string, string?>? environmentOverrides, CancellationToken ct)
     {
         using var identity = WindowsIdentity.GetCurrent();
         if (!DuplicateCommandToken(identity.AccessToken.DangerousGetHandle(), 0x02000000, IntPtr.Zero, 2, 1, out var rawToken))
@@ -1405,7 +1412,7 @@ public static class TtyHostSpawner
         // Process creation needs service privileges, but the explicit primary token is the caller's.
         // No desktop-user selection and no execution of git with the service account are allowed here.
         return await WindowsIdentity.RunImpersonatedAsync(Microsoft.Win32.SafeHandles.SafeAccessTokenHandle.InvalidHandle,
-            () => RunCommandWithTokenAsync(fileName, args, workingDir, token.DangerousGetHandle(), ct));
+            () => RunCommandWithTokenAsync(fileName, args, workingDir, token.DangerousGetHandle(), ct, environmentOverrides));
     }
 
     [DllImport("advapi32.dll", EntryPoint = "DuplicateTokenEx", SetLastError = true)]
@@ -1415,7 +1422,8 @@ public static class TtyHostSpawner
 
     [SupportedOSPlatform("windows")]
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunCommandWithTokenAsync(
-        string fileName, IReadOnlyList<string> args, string workingDir, IntPtr userToken, CancellationToken ct)
+        string fileName, IReadOnlyList<string> args, string workingDir, IntPtr userToken, CancellationToken ct,
+        IReadOnlyDictionary<string, string?>? environmentOverrides = null)
     {
         var sa = new SECURITY_ATTRIBUTES
         {
@@ -1442,8 +1450,11 @@ public static class TtyHostSpawner
             return (-1, "", string.Create(CultureInfo.InvariantCulture, $"CreateEnvironmentBlock failed: {Marshal.GetLastWin32Error()}"));
         }
 
+        var mergedEnvironment = IntPtr.Zero;
         try
         {
+            if (environmentOverrides is not null)
+                mergedEnvironment = BuildWindowsEnvironmentBlock(envBlock, environmentOverrides, pathPrependEntries: null);
             var cmdLine = BuildCommandLine(fileName, args);
 
             var si = new STARTUPINFO();
@@ -1465,7 +1476,7 @@ public static class TtyHostSpawner
                     IntPtr.Zero,
                     true,
                     CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
-                    envBlock,
+                    mergedEnvironment == IntPtr.Zero ? envBlock : mergedEnvironment,
                     workingDir,
                     ref si,
                     out var pi);
@@ -1494,7 +1505,12 @@ public static class TtyHostSpawner
 
                 using var processSafe = new Microsoft.Win32.SafeHandles.SafeProcessHandle(pi.hProcess, true);
                 using var process = Process.GetProcessById(pi.dwProcessId);
-                await process.WaitForExitAsync(ct);
+                try { await process.WaitForExitAsync(ct); }
+                catch (OperationCanceledException)
+                {
+                    try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+                    throw;
+                }
 
                 var stdout = await stdoutTask;
                 var stderr = await stderrTask;
@@ -1508,6 +1524,7 @@ public static class TtyHostSpawner
         }
         finally
         {
+            if (mergedEnvironment != IntPtr.Zero) Marshal.FreeHGlobal(mergedEnvironment);
             DestroyEnvironmentBlock(envBlock);
             if (stdoutRead != IntPtr.Zero) CloseHandle(stdoutRead);
             if (stdoutWrite != IntPtr.Zero) CloseHandle(stdoutWrite);

@@ -5,6 +5,9 @@ public sealed class GitDiffViewResponse
     public string Scope { get; set; } = "";
     public string Title { get; set; } = "";
     public bool IsTruncated { get; set; }
+    public string PatchVersion { get; set; } = "";
+    public string IndexVersion { get; set; } = "";
+    public bool CanSelectLines { get; set; }
     public GitDiffFileView[] Files { get; set; } = [];
 }
 
@@ -18,6 +21,9 @@ public sealed class GitCommitDetailsResponse
     public string AuthoredDate { get; set; } = "";
     public string CommittedDate { get; set; } = "";
     public string[] ParentHashes { get; set; } = [];
+    public int? ComparedParentIndex { get; set; }
+    public string? ComparedParentHash { get; set; }
+    public bool IsRootCommit { get; set; }
     public int TotalAdditions { get; set; }
     public int TotalDeletions { get; set; }
     public bool IsTruncated { get; set; }
@@ -34,11 +40,19 @@ public sealed class GitDiffFileView
     public bool IsBinary { get; set; }
     public bool IsTruncated { get; set; }
     public GitDiffHunk[] Hunks { get; set; } = [];
+    public bool IsNewFile { get; set; }
+    public bool HasLineStats { get; set; } = true;
+    public long? SizeBytes { get; set; }
+    public string? MimeType { get; set; }
+    public string? Encoding { get; set; }
+    public string? ContentVersion { get; set; }
 }
 
 public sealed class GitDiffHunk
 {
     public string Header { get; set; } = "";
+    public int OldStart { get; set; }
+    public int NewStart { get; set; }
     public GitDiffLine[] Lines { get; set; } = [];
 }
 
@@ -46,4 +60,14 @@ public sealed class GitDiffLine
 {
     public string Kind { get; set; } = "";
     public string Text { get; set; } = "";
+    public int? OldLine { get; set; }
+    public int? NewLine { get; set; }
+    public int VisualRow { get; set; }
+    public GitDiffSegment[] Segments { get; set; } = [];
+}
+
+public sealed class GitDiffSegment
+{
+    public string Text { get; set; } = "";
+    public bool Changed { get; set; }
 }

@@ -44,6 +44,65 @@ public sealed class FileServiceIdentityTests
                 Assert.NotNull(ignored); Assert.Contains("ignored.tmp", ignored); Assert.DoesNotContain("caller.txt", ignored);
                 using var afterGit = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterGit.User!.Value);
 
+                foreach (var args in new[] {
+                    new[] { "config", "user.name", "Caller Git acceptance" },
+                    new[] { "config", "user.email", "caller@tlbx.invalid" },
+                    new[] { "config", "commit.gpgSign", "false" } })
+                    Assert.Equal(0, (await GitCommandRunner.ExecuteAsync(root, args, default)).ExitCode);
+                var gitOperations = new GitOperationService();
+                Ai.Tlbx.MidTerm.Models.Git.GitOperationRequest GitRequest(string action) => new()
+                { Action = action, OperationId = Guid.NewGuid().ToString("D"), Paths = ["caller.txt"] };
+                Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, GitRequest("stage"), default)).State);
+                Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, GitRequest("unstage"), default)).State);
+                Assert.Equal("caller data", File.ReadAllText(source));
+                Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, GitRequest("stage"), default)).State);
+                var reviewed = await GitCommandRunner.GetStatusAsync(root);
+                var commit = GitRequest("commit"); commit.Message = "Caller identity commit";
+                commit.ExpectedIndexVersion = reviewed.IndexVersion; commit.ExpectedHead = reviewed.HeadHash;
+                var committed = await gitOperations.ExecuteAsync(root, commit, default);
+                Assert.Equal("completed", committed.State); Assert.False(string.IsNullOrEmpty(committed.CommitHash));
+                var committedText = await GitCommandRunner.ExecuteAsync(root, ["show", "HEAD:caller.txt"], default);
+                Assert.Equal(0, committedText.ExitCode); Assert.Equal("caller data", committedText.Stdout);
+                var callerMetadata = await GitCommandRunner.GetCommitMetadataAsync(root, committed.CommitHash!);
+                Assert.NotNull(callerMetadata);
+                var callerPatch = await GitCommandRunner.GetCommitPatchAsync(root, callerMetadata.Hash, callerMetadata.ParentHashes.FirstOrDefault());
+                Assert.Contains(GitPatchParser.ParseCommitDetails(callerMetadata, callerPatch.Patch, callerPatch.IsTruncated).Files, file => file.Path == "caller.txt");
+                using var afterMutation = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterMutation.User!.Value);
+
+                var selectedPath = Path.Combine(root, "selected ä.txt");
+                await File.WriteAllTextAsync(selectedPath, "Caller first ä\nCaller second 字\n");
+                var newFile = Assert.Single((await GitNewFileReview.ReadAsync(root, "selected ä.txt", default)).Files);
+                Assert.Equal(2, newFile.Additions); Assert.False(newFile.IsBinary);
+                var selectedStatus = await GitCommandRunner.GetStatusAsync(root);
+                var snapshot = await GitPatchSelection.ReadAsync(root, "selected ä.txt", false, selectedStatus);
+                var selected = new Ai.Tlbx.MidTerm.Models.Git.GitOperationRequest
+                {
+                    Action = "stage-selection", OperationId = Guid.NewGuid().ToString("D"), Paths = ["selected ä.txt"],
+                    ExpectedIndexVersion = selectedStatus.IndexVersion, ExpectedPatchVersion = snapshot.View.PatchVersion,
+                    SelectedLines = [new() { Hunk = 0, Line = 0 }]
+                };
+                Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, selected, default)).State);
+                var selectedText = await GitCommandRunner.ExecuteAsync(root, ["show", ":selected ä.txt"], default);
+                Assert.Equal(0, selectedText.ExitCode); Assert.Equal("Caller first ä\n", selectedText.Stdout.Replace("\r\n", "\n", StringComparison.Ordinal));
+                selectedStatus = await GitCommandRunner.GetStatusAsync(root);
+                snapshot = await GitPatchSelection.ReadAsync(root, "selected ä.txt", true, selectedStatus);
+                selected.Action = "unstage-selection"; selected.OperationId = Guid.NewGuid().ToString("D");
+                selected.ExpectedIndexVersion = selectedStatus.IndexVersion; selected.ExpectedPatchVersion = snapshot.View.PatchVersion;
+                selected.SelectedLines = []; selected.SelectedHunks = [0];
+                Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, selected, default)).State);
+                Assert.Equal("Caller first ä\nCaller second 字\n", await File.ReadAllTextAsync(selectedPath));
+                using var afterSelection = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterSelection.User!.Value);
+                var workspace = await GitWorkspaceQuery.ReadAsync(root, default);
+                var createBranch = new Ai.Tlbx.MidTerm.Models.Git.GitOperationRequest
+                {
+                    Action = "branch-create", OperationId = Guid.NewGuid().ToString("D"), Branch = "caller-workspace",
+                    ExpectedHead = workspace.HeadHash, ExpectedBranch = workspace.CurrentBranch, ExpectedIndexVersion = workspace.IndexVersion
+                };
+                Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, createBranch, default)).State);
+                Assert.Equal("caller-workspace", (await GitWorkspaceQuery.ReadAsync(root, default)).CurrentBranch);
+                Assert.Contains(await GitCommandRunner.GetLogAsync(root, 20, 0, workspace.HeadHash), entry => entry.Hash == workspace.HeadHash);
+                using var afterWorkspace = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterWorkspace.User!.Value);
+
                 var create = Request("createFolder"); create.DestinationDirectory = root; create.Name = "destination";
                 Assert.True(Assert.Single((await service.ExecuteAsync(create, Accessible, [root], default)).Items).Success);
                 var duplicate = Assert.Single((await service.ExecuteAsync(Request("duplicate", source), Accessible, [root], default)).Items);

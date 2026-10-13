@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { clickControl, tapControl } from './ui-controls.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -51,6 +52,7 @@ try {
   const node = name => tree.locator('.tree-node').filter({ has: page.locator('.tree-name', { hasText: new RegExp('^' + name.replace('.', '\\.') + '$') }) });
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const toolbar = tree.locator('.file-selection-toolbar');
+  assert.equal(await tree.locator('input[type="checkbox"]').count(),0);
   const selected = async root => root.locator('[aria-selected="true"]').evaluateAll(rows => rows.map(row => row.dataset.path));
   await node('a.md').click(); await preview.locator('.file-document-mode[data-mode="edit"]').click(); const editor = preview.locator('textarea'); await editor.fill('# Selection draft\n');
   await node('b.md').click({ modifiers: ['Control'] });
@@ -61,18 +63,18 @@ try {
   assert.equal(await toolbar.locator('[data-selection-action="open"]').isDisabled(), true);
   result.cases.push('Modifier and range selection leave the active draft intact and disable ambiguous Open');
   await node('c.md').click({ modifiers: ['Meta'] });
-  await toolbar.locator('[data-selection-action="copyPaths"]').click();
+  await clickControl(toolbar.locator('[data-selection-action="copyPaths"]'));
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   assert.deepEqual(copied.split(/\r?\n/).sort(), ['b.md', 'd.md'].map(n => path.join(fixtures, n)).sort());
   result.cases.push('Copy paths uses exactly the toggled selection, including no active-preview file');
   await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new DOMException('Test denied clipboard permission', 'NotAllowedError'); } } }));
-  await toolbar.locator('[data-selection-action="copyPaths"]').click();
+  await clickControl(toolbar.locator('[data-selection-action="copyPaths"]'));
   await toolbar.getByText('Could not copy paths').waitFor();
   assert.equal((await selected(tree)).length, 2);
   await page.evaluate(() => { delete navigator.clipboard; });
   result.cases.push('Clipboard denial is visible and keeps the selected files intact');
   const downloads = []; page.on('download', download => downloads.push(download));
-  await toolbar.locator('[data-selection-action="download"]').click();
+  await clickControl(toolbar.locator('[data-selection-action="download"]'));
   for (let i = 0; i < 60 && downloads.length < 2; i++) await sleep(100);
   assert.equal(downloads.length, 2);
   assert.deepEqual(downloads.map(d => d.suggestedFilename()).sort(), ['b.md', 'd.md']);
@@ -88,12 +90,12 @@ try {
   await node('b.md').press(' '); await node('b.md').press('Enter');
   const dialog = page.locator('.file-unsaved-overlay'); await dialog.waitFor(); await dialog.locator('[data-file-decision="cancel"]').click();
   assert.equal(await editor.inputValue(), '# Selection draft\n');
-  await toolbar.locator('[data-selection-action="open"]').click(); await dialog.waitFor(); await dialog.locator('[data-file-decision="save"]').click();
+  await clickControl(toolbar.locator('[data-selection-action="open"]')); await dialog.waitFor(); await dialog.locator('[data-file-decision="save"]').click();
   await preview.locator('.file-document-mode[data-mode="edit"]').click();
   await page.waitForFunction(() => document.querySelector('.file-browser-preview textarea')?.value === '# Original b.md\n');
   assert.equal(fs.readFileSync(path.join(fixtures, 'a.md'), 'utf8'), '# Selection draft\n');
   result.cases.push('Explicit Enter/Open respects Cancel and writes the previous draft before changing the preview');
-  await node('c.md').locator('input').click();
+  await node('c.md').click({ modifiers: ['Control'] });
   const treeSelection = await selected(tree);
   await wrapper.locator('[data-browser-navigation="refresh"]').click();
   await page.waitForFunction(() => !document.querySelector('[data-browser-navigation="refresh"]')?.disabled);
@@ -113,7 +115,7 @@ try {
   await item('c.md').click({ modifiers: ['Shift'] });
   assert.deepEqual(await selected(list), ['a.md','b.md','c.md'].map(n => path.join(fixtures, n)));
   await item('b.md').click({ modifiers: ['Control'] });
-  await modal.locator('[data-selection-action="copyPaths"]').click();
+  await clickControl(modal.locator('[data-selection-action="copyPaths"]'));
   assert.deepEqual((await page.evaluate(() => navigator.clipboard.readText())).split(/\r?\n/).sort(), ['a.md','c.md'].map(n => path.join(fixtures, n)).sort());
   result.cases.push('Directory single click selects only; Shift/Ctrl and clipboard follow the same exact selection model');
   await item('Ünicode space.md').dblclick(); await modal.locator('.file-document-mode[data-mode="edit"]').click(); await modal.locator('textarea').waitFor();
@@ -121,16 +123,16 @@ try {
   await modal.locator('[data-file-navigation="back"]').click(); await item('Ünicode space.md').waitFor();
   assert.deepEqual(await selected(list), [path.join(fixtures, 'Ünicode space.md')]);
   result.cases.push('Double click opens Unicode/space paths and Back restores the selected directory row');
-  await item('a.md').click(); await item('c.md').locator('input').click();
+  await item('a.md').click(); await item('c.md').click({ modifiers: ['Control'] });
   await modal.locator('#file-viewer-dock-btn').click(); const dock = page.locator('#file-viewer-dock');
   assert.deepEqual(await selected(dock), ['a.md','c.md'].map(n => path.join(fixtures, n)));
-  result.cases.push('Checkbox selection remains separate from opening and survives the modal/dock transfer');
+  result.cases.push('Ctrl selection remains separate from opening and survives the modal/dock transfer without file checkboxes');
   await page.screenshot({ path: path.join(out, 'directory-selection-dock.png') });
   const dockRow = name => dock.locator('.file-list-item').filter({ has: page.locator('.file-name', { hasText: new RegExp('^' + name.replace('.', '\\.') + '$') }) });
   fs.unlinkSync(path.join(fixtures, 'c.md'));
   await dock.locator('#dock-refresh').click(); await dockRow('a.md').waitFor();
   assert.deepEqual(await selected(dock), [path.join(fixtures, 'a.md')]);
-  await dock.locator('[data-selection-action="copyPaths"]').click();
+  await clickControl(dock.locator('[data-selection-action="copyPaths"]'));
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), path.join(fixtures, 'a.md'));
   fs.writeFileSync(path.join(fixtures, 'c.md'), '# Original c.md\n');
   await dock.locator('#dock-refresh').click(); await dockRow('c.md').waitFor();
@@ -146,16 +148,17 @@ try {
   else { await page.locator('#btn-mobile-actions-menu').tap(); await page.locator('#btn-mobile-tab-files').tap(); }
   if (await wrapper.locator('.file-browser-back').isVisible()) await wrapper.locator('.file-browser-back').tap();
   await tree.waitFor();
-  await node('b.md').locator('input').tap(); // Toggle the previous b/c selection to just c.
-  await node('a.md').locator('input').tap();
+  await tapControl(toolbar.locator('[data-selection-action="selectMultiple"]'));
+  await node('b.md').tap(); // Toggle the previous b/c selection to just c.
+  await node('a.md').tap();
   assert.deepEqual((await selected(tree)).sort(), ['a.md','c.md'].map(n => path.join(fixtures, n)).sort());
   assert.equal(await preview.isVisible(), false);
-  await node('c.md').locator('input').tap();
-  await toolbar.locator('[data-selection-action="open"]').tap();
+  await node('c.md').tap();
+  await tapControl(toolbar.locator('[data-selection-action="open"]'));
   await preview.locator('.file-document-mode[data-mode="edit"]').tap();
   await editor.waitFor(); assert.equal(await editor.inputValue(), '# Selection draft\n');
   await wrapper.locator('.file-browser-back').tap();
-  await node('d.md').locator('input').tap();
+  await node('d.md').tap();
   assert.equal((await selected(tree)).length, 2);
   await page.screenshot({ path: path.join(out, 'touch-selection-390.png') });
   result.cases.push('390px touch toggles selection without hidden previews and explicitly opens the sole selected file');
