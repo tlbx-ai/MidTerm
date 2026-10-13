@@ -79,8 +79,8 @@ public sealed class GitOperationServiceTests : IDisposable
         var beta = Assert.Single(watcher.GetRepoBindings("beta")).Status!;
         Assert.Equal("Target A", alpha.Label); Assert.Equal("target", alpha.Role);
         Assert.Equal("Supervisor B", beta.Label); Assert.Equal("supervisor", beta.Role); Assert.NotSame(alpha, beta);
-        Assert.Equal("Target A", watcher.GetCachedStatus("alpha", _root)!.Label);
-        Assert.Equal("Supervisor B", watcher.GetCachedStatus("beta", _root)!.Label);
+        Assert.Equal("Target A", watcher.GetCachedStatus("alpha", alpha.RepoRoot)!.Label);
+        Assert.Equal("Supervisor B", watcher.GetCachedStatus("beta", beta.RepoRoot)!.Label);
         Assert.Equal("Target A", Assert.Single(watcher.GetRepoBindings("alpha")).Status!.Label);
         watcher.UnregisterSession("alpha"); watcher.UnregisterSession("beta");
         await watcher.WaitForSessionCleanupAsync("alpha"); await watcher.WaitForSessionCleanupAsync("beta");

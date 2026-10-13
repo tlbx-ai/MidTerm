@@ -174,7 +174,7 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
             previewContainer.dataset.selectedPath = selected.fullPath;
           }
           detailScroll = [];
-          browser.dataset.filePane = 'tree';
+          browser.dataset.filePane = selected && !selected.isDirectory ? 'detail' : 'tree';
         },
       });
       navigators.set(sessionId, navigation);
