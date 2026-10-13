@@ -1234,7 +1234,7 @@
   "fileBrowser.type": "Тип",
   "fileBrowser.size": "Размер",
   "fileBrowser.viewOptions": "Настройки вида",
-  "fileBrowser.filterPlaceholder": "Фильтр загруженных имён или типов",
+  "fileBrowser.filterPlaceholder": "Фильтр имён или типов…",
   "fileBrowser.filterFiles": "Фильтр загруженных файлов",
   "fileBrowser.sortBy": "Сортировать по",
   "fileBrowser.viewMode": "Вид",
@@ -1290,5 +1290,8 @@
   "git.repositoryUnbound": "Этот репозиторий больше не привязан или доступ запрещён.",
   "git.repositoryUnavailable": "Репозиторий или сеанс недоступен.",
   "git.offlineStatus": "Соединение Git потеряно. Подключитесь снова для обновления.",
-  "git.readFailed": "Не удалось прочитать состояние Git."
+  "git.readFailed": "Не удалось прочитать состояние Git.",
+  "fileBrowser.editAddress": "Изменить путь (Ctrl+L)",
+  "fileBrowser.locations": "Расположения",
+  "fileBrowser.openHint": "Двойной щелчок или Enter для открытия"
 }

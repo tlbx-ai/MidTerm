@@ -61,6 +61,6 @@ describe('file listing presentation', () => {
     const first = getListingView('test-context-one', false);
     first.query = 'changed';
     expect(getListingView('test-context-one', false).query).toBe('pdf');
-    expect(getListingView('test-context-two', true).mode).toBe('tree');
+    expect(getListingView('test-context-two', true).mode).toBe('details');
   });
 });

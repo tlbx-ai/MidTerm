@@ -50,6 +50,10 @@ try {
   const wrapper = page.locator(`.session-wrapper[data-session-id="${session}"]`);
   const files = wrapper.locator('.session-tab[data-tab="files"]'), terminal = wrapper.locator('.session-tab[data-tab="terminal"]');
   await files.click();
+  const viewOptions = wrapper.locator('.file-listing-options');
+  await viewOptions.locator('summary').click();
+  await viewOptions.locator('[data-mode="tree"]').click();
+  await page.keyboard.press('Escape');
   const nav = wrapper.locator('.file-browser-navigation'), address = nav.locator('.file-browser-address-form input');
   const tree = wrapper.locator('.file-browser-tree'), preview = wrapper.locator('.file-browser-preview');
   const dialog = page.locator('.file-unsaved-overlay'), editor = preview.locator('textarea');
@@ -57,7 +61,10 @@ try {
     const nav = document.querySelector(`.session-wrapper[data-session-id="${id}"] .file-browser-navigation`);
     return nav?.getAttribute('aria-busy') === 'false' && nav.querySelector('input').value === target;
   }, { id: session, target });
-  const go = async target => { await address.fill(target); await address.press('Enter'); };
+  const go = async target => {
+    if (!(await address.isVisible())) await nav.locator('.file-browser-edit-address').click();
+    await address.fill(target); await address.press('Enter');
+  };
   const choose = async name => tree.locator('.tree-node').filter({ has: page.locator('.tree-name', { hasText: new RegExp('^' + name.replace('.', '\\.') + '$') }) }).click();
   await waitPath(fixtures); await tree.locator('.tree-node').first().waitFor();
   await choose('root-050.txt');
@@ -118,7 +125,7 @@ try {
   await terminal.click(); await wrapper.locator('.xterm-screen').click();
   await page.keyboard.type(`Set-Location -LiteralPath '${a.replaceAll("'", "''")}'`); await page.keyboard.press('Enter');
   await files.click();
-  await page.waitForFunction(({ id, target }) => document.querySelector(`.session-wrapper[data-session-id="${id}"] [data-browser-navigation="cwd"]`)?.title === target, { id: session, target: a });
+  await page.waitForFunction(({ id, target }) => document.querySelector(`.session-wrapper[data-session-id="${id}"] [data-browser-navigation="cwd"]`)?.title.endsWith(target), { id: session, target: a });
   assert.equal(await address.inputValue(), b); assert.equal(await editor.inputValue(), '# Retained while CWD changes\n');
   await nav.locator('[data-browser-navigation="cwd"]').click(); await dialog.waitFor(); await dialog.locator('[data-file-decision="cancel"]').click();
   assert.equal(await address.inputValue(), b); assert.equal(await editor.inputValue(), '# Retained while CWD changes\n');

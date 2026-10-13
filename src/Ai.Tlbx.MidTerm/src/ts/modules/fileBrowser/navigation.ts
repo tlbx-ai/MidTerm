@@ -4,12 +4,32 @@ import { FileNavigationHistory } from '../fileViewer/navigationHistory';
 import { fetchTree, type FileTreeEntry, type FileTreeResponse } from './treeApi';
 import { beginFileOpen, isFileOpenCurrent, type FileOpenRequest } from '../fileViewer/loadState';
 import { createFileVisibilityControls, getFileVisibility } from '../fileViewer/visibility';
+import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 
 interface BrowserNavigationActions {
+  returnToFiles: () => void;
   confirm: () => Promise<boolean>;
   apply: (path: string, data: FileTreeResponse) => void;
   file: (entry: FileTreeEntry) => Promise<boolean>;
   refilter: (path: string, data: FileTreeResponse, signal: AbortSignal) => Promise<void>;
+}
+
+function navigationShortcut(event: KeyboardEvent): string | null {
+  const key = event.key.toLowerCase();
+  if (event.altKey && !event.ctrlKey && !event.metaKey)
+    return { arrowleft: 'back', arrowright: 'forward', arrowup: 'up' }[key] ?? null;
+  if (event.metaKey && !event.ctrlKey && !event.altKey)
+    return { '[': 'back', ']': 'forward', arrowup: 'up' }[key] ?? null;
+  return null;
+}
+
+function isAddressShortcut(event: KeyboardEvent): boolean {
+  const key = event.key.toLowerCase();
+  return (
+    ((event.ctrlKey || event.metaKey) && key === 'l') ||
+    (event.altKey && key === 'd') ||
+    (event.metaKey && event.shiftKey && key === 'g')
+  );
 }
 
 /** Per-session address/history UI. The server defines hierarchy and authorized roots. */
@@ -19,6 +39,9 @@ export class BrowserNavigation {
   private readonly roots = document.createElement('select');
   private readonly breadcrumbs = document.createElement('div');
   private readonly error = document.createElement('div');
+  private readonly addressForm = document.createElement('form');
+  private readonly eventsController = new AbortController();
+  private releaseBackLayer: (() => void) | null = null;
   private readonly history = new FileNavigationHistory();
   private readonly buttons = new Map<string, HTMLButtonElement>();
   private metadata: FileNavigation | null = null;
@@ -62,14 +85,14 @@ export class BrowserNavigation {
             : `fileViewer.${action}`,
       );
       button.setAttribute('aria-label', button.title);
-      const symbols: Record<string, string> = {
-        back: '←',
-        forward: '→',
-        up: '↑',
-        cwd: '⌂',
-        refresh: '↻',
+      const paths: Record<string, string> = {
+        back: 'M19 12H5m7-7-7 7 7 7',
+        forward: 'M5 12h14m-7-7 7 7-7 7',
+        up: 'M12 19V5m-7 7 7-7 7 7',
+        cwd: 'm3 10 9-7 9 7v10H3Z M9 20v-7h6v7',
+        refresh: 'M20 7v5h-5m5 0a8 8 0 1 0-2 6',
       };
-      button.textContent = symbols[action] ?? '';
+      button.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[action] ?? ''}"/></svg>`;
       button.addEventListener('click', () => {
         if (action === 'refresh') void this.refresh();
         else void this.navigateAction(action);
@@ -81,8 +104,7 @@ export class BrowserNavigation {
     this.roots.addEventListener('change', () => {
       void this.navigate(this.roots.value);
     });
-    actionsRow.appendChild(this.roots);
-    const form = document.createElement('form');
+    const form = this.addressForm;
     form.className = 'file-browser-address-form';
     this.address.type = 'text';
     this.address.spellcheck = false;
@@ -91,9 +113,13 @@ export class BrowserNavigation {
     this.address.addEventListener('keydown', (event) => {
       event.stopPropagation();
       if (event.key === 'Escape') {
-        this.address.value = this.metadata?.path ?? '';
-        this.address.blur();
+        event.preventDefault();
+        this.restoreAddress();
+        this.stopEditingAddress();
       }
+    });
+    this.address.addEventListener('blur', () => {
+      if (this.address.value === this.metadata?.path) this.stopEditingAddress();
     });
     const go = document.createElement('button');
     go.type = 'submit';
@@ -109,18 +135,44 @@ export class BrowserNavigation {
     this.error.className = 'file-browser-navigation-error';
     this.error.setAttribute('role', 'alert');
     this.error.hidden = true;
-    actionsRow.insertBefore(form, this.roots);
+    const location = document.createElement('div');
+    location.className = 'file-browser-location';
+    location.title = t('fileBrowser.editAddress');
+    const editAddress = document.createElement('button');
+    editAddress.type = 'button';
+    editAddress.className = 'file-browser-edit-address';
+    editAddress.textContent = '/';
+    editAddress.title = t('fileBrowser.editAddress');
+    editAddress.setAttribute('aria-label', editAddress.title);
+    editAddress.addEventListener('click', () => {
+      this.editAddress();
+    });
+    location.addEventListener('click', (event) => {
+      if (event.target === location || event.target === this.breadcrumbs) this.editAddress();
+    });
+    location.append(this.breadcrumbs, form, editAddress);
+    this.roots.className = 'file-browser-roots';
+    actionsRow.insertBefore(this.roots, this.buttons.get('cwd') ?? null);
+    actionsRow.insertBefore(location, this.buttons.get('refresh') ?? null);
     const visibilityMenu = document.createElement('details');
     visibilityMenu.className = 'file-visibility-menu';
     const visibilitySummary = document.createElement('summary');
-    visibilitySummary.textContent = '◉';
+    visibilitySummary.innerHTML =
+      '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
     visibilitySummary.title = t('fileBrowser.visibilityOptions');
     visibilitySummary.setAttribute('aria-label', visibilitySummary.title);
     visibilityMenu.append(visibilitySummary, this.visibility.root);
-    const location = document.createElement('div');
-    location.className = 'file-browser-location-row';
-    location.append(this.breadcrumbs, visibilityMenu);
-    this.root.append(actionsRow, location, this.error);
+    actionsRow.append(visibilityMenu);
+    this.root.append(actionsRow, this.error);
+    document.addEventListener(
+      'keydown',
+      (event) => {
+        this.keydown(event);
+      },
+      {
+        signal: this.eventsController.signal,
+      },
+    );
     this.syncControls();
   }
 
@@ -136,11 +188,19 @@ export class BrowserNavigation {
     this.controller?.abort();
     this.visibility.dispose();
     this.setActive(false);
+    this.eventsController.abort();
   }
 
   public setActive(active: boolean): void {
     if (active === this.active && this.events) return;
     this.active = active;
+    this.releaseBackLayer?.();
+    this.releaseBackLayer = active
+      ? registerBackButtonLayer(() => {
+          if (this.history.canBack) void this.navigateAction('back');
+          else this.actions.returnToFiles();
+        })
+      : null;
     if (!active) {
       this.refreshController?.abort();
       this.events?.close();
@@ -339,30 +399,64 @@ export class BrowserNavigation {
     this.roots.value = this.metadata?.path ?? '';
   }
 
+  private editAddress(): void {
+    this.root.dataset.editingAddress = 'true';
+    this.address.value = this.metadata?.path ?? '';
+    this.address.focus();
+    this.address.select();
+  }
+
+  private stopEditingAddress(): void {
+    this.root.dataset.editingAddress = 'false';
+    this.root.querySelector<HTMLButtonElement>('.file-browser-edit-address')?.focus();
+  }
+
+  private keydown(event: KeyboardEvent): void {
+    if (
+      !this.active ||
+      event.defaultPrevented ||
+      event.isComposing ||
+      document.querySelector('.modal-overlay, .file-unsaved-overlay, .modal:not(.hidden)')
+    )
+      return;
+    const key = event.key.toLowerCase();
+    const editing =
+      event.target instanceof HTMLElement &&
+      !!event.target.closest('textarea, input, [contenteditable="true"]');
+    const action = navigationShortcut(event);
+    if (action && !editing) {
+      event.preventDefault();
+      void this.navigateAction(action);
+    } else if (isAddressShortcut(event)) {
+      event.preventDefault();
+      this.editAddress();
+    } else if (key === 'f5' && this.root.parentElement?.contains(document.activeElement)) {
+      event.preventDefault();
+      void this.refresh();
+    }
+  }
+
   private renderLocation(preserveAddress = false): void {
     if (!this.metadata) return;
     if (!preserveAddress) this.restoreAddress();
+    if (!preserveAddress) this.root.dataset.editingAddress = 'false';
     this.roots.replaceChildren();
     const location = document.createElement('option');
     location.value = this.metadata.path;
-    location.textContent =
-      this.metadata.roots.find((root) => root.path === this.metadata?.path)?.name ??
-      this.metadata.breadcrumbs[this.metadata.breadcrumbs.length - 1]?.name ??
-      this.metadata.path;
-    this.roots.title = this.metadata.path;
+    location.textContent = t('fileBrowser.locations');
+    this.roots.title = t('fileBrowser.availableRoots');
     this.roots.appendChild(location);
     for (const root of this.metadata.roots) {
-      if (root.path === this.metadata.path) continue;
       const option = document.createElement('option');
       option.value = root.path;
       option.textContent = `${root.name} — ${root.path}`;
       this.roots.appendChild(option);
     }
     this.breadcrumbs.replaceChildren();
-    for (const location of this.metadata.breadcrumbs) {
+    for (const [index, location] of this.metadata.breadcrumbs.entries()) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.textContent = location.name;
+      button.textContent = index === 0 ? location.path : location.name;
       button.title = location.path;
       button.dataset.breadcrumbPath = location.path;
       button.addEventListener('click', () => {
@@ -371,6 +465,10 @@ export class BrowserNavigation {
       if (location.path === this.metadata.path) button.setAttribute('aria-current', 'location');
       this.breadcrumbs.appendChild(button);
     }
+    this.breadcrumbs.title = this.metadata.path;
+    requestAnimationFrame(() => {
+      this.breadcrumbs.scrollLeft = this.breadcrumbs.scrollWidth;
+    });
   }
 
   private syncControls(): void {
@@ -384,6 +482,20 @@ export class BrowserNavigation {
     for (const [action, button] of this.buttons)
       button.disabled = !enabled[action as keyof typeof enabled];
     const cwdButton = this.buttons.get('cwd');
-    if (cwdButton) cwdButton.title = this.cwd ?? '';
+    if (cwdButton) {
+      cwdButton.hidden = !enabled.cwd;
+      cwdButton.title = `${t('fileBrowser.toCwd')}: ${this.cwd ?? ''}`;
+    }
+    for (const action of ['back', 'forward', 'up']) {
+      const button = this.buttons.get(action);
+      if (!button) continue;
+      const path =
+        action === 'back'
+          ? this.history.backPath
+          : action === 'forward'
+            ? this.history.forwardPath
+            : this.metadata?.parentPath;
+      button.title = `${t(`fileViewer.${action}`)}${path ? `: ${path}` : ''}`;
+    }
   }
 }

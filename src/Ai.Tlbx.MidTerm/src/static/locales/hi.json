@@ -1234,7 +1234,7 @@
   "fileBrowser.type": "प्रकार",
   "fileBrowser.size": "आकार",
   "fileBrowser.viewOptions": "फ़ाइल दृश्य विकल्प",
-  "fileBrowser.filterPlaceholder": "लोड किए गए नाम या प्रकार छाँटें",
+  "fileBrowser.filterPlaceholder": "नाम या प्रकार छाँटें…",
   "fileBrowser.filterFiles": "लोड की गई फ़ाइलें छाँटें",
   "fileBrowser.sortBy": "इसके अनुसार क्रमबद्ध करें",
   "fileBrowser.viewMode": "दृश्य",
@@ -1290,5 +1290,8 @@
   "git.repositoryUnbound": "यह रिपॉज़िटरी अब जुड़ी नहीं है या पहुँच अस्वीकृत है।",
   "git.repositoryUnavailable": "रिपॉज़िटरी या सत्र उपलब्ध नहीं है।",
   "git.offlineStatus": "Git कनेक्शन टूट गया। अपडेट के लिए फिर जुड़ें।",
-  "git.readFailed": "Git स्थिति पढ़ी नहीं जा सकी।"
+  "git.readFailed": "Git स्थिति पढ़ी नहीं जा सकी।",
+  "fileBrowser.editAddress": "पथ संपादित करें (Ctrl+L)",
+  "fileBrowser.locations": "स्थान",
+  "fileBrowser.openHint": "खोलने के लिए डबल-क्लिक या Enter"
 }

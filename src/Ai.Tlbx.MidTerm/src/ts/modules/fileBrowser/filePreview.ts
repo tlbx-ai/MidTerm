@@ -141,9 +141,36 @@ function appendPreviewFileActions(
     });
   });
 
-  actions.appendChild(copyBtn);
-  actions.appendChild(downloadBtn);
-  actions.appendChild(pathDetailsButton(() => [entry.fullPath]));
+  const menu = document.createElement('details');
+  menu.className = 'file-preview-actions-menu';
+  const summary = document.createElement('summary');
+  summary.textContent = '⋯';
+  summary.title = t('fileBrowser.actions');
+  summary.setAttribute('aria-label', summary.title);
+  const items = document.createElement('div');
+  for (const [button, label] of [
+    [copyBtn, t('trust.copy')],
+    [downloadBtn, t('fileViewer.download')],
+  ] as const) {
+    button.classList.remove('btn-icon');
+    button.append(document.createTextNode(label));
+    items.append(button);
+  }
+  const details = pathDetailsButton(() => [entry.fullPath]);
+  items.append(details);
+  // Close and focus the menu before a button opens a dialog, so the dialog owns focus.
+  items.addEventListener(
+    'click',
+    (event) => {
+      if (event.target instanceof HTMLElement && event.target.closest('button')) {
+        menu.open = false;
+        summary.focus();
+      }
+    },
+    true,
+  );
+  menu.append(summary, items);
+  actions.append(menu);
 }
 
 export function renderPreview(

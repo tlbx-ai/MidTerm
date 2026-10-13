@@ -81,7 +81,7 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
       const back = document.createElement('button');
       back.type = 'button';
       back.className = 'file-browser-back';
-      back.textContent = '←';
+      back.innerHTML = `<span class="file-preview-close-desktop" aria-hidden="true">×</span><span class="file-preview-close-mobile">← ${t('sessionTabs.files')}</span>`;
       back.title = t('fileBrowser.backToFiles');
       back.setAttribute('aria-label', back.title);
       back.addEventListener('click', () => {
@@ -93,6 +93,18 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
         const selected = treeContainer.querySelector<HTMLElement>('.tree-node.selected');
         if (selected) selected.tabIndex = 0;
         selected?.focus({ preventScroll: true });
+      });
+      browser.addEventListener('keydown', (event) => {
+        if (
+          event.key === 'Escape' &&
+          browser.dataset.filePane === 'detail' &&
+          !event.defaultPrevented &&
+          !document.querySelector('.modal-overlay, .file-unsaved-overlay') &&
+          !browser.querySelector('details[open]')
+        ) {
+          event.preventDefault();
+          back.click();
+        }
       });
       detail.insertBefore(back, previewContainer);
     }
@@ -157,6 +169,8 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
     if (browser) {
       browser.dataset.filePane = 'tree';
       const navigation = new BrowserNavigation(sessionId, {
+        returnToFiles: () =>
+          browser.querySelector<HTMLButtonElement>('.file-browser-back')?.click(),
         refilter: (path, data, signal) => applyTreeVisibility(sessionId, path, data, signal),
         confirm: () => confirmFileNavigation(previewContainer),
         file: async (entry) => {
@@ -209,14 +223,12 @@ function setupTreeResize(panel: HTMLElement, tree: HTMLElement, sessionId: strin
       panel: tree,
       grip,
       key: `tlbx-file-tree-width:${sessionId}`,
-      defaultWidth: 280,
+      defaultWidth: Math.max(360, Math.round(layout.clientWidth * 0.44)),
+      responsiveDefault: () => Math.round(layout.clientWidth * 0.44),
       direction: 1,
       bounds: () => ({
-        min: 220,
-        max: Math.max(
-          220,
-          Math.min(900, layout.clientWidth - 260 - (parseFloat(getComputedStyle(grip).width) || 8)),
-        ),
+        min: 320,
+        max: Math.max(320, Math.min(900, layout.clientWidth - 420)),
         enabled: layout.clientWidth > 768,
       }),
       observe: [layout, tree],

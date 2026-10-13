@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { revealControl } from './ui-controls.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -137,6 +138,7 @@ try {
     const downloadButton = preview.locator('.preview-toolbar-actions button').filter({ has: page.locator('.icon-download') });
     // Download action is identified by the existing localized title if the SVG has no CSS icon class.
     const downloadAction = (await downloadButton.count()) ? downloadButton : preview.locator('.preview-toolbar-actions button[title="Download"]');
+    await revealControl(downloadAction);
     const [download] = await Promise.all([page.waitForEvent('download'), downloadAction.tap()]);
     const target = path.join(out, `download-${width}.png`); await download.saveAs(target);
     assert.deepEqual(fs.readFileSync(target), fs.readFileSync(path.join(fixtures, 'C.png')));

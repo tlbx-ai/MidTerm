@@ -1234,7 +1234,7 @@
   "fileBrowser.type": "ধরন",
   "fileBrowser.size": "আকার",
   "fileBrowser.viewOptions": "ফাইল দেখার বিকল্প",
-  "fileBrowser.filterPlaceholder": "লোড করা নাম বা ধরন ছাঁকুন",
+  "fileBrowser.filterPlaceholder": "নাম বা ধরন ছাঁকুন…",
   "fileBrowser.filterFiles": "লোড করা ফাইল ছাঁকুন",
   "fileBrowser.sortBy": "সাজানোর ভিত্তি",
   "fileBrowser.viewMode": "দৃশ্য",
@@ -1290,5 +1290,8 @@
   "git.repositoryUnbound": "এই রিপোজিটরি আর সংযুক্ত নেই বা প্রবেশাধিকার নেই।",
   "git.repositoryUnavailable": "রিপোজিটরি বা সেশন পাওয়া যাচ্ছে না।",
   "git.offlineStatus": "Git সংযোগ হারিয়েছে। আপডেট করতে পুনরায় সংযোগ করুন।",
-  "git.readFailed": "Git-এর অবস্থা পড়া যায়নি।"
+  "git.readFailed": "Git-এর অবস্থা পড়া যায়নি।",
+  "fileBrowser.editAddress": "পথ সম্পাদনা (Ctrl+L)",
+  "fileBrowser.locations": "অবস্থান",
+  "fileBrowser.openHint": "খুলতে ডাবল-ক্লিক বা Enter"
 }
