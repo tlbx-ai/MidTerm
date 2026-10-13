@@ -16,7 +16,7 @@ import type {
   GitStatusReadResult,
   GitOperationResponse,
 } from './types';
-import type { Session } from '../../types';
+
 import {
   fetchCommitDetails,
   fetchDiffView,
@@ -36,6 +36,7 @@ import { pasteToTerminal } from '../terminal';
 import { escapeHtml } from '../../utils';
 import { renderPatchFile } from './gitDiffView';
 import { renderPanelFill, renderSummary } from './gitPanelSummary';
+import { openGitWorkspace } from './gitWorkspace';
 import { renderGitFileTree } from './gitFileTree';
 import {
   createGitFileUi,
@@ -69,8 +70,9 @@ import { syncGitPanelDom } from './gitPanelDom';
 import { showPathDetails, repositoryFilePath } from '../fileViewer/pathDetails';
 import { fileStatusPresentation } from './fileStatus';
 import { writeTextToClipboard } from '../fileViewer/shared';
-import { sessionTerminals } from '../../state';
-import { addProcessStateListener, getProcessState } from '../process';
+
+import { addProcessStateListener } from '../process';
+import { renderCommandSuggestions, canInsertCommand } from './gitCommandSuggestions';
 import {
   createGitOperationsUi,
   buildGitMutationRequest,
@@ -763,60 +765,6 @@ function renderCommitInspector(
   return html;
 }
 
-function renderCommandSuggestions(
-  suggestions: Array<{ label: string; command: string }>,
-  sessionId: string,
-): string {
-  if (suggestions.length === 0)
-    return `<p class="git-panel-hint">${t('git.commandShellUnsupported')}</p>`;
-  const insertAllowed = canInsertCommand(sessionId);
-  return `<section class="git-command-section">
-    <div class="git-command-section-title">Suggested terminal commands</div>
-    <div class="git-command-list">
-      ${suggestions
-        .map(
-          (suggestion) => `<div class="git-command-row">
-            <div class="git-command-copy">
-              <div class="git-command-label">${escapeHtml(suggestion.label)}</div>
-              <code class="git-command-text">${escapeHtml(suggestion.command)}</code>
-            </div>
-            <div class="git-command-actions">
-              <button class="git-action-button" data-action="copy-command" data-command="${escapeHtml(suggestion.command)}" title="${t('git.copyCommand')}" type="button">${t('git.copy')}</button>
-              <button class="git-action-button" data-action="insert-command" data-command="${escapeHtml(suggestion.command)}" title="${t(insertAllowed ? 'git.insertHint' : 'git.insertShellOnly')}"${insertAllowed ? '' : ' disabled'} type="button">${t('git.insert')}</button>
-            </div>
-            <div class="git-action-status" role="status" aria-live="polite"></div>
-          </div>`,
-        )
-        .join('')}
-    </div>
-  </section>`;
-}
-
-function canInsertCommand(sessionId: string): boolean {
-  const session = $sessions.get()[sessionId];
-  if (
-    !session ||
-    !session.isRunning ||
-    session.appServerControlOnly ||
-    !sessionTerminals.has(sessionId)
-  )
-    return false;
-  return isSessionShellForeground(sessionId, session);
-}
-
-function isSessionShellForeground(sessionId: string, session: Session): boolean {
-  const process = getProcessState(sessionId);
-  const foreground = process.foregroundName ?? session.foregroundName;
-  const foregroundPid = process.foregroundPid ?? session.foregroundPid;
-  const name = foreground?.replace(/\.exe$/i, '').toLowerCase();
-  const shell = session.shellType;
-  const expected = shell === 'Pwsh' ? 'pwsh' : shell.toLowerCase();
-  return (
-    (foregroundPid == null && name === undefined) ||
-    (foregroundPid === session.pid && (name === 'shell' || name === expected))
-  );
-}
-
 function renderInspectorFill(message: string): string {
   return `<div class="git-inspector-empty"><p>${escapeHtml(message)}</p></div>`;
 }
@@ -907,6 +855,19 @@ function handleContentAction(
   element: HTMLElement,
   event: MouseEvent,
 ): boolean {
+  if (element.dataset.action === 'git-workspace' || element.dataset.action === 'resolve-conflict') {
+    if (!state.status || isGitOperationBusy(state)) return true;
+    void openGitWorkspace(
+      state.sessionId,
+      state.status.repoRoot,
+      async (request) => {
+        if (activePanels.get(state.container) !== state || isGitOperationBusy(state)) return null;
+        return await performMutation(state, request);
+      },
+      element.dataset.action === 'resolve-conflict' ? element.dataset.path : undefined,
+    );
+    return true;
+  }
   if (element.dataset.action === 'retry-git-status') {
     void refreshPanelRead(state);
     return true;
@@ -1054,7 +1015,10 @@ function applyDiffSelection(state: GitPanelState, hunk?: number): void {
   );
 }
 
-async function performMutation(state: GitPanelState, request: GitOperationRequest): Promise<void> {
+async function performMutation(
+  state: GitPanelState,
+  request: GitOperationRequest,
+): Promise<GitOperationResponse | null> {
   const pending = executeGitOperation(state.operations, request);
   delete state.inspectorSelection;
   renderPanel(state);
@@ -1066,6 +1030,7 @@ async function performMutation(state: GitPanelState, request: GitOperationReques
   renderPanel(state);
   if (result?.state === 'completed' && state.selection?.kind === 'file')
     await openFileSelection(state, state.selection, true);
+  return result;
 }
 
 function acceptMutationStatus(
@@ -1074,6 +1039,7 @@ function acceptMutationStatus(
   result: GitOperationResponse,
 ): void {
   if (result.status) {
+    if (result.status.conflicted.length > 0) state.expandedSections.add('conflicts');
     state.read.sequence++;
     state.status = acceptGitRead(state.read, { ok: true, status: result.status }, state.status);
     if (state.status) pruneGitFileSelection(state.fileUi, state.status);

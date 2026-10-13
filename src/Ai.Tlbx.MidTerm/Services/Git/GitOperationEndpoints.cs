@@ -11,6 +11,18 @@ internal static class GitOperationEndpoints
     {
         var operations = new GitOperationService();
         var settings = app.Services.GetRequiredService<SettingsService>();
+        app.MapGet("/api/git/workspace", async Task<IResult> (string sessionId, string repoRoot, HttpContext context, CancellationToken ct) =>
+            await RespondAsync(context, sessionId, repoRoot, sessions, settings, async () =>
+            {
+                var root = await ResolveAsync(sessionId, repoRoot, metadata, watcher, ct).ConfigureAwait(false);
+                return Results.Json(await GitWorkspaceQuery.ReadAsync(root, ct).ConfigureAwait(false), GitJsonContext.Default.GitWorkspaceResponse);
+            }).ConfigureAwait(false));
+        app.MapGet("/api/git/conflict", async Task<IResult> (string sessionId, string repoRoot, string path, HttpContext context, CancellationToken ct) =>
+            await RespondAsync(context, sessionId, repoRoot, sessions, settings, async () =>
+            {
+                var root = await ResolveAsync(sessionId, repoRoot, metadata, watcher, ct).ConfigureAwait(false);
+                return Results.Json(await GitWorkspaceQuery.ReadConflictAsync(root, path, ct).ConfigureAwait(false), GitJsonContext.Default.GitConflictView);
+            }).ConfigureAwait(false));
         app.MapPost("/api/git/operations", async Task<IResult> (GitOperationRequest request, HttpContext context, CancellationToken ct) =>
         {
             return await RespondAsync(context, request.SessionId, request.RepoRoot, sessions, settings, async () =>

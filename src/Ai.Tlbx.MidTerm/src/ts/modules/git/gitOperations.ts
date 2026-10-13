@@ -135,8 +135,11 @@ export async function executeGitOperation(
       if (request.action === 'commit') {
         setGitCommitMessage(state, '');
         state.confirmed = `${t('git.commitCreated')}: ${result.commitHash ?? ''}`;
-      } else
-        state.confirmed = t(request.action.startsWith('stage') ? 'git.staged' : 'git.unstaged');
+      } else if (request.action === 'stage' || request.action === 'stage-selection')
+        state.confirmed = t('git.staged');
+      else if (request.action === 'unstage' || request.action === 'unstage-selection')
+        state.confirmed = t('git.unstaged');
+      else state.confirmed = t('git.operationCompleted');
       state.pending = null;
     }
     return result;

@@ -1352,6 +1352,17 @@ Remotes/Fehlern, Stashverwaltung und echte Konfliktauflösung einschließlich Ab
 **Abnahme:** Isolierte lokale Bare-Remotes/Clones, Divergenz/Authfehler/Dirtybranch,
 Stashkonflikt und Mergeconflict. Kein Forcepush/Reset als versteckter Normalpfad.
 
+**Lokale Umsetzung/Abnahme 13.10.2026:** Native Operationen mit Repository-/Branch-/
+HEAD-/Indexprüfung und dauerhaften Receipts; Branchkopf öffnet kontextuelle Aktionen.
+Explizite Remotes/Zielbranches, Fast-forward-Pull, Stash mit Index/untracked,
+versionierte Konfliktauflösung einschließlich gelöschter Seiten und Mergeabschluss.
+9 neue echte Gitprüfungen bestehen, zusätzlich 38 Operations-/Read-/Partialregressionen
+mit einem Plattformskip; 709 Frontendtests und Typecheck/Lints bestehen. 5 echte
+Browserabläufe bestehen einschließlich lokaler Bare-Remote, Stashbestätigung,
+Konfliktpreview/-auflösung, Zwei-Parent-Abschluss und 390px/Fokus. 0 Terminalinputs/
+Browserfehler. Evidenz `git-task-40-{native,browser-second,frontend-final.log}`.
+Windows-/Linux-/macOS- und LocalSystem-CI noch ausstehend; Aufgabe bleibt offen.
+
 ### 41. [ ] Clean-Zustand kompakt halten und Verlauf nutzbar machen
 
 **Befund (mittel, reproduziert):** Working tree clean füllt große Fläche;

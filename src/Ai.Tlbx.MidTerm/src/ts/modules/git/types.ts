@@ -36,15 +36,23 @@ export interface GitOperationRequest {
   sessionId: string;
   repoRoot: string;
   operationId: string;
-  action: 'stage' | 'unstage' | 'commit' | 'stage-selection' | 'unstage-selection';
+  action:
+    'stage' | 'unstage' | 'commit' | 'stage-selection' | 'unstage-selection' | GitWorkspaceAction;
   paths: string[];
   all: boolean;
   message?: string;
   expectedIndexVersion?: string;
   expectedHead?: string;
+  expectedBranch?: string;
   expectedPatchVersion?: string;
   selectedHunks?: number[];
   selectedLines?: Array<{ hunk: number; line: number }>;
+  branch?: string;
+  remote?: string;
+  remoteBranch?: string;
+  stashHash?: string;
+  resolution?: string;
+  expectedFileVersion?: string;
 }
 
 export interface GitOperationResponse {
@@ -56,6 +64,50 @@ export interface GitOperationResponse {
   detail?: string | null;
   commitHash?: string | null;
   status?: GitStatusResponse | null;
+  workspace?: GitWorkspaceResponse | null;
+}
+
+export type GitWorkspaceAction =
+  | 'branch-switch'
+  | 'branch-create'
+  | 'fetch'
+  | 'pull'
+  | 'push'
+  | 'merge'
+  | 'merge-abort'
+  | 'stash-create'
+  | 'stash-apply'
+  | 'stash-pop'
+  | 'stash-drop'
+  | 'resolve-conflict';
+export interface GitWorkspaceResponse {
+  repoRoot: string;
+  currentBranch: string;
+  headHash: string;
+  indexVersion: string;
+  branches: Array<{
+    name: string;
+    ref: string;
+    hash: string;
+    isCurrent: boolean;
+    isRemote: boolean;
+  }>;
+  remotes: Array<{ name: string }>;
+  stashes: Array<{ ref: string; hash: string; message: string; date: string }>;
+  mergeInProgress: boolean;
+  mergeMessage: string;
+}
+export interface GitConflictView {
+  path: string;
+  contentVersion: string;
+  isBinary: boolean;
+  hasMarkers: boolean;
+  hasOurs: boolean;
+  hasTheirs: boolean;
+  isTruncated: boolean;
+  base: string;
+  ours: string;
+  theirs: string;
 }
 
 export interface GitRepoBinding {

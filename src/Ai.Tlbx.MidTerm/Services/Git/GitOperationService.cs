@@ -42,7 +42,9 @@ internal sealed class GitOperationService
             Directory.CreateDirectory(folder);
             var receipt = new GitOperationReceipt { Fingerprint = fingerprint, Result = new() { OperationId = request.OperationId, RepoRoot = repoRoot, Action = request.Action, State = "running" } };
             await SaveReceiptAsync(receiptPath, receipt).ConfigureAwait(false);
-            try { receipt.Result = await ExecuteLockedIndexAsync(info, request, ct).ConfigureAwait(false); }
+            try { receipt.Result = GitWorkspaceOperations.Handles(request.Action)
+                ? await GitWorkspaceOperations.ExecuteAsync(info, request, ct).ConfigureAwait(false)
+                : await ExecuteLockedIndexAsync(info, request, ct).ConfigureAwait(false); }
             catch (GitOperationException error) { receipt.Result.State = "error"; receipt.Result.StatusCode = error.StatusCode; receipt.Result.ErrorCode = error.Code; receipt.Result.Detail = error.Message; }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException)
             { receipt.Result.State = "error"; receipt.Result.StatusCode = error is UnauthorizedAccessException ? 403 : 409; receipt.Result.ErrorCode = error is UnauthorizedAccessException ? "permission_denied" : "git_io_error"; receipt.Result.Detail = error.Message; }
@@ -57,7 +59,13 @@ internal sealed class GitOperationService
     {
         if (request.Paths is null) throw new GitOperationException(400, "invalid_paths", "Paths must be an array.");
         if (!Guid.TryParseExact(request.OperationId, "D", out _)) throw new GitOperationException(400, "invalid_operation", "A unique operation ID is required.");
-        if (request.Action is not ("stage" or "unstage" or "commit" or "stage-selection" or "unstage-selection")) throw new GitOperationException(400, "invalid_action", "Unsupported Git operation.");
+        var workspace = GitWorkspaceOperations.Handles(request.Action);
+        if (!workspace && request.Action is not ("stage" or "unstage" or "commit" or "stage-selection" or "unstage-selection")) throw new GitOperationException(400, "invalid_action", "Unsupported Git operation.");
+        if (workspace && (request.ExpectedHead is null || request.ExpectedBranch is null || string.IsNullOrEmpty(request.ExpectedIndexVersion)))
+            throw new GitOperationException(400, "review_required", "Refresh the repository before this operation.");
+        if (request.Action == "resolve-conflict" && (request.Paths.Length != 1 || string.IsNullOrEmpty(request.ExpectedFileVersion)))
+            throw new GitOperationException(400, "review_required", "Review one conflicted file before resolving it.");
+        if (request.Message?.Length > 65536) throw new GitOperationException(400, "message_too_long", "Enter a message of at most 65536 characters.");
         if (request.Action is "stage-selection" or "unstage-selection")
         {
             if (request.All || request.Paths.Length != 1 || string.IsNullOrEmpty(request.ExpectedIndexVersion) || string.IsNullOrEmpty(request.ExpectedPatchVersion))
@@ -69,7 +77,7 @@ internal sealed class GitOperationService
             throw new GitOperationException(400, "commit_message_required", "Enter a commit message of at most 65536 characters.");
         if (request.Action == "commit" && (string.IsNullOrEmpty(request.ExpectedIndexVersion) || request.ExpectedHead is null))
             throw new GitOperationException(400, "review_required", "Refresh and review staged changes before committing.");
-        if (request.Action != "commit" && !request.All && request.Paths.Length == 0)
+        if (!workspace && request.Action != "commit" && !request.All && request.Paths.Length == 0)
             throw new GitOperationException(400, "paths_required", "Select files before changing the index.");
         if (request.Paths.Length > 10000) throw new GitOperationException(400, "too_many_paths", "Select at most 10000 files at once.");
     }
@@ -89,7 +97,7 @@ internal sealed class GitOperationService
                 throw new GitOperationException(409, "index_changed", "Staged changes changed since the last review. Refresh and review them again.");
             if (request.Action == "commit" && request.ExpectedHead != before.HeadHash)
                 throw new GitOperationException(409, "head_changed", "The repository HEAD changed. Refresh and review before committing.");
-            if (request.Action == "commit" && before.Staged.Length == 0)
+            if (request.Action == "commit" && before.Staged.Length == 0 && !File.Exists(Path.Combine(info.GitDir, "MERGE_HEAD")))
                 throw new GitOperationException(409, "nothing_staged", "Stage changes before creating a commit.");
             if (before.Conflicted.Length > 0 && (request.Action == "commit" || request.All || request.Paths.Any(path => before.Conflicted.Any(file => PathComparer.Equals(file.Path, path)))))
                 throw new GitOperationException(409, "conflict_unresolved", "Resolve conflicted files before staging or committing them.");

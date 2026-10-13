@@ -57,7 +57,7 @@ export function renderSummary(status: GitStatusResponse): string {
 
   return `<div class="git-panel-summary">
     <div class="git-panel-summary-title-row">
-      <span class="git-panel-summary-title">${branch}</span>
+      <button class="git-panel-summary-title git-branch-button" data-action="git-workspace" title="${t('git.workspace')}" type="button">${branch}<span aria-hidden="true"> ▾</span></button>
       <span class="git-panel-summary-pills">${pills.join('')}</span>
     </div>
     ${repoSubtitle}

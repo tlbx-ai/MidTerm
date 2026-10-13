@@ -92,6 +92,15 @@ public sealed class FileServiceIdentityTests
                 Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, selected, default)).State);
                 Assert.Equal("Caller first ä\nCaller second 字\n", await File.ReadAllTextAsync(selectedPath));
                 using var afterSelection = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterSelection.User!.Value);
+                var workspace = await GitWorkspaceQuery.ReadAsync(root, default);
+                var createBranch = new Ai.Tlbx.MidTerm.Models.Git.GitOperationRequest
+                {
+                    Action = "branch-create", OperationId = Guid.NewGuid().ToString("D"), Branch = "caller-workspace",
+                    ExpectedHead = workspace.HeadHash, ExpectedBranch = workspace.CurrentBranch, ExpectedIndexVersion = workspace.IndexVersion
+                };
+                Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, createBranch, default)).State);
+                Assert.Equal("caller-workspace", (await GitWorkspaceQuery.ReadAsync(root, default)).CurrentBranch);
+                using var afterWorkspace = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterWorkspace.User!.Value);
 
                 var create = Request("createFolder"); create.DestinationDirectory = root; create.Name = "destination";
                 Assert.True(Assert.Single((await service.ExecuteAsync(create, Accessible, [root], default)).Items).Success);

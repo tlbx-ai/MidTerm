@@ -13,9 +13,16 @@ public sealed class GitOperationRequest
     public string? Message { get; set; }
     public string? ExpectedIndexVersion { get; set; }
     public string? ExpectedHead { get; set; }
+    public string? ExpectedBranch { get; set; }
     public string? ExpectedPatchVersion { get; set; }
     public int[] SelectedHunks { get; set; } = [];
     public GitSelectedLine[] SelectedLines { get; set; } = [];
+    public string? Branch { get; set; }
+    public string? Remote { get; set; }
+    public string? RemoteBranch { get; set; }
+    public string? StashHash { get; set; }
+    public string? Resolution { get; set; }
+    public string? ExpectedFileVersion { get; set; }
 }
 
 public sealed class GitSelectedLine
@@ -34,6 +41,7 @@ public sealed class GitOperationResponse
     public string? Detail { get; set; }
     public string? CommitHash { get; set; }
     public GitStatusResponse? Status { get; set; }
+    public GitWorkspaceResponse? Workspace { get; set; }
     [JsonIgnore] public int StatusCode { get; set; } = 200;
 }
 
