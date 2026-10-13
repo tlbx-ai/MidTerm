@@ -181,7 +181,7 @@ public static class GitEndpoints
                 GitJsonContext.Default.GitRepoListResponse);
         });
 
-        app.MapGet("/api/git/status", async (string? sessionId, string? repoRoot, CancellationToken ct) =>
+        app.MapGet("/api/git/status", async Task<IResult> (string? sessionId, string? repoRoot, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId))
             {
@@ -198,18 +198,16 @@ public static class GitEndpoints
 
             if (resolvedRepoRoot is null)
             {
-                return Results.Json(new GitStatusResponse(), GitJsonContext.Default.GitStatusResponse);
+                if (!string.IsNullOrEmpty(repoRoot)) return Results.Json(new GitStatusResponse { ReadState = "error", ErrorCode = "repository_unbound" }, GitJsonContext.Default.GitStatusResponse, statusCode: 403);
+                return Results.Json(new GitStatusResponse { ReadState = "no-repo" }, GitJsonContext.Default.GitStatusResponse);
             }
 
-            var cached = gitWatcher.GetCachedStatus(sessionId, resolvedRepoRoot);
-            if (cached is not null)
+            return await RunForGitCallerAsync(sessionId, sessionManager, settings, async () =>
             {
-                return Results.Json(cached, GitJsonContext.Default.GitStatusResponse);
-            }
-
-            await gitWatcher.RefreshStatusAsync(resolvedRepoRoot);
-            var status = gitWatcher.GetCachedStatus(sessionId, resolvedRepoRoot) ?? new GitStatusResponse { RepoRoot = resolvedRepoRoot };
-            return Results.Json(status, GitJsonContext.Default.GitStatusResponse);
+                await gitWatcher.RefreshStatusAsync(resolvedRepoRoot).ConfigureAwait(false);
+                var status = gitWatcher.GetCachedStatus(sessionId, resolvedRepoRoot) ?? new GitStatusResponse { RepoRoot = resolvedRepoRoot, ReadState = "error", ErrorCode = "git_read_failed" };
+                return Results.Json(status, GitJsonContext.Default.GitStatusResponse);
+            }).ConfigureAwait(false);
         });
 
         app.MapGet("/api/git/diff", async (string? sessionId, string? repoRoot, string? path, bool? staged, CancellationToken ct) =>

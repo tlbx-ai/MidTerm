@@ -10,6 +10,7 @@ import type {
   GitLogEntry,
   GitRepoListResponse,
   GitStatusResponse,
+  GitStatusReadResult,
 } from './types';
 
 function appendRepoRoot(params: URLSearchParams, repoRoot?: string): void {
@@ -82,14 +83,23 @@ export async function fetchGitStatus(
   sessionId: string,
   repoRoot?: string,
 ): Promise<GitStatusResponse | null> {
+  const result = await fetchGitStatusResult(sessionId, repoRoot);
+  return result.ok ? result.status : null;
+}
+
+export async function fetchGitStatusResult(
+  sessionId: string,
+  repoRoot?: string,
+): Promise<GitStatusReadResult> {
   try {
     const params = new URLSearchParams({ sessionId });
     appendRepoRoot(params, repoRoot);
     const res = await fetch(`/api/git/status?${params}`);
-    if (!res.ok) return null;
-    return (await res.json()) as GitStatusResponse;
+    if (!res.ok)
+      return { ok: false, httpStatus: res.status, detail: (await res.text()).slice(0, 2000) };
+    return { ok: true, status: (await res.json()) as GitStatusResponse };
   } catch {
-    return null;
+    return { ok: false, httpStatus: 0, detail: '' };
   }
 }
 

@@ -1326,5 +1326,13 @@
   "git.treeView": "Baum",
   "git.stageSelectedFiles": "Ausgewählte Dateien stagen",
   "git.unstageSelectedFiles": "Ausgewählte Dateien unstagen",
-  "git.noMatchingFiles": "Keine passenden Dateien."
+  "git.noMatchingFiles": "Keine passenden Dateien.",
+  "git.loadingStatus": "Git-Status wird geladen…",
+  "git.showingPreviousStatus": "Vorherige Daten werden angezeigt",
+  "git.retryStatus": "Erneut versuchen",
+  "git.authenticationRequired": "Erneut anmelden, um den Git-Status zu lesen.",
+  "git.repositoryUnbound": "Dieses Repository ist nicht mehr gebunden oder der Zugriff wurde verweigert.",
+  "git.repositoryUnavailable": "Repository oder Sitzung ist nicht verfügbar.",
+  "git.offlineStatus": "Git-Verbindung verloren. Für aktuelle Daten erneut verbinden.",
+  "git.readFailed": "Git-Status konnte nicht gelesen werden."
 }

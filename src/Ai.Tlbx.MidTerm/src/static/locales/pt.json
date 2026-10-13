@@ -1282,5 +1282,13 @@
   "git.treeView": "Árvore",
   "git.stageSelectedFiles": "Preparar arquivos selecionados",
   "git.unstageSelectedFiles": "Retirar arquivos selecionados do índice",
-  "git.noMatchingFiles": "Nenhum arquivo correspondente."
+  "git.noMatchingFiles": "Nenhum arquivo correspondente.",
+  "git.loadingStatus": "Carregando estado do Git…",
+  "git.showingPreviousStatus": "Exibindo dados anteriores",
+  "git.retryStatus": "Tentar novamente",
+  "git.authenticationRequired": "Entre novamente para ler o estado do Git.",
+  "git.repositoryUnbound": "Este repositório não está mais vinculado ou o acesso foi negado.",
+  "git.repositoryUnavailable": "O repositório ou a sessão não estão disponíveis.",
+  "git.offlineStatus": "Conexão do Git perdida. Reconecte para atualizar.",
+  "git.readFailed": "Não foi possível ler o estado do Git."
 }

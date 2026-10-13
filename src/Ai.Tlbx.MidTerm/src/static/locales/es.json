@@ -1282,5 +1282,13 @@
   "git.treeView": "Árbol",
   "git.stageSelectedFiles": "Preparar archivos seleccionados",
   "git.unstageSelectedFiles": "Quitar archivos seleccionados del índice",
-  "git.noMatchingFiles": "No hay archivos coincidentes."
+  "git.noMatchingFiles": "No hay archivos coincidentes.",
+  "git.loadingStatus": "Cargando estado de Git…",
+  "git.showingPreviousStatus": "Se muestran datos anteriores",
+  "git.retryStatus": "Reintentar",
+  "git.authenticationRequired": "Inicia sesión de nuevo para leer el estado de Git.",
+  "git.repositoryUnbound": "Este repositorio ya no está vinculado o se denegó el acceso.",
+  "git.repositoryUnavailable": "El repositorio o la sesión no están disponibles.",
+  "git.offlineStatus": "Se perdió la conexión de Git. Reconecta para actualizar.",
+  "git.readFailed": "No se pudo leer el estado de Git."
 }

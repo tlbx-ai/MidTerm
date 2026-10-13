@@ -1282,5 +1282,13 @@
   "git.treeView": "Arbre",
   "git.stageSelectedFiles": "Indexer les fichiers sélectionnés",
   "git.unstageSelectedFiles": "Désindexer les fichiers sélectionnés",
-  "git.noMatchingFiles": "Aucun fichier correspondant."
+  "git.noMatchingFiles": "Aucun fichier correspondant.",
+  "git.loadingStatus": "Chargement du statut Git…",
+  "git.showingPreviousStatus": "Affichage des données précédentes",
+  "git.retryStatus": "Réessayer",
+  "git.authenticationRequired": "Reconnectez-vous pour lire le statut Git.",
+  "git.repositoryUnbound": "Ce dépôt est indisponible ou votre accès est refusé.",
+  "git.repositoryUnavailable": "Le dépôt ou la session est indisponible.",
+  "git.offlineStatus": "Connexion Git perdue. Reconnectez-vous pour actualiser.",
+  "git.readFailed": "Impossible de lire le statut Git."
 }

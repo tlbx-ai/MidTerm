@@ -231,12 +231,23 @@ internal static class GitCommandRunner
         if (exitCode != 0)
         {
             Log.Verbose(() => $"[Git] status failed: {stderr}");
+            response.ReadState = stderr.Contains("not a git repository", StringComparison.OrdinalIgnoreCase) ? "no-repo" : "error";
+            response.ErrorCode = response.ReadState == "no-repo" ? "no_repository" : "git_read_failed";
+            response.ErrorDetail = stderr[..Math.Min(stderr.Length, 16000)];
             return response;
         }
 
         response = ParseStatus(repoRoot, stdout);
         response.IndexVersion = await GetIndexVersionAsync(repoRoot).ConfigureAwait(false);
+        response.ReadAt = DateTimeOffset.UtcNow;
         return response;
+    }
+
+    internal static async Task<string?> GetCommittedHeadAsync(string root)
+    {
+        var (code, output, _) = await RunGitAsync(root, "rev-parse", "--verify", "HEAD^{commit}").ConfigureAwait(false);
+        var hash = output.TrimEnd('\r', '\n');
+        return code == 0 && hash.Length is 40 or 64 && hash.All(char.IsAsciiHexDigit) ? hash : null;
     }
 
     internal static GitStatusResponse ParseStatus(string repoRoot, string stdout)

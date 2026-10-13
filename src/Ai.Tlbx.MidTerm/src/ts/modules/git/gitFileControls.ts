@@ -94,7 +94,11 @@ export function patchGitFileSelection(ui: GitFileUi, container: HTMLElement, bus
     row.setAttribute('aria-selected', String(selected));
   }
   const actions = container.querySelector<HTMLElement>('.git-file-selection-actions');
-  if (actions) syncGitPanelDom(actions, renderSelectedActions(ui, busy));
+  if (actions)
+    syncGitPanelDom(
+      actions,
+      renderSelectedActions(ui, busy || !!container.querySelector('.git-read-state')),
+    );
 }
 
 export function chooseGitFile(

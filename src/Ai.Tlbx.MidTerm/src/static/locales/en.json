@@ -1430,5 +1430,13 @@
   "git.treeView": "Tree",
   "git.stageSelectedFiles": "Stage selected files",
   "git.unstageSelectedFiles": "Unstage selected files",
-  "git.noMatchingFiles": "No matching files."
+  "git.noMatchingFiles": "No matching files.",
+  "git.loadingStatus": "Loading Git status…",
+  "git.showingPreviousStatus": "Showing previous data",
+  "git.retryStatus": "Retry",
+  "git.authenticationRequired": "Sign in again to read Git status.",
+  "git.repositoryUnbound": "This repository is no longer bound or access is denied.",
+  "git.repositoryUnavailable": "The repository or session is unavailable.",
+  "git.offlineStatus": "Git connection lost. Reconnect to refresh.",
+  "git.readFailed": "Git status could not be read."
 }

@@ -1282,5 +1282,13 @@
   "git.treeView": "目录树",
   "git.stageSelectedFiles": "暂存选中文件",
   "git.unstageSelectedFiles": "取消暂存选中文件",
-  "git.noMatchingFiles": "没有匹配的文件。"
+  "git.noMatchingFiles": "没有匹配的文件。",
+  "git.loadingStatus": "正在加载 Git 状态…",
+  "git.showingPreviousStatus": "显示上次的数据",
+  "git.retryStatus": "重试",
+  "git.authenticationRequired": "请重新登录以读取 Git 状态。",
+  "git.repositoryUnbound": "此仓库已解除绑定或访问被拒绝。",
+  "git.repositoryUnavailable": "仓库或会话不可用。",
+  "git.offlineStatus": "Git 连接已断开。请重新连接以刷新。",
+  "git.readFailed": "无法读取 Git 状态。"
 }

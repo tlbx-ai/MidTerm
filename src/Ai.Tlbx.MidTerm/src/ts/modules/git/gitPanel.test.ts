@@ -15,12 +15,22 @@ import { sessionTerminals } from '../../state';
 import type { Session, TerminalState } from '../../types';
 
 vi.mock('./gitPanelDom', () => ({ syncGitPanelDom: vi.fn() }));
-vi.mock('./gitApi', () => ({
-  fetchGitStatus: vi.fn(async () => null),
-  fetchGitLog: vi.fn(),
-  fetchDiffView: vi.fn(),
-  fetchCommitDetails: vi.fn(),
-}));
+vi.mock('./gitApi', () => {
+  const fetchGitStatus = vi.fn(
+    async (_session: string, _root?: string): Promise<GitStatusResponse | null> => null,
+  );
+  return {
+    fetchGitStatus,
+    fetchGitStatusResult: vi.fn(async (session: string, root?: string) => {
+      const value = await fetchGitStatus(session, root);
+      return value ? { ok: true, status: value } : { ok: false, httpStatus: 0, detail: '' };
+    }),
+    fetchGitLog: vi.fn(),
+    fetchDiffView: vi.fn(),
+    fetchCommitDetails: vi.fn(),
+  };
+});
+
 vi.mock('../terminal', () => ({ pasteToTerminal: vi.fn() }));
 vi.mock('../i18n', () => ({ t: (key: string) => key }));
 

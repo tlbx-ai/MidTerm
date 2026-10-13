@@ -664,28 +664,38 @@ public sealed class GitWatcherService : IDisposable
             await Task.WhenAll(statusTask, recentCommitsTask, stashCountTask, workingStatTask, stagedStatTask).ConfigureAwait(false);
 
             var status = await statusTask.ConfigureAwait(false);
+            if (status.ReadState != "ready")
+            {
+                if (_watchers.TryGetValue(repoRoot, out var previous) && previous.CachedStatus is { } cached)
+                    status = cached.WithReadFailure(status);
+                PublishStatus(repoRoot, status);
+                return;
+            }
             status.RecentCommits = await recentCommitsTask.ConfigureAwait(false);
             status.StashCount = await stashCountTask.ConfigureAwait(false);
             MergeNumStat(status, await workingStatTask.ConfigureAwait(false), await stagedStatTask.ConfigureAwait(false));
 
-            if (_watchers.TryGetValue(repoRoot, out var watcher))
-            {
-                var fingerprint = StatusFingerprint(status);
-                if (watcher.LastFingerprint == fingerprint)
-                {
-                    return;
-                }
-
-                watcher.CachedStatus = status;
-                watcher.LastFingerprint = fingerprint;
-            }
-
-            OnStatusChanged?.Invoke(repoRoot, status);
+            PublishStatus(repoRoot, status);
         }
         catch (Exception ex)
         {
             Log.Error(() => $"[Git] RefreshStatus failed for {repoRoot}: {ex.Message}");
+            var failure = new GitStatusResponse { RepoRoot = repoRoot, ReadState = "error", ErrorCode = "git_read_failed", ErrorDetail = ex.Message };
+            if (_watchers.TryGetValue(repoRoot, out var previous) && previous.CachedStatus is { } cached) failure = cached.WithReadFailure(failure);
+            PublishStatus(repoRoot, failure);
         }
+    }
+
+    private void PublishStatus(string root, GitStatusResponse status)
+    {
+        if (_watchers.TryGetValue(root, out var watcher))
+        {
+            var fingerprint = StatusFingerprint(status) + "|" + status.ReadState + "|" + status.ErrorCode + "|" + status.ErrorDetail;
+            watcher.CachedStatus = status;
+            if (watcher.LastFingerprint == fingerprint) return;
+            watcher.LastFingerprint = fingerprint;
+        }
+        OnStatusChanged?.Invoke(root, status);
     }
 
     private static void MergeNumStat(GitStatusResponse status,

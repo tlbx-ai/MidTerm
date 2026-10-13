@@ -84,6 +84,7 @@ internal sealed class GitOperationService
         try
         {
             var before = await GitCommandRunner.GetStatusAsync(info.RepoRoot).ConfigureAwait(false);
+            if (before.ReadState != "ready") throw new GitOperationException(409, "status_unavailable", "Git status could not be read. Refresh before changing this repository.");
             if (request.ExpectedIndexVersion is { } expected && expected != before.IndexVersion)
                 throw new GitOperationException(409, "index_changed", "Staged changes changed since the last review. Refresh and review them again.");
             if (request.Action == "commit" && request.ExpectedHead != before.HeadHash)
@@ -101,9 +102,14 @@ internal sealed class GitOperationService
             result = new GitOperationResponse { OperationId = request.OperationId, RepoRoot = info.RepoRoot, Action = request.Action, State = "completed" };
             if (request.Action == "commit")
             {
-                var after = await GitCommandRunner.GetStatusAsync(info.RepoRoot).ConfigureAwait(false);
-                if (after.HeadHash != before.HeadHash) result.CommitHash = after.HeadHash;
-                else if (exitCode == 0) throw new GitOperationException(409, "commit_unconfirmed", "Git returned without a new commit. Inspect repository status before retrying.");
+                var head = await GitCommandRunner.GetCommittedHeadAsync(info.RepoRoot).ConfigureAwait(false);
+                if (exitCode == 0 && head is not null && head != before.HeadHash) result.CommitHash = head;
+                else if (exitCode == 0 || (head is not null && head != before.HeadHash))
+                {
+                    result.State = "unknown"; result.StatusCode = 409; result.ErrorCode = "commit_unconfirmed";
+                    result.Detail = "The commit result could not be confirmed. Inspect HEAD before creating another commit. The prepared index remains at " + temporary;
+                    transaction.PreservePreparedIndex = true; return result;
+                }
             }
             if (exitCode != 0 && result.CommitHash is null) throw GitFailure(stderr, stdout, exitCode);
             await transaction.PublishAsync().ConfigureAwait(false);

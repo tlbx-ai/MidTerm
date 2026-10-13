@@ -1310,6 +1310,29 @@ Zusätzlich: ein fehlgeschlagener Status-/HEADread nach einer Schreibaktion darf
 keinen leeren Hash als bestätigten Commit ausgeben. Die tatsächliche Commit-
 Identität separat bestätigen und unsichere Ergebnisse als solche erhalten.
 
+**Implementiert und lokal geprüft 13.10.2026:** Readstate Loading/Ready/No-Repo/
+Error/Stale plus lokalisierter Retry und letzte Empfangszeit. HTTP-/Native-Git-
+Fehler werden nicht mehr zu falschem No-Repo; letzte gute Daten bleiben markiert
+sichtbar, Schreibaktionen gesperrt. Offline/Reconnect und entfernte Bindung
+aktualisieren den Zustand; überholte Reads werden verworfen. Retryhandler werden
+bereits beim ersten Render gebunden, auch wenn noch nie ein Status erfolgreich
+war. Backend erhält den letzten guten Snapshot bei echten Lesefehlern.
+
+Commitbestätigung liest den tatsächlichen HEAD unabhängig vom Status und
+verlangt einen gültigen neuen Hash plus erfolgreichen Git-Exit. Nicht bestätigte
+Ergebnisse behalten Unknown-Receipt und vorbereiteten Index, ohne leeren Hash
+oder automatische Wiederholung. 39 native Tests bestehen, ein Unix-Skip; drei
+neue echte Gitfälle prüfen Statusfehler/NoRepo/immutable Stale, nach Commit
+gebrochenen Status und unlesbaren HEAD mit Replay ohne zweiten Commit.
+
+Neun Browserabläufe bestehen: verzögerter erster Read, 401/403/404/500 mit Stale/
+Retry, echtes Offline/Online, Bindungsentfernung, echtes No-Repo und Fehler beim
+ersten Read ohne Cache. Null Terminalinput/Browserfehler, Index/Datei unverändert.
+19 Commit-/Partial-/Dateilistenregressionen und 709 Frontendtests plus Typecheck/
+Lints bestehen. UI geprüft; `git-task-39-browser-accepted`, `git-task-39-native-final`,
+`git-task-39-regression-*` und Verify-Logs enthalten die Nachweise. Vollständige
+Plattform-/Caller-CI steht noch aus; Aufgabe noch nicht abgeschlossen.
+
 ### 40. [ ] Branch-, Remote-, Stash- und Konfliktabläufe tatsächlich anbieten
 
 **Befund (mittel, Erwartungslücke):** Branch/Ahead/Behind/Stash nur Anzeigen;

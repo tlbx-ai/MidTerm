@@ -2,6 +2,10 @@ namespace Ai.Tlbx.MidTerm.Models.Git;
 
 public sealed class GitStatusResponse
 {
+    public string ReadState { get; set; } = "ready";
+    public string? ErrorCode { get; set; }
+    public string? ErrorDetail { get; set; }
+    public DateTimeOffset? ReadAt { get; set; }
     public string Label { get; set; } = "";
     public string Role { get; set; } = "";
     public string Source { get; set; } = "";
@@ -20,6 +24,13 @@ public sealed class GitStatusResponse
     public string RepoRoot { get; set; } = "";
     public int TotalAdditions { get; set; }
     public int TotalDeletions { get; set; }
+
+    internal GitStatusResponse WithReadFailure(GitStatusResponse failure)
+    {
+        var copy = (GitStatusResponse)MemberwiseClone();
+        copy.ReadState = "stale"; copy.ErrorCode = failure.ErrorCode; copy.ErrorDetail = failure.ErrorDetail;
+        return copy;
+    }
 }
 
 public sealed class GitRepoBinding

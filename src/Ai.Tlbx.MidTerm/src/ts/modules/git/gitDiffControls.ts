@@ -1,4 +1,28 @@
 import { t } from '../i18n';
+import type { GitDiffFileView, GitDiffViewResponse, GitCommitDetailsResponse } from './types';
+
+type DiffControlSelection =
+  | { kind: 'file'; scope: 'staged' | 'worktree'; diff: GitDiffViewResponse | null }
+  | { kind: 'commit'; details: GitCommitDetailsResponse | null }
+  | null;
+function selectedDiffFiles(selection: DiffControlSelection): GitDiffFileView[] {
+  if (selection?.kind === 'file') return selection.diff?.files ?? [];
+  if (selection?.kind === 'commit') return selection.details?.files ?? [];
+  return [];
+}
+export function renderSelectedDiffControls(
+  ui: GitDiffUi,
+  selection: DiffControlSelection,
+  busy: boolean,
+): string {
+  return renderDiffControls(
+    ui,
+    selection?.kind === 'file' && !!selection.diff?.canSelectLines,
+    selection?.kind === 'file' && selection.scope === 'staged',
+    selectedDiffFiles(selection).some((file) => file.hunks.length > 0),
+    busy,
+  );
+}
 
 export interface GitDiffUi {
   sideBySide: boolean;

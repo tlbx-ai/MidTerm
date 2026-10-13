@@ -77,19 +77,31 @@ export function canCommit(state: GitOperationsUi, status: GitStatusResponse): bo
   );
 }
 
-export function renderGitOperations(state: GitOperationsUi, status: GitStatusResponse): string {
-  const disabled = state.busy || state.pending !== null ? ' disabled' : '';
+export function renderGitOperations(
+  state: GitOperationsUi,
+  status: GitStatusResponse,
+  blocked = false,
+): string {
   const message = state.error ?? state.confirmed ?? (state.busy ? t('git.operationBusy') : '');
   return `<section class="git-operations" aria-label="${t('git.commitStaged')}">
     <textarea class="git-commit-message" data-git-commit-message="true" aria-label="${t('git.commitMessage')}" placeholder="${t('git.commitMessage')}" maxlength="65536"${state.busy ? ' readonly' : ''}>${escapeHtml(state.message)}</textarea>
-    <div class="git-operation-buttons">
-      <button class="git-action-button" data-action="stage-all"${disabled} type="button">${t('git.stageAll')}</button>
-      <button class="git-action-button" data-action="unstage-all"${state.busy || state.pending !== null || status.staged.length === 0 ? ' disabled' : ''} type="button">${t('git.unstageAll')}</button>
-      <button class="git-action-button" data-action="commit-staged"${canCommit(state, status) ? '' : ' disabled'} type="button">${t('git.commitStaged')}</button>
-    </div>
+    ${renderOperationButtons(state, status, blocked)}
     <div class="git-operation-status" role="${state.error ? 'alert' : 'status'}" aria-live="polite">${escapeHtml(message)}</div>
     ${state.pending && !state.busy ? `<button class="git-action-button" data-action="retry-operation" type="button">${t('git.retryOperation')}</button>` : ''}
   </section>`;
+}
+
+function renderOperationButtons(
+  state: GitOperationsUi,
+  status: GitStatusResponse,
+  blocked: boolean,
+): string {
+  const busy = blocked || state.busy || state.pending !== null;
+  return `<div class="git-operation-buttons">
+    <button class="git-action-button" data-action="stage-all"${busy ? ' disabled' : ''} type="button">${t('git.stageAll')}</button>
+    <button class="git-action-button" data-action="unstage-all"${busy || status.staged.length === 0 ? ' disabled' : ''} type="button">${t('git.unstageAll')}</button>
+    <button class="git-action-button" data-action="commit-staged"${!blocked && canCommit(state, status) ? '' : ' disabled'} type="button">${t('git.commitStaged')}</button>
+  </div>`;
 }
 
 export function gitFileAction(path: string, staged: boolean, busy: boolean): string {

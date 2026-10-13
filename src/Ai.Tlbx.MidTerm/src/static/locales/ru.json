@@ -1282,5 +1282,13 @@
   "git.treeView": "Дерево",
   "git.stageSelectedFiles": "Добавить выбранные файлы в индекс",
   "git.unstageSelectedFiles": "Убрать выбранные файлы из индекса",
-  "git.noMatchingFiles": "Нет подходящих файлов."
+  "git.noMatchingFiles": "Нет подходящих файлов.",
+  "git.loadingStatus": "Загрузка состояния Git…",
+  "git.showingPreviousStatus": "Показаны предыдущие данные",
+  "git.retryStatus": "Повторить",
+  "git.authenticationRequired": "Войдите снова, чтобы прочитать состояние Git.",
+  "git.repositoryUnbound": "Этот репозиторий больше не привязан или доступ запрещён.",
+  "git.repositoryUnavailable": "Репозиторий или сеанс недоступен.",
+  "git.offlineStatus": "Соединение Git потеряно. Подключитесь снова для обновления.",
+  "git.readFailed": "Не удалось прочитать состояние Git."
 }

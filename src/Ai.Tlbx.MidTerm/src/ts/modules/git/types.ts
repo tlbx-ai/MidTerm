@@ -5,6 +5,10 @@
  */
 
 export interface GitStatusResponse {
+  readState?: 'ready' | 'no-repo' | 'error' | 'stale';
+  errorCode?: string | null;
+  errorDetail?: string | null;
+  readAt?: string | null;
   label?: string | undefined;
   role?: string | undefined;
   source?: string | undefined;
@@ -24,6 +28,9 @@ export interface GitStatusResponse {
   totalAdditions: number;
   totalDeletions: number;
 }
+
+export type GitStatusReadResult =
+  { ok: true; status: GitStatusResponse } | { ok: false; httpStatus: number; detail: string };
 
 export interface GitOperationRequest {
   sessionId: string;

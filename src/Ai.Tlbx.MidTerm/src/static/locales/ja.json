@@ -1282,5 +1282,13 @@
   "git.treeView": "ツリー",
   "git.stageSelectedFiles": "選択ファイルをステージ",
   "git.unstageSelectedFiles": "選択ファイルをステージ解除",
-  "git.noMatchingFiles": "一致するファイルはありません。"
+  "git.noMatchingFiles": "一致するファイルはありません。",
+  "git.loadingStatus": "Gitの状態を読み込み中…",
+  "git.showingPreviousStatus": "前回のデータを表示しています",
+  "git.retryStatus": "再試行",
+  "git.authenticationRequired": "Gitの状態を読むには再ログインしてください。",
+  "git.repositoryUnbound": "このリポジトリは接続されていないか、アクセスが拒否されました。",
+  "git.repositoryUnavailable": "リポジトリまたはセッションを利用できません。",
+  "git.offlineStatus": "Git接続が切れました。再接続して更新してください。",
+  "git.readFailed": "Gitの状態を読み込めませんでした。"
 }
