@@ -213,7 +213,7 @@ try {
       await api('PATCH', '/api/settings', { theme, uiTransparency: 65, terminalTransparency: 65 });
       await page.reload(); await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click(); await files.click(); await row.waitFor();
       const prefix = `.session-wrapper[data-session-id="${session}"] .file-browser-preview`, preview = wrapper.locator('.file-browser-preview');
-      await preview.locator('.preview-empty').waitFor(); await sample(`${theme}-65-empty`, prefix, '.file-browser', imageColor, true);
+      await preview.locator('.preview-empty').waitFor({state:'hidden'}); await sample(`${theme}-65-browse`, `.session-wrapper[data-session-id="${session}"] .file-browser-tree`, '.file-browser', imageColor, true);
       await page.route('**/api/files/document**', async route => { await sleep(400); await route.continue(); });
       await row.click(); await preview.locator('.preview-loading').waitFor(); await sample(`${theme}-65-loading`, prefix, '.file-browser', imageColor, true);
       await preview.locator('.file-document-source').waitFor(); await page.unroute('**/api/files/document**');

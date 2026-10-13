@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { revealControl } from './ui-controls.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -43,14 +44,14 @@ try {
   page = await context.newPage(); page.setDefaultTimeout(25000); page.on('pageerror', error => result.errors.push(error.message)); page.on('request', request => { const pathname = new URL(request.url()).pathname; if (pathname.endsWith('/input/paste')) result.pasteRequests.push(request.postDataJSON()); if (pathname.endsWith('/agent-control/turn') || pathname.endsWith('/input/submit')) result.turnRequests.push(pathname); });
   page.on('websocket', socket => socket.on('framesent', frame => { if (Buffer.isBuffer(frame.payload) && frame.payload[0] === 0x14) result.inputFrames++; })); await page.goto(url);
   let dock = await openSession(shell); await page.waitForFunction(() => document.querySelector('#git-dock [data-action="insert-command"]')?.disabled === false); await stageAndUnstage(dock);
-  await dock.locator('.git-tree-file[data-path="file.txt"]').click(); const insert = dock.locator('[data-action="insert-command"]').first(); const insertedCommand = await insert.getAttribute('data-command'); await insert.click();
+  await dock.locator('.git-tree-file[data-path="file.txt"]').click(); const insert = dock.locator('[data-action="insert-command"]').first(); const insertedCommand = await insert.getAttribute('data-command'); await revealControl(insert); await insert.click();
   await dock.locator('.git-action-status').first().filter({ hasText: 'Inserted without running' }).waitFor(); assert.equal(result.pasteRequests.length, 1); assert.equal(result.pasteRequests[0].text, insertedCommand); assert.ok(!/[\r\n]/.test(result.pasteRequests[0].text));
   await dock.locator('#git-dock-close').click(); await api('DELETE', '/api/sessions/' + shell); sessions.splice(sessions.indexOf(shell), 1);
   result.cases.push('Direct stage/unstage works at a real PowerShell prompt without terminal input');
   const app = (await api('POST', '/api/sessions', { shell: 'Pwsh', workingDirectory: fixture, launchCommand: `node '${path.join(fixture, 'app.cjs').replaceAll("'", "''")}'`, launchRequestId: crypto.randomUUID() })).id; sessions.push(app);
   for (let i = 0; i < 100 && !fs.existsSync(path.join(fixture, 'ready.marker')); i++) await sleep(100); assert.ok(fs.existsSync(path.join(fixture, 'ready.marker')));
   for (let i = 0; i < 100; i++) { const current = (await api('GET', '/api/sessions')).sessions.find(session => session.id === app); if (current.foregroundName?.replace(/\.exe$/i, '').toLowerCase() === 'node') break; assert.ok(i < 99, 'Application is the reported foreground process'); await sleep(100); }
-  dock = await openSession(app); await page.waitForFunction(() => document.querySelector('#git-dock [data-action="insert-command"]')?.disabled === true); const copy = dock.locator('[data-action="copy-command"]').first(); await copy.click(); assert.equal(await page.evaluate(() => navigator.clipboard.readText()), await copy.getAttribute('data-command'));
+  dock = await openSession(app); await page.waitForFunction(() => document.querySelector('#git-dock [data-action="insert-command"]')?.disabled === true); const copy = dock.locator('[data-action="copy-command"]').first(); await revealControl(copy); await copy.click(); assert.equal(await page.evaluate(() => navigator.clipboard.readText()), await copy.getAttribute('data-command'));
   await dock.locator('[data-action="insert-command"]').first().evaluate(button => button.dispatchEvent(new MouseEvent('click', { bubbles: true })));
   const blockedApp = await context.request.post(url + `/api/sessions/${app}/input/paste`, { data: { text: 'git status', bracketedPaste: false, historySource: 'git-panel-insert' } }); assert.equal(blockedApp.status(), 409); result.shellGuards.push({ surface: 'application', status: blockedApp.status() });
   await stageAndUnstage(dock); assert.ok(!fs.existsSync(path.join(fixture, 'input.marker'))); await page.screenshot({ path: path.join(out, 'busy-application.png'), animations: 'disabled' }); await dock.locator('#git-dock-close').click(); await api('DELETE', '/api/sessions/' + app); sessions.splice(sessions.indexOf(app), 1);

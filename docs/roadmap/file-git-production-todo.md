@@ -1421,7 +1421,7 @@ und 4 Aktionsregressionen bestehen, einschließlich Coarse-Pointer44px und Clipb
 Insert-Fehlern. 20 echte Win-Shellquotierungen und 709 Frontendtests/Typecheck/Lints
 bestehen. Evidenz `git-task-42-{browser-third,regression-*,command-quoting,frontend-final.log}`.
 
-### 43. [~] Strengen UI-/UX-Designpass für Files und Git abschließen
+### 43. [x] Strengen UI-/UX-Designpass für Files und Git abschließen
 
 **Verbindlicher Zusatzauftrag 13.10.2026:** Files und Git müssen am Ende als
 bewusst gestaltete, konsistente tlbx-Oberflächen wirken. Funktionsprüfungen
@@ -1470,8 +1470,20 @@ geprüft. 13 Auswahl-, 7 Listing-/600Dateien-, 17 reale FSaktions-, 10 Sichtbark
 32 Hintergrund-Pixelproben und 1008 Kontrastproben bestehen (Minimum 4,979355:1),
 einschließlich Guttern/Wortmarkierungen, vier Themes/0-65-90%/drei Wallpapers.
 34 native Tests mit 1 Plattformskip und 709 Frontendtests/Typecheck/Lints bestehen.
-Evidenz `task-43-*`; letzte übrige Regressionen, Plattform-CI, integrierte Schluss-
-abnahme, zweiter Minor und Teardown stehen noch aus. Aufgabe bleibt offen.
+Evidenz `task-43-*`. Zusätzlich 11 Navigation-, 6 Refresh-, 37 Edit-/Konflikt-/Race-,
+8 LargeFile-, 4 Fullpath-, 40 Medienproben, 7 Parent- und 3 Terminal/TUI/Controller-
+Grenzfälle bestehen. Finale repräsentative Desktop-/Touchscreenshots geprüft.
+Kontrastminimum 4,979355:1. Abnahme der 43 UIaufgaben abgeschlossen; zweiter Minor
+und operativer Teardown bleiben als Releaseabschluss offen.
+
+**Plattformabnahme:** CI `38352182889`/`f38ee88e` besteht auf allen 3 OS.
+Tatsächliche TRX Windows 161/171 mit 10 Skips, Linux 164/171 mit 7, macOS 161/171
+mit 10; keine Fehler. Beide neuen Cleanupfälle bestehen je OS; echter LocalSystem-
+Caller zusätzlich 1/1. Artefakte `task-43-platform-final-*` und Zähler JSON.
+Mac-Test verwendet die vom Binding zurückgegebene physische RepoID; sein erster
+Lauf hatte einen ungebundenen `/var`-Alias im Test anstelle dieser ID benutzt.
+Native Commands/Shellquotierungen bestehen. Folder Back stellt die bereits
+geöffnete Dateivorschau wieder her; ohne Auswahl nutzt Browse weiter die volle Liste.
 
 ## Release- und Abschlussnachweise
 
