@@ -67,6 +67,7 @@ internal static class GitWorkspaceQuery
     internal static bool HasConflictMarkers(string text) => text.Split('\n').Any(line => line.StartsWith("<<<<<<< ", StringComparison.Ordinal) || line.StartsWith(">>>>>>> ", StringComparison.Ordinal) || line.TrimEnd('\r') == "=======");
     internal static string ConflictPath(string root, string path)
     {
+        root = FileDocumentService.ResolvePath(root);
         if (string.IsNullOrEmpty(path) || Path.IsPathRooted(path) || path.AsSpan().IndexOf('\0') >= 0 || path.Replace('\\', '/').Split('/').Any(part => part is "." or ".."))
             throw new GitOperationException(400, "invalid_path", "Select a repository-relative conflicted path.");
         var full = Path.GetFullPath(Path.Combine(root, path));
