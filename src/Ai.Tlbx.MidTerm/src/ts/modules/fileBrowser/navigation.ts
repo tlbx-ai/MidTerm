@@ -296,7 +296,9 @@ export class BrowserNavigation {
   ): Promise<boolean> {
     if (!path) return false;
     const generation = ++this.generation;
-    this.openRequest = beginFileOpen(this.sessionId);
+    // Initial folder hydration belongs to this pane, even if another session opens a file.
+    // Interactive navigation still invalidates superseded document opens.
+    this.openRequest = this.metadata && this.active ? beginFileOpen(this.sessionId) : null;
     this.controller?.abort();
     this.controller = new AbortController();
     this.error.hidden = true;
@@ -390,8 +392,7 @@ export class BrowserNavigation {
     return (
       generation === this.generation &&
       this.root.isConnected &&
-      !!this.openRequest &&
-      isFileOpenCurrent(this.openRequest)
+      (!this.openRequest || isFileOpenCurrent(this.openRequest))
     );
   }
   private restoreAddress(): void {

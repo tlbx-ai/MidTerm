@@ -19,7 +19,7 @@ const extra = fs.mkdtempSync(path.join(os.tmpdir(), 'tlbx-files-root-')); execFi
 fs.writeFileSync(path.join(extra, 'extra.md'), '# Extra authorized root\n');
 const result = { ok: false, fixtures, extra, cases: [], errors: [] };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-let chrome, browser, context, session, page;
+let chrome, browser, context, session, otherSession, page;
 async function api(method, route, data) {
   const response = await context.request.fetch(url + route, { method, data });
   assert.ok(response.ok(), `${route}: ${response.status()} ${await response.text()}`);
@@ -143,6 +143,33 @@ try {
     reposBeforeBrowse.repos.map(repo => ({ path: repo.repoRoot, role: repo.role, primary: repo.isPrimary })));
   result.cases.push('An explicitly bound repository appears as an authorized selectable root and opens actual files');
   await page.screenshot({ path: path.join(out, 'roots-and-address.png') });
+  otherSession = (await api('POST', '/api/sessions', { shell: 'Pwsh', cols: 90, rows: 30, workingDirectory: fixtures, launchRequestId: crypto.randomUUID() })).id;
+  let arrived, release;
+  const initialRequest = new Promise(resolve => { arrived = resolve; });
+  const initialGate = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/files/navigation**', async route => {
+    if (new URL(route.request().url()).searchParams.get('sessionId') === otherSession) {
+      const response = await route.fetch(); arrived(); await initialGate;
+      await route.fulfill({ response }).catch(() => {});
+    } else await route.continue();
+  });
+  await page.locator(`.session-item[data-session-id="${otherSession}"] .session-title`).click();
+  const otherWrapper = page.locator(`.session-wrapper[data-session-id="${otherSession}"]`);
+  await otherWrapper.locator('[data-tab="files"]').click(); await initialRequest;
+  await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click();
+  await go(extra); await waitPath(extra);
+  await page.locator(`.session-item[data-session-id="${otherSession}"] .session-title`).click(); release();
+  await otherWrapper.locator('.tree-node').first().waitFor();
+  assert.equal(await otherWrapper.locator('.file-browser-address-form input').inputValue(), fixtures);
+  await page.unroute('**/api/files/navigation**');
+  await page.screenshot({ path: path.join(out, 'initial-load-session-race.png') });
+  result.cases.push('An initial Files response survives another session navigating and returning before it finishes');
+  for (let reload = 0; reload < 5; reload++) {
+    await page.reload();
+    await otherWrapper.locator('[data-panel="files"].active .tree-node').first().waitFor();
+    assert.equal(await otherWrapper.locator('.file-browser-address-form input').inputValue(), fixtures);
+  }
+  result.cases.push('Restored Files tabs hydrate on five real page reloads without toggling tabs');
   assert.deepEqual(result.errors, []); result.ok = true;
 } catch (error) {
   result.failure = String(error.stack || error).replaceAll(cookie, '<redacted-session-cookie>');
@@ -150,6 +177,8 @@ try {
     result.pageText = (await page.locator('body').innerText().catch(() => '')).slice(-2500); }
   process.exitCode = 1;
 } finally {
+  if (context && otherSession) { try { await api('DELETE', '/api/sessions/' + otherSession); }
+    catch (error) { result.cleanupFailure = String(error); result.ok = false; process.exitCode = 1; } }
   if (context && session) { try { await api('DELETE', '/api/sessions/' + session); }
     catch (error) { result.cleanupFailure = String(error).replaceAll(cookie, '<redacted-session-cookie>'); result.ok = false; process.exitCode = 1; } }
   await context?.close(); await browser?.close(); chrome?.kill();
