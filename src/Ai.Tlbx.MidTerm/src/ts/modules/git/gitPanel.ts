@@ -80,6 +80,7 @@ import {
   buildGitSelectionRequest,
   renderGitOperations,
   gitSectionAction,
+  renderGitInspectorAction,
   executeGitOperation,
   setGitCommitMessage,
   canCommit,
@@ -499,12 +500,12 @@ function renderPanel(state: GitPanelState): void {
   expandHistoryWhenClean(state, sectionCount);
   const singleFillSection = sectionCount === 1;
 
-  let html = `<div class="${panelShellClass(state)}" data-diff-wrap="${state.wrapDiff}">`;
+  let html = `<div class="${panelShellClass(state)}" data-diff-wrap="${state.wrapDiff}" data-git-phase="${state.read.phase}">`;
   html += '<div class="git-panel-list">';
   html += renderGitReadState(state.read);
   html += renderSummary(status);
   html += renderGitOperations(state.operations, status, state.read.phase !== 'ready');
-  html += renderGitFileControls(state.fileUi, isGitOperationBusy(state));
+  html += renderVisibleFileControls(state, sectionCount);
   html += '<div class="git-panel-content">';
 
   if (sectionCount > 0) {
@@ -655,11 +656,18 @@ function renderInspector(state: GitPanelState): string {
   }
 
   return `<div class="git-inspector-header">
-      <button class="git-inspector-back" data-action="show-list" type="button">${t('git.backToList')}</button>
-      <button class="git-diff-wrap" data-action="toggle-diff-wrap" aria-pressed="${state.wrapDiff}" type="button">${t('git.wrapLines')}</button>
+      <button class="git-inspector-back" data-action="show-list" aria-label="${t('git.backToList')}" title="${t('git.backToList')}" type="button">←</button>
+      ${renderGitInspectorAction(state.selection, isGitOperationBusy(state))}
+      <details class="git-diff-options"><summary aria-label="${t('fileBrowser.viewOptions')}" title="${t('fileBrowser.viewOptions')}">⋯</summary><div><button class="git-diff-wrap" data-action="toggle-diff-wrap" aria-pressed="${state.wrapDiff}" type="button">${t('git.wrapLines')}</button></div></details>
       ${renderSelectedDiffControls(state.diffUi, state.selection, isGitOperationBusy(state))}
     </div>
     <div class="git-inspector-body">${body}</div>`;
+}
+
+function renderVisibleFileControls(state: GitPanelState, sectionCount: number): string {
+  return sectionCount > 0 || state.fileUi.filter
+    ? renderGitFileControls(state.fileUi, isGitOperationBusy(state))
+    : '';
 }
 
 function renderFileInspector(
@@ -958,6 +966,8 @@ function handleMutationAction(state: GitPanelState, data: DOMStringMap): boolean
     ![
       'stage-file',
       'unstage-file',
+      'stage-inspected-file',
+      'unstage-inspected-file',
       'stage-section',
       'stage-all',
       'unstage-all',
@@ -1012,8 +1022,10 @@ async function performMutation(
   renderPanel(state);
   const result = await pending;
   if (result) acceptMutationStatus(state, request, result);
-  if (result?.state === 'completed') clearDiffSelection(state.diffUi);
-  if (result?.state === 'completed') state.fileUi.selected.clear();
+  if (result?.state === 'completed' && request.action !== 'fetch' && request.action !== 'push') {
+    clearDiffSelection(state.diffUi);
+    state.fileUi.selected.clear();
+  }
   delete state.inspectorSelection;
   renderPanel(state);
   if (result?.state === 'completed' && state.selection?.kind === 'file')

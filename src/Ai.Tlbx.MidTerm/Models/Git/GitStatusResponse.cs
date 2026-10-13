@@ -31,6 +31,13 @@ public sealed class GitStatusResponse
         copy.ReadState = "stale"; copy.ErrorCode = failure.ErrorCode; copy.ErrorDetail = failure.ErrorDetail;
         return copy;
     }
+
+    internal GitStatusResponse WithBindingMetadata(string label, string role, string source, bool isPrimary)
+    {
+        var copy = (GitStatusResponse)MemberwiseClone();
+        copy.Label = label; copy.Role = role; copy.Source = source; copy.IsPrimary = isPrimary;
+        return copy;
+    }
 }
 
 public sealed class GitRepoBinding

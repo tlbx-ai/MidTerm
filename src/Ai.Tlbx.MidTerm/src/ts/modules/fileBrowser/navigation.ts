@@ -54,13 +54,22 @@ export class BrowserNavigation {
       const button = document.createElement('button');
       button.type = 'button';
       button.dataset.browserNavigation = action;
-      button.textContent = t(
+      button.title = t(
         action === 'cwd'
           ? 'fileBrowser.toCwd'
           : action === 'refresh'
             ? 'fileBrowser.refresh'
             : `fileViewer.${action}`,
       );
+      button.setAttribute('aria-label', button.title);
+      const symbols: Record<string, string> = {
+        back: '←',
+        forward: '→',
+        up: '↑',
+        cwd: '⌂',
+        refresh: '↻',
+      };
+      button.textContent = symbols[action] ?? '';
       button.addEventListener('click', () => {
         if (action === 'refresh') void this.refresh();
         else void this.navigateAction(action);
@@ -88,7 +97,9 @@ export class BrowserNavigation {
     });
     const go = document.createElement('button');
     go.type = 'submit';
-    go.textContent = t('fileBrowser.go');
+    go.textContent = '→';
+    go.title = t('fileBrowser.go');
+    go.setAttribute('aria-label', go.title);
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       void this.navigate(this.address.value.trim());
@@ -98,7 +109,18 @@ export class BrowserNavigation {
     this.error.className = 'file-browser-navigation-error';
     this.error.setAttribute('role', 'alert');
     this.error.hidden = true;
-    this.root.append(actionsRow, form, this.breadcrumbs, this.visibility.root, this.error);
+    actionsRow.insertBefore(form, this.roots);
+    const visibilityMenu = document.createElement('details');
+    visibilityMenu.className = 'file-visibility-menu';
+    const visibilitySummary = document.createElement('summary');
+    visibilitySummary.textContent = '◉';
+    visibilitySummary.title = t('fileBrowser.visibilityOptions');
+    visibilitySummary.setAttribute('aria-label', visibilitySummary.title);
+    visibilityMenu.append(visibilitySummary, this.visibility.root);
+    const location = document.createElement('div');
+    location.className = 'file-browser-location-row';
+    location.append(this.breadcrumbs, visibilityMenu);
+    this.root.append(actionsRow, location, this.error);
     this.syncControls();
   }
 

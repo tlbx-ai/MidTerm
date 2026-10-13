@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { revealControl, tapControl, clickControl } from './ui-controls.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -35,7 +36,7 @@ try {
   await page.goto(url); await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click();
   const wrapper = page.locator(`.session-wrapper[data-session-id="${session}"]`); await wrapper.locator('.session-tab[data-tab="files"]').click();
   const tree = wrapper.locator('.file-browser-tree'), preview = wrapper.locator('.file-browser-preview');
-  const byPath = full => tree.locator('.tree-node').filter({ has: page.locator('input') }).evaluateAll((rows, full) => rows.find(row => row.dataset.path === full)?.getAttribute('title'), full);
+  const byPath = full => tree.locator('.tree-node').evaluateAll((rows, full) => rows.find(row => row.dataset.path === full)?.getAttribute('title'), full);
   async function navigate(folder) { await wrapper.locator('.file-browser-address-form input').fill(folder); await wrapper.locator('.file-browser-address-form button').click(); await page.waitForFunction(({ session, full }) => [...document.querySelectorAll(`.session-wrapper[data-session-id="${session}"] .tree-node`)].some(row => row.dataset.path === full), { session, full: path.join(folder, name) }); }
   const info = page.locator('.file-operation-overlay');
   async function copyDetails(expected) { await info.waitFor(); assert.ok((await info.locator('.file-operation-message').innerText()).includes(expected)); await info.locator('[data-operation-choice="copy"]').click(); assert.equal(await page.evaluate(() => navigator.clipboard.readText()), expected); }
@@ -43,11 +44,11 @@ try {
     await navigate(path.dirname(full));
     const row = tree.locator('.tree-node').filter({ has: page.locator('.tree-name', { hasText: name }) });
     assert.equal(await byPath(full), full); assert.equal(await row.getAttribute('aria-label'), full);
-    await row.locator('input').click(); const details = tree.locator('[data-selection-action="details"]'); await details.focus(); await details.press('Enter'); await copyDetails(full);
-    assert.equal(await details.evaluate(el => el === document.activeElement), true);
+    await row.click({ modifiers: ['Control'] }); const details = tree.locator('[data-selection-action="details"]'); await revealControl(details); await details.focus(); await details.press('Enter'); await copyDetails(full);
+    assert.equal(await tree.locator('.file-actions-menu > summary').evaluate(el => el === document.activeElement), true);
   }
   result.cases.push('Deep equal filenames expose exact full tooltip/AX paths; keyboard Details copies the uncut path and restores focus');
-  await tree.locator('[data-selection-action="open"]').click(); await preview.locator('.file-document-view').waitFor();
+  await clickControl(tree.locator('[data-selection-action="open"]')); await preview.locator('.file-document-view').waitFor();
   await preview.locator('[data-path-details]').click(); await copyDetails(paths[1]);
   await wrapper.locator('.session-tab[data-tab="terminal"]').click();
   await page.evaluate(target => window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), target), paths[0]);
@@ -65,7 +66,7 @@ try {
   await gitDock.locator('#git-dock-close').click(); result.cases.push('Git equal-name rows identify their repository-rooted paths and Inspector Details copies the correct selected path');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(target => window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), target), path.dirname(paths[0]));
-  await modal.locator('.file-list-item').first().tap(); await modal.locator('[data-selection-action="details"]').tap(); await copyDetails(paths[0]);
+  await modal.locator('.file-list-item').first().tap(); await tapControl(modal.locator('[data-selection-action="details"]')); await copyDetails(paths[0]);
   await modal.locator('.modal-close').tap();
   await page.evaluate(target => window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), target), paths[1]);
   await modal.locator('[data-path-details]').tap(); await info.waitFor(); assert.ok((await info.locator('.file-operation-message').innerText()).includes(paths[1]));

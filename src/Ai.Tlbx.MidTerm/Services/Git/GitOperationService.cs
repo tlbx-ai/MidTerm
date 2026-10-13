@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Git;
 
 namespace Ai.Tlbx.MidTerm.Services.Git;
@@ -88,6 +89,8 @@ internal sealed class GitOperationService
         var index = await GitCommandRunner.GetIndexPathAsync(info.RepoRoot).ConfigureAwait(false);
         await using var transaction = new GitIndexTransaction(index, request.OperationId);
         var temporary = transaction.TemporaryPath;
+        var messagePath = temporary + ".message";
+        var ownsMessage = false;
         GitOperationResponse? result = null;
         try
         {
@@ -104,9 +107,15 @@ internal sealed class GitOperationService
             transaction.CopyOriginal();
             var paths = request.Action == "commit" ? [] : SelectPaths(info.RepoRoot, request, before);
             var environment = new Dictionary<string, string?>(StringComparer.Ordinal) { ["GIT_INDEX_FILE"] = temporary, ["GIT_TERMINAL_PROMPT"] = "0", ["GCM_INTERACTIVE"] = "never" };
+            if (request.Action == "commit")
+            {
+                await using var message = new FileStream(messagePath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous);
+                ownsMessage = true;
+                await message.WriteAsync(new UTF8Encoding(false).GetBytes(request.Message!), ct).ConfigureAwait(false);
+            }
             var (exitCode, stdout, stderr) = request.Action is "stage-selection" or "unstage-selection"
                 ? await ApplySelectionAsync(info.RepoRoot, request, before, temporary, environment, ct).ConfigureAwait(false)
-                : await GitCommandRunner.ExecuteAsync(info.RepoRoot, BuildArguments(request, before, paths), environment, ct).ConfigureAwait(false);
+                : await GitCommandRunner.ExecuteAsync(info.RepoRoot, BuildArguments(request, before, paths, messagePath), environment, ct).ConfigureAwait(false);
             result = new GitOperationResponse { OperationId = request.OperationId, RepoRoot = info.RepoRoot, Action = request.Action, State = "completed" };
             if (request.Action == "commit")
             {
@@ -131,6 +140,11 @@ internal sealed class GitOperationService
             transaction.PreservePreparedIndex = true;
             result.Detail = $"Commit {result.CommitHash} exists, but its index could not be published. Do not create another commit. The prepared index remains at {temporary}. {error.Message}";
             return result;
+        }
+        finally
+        {
+            if (ownsMessage) try { File.Delete(messagePath); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Log.Warn(() => $"Could not remove owned commit message file {messagePath}: {error.Message}"); }
         }
     }
 
@@ -171,9 +185,9 @@ internal sealed class GitOperationService
         finally { if (File.Exists(patchPath)) File.Delete(patchPath); }
     }
 
-    private static string[] BuildArguments(GitOperationRequest request, GitStatusResponse before, string[] paths)
+    private static string[] BuildArguments(GitOperationRequest request, GitStatusResponse before, string[] paths, string messagePath)
     {
-        if (request.Action == "commit") return ["commit", "--cleanup=verbatim", "-m", request.Message!];
+        if (request.Action == "commit") return ["commit", "--cleanup=verbatim", "-F", messagePath];
         if (request.Action == "stage") return ["--literal-pathspecs", "add", "-A", "--", .. paths];
         return string.IsNullOrEmpty(before.HeadHash)
             ? ["--literal-pathspecs", "rm", "--cached", "--force", "--ignore-unmatch", "-r", "--", .. paths]

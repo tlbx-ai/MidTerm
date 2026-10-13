@@ -340,8 +340,8 @@ public sealed class GitWatcherService : IDisposable
     {
         var resolved = ResolveRepoRoot(sessionId, repoRoot);
         if (resolved is null) return null;
-        if (!_watchers.TryGetValue(resolved, out var watcher)) return null;
-        return watcher.CachedStatus;
+        return GetRepoBindings(sessionId).FirstOrDefault(binding => string.Equals(binding.RepoRoot, resolved,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))?.Status;
     }
 
     public string? GetRepoRoot(string sessionId)
@@ -597,13 +597,7 @@ public sealed class GitWatcherService : IDisposable
     private GitRepoBinding CreateBinding(string repoRoot, string role, string source, bool isPrimary, string? label = null)
     {
         var status = _watchers.TryGetValue(repoRoot, out var watcher) ? watcher.CachedStatus : null;
-        if (status is not null)
-        {
-            status.Label = label ?? Path.GetFileName(repoRoot);
-            status.Role = role;
-            status.Source = source;
-            status.IsPrimary = isPrimary;
-        }
+        status = status?.WithBindingMetadata(label ?? Path.GetFileName(repoRoot), role, source, isPrimary);
 
         return new GitRepoBinding
         {

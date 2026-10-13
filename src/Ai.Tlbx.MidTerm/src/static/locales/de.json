@@ -1414,5 +1414,8 @@
   "git.binaryChanged": "Binärdatei geändert.",
   "git.reviewChanged": "Der geprüfte Stand hat sich geändert. Aktualisieren und erneut prüfen.",
   "git.invalidBranch": "Einen gültigen Branchnamen eingeben.",
-  "git.dirtyWorkingTree": "Änderungen zuerst committen oder stashen."
+  "git.dirtyWorkingTree": "Änderungen zuerst committen oder stashen.",
+  "git.commit": "Commit",
+  "fileBrowser.selectMultiple": "Mehrfachauswahl",
+  "fileBrowser.visibilityOptions": "Sichtbarkeit"
 }

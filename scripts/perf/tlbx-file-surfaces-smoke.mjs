@@ -64,8 +64,10 @@ function contrast(fg, bg) {
 async function measureContrast(label, selectors) {
   const evidence = await page.locator(selectors).evaluateAll(nodes => {
     const visible = [...new Set(nodes)].filter(el => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden');
-    window.workspaceContrastElements = visible.map(el => ({ el, style: el.getAttribute('style') }));
-    return visible.map(el => { const style = getComputedStyle(el), rect = el.getBoundingClientRect(); const record = { text: el.textContent.slice(0, 60), color: style.color, x: Math.min(innerWidth - 2, Math.max(1, rect.x + Math.min(rect.width / 2, 30))), y: Math.min(innerHeight - 2, Math.max(1, rect.y + Math.min(rect.height / 2, 8))) }; el.style.setProperty('color', 'transparent', 'important'); el.style.setProperty('text-shadow', 'none', 'important'); return record; });
+    const evidence = visible.map(el => { const style = getComputedStyle(el), rect = el.getBoundingClientRect(); return { text: el.textContent.slice(0, 60), color: style.color, x: Math.min(innerWidth - 2, Math.max(1, rect.x + Math.min(rect.width / 2, 30))), y: Math.min(innerHeight - 2, Math.max(1, rect.y + Math.min(rect.height / 2, 8))) }; });
+    window.workspaceContrastElements = [...new Set(visible.flatMap(el => [el,...el.querySelectorAll('*')]))].map(el => ({ el, style: el.getAttribute('style'), background: getComputedStyle(el).backgroundColor }));
+    for (const {el,background} of window.workspaceContrastElements) { el.style.setProperty('background-color',background,'important');el.style.setProperty('color','transparent','important');el.style.setProperty('text-shadow','none','important'); }
+    return evidence;
   });
   let raster;
   try { raster = PNG.sync.read(await page.screenshot({ animations: 'disabled' })); }
@@ -74,6 +76,7 @@ async function measureContrast(label, selectors) {
   for (const e of evidence) {
     const offset = (Math.floor(e.y) * raster.width + Math.floor(e.x)) * 4, background = [...raster.data.subarray(offset, offset + 3)], foreground = rgba(e.color);
     const ratio = contrast(foreground, background); result.samples.push({ label, text: e.text, foreground, background, ratio });
+    if (ratio < 4.5) { fs.writeFileSync(path.join(out,'contrast-probe.png'),PNG.sync.write(raster));fs.writeFileSync(path.join(out,'contrast-probe.json'),JSON.stringify({label,e,evidence,foreground,background,ratio},null,2)); }
     assert.ok(ratio >= 4.5, `${label} ${e.text}: contrast ${ratio.toFixed(4)} foreground ${foreground} background ${background}`);
   }
 }
@@ -123,7 +126,7 @@ try {
   context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
   const eq = cookie.indexOf('='); await context.addCookies([{ name: cookie.slice(0, eq), value: cookie.slice(eq + 1), url }]);
   let ready = false;
-  for (let i = 0; i < 40; i++) { try { const css = await context.request.get(url + '/css/app.css'); ready = css.ok() && (await css.text()).includes('.file-selection-target'); } catch {} if (ready) break; await sleep(250); }
+  for (let i = 0; i < 40; i++) { try { const css = await context.request.get(url + '/css/app.css'); ready = css.ok() && (await css.text()).includes('.file-listing-options-panel'); } catch {} if (ready) break; await sleep(250); }
   if (!ready) throw new Error('Source assets are not ready');
   savedSettings = await api('GET', '/api/settings');
   if (savedSettings.backgroundImageFileName) { const image = await context.request.get(url + '/api/settings/background-image'); assert.ok(image.ok()); savedImage = await image.body(); fs.writeFileSync(path.join(out, 'original-wallpaper.backup'), savedImage); }
@@ -158,7 +161,7 @@ try {
         await row.hover(); await measureContrast(label + '-hover', `.session-wrapper[data-session-id="${session}"] .tree-node[data-name="tracked.txt"] .tree-size`);
         await terminal.click(); await wrapper.locator('.git-indicator').click();
         const gitDock = page.locator('#git-dock'); await gitDock.locator('.git-dock-resize-grip').press('End'); await gitDock.locator('.git-tree-file[data-path="tracked.txt"]').click(); await gitDock.locator('.git-diff-lines').waitFor();
-        await measureContrast(label + '-git', '#git-dock .git-panel-summary-subtitle, #git-dock .git-tree-file-selected .git-loc-add, #git-dock .git-tree-file-selected .git-loc-del, #git-dock .git-diff-line-add, #git-dock .git-diff-line-del');
+        await measureContrast(label + '-git', '#git-dock .git-panel-summary-subtitle, #git-dock .git-tree-file-selected .git-loc-add, #git-dock .git-tree-file-selected .git-loc-del, #git-dock .git-diff-line-add .git-diff-code, #git-dock .git-diff-line-del .git-diff-code, #git-dock .git-diff-number, #git-dock .git-diff-word-change');
         if (pattern === 'structured' && transparency === 90) await page.screenshot({ path: path.join(out, label + '-git.png'), animations: 'disabled' });
         await gitDock.locator('#git-dock-close').click();
       }

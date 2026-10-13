@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { revealControl } from './ui-controls.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -53,7 +54,7 @@ try {
   for (const width of [250, 400, 600]) {
     await grip.focus(); await grip.press('End'); if (width === 250) await grip.press('Home'); else if (width === 400) for (let i = 0; i < 4; i++) await grip.press('Shift+ArrowRight');
     assert.equal((await dock.boundingBox()).width, width);
-    if ((await wrap.getAttribute('aria-pressed')) === 'true') await wrap.click();
+    await revealControl(wrap); if ((await wrap.getAttribute('aria-pressed')) === 'true') await wrap.click();
     const nowrap = await panes.first().evaluate(el => ({ whiteSpace: getComputedStyle(el).whiteSpace, tabSize: getComputedStyle(el).tabSize, client: el.clientWidth, scroll: el.scrollWidth, heights: [...el.querySelectorAll('.git-diff-line')].map(line => line.getBoundingClientRect().height), lineHeight: parseFloat(getComputedStyle(el).lineHeight) }));
     assert.equal(nowrap.whiteSpace, 'pre'); assert.equal(nowrap.tabSize, '4'); assert.ok(nowrap.scroll > nowrap.client * 2); for (const height of nowrap.heights) assert.ok(Math.abs(height - nowrap.lineHeight) < 1, JSON.stringify(nowrap));
     const markers = await dock.locator('.git-diff-line-add .git-diff-code').evaluateAll(nodes => {

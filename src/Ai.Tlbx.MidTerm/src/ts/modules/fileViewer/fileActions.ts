@@ -63,7 +63,9 @@ export class FileActions {
   public constructor(private context: FileActionContext) {
     this.root.className = 'file-actions-menu';
     const summary = document.createElement('summary');
-    summary.textContent = t('fileBrowser.actions');
+    summary.textContent = '⋯';
+    summary.title = t('fileBrowser.actions');
+    summary.setAttribute('aria-label', summary.title);
     this.root.append(summary);
     const menu = document.createElement('div');
     menu.className = 'file-actions-list';
@@ -100,6 +102,8 @@ export class FileActions {
   }
 
   public attach(toolbar: HTMLElement): void {
+    const readingActions = toolbar.querySelector('.file-selection-read-actions');
+    if (readingActions) this.root.querySelector('.file-actions-list')?.prepend(readingActions);
     toolbar.append(this.root);
     toolbar.after(this.status);
     this.update();
@@ -505,7 +509,7 @@ export class FileActions {
   private keyboard(event: KeyboardEvent): void {
     if (
       (event.target as HTMLElement).closest(
-        'input:not(.file-selection-checkbox), textarea, button, summary, .file-browser-preview',
+        'input, textarea, button, summary, .file-browser-preview',
       )
     )
       return;

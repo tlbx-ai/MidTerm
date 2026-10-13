@@ -1518,5 +1518,8 @@
   "git.binaryChanged": "Binary file changed.",
   "git.reviewChanged": "The reviewed state changed. Refresh and review it again.",
   "git.invalidBranch": "Enter a valid branch name.",
-  "git.dirtyWorkingTree": "Commit or stash your changes first."
+  "git.dirtyWorkingTree": "Commit or stash your changes first.",
+  "git.commit": "Commit",
+  "fileBrowser.selectMultiple": "Select multiple",
+  "fileBrowser.visibilityOptions": "Visibility options"
 }

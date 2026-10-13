@@ -354,11 +354,14 @@ function renderTextContent(
     mode: previousMode,
     save: saveCurrentText,
   });
+  const modeControls = view.root.querySelector('.file-document-modes');
+  if (modeControls) actions.prepend(modeControls);
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
   saveBtn.className = 'preview-save-btn';
   const updateSave = (): void => {
     saveBtn.disabled = !edit.dirty || edit.saving || snapshot.readOnly;
+    saveBtn.hidden = !edit.dirty && !edit.saving;
     saveBtn.textContent = t(edit.saving ? 'modal.saving' : 'fileViewer.save');
   };
   edit.subscribe(updateSave);

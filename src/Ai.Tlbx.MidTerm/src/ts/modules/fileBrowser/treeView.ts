@@ -129,6 +129,12 @@ export function createTreeView(
       openSelectedPath(state, path);
     },
     () => sessionId,
+    {
+      active: () => surface.multiSelect,
+      toggle: () => {
+        surface.toggleMultiSelect();
+      },
+    },
   );
   const controls = createListingControls(`tree:${sessionId}`, true, (options) => {
     state.view = options;
@@ -137,7 +143,8 @@ export function createTreeView(
   const header = createListingHeader((sort) => {
     controls.setSort(sort);
   });
-  container.replaceChildren(toolbar.root, controls.root, header.root, rowsRoot);
+  controls.root.insertBefore(toolbar.root, controls.root.querySelector('.file-listing-count'));
+  container.replaceChildren(controls.root, header.root, rowsRoot);
   const actions = new FileActions({
     owner: container,
     sessionId: () => sessionId,
@@ -379,8 +386,12 @@ function createTreeNode(state: TreeState): HTMLElement {
   node.addEventListener('click', (event) => {
     const entry = rowEntries.get(node);
     if (!entry) return;
-    if (event.ctrlKey || event.metaKey || event.shiftKey) {
-      state.surface.choose(node, event.ctrlKey || event.metaKey, event.shiftKey);
+    if (event.ctrlKey || event.metaKey || event.shiftKey || state.surface.multiSelect) {
+      state.surface.choose(
+        node,
+        event.ctrlKey || event.metaKey || state.surface.multiSelect,
+        event.shiftKey,
+      );
       node.focus({ preventScroll: true });
       return;
     }

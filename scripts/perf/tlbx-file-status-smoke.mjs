@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { clickControl, tapControl } from './ui-controls.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -86,7 +87,7 @@ try {
     // Deleted entries no longer exist on disk; Files conveys their change through
     // the surviving parent, while Git retains the actual deleted file entry.
     assert.equal(await (await folderRow('deleted/change.txt')).count(), 0);
-    await (await folderRow('modified')).locator('input').click(); await tree.locator('[data-selection-action="details"]').click();
+    await (await folderRow('modified')).click({ modifiers: ['Control'] }); await clickControl(tree.locator('[data-selection-action="details"]'));
     const dialog = page.locator('.file-operation-overlay'); await dialog.locator('[role="dialog"]').waitFor();
     await dialogContrast(`${language}-${theme}`); await page.screenshot({ path: path.join(out, `${language}-${theme}-details.png`), animations: 'disabled' }); await dialog.locator('[data-operation-choice="cancel"]').click();
     await (await folderRow('modified/change.txt')).click();
@@ -121,7 +122,7 @@ try {
   const untrackedFolder = await folderRow('untracked');
   if ((await untrackedFolder.getAttribute('aria-expanded')) !== 'true') await untrackedFolder.locator('.tree-expand').tap();
   const untrackedBadge = tree.locator('.tree-node .tree-git-badge[data-git-status="untracked"]').last(); assert.equal((await badgeSnapshot(untrackedBadge)).letter, 'U');
-  const checkbox = (await folderRow('untracked/New file.txt')).locator('input'); if (!(await checkbox.isChecked())) await checkbox.tap(); await tree.locator('[data-selection-action="details"]').tap();
+  await tapControl(tree.locator('[data-selection-action="selectMultiple"]')); const selectedFile=await folderRow('untracked/New file.txt'); if(await selectedFile.getAttribute('aria-selected')!=='true')await selectedFile.tap(); await tapControl(tree.locator('[data-selection-action="details"]'));
   const info = page.locator('.file-operation-overlay'); assert.ok((await info.locator('.file-operation-message').innerText()).includes('Ungetrackt')); await dialogContrast('390px-touch'); await page.screenshot({ path: path.join(out, 'touch-files-status-details-390.png'), animations: 'disabled' }); await info.locator('[data-operation-choice="cancel"]').tap();
   await page.screenshot({ path: path.join(out, 'touch-files-390.png') });
   git(['add', 'untracked/New file.txt']); await api('POST', '/api/git/repos/refresh', { sessionId: session, repoRoot: fixture });

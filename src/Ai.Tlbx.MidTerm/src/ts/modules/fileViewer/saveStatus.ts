@@ -11,6 +11,10 @@ export interface FileSaveActions {
   active: () => boolean;
 }
 
+function hasSaveFeedback(edit: FileEditState): boolean {
+  return edit.dirty || edit.saved || edit.saving || !!edit.lastError;
+}
+
 export function createFileSaveStatus(edit: FileEditState, actions: FileSaveActions): HTMLElement {
   const root = document.createElement('div');
   root.className = 'file-save-status';
@@ -30,6 +34,7 @@ export function createFileSaveStatus(edit: FileEditState, actions: FileSaveActio
   buttons.appendChild(exportDraft);
   root.appendChild(buttons);
   const render = (): void => {
+    root.hidden = !hasSaveFeedback(edit);
     const conflict =
       edit.lastError instanceof FileDocumentError &&
       (edit.lastError.code === 'changed' || edit.lastError.code === 'changed_during_save');

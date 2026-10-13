@@ -16141,6 +16141,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 }
 
 .file-browser-detail {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -16709,11 +16710,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .git-panel-summary {
   padding: 10px 12px 12px;
   border-bottom: 1px solid var(--border-color);
-  background: linear-gradient(
-    180deg,
-    var(--workspace-pane-chrome-background),
-    var(--workspace-pane-background)
-  );
+  background: var(--workspace-pane-chrome-background);
 }
 
 .git-panel-summary-title-row {
@@ -17008,7 +17005,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .git-tree-file-row, .git-section-heading { display: flex; align-items: stretch; min-width: 0; }
 .git-section-heading { flex-wrap: wrap; }
 .git-section-heading .git-section-header { flex: 1; min-width: 0; }
-.git-file-action, .git-section-action { flex-shrink: 0; margin: 4px 8px 4px 0; min-width: 0; }
+.git-file-action, .git-section-action { flex-shrink: 0; margin: 4px 8px 4px 0; min-width: 28px; width: 28px; min-height: 28px; padding: 2px; font-size: 20px; line-height: 1; }
 .git-operations { padding: 10px 12px; border-bottom: 1px solid var(--border-color); }
 .git-commit-message { display: block; resize: vertical; width: 100%; min-height: 64px; max-height: 160px; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--workspace-pane-chrome-background); color: var(--text-primary); font: inherit; }
 .git-operation-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
@@ -17022,7 +17019,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 }
 
 .git-tree-file-selected {
-  background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+  background: var(--bg-active);
   box-shadow: inset 2px 0 0 var(--accent-blue);
 }
 
@@ -17330,7 +17327,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .git-diff-number { position: sticky; z-index: 1; padding-right: 1ch; text-align: right; color: var(--text-muted); background: var(--workspace-pane-chrome-background); user-select: none; }
 .git-diff-number-old { left: 0; }
 .git-diff-number-new { left: var(--git-diff-number-width, 4ch); }
-.git-diff-word-change { background: color-mix(in srgb, currentColor 20%, transparent); }
+.git-diff-word-change { background: color-mix(in srgb, currentColor 8%, transparent); text-decoration: underline; text-underline-offset: 2px; }
 .git-diff-hunk-header > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .git-diff-hunk-action { flex: none; min-width: 24px; min-height: 24px; padding: 0 5px; font-size: var(--fs-md); }
 @media (pointer: coarse) {
@@ -21021,16 +21018,10 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 
 /* Selection remains available with touch, keyboard and pointer input. */
 .file-selection-toolbar {
-  position: sticky;
-  z-index: 1;
-  top: 0;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 8px;
-  border-bottom: 1px solid var(--border-color);
-  background: var(--workspace-pane-chrome-background);
+  padding: 0;
   font-size: var(--fs-xs);
 }
 
@@ -21050,13 +21041,6 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   cursor: default;
 }
 
-.file-selection-checkbox {
-  flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  margin: 0 6px 0 0;
-  accent-color: var(--accent-color);
-}
 
 .file-list-item:focus-visible,
 .tree-node:focus-visible {
@@ -21170,7 +21154,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   font: inherit;
 }
 .file-listing-controls button, .file-listing-heading { cursor: pointer; }
-.file-listing-filter { flex: 1 1 160px; min-width: 0 !important; width: 100%; }
+.file-listing-filter { flex: 1 1 100px; min-width: 0 !important; width: auto; }
 .file-listing-sort { flex: 1 1 90px; max-width: 180px; }
 .file-listing-views { display: flex; gap: 3px; }
 .file-listing-views .active {
@@ -21183,20 +21167,20 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   grid-template-columns: minmax(180px, 1fr) 90px 170px 80px;
   gap: 8px;
   min-width: 640px;
-  padding: 0 12px 0 64px;
+  padding: 0 12px 0 38px;
   font-size: var(--fs-xs);
 }
 .file-listing-header[hidden] { display: none; }
 .file-listing-heading { border: 0; background: transparent; text-align: left; }
 .file-listing-details :is(.file-list-item, .tree-node) {
   display: grid;
-  grid-template-columns: 18px 18px minmax(180px, 1fr) 90px 170px 80px;
+  grid-template-columns: 18px minmax(180px, 1fr) 90px 170px 80px;
   gap: 8px;
   min-width: 640px;
   min-height: 40px;
   padding: 4px 12px;
 }
-.file-listing-details :is(.file-selection-checkbox, .tree-icon, .file-icon, .tree-size, .file-size) {
+.file-listing-details :is(.tree-icon, .file-icon, .tree-size, .file-size) {
   margin: 0;
   padding: 0;
 }
@@ -21230,7 +21214,6 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 .file-listing-icons :is(.tree-indent, .tree-expand, .tree-type, .tree-modified, .file-type, .file-modified) {
   display: none;
 }
-.file-listing-icons .file-selection-target { position: absolute; top: 4px; left: 4px; margin: 0; }
 .file-listing-icons :is(.file-icon, .tree-icon) { margin: 0; font-size: 32px; }
 .file-listing-icons .file-entry-label { flex: 0; flex-wrap: wrap; justify-content: center; width: 100%; }
 .file-listing-icons :is(.file-name, .tree-name) {
@@ -21250,13 +21233,13 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   }
   .file-listing-heading:not(.file-listing-heading-name) { display: none; }
   .file-listing-details :is(.file-list-item, .tree-node) {
-    grid-template-columns: 18px 18px minmax(0, 1fr);
+    grid-template-columns: 18px minmax(0, 1fr);
     min-width: 0;
     gap: 6px 8px;
   }
   .file-listing-details .file-entry-metadata {
     display: flex;
-    grid-column: 3;
+    grid-column: 2;
     flex-wrap: wrap;
     gap: 4px 10px;
     min-width: 0;
@@ -21345,15 +21328,6 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   .file-pane-resize-grip { display: none; }
 }
 
-.file-selection-target {
-  display: inline-flex;
-  flex: 0 0 22px;
-  align-items: center;
-  justify-content: center;
-  min-height: 22px;
-  cursor: pointer;
-}
-.file-selection-target .file-selection-checkbox { margin: 0; }
 .file-path-details, .git-path-details {
   min-height: 36px;
   padding: 6px 10px;
@@ -21393,7 +21367,6 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 
 @media (pointer: coarse) {
   .tree-node, .file-list-item { min-height: 44px; }
-  .file-selection-target { flex-basis: 44px; width: 44px; min-height: 44px; }
   button.tree-expand { flex-basis: 44px; width: 44px; height: 44px; font-size: 18px; }
   .file-selection-toolbar button,
   .file-actions-menu summary,
@@ -21420,9 +21393,8 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   .file-viewer-header-actions button,
   .file-viewer-modal-content .modal-close { min-width: 44px; min-height: 44px; }
   .file-browser-navigation input, .file-listing-filter, .file-listing-sort, .file-operation-input { min-height: 44px; font-size: 16px; }
-  .file-listing-details :is(.tree-node, .file-list-item) { grid-template-columns: 44px 18px minmax(180px, 1fr) 90px 170px 80px; }
-  .file-listing-details .file-selection-target { min-height: 44px; }
-  .file-listing-header { padding-left: 90px; }
+  .file-listing-details :is(.tree-node, .file-list-item) { grid-template-columns: 18px minmax(180px, 1fr) 90px 170px 80px; }
+  .file-listing-header { padding-left: 38px; }
   .file-viewer-modal-content .modal-header, .file-viewer-dock-header { flex: 0 0 auto; flex-wrap: wrap; height: auto; min-height: 44px; }
   .file-viewer-modal-content .file-viewer-body { flex: 1; min-height: 0; max-height: none; }
   .file-viewer-header-info, .file-viewer-dock-title { flex: 1 1 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -21486,3 +21458,61 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .git-commit-details dt { color: var(--text-secondary); }
 .git-commit-details dd { margin: 0; overflow-wrap: anywhere; user-select: text; }
 .git-operation-details pre { max-height: 180px; margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; font-family: var(--font-mono); font-size: var(--fs-xs); }
+
+/* Files and Git share the compact control language of tlbx's session chrome. */
+.file-selection-read-actions { border-bottom: 1px solid var(--border-color); padding-bottom: 6px; margin-bottom: 6px; }
+.file-selection-read-actions button { display: block; width: 100%; text-align: left; }
+.file-actions-menu > summary { justify-content: center; width: 32px; padding: 4px; font-size: 20px; }
+.file-listing-options { position: relative; }
+.file-listing-options > summary { display: flex; justify-content: center; align-items: center; min-width: 32px; min-height: 36px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--workspace-pane-chrome-background); cursor: pointer; list-style: none; }
+.file-listing-options-panel { position: absolute; top: calc(100% + 6px); right: 0; z-index: 1500; display: flex; gap: 8px; flex-wrap: wrap; width: 228px; padding: 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-dropdown-opaque); box-shadow: var(--shadow-md); }
+.file-listing-options-panel .file-listing-sort { flex: 1; max-width: none; }
+.file-listing-options-panel .file-listing-views { flex-basis: 100%; }
+.file-listing-options > summary:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.file-browser-navigation-actions button { width: 32px; min-width: 32px; padding: 4px; font-size: 18px; }
+.file-browser-address-form button { min-width: 32px; padding: 4px; }
+.file-browser[data-file-pane="tree"] .file-browser-tree { flex: 1 1 0; max-width: none; border-right: none; }
+.file-browser[data-file-pane="tree"] .file-browser-detail, .file-browser[data-file-pane="tree"] .file-pane-resize-grip { display: none; }
+.file-browser[data-file-pane="detail"] .file-browser-back { position: absolute; top: 8px; left: 8px; z-index: 2; display: flex; justify-content: center; align-items: center; width: 32px; min-height: 32px; padding: 4px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--workspace-pane-chrome-background); color: var(--text-primary); cursor: pointer; }
+.file-browser-detail .preview-toolbar { padding-left: 48px; }
+.file-browser-detail .preview-toolbar-subtitle { display: none; }
+.git-operation-menu { position: relative; margin-left: auto; }
+.git-operation-menu > summary { display: flex; justify-content: center; align-items: center; width: 32px; min-height: 32px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--workspace-pane-chrome-background); cursor: pointer; list-style: none; font-size: 20px; }
+.git-operation-menu-items { position: absolute; top: calc(100% + 4px); right: 0; z-index: 10; width: max-content; max-width: 260px; padding: 6px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-dropdown-opaque); }
+.git-operation-menu-items button { display: block; width: 100%; text-align: left; border: 0; background: transparent; }
+.git-operation-menu > summary:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.git-commit-button { flex: 1; min-height: 32px; padding: 6px 12px; }
+.git-tree-file-row .git-file-action { opacity: 0; background: transparent; border-color: transparent; }
+.git-tree-file-row:hover .git-file-action, .git-tree-file-row:focus-within .git-file-action { opacity: 1; }
+.git-file-action:hover, .git-section-action:hover { background: var(--bg-hover-opaque); }
+.git-inspector-header .git-inspector-back { min-width: 32px; padding: 4px; }
+:is(.git-panel, .git-panel-shell) :is(.git-inspector-summary, .git-inspector-patch, .git-command-section) { padding: 0; border: 0; border-radius: 0; }
+:is(.git-panel, .git-panel-shell) .git-command-row { border: 0; border-radius: 0; padding: 10px 0; background: transparent; border-top: 1px solid var(--border-color); }
+:is(.git-panel, .git-panel-shell) .git-inspector-body { gap: 14px; }
+@media (pointer: coarse) {
+  .file-listing-options > summary, .file-actions-menu > summary, .git-operation-menu > summary, .git-commit-button, .file-browser-navigation-actions button, .file-browser[data-file-pane="detail"] .file-browser-back { min-width: 44px; min-height: 44px; }
+  .git-file-action, .git-section-action { min-width: 44px; width: 44px; min-height: 44px; }
+  .git-tree-file-row .git-file-action { opacity: 1; }
+  .git-commit-metadata summary, .git-command-section summary, .git-operation-details summary { min-height: 44px; }
+  .file-browser-detail .preview-toolbar { padding-left: 60px; }
+}
+.git-diff-options { position: relative; margin-left: auto; }
+.git-diff-options > summary { display: flex; align-items: center; justify-content: center; width: 32px; min-height: 32px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--workspace-pane-chrome-background); cursor: pointer; list-style: none; font-size: 20px; }
+.git-diff-options > div { position: absolute; z-index: 10; top: calc(100% + 4px); right: 0; min-width: 150px; padding: 6px; border: 1px solid var(--border-color); background: var(--bg-dropdown-opaque); border-radius: var(--radius-sm); }
+.git-diff-mode { min-width: 32px; padding: 4px; font-size: 18px; }
+@media (pointer: coarse) { .git-diff-options > summary, .git-diff-mode { min-width: 44px; min-height: 44px; } }
+.preview-save-btn[hidden] { display: none; }
+.file-document-mode-status:empty { display: none; }
+.file-selection-read-actions button[aria-pressed="true"] { color: var(--accent-blue); background: var(--bg-active); }
+.file-browser-navigation-actions .file-browser-address-form { flex: 1 1 300px; }
+.file-browser-location-row { display: flex; align-items: center; gap: 8px; }
+.file-browser-location-row .file-browser-breadcrumbs { flex: 1; min-width: 0; }
+.file-visibility-menu { position: relative; flex: 0 0 auto; }
+.file-visibility-menu > summary { display: flex; align-items: center; justify-content: center; width: 32px; min-height: 32px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--workspace-pane-chrome-background); cursor: pointer; list-style: none; }
+.file-visibility-menu > .file-visibility-controls { position: absolute; right: 0; top: calc(100% + 4px); z-index: 1500; width: 260px; max-width: calc(100vw - 24px); padding: 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-dropdown-opaque); }
+.file-save-status[hidden] { display: none; }
+.preview-toolbar-actions .file-document-modes { padding: 0; border: 0; }
+.preview-toolbar-actions .file-document-mode { min-height: 32px; padding: 4px 8px; }
+@media (pointer: coarse) {
+  .file-visibility-menu > summary, .preview-toolbar-actions .file-document-mode { min-width: 44px; min-height: 44px; }
+}

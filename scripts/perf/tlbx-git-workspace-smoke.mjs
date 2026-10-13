@@ -27,7 +27,7 @@ try {
   page.on('websocket',socket=>socket.on('framesent',frame=>{if(Buffer.isBuffer(frame.payload)&&frame.payload[0]===0x14)result.inputFrames++;}));
   await page.goto(url); await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click(); await page.locator(`.session-wrapper[data-session-id="${session}"] .git-indicator`).click();
   const dock=page.locator('#git-dock'), dialog=page.locator('.git-workspace-dialog'); await dock.locator('.git-dock-resize-grip').press('End');
-  const refresh=async()=>{await api('POST','/api/git/repos/refresh',{sessionId:session,repoRoot:fixture}); await page.waitForFunction(()=>!document.querySelector('#git-dock [data-action="stage-all"]')?.disabled);};
+  const refresh=async()=>{await api('POST','/api/git/repos/refresh',{sessionId:session,repoRoot:fixture}); await page.waitForFunction(()=>document.querySelector('#git-dock .git-panel-shell')?.dataset.gitPhase==='ready');};
   const open=async()=>{await dock.locator('[data-action="git-workspace"]').click();await dialog.locator('.git-workspace-section').first().waitFor();};
   const close=async()=>{await dialog.locator('[data-close]').click();await dialog.waitFor({state:'detached'});};
   const action=async(name, options={})=>{

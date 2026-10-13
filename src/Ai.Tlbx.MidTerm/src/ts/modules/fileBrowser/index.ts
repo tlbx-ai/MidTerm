@@ -81,7 +81,9 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
       const back = document.createElement('button');
       back.type = 'button';
       back.className = 'file-browser-back';
-      back.textContent = `← ${t('fileBrowser.backToFiles')}`;
+      back.textContent = '←';
+      back.title = t('fileBrowser.backToFiles');
+      back.setAttribute('aria-label', back.title);
       back.addEventListener('click', () => {
         detailScroll = [previewContainer, ...previewContainer.querySelectorAll<HTMLElement>('*')]
           .filter((element) => element.scrollTop !== 0 || element.scrollLeft !== 0)
@@ -153,6 +155,7 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
     );
 
     if (browser) {
+      browser.dataset.filePane = 'tree';
       const navigation = new BrowserNavigation(sessionId, {
         refilter: (path, data, signal) => applyTreeVisibility(sessionId, path, data, signal),
         confirm: () => confirmFileNavigation(previewContainer),

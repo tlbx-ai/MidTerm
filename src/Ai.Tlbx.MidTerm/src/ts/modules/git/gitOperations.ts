@@ -85,6 +85,13 @@ export function renderGitOperations(
 ): string {
   const message = operationMessage(state);
   const [summary, ...details] = message.split('\n');
+  const hasChanges =
+    status.staged.length +
+      status.modified.length +
+      status.untracked.length +
+      status.conflicted.length >
+    0;
+  if (!hasChanges && !state.message) return renderOperationNotice(state, summary ?? '', details);
   return `<section class="git-operations" aria-label="${t('git.commitStaged')}">
     <textarea class="git-commit-message" data-git-commit-message="true" aria-label="${t('git.commitMessage')}" placeholder="${t('git.commitMessage')}" maxlength="65536"${state.busy ? ' readonly' : ''}>${escapeHtml(state.message)}</textarea>
     ${renderOperationButtons(state, status, blocked)}
@@ -94,6 +101,11 @@ export function renderGitOperations(
   </section>`;
 }
 
+function renderOperationNotice(state: GitOperationsUi, summary: string, details: string[]): string {
+  if (!summary && !state.pending) return '';
+  return `<section class="git-operations git-operations-notice"><div class="git-operation-status" role="${state.error ? 'alert' : 'status'}" aria-live="polite">${escapeHtml(summary)}</div>${details.length ? `<details class="git-operation-details"><summary>${t('git.errorDetails')}</summary><pre>${escapeHtml(details.join('\n'))}</pre></details>` : ''}${state.pending && !state.busy ? `<button class="git-action-button" data-action="retry-operation" type="button">${t('git.retryOperation')}</button>` : ''}</section>`;
+}
+
 function renderOperationButtons(
   state: GitOperationsUi,
   status: GitStatusResponse,
@@ -101,19 +113,39 @@ function renderOperationButtons(
 ): string {
   const busy = blocked || state.busy || state.pending !== null;
   return `<div class="git-operation-buttons">
+    <button class="btn-primary git-commit-button" data-action="commit-staged"${!blocked && canCommit(state, status) ? '' : ' disabled'} title="${t('git.commitStaged')}" type="button">${t('git.commit')}</button>
+    <details class="git-operation-menu"><summary aria-label="${t('git.workspace')}" title="${t('git.workspace')}">⋯</summary><div class="git-operation-menu-items">
     <button class="git-action-button" data-action="stage-all"${busy ? ' disabled' : ''} type="button">${t('git.stageAll')}</button>
     <button class="git-action-button" data-action="unstage-all"${busy || status.staged.length === 0 ? ' disabled' : ''} type="button">${t('git.unstageAll')}</button>
-    <button class="git-action-button" data-action="commit-staged"${!blocked && canCommit(state, status) ? '' : ' disabled'} type="button">${t('git.commitStaged')}</button>
+    </div></details>
   </div>`;
 }
 
-export function gitFileAction(path: string, staged: boolean, busy: boolean): string {
-  return `<button class="git-action-button git-file-action" data-action="${staged ? 'unstage-file' : 'stage-file'}" data-path="${escapeHtml(path)}"${busy ? ' disabled' : ''} aria-label="${t(staged ? 'git.unstage' : 'git.stage')}: ${escapeHtml(path)}" type="button">${t(staged ? 'git.unstage' : 'git.stage')}</button>`;
+export function gitFileAction(
+  path: string,
+  staged: boolean,
+  busy: boolean,
+  inspector = false,
+): string {
+  const label = `${t(staged ? 'git.unstage' : 'git.stage')}: ${escapeHtml(path)}`;
+  const action = `${staged ? 'unstage' : 'stage'}-${inspector ? 'inspected-' : ''}file`;
+  return `<button class="git-action-button git-file-action" data-action="${action}" data-path="${escapeHtml(path)}"${busy ? ' disabled' : ''} aria-label="${label}" title="${label}" type="button"><span aria-hidden="true">${staged ? '−' : '+'}</span></button>`;
 }
 
 export function gitSectionAction(section: string, busy: boolean): string {
   if (section === 'conflicts') return '';
-  return `<button class="git-action-button git-section-action" data-action="stage-section" data-section="${section}"${busy ? ' disabled' : ''} type="button">${t(section === 'staged' ? 'git.unstageGroup' : 'git.stageGroup')}</button>`;
+  const label = t(section === 'staged' ? 'git.unstageGroup' : 'git.stageGroup');
+  return `<button class="git-action-button git-section-action" data-action="stage-section" data-section="${section}"${busy ? ' disabled' : ''} aria-label="${label}" title="${label}" type="button"><span aria-hidden="true">${section === 'staged' ? '−' : '+'}</span></button>`;
+}
+
+export function renderGitInspectorAction(
+  selection: { kind: string; path?: string; scope?: string; status?: string } | null,
+  busy: boolean,
+): string {
+  if (selection?.kind !== 'file' || !selection.path) return '';
+  if (selection.status === 'unmerged' || selection.status === 'conflicted')
+    return `<button class="git-action-button" data-action="resolve-conflict" data-path="${escapeHtml(selection.path)}"${busy ? ' disabled' : ''} type="button">${t('git.resolveConflict')}</button>`;
+  return gitFileAction(selection.path, selection.scope === 'staged', busy, true);
 }
 
 export async function executeGitOperation(

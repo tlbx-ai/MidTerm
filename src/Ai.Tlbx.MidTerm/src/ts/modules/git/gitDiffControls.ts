@@ -56,7 +56,7 @@ export function renderDiffControls(
   busy = false,
 ): string {
   if (!hasHunks) return '';
-  return `<button class="git-diff-wrap" data-action="toggle-diff-side" aria-pressed="${ui.sideBySide}" type="button">${t('git.sideBySide')}</button>
+  return `<button class="git-diff-wrap git-diff-mode" data-action="toggle-diff-side" aria-label="${t('git.sideBySide')}" title="${t('git.sideBySide')}" aria-pressed="${ui.sideBySide}" type="button">▥</button>
     <button class="git-diff-wrap" data-action="previous-diff-hunk" title="${t('git.previousChange')}" aria-label="${t('git.previousChange')}" type="button">↑</button>
     <button class="git-diff-wrap" data-action="next-diff-hunk" title="${t('git.nextChange')}" aria-label="${t('git.nextChange')}" type="button">↓</button>
     ${canSelect ? `<button class="git-action-button git-diff-selection-action" data-action="apply-diff-selection"${ui.selected.size ? '' : ' hidden'}${busy ? ' disabled' : ''} type="button">${t(staged ? 'git.unstageSelectedLines' : 'git.stageSelectedLines')}</button>` : ''}`;

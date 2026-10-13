@@ -1,3 +1,4 @@
+import { clickControl, revealControl } from './ui-controls.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -50,7 +51,7 @@ try {
   await context.addCookies([{ name: cookie.slice(0, eq), value: cookie.slice(eq + 1), url }]);
   let assetsReady = false;
   for (let i = 0; i < 40; i++) {
-    try { const css = await context.request.get(url + '/css/app.css'), locale = await context.request.get(url + '/locales/en.json'); assetsReady = css.ok() && (await css.text()).includes('.file-selection-target') && locale.ok() && JSON.parse((await locale.text()).replace(/^\uFEFF/, ''))['fileViewer.modePreview'] === 'Preview'; } catch {}
+    try { const css = await context.request.get(url + '/css/app.css'), locale = await context.request.get(url + '/locales/en.json'); assetsReady = css.ok() && (await css.text()).includes('.file-listing-options-panel') && locale.ok() && JSON.parse((await locale.text()).replace(/^\uFEFF/, ''))['fileViewer.modePreview'] === 'Preview'; } catch {}
     if (assetsReady) break; await sleep(250);
   }
   if (!assetsReady) throw new Error('Source static asset synchronization did not finish');
@@ -70,6 +71,9 @@ try {
   const chosen = root => root.locator('[aria-selected="true"]').evaluateAll(nodes => nodes.filter(n => !n.closest('.tree-children[hidden]')).map(n => n.dataset.path.split(/[\\/]/).at(-1)));
   await row('file2.txt').waitFor();
   const treeGrip = wrapper.locator('.file-browser-layout > .file-pane-resize-grip');
+  assert.equal(await tree.locator('input[type="checkbox"]').count(),0);
+  assert.equal(await wrapper.locator('.file-browser-detail').isVisible(),false);
+  await row('file2.txt').click(); await wrapper.locator('.file-browser-detail').waitFor();
   const width = root => root.evaluate(el => Math.round(el.getBoundingClientRect().width));
   async function drag(grip, delta, cancel = false) {
     const rect = await grip.boundingBox(); assert.ok(rect);
@@ -86,22 +90,22 @@ try {
   await treeGrip.press('Home'); assert.equal(await width(tree), 220);
   await treeGrip.press('End'); assert.ok((await width(wrapper.locator('.file-browser-detail'))) >= 252);
   await treeGrip.press('Home'); await treeGrip.press('Shift+ArrowRight');
-  assert.equal(await width(tree), 270);
+  assert.equal(await width(tree),270);
   assert.equal(ownershipRequests, resizeClaims);
   result.cases.push('Files split resizes with pointer and keyboard, clamps, cancels and never requests terminal ownership');
   assert.deepEqual(await names(), ['large', 'nested', 'empty.txt', 'file2.txt', 'file10.txt', 'Öffentlicher Plan.PDF']);
   await row('nested').click(); await row('child.txt').waitFor();
-  await row('file2.txt').locator('input').click();
-  await tree.locator('[data-mode="details"]').click();
+  await row('file2.txt').click({ modifiers: ['Control'] });
+  await clickControl(tree.locator('[data-mode="details"]'));
   assert.deepEqual(await chosen(tree), ['nested', 'file2.txt']);
   await row('file2.txt').click();
   assert.equal(await wrapper.locator('.file-browser-preview textarea').count(), 0);
-  await tree.locator('[data-mode="icons"]').click();
+  await clickControl(tree.locator('[data-mode="icons"]'));
   assert.deepEqual(await chosen(tree), ['file2.txt']);
-  await tree.locator('[data-mode="tree"]').click();
+  await clickControl(tree.locator('[data-mode="tree"]'));
   await row('child.txt').waitFor();
   result.cases.push('Natural names, folders first, view-switch selection and retained tree expansion');
-  await tree.locator('[data-mode="details"]').click();
+  await clickControl(tree.locator('[data-mode="details"]'));
   const filter = tree.locator('.file-listing-filter'), sort = tree.locator('.file-listing-sort');
   await filter.fill('pdf');
   assert.deepEqual(await names(), ['Öffentlicher Plan.PDF']);
@@ -110,24 +114,25 @@ try {
   assert.equal(await tree.locator('[data-selection-action="open"]').isDisabled(), true);
   await filter.fill('');
   assert.deepEqual(await chosen(tree), ['file2.txt']);
-  await sort.selectOption('modified'); await tree.locator('.file-listing-direction').click();
+  await revealControl(sort); await sort.selectOption('modified'); await tree.locator('.file-listing-direction').click();
   assert.deepEqual((await names()).slice(2), ['Öffentlicher Plan.PDF', 'empty.txt', 'file2.txt', 'file10.txt']);
   assert.ok((await row('Öffentlicher Plan.PDF').locator('.tree-modified').innerText()).includes('2026'));
-  await sort.selectOption('size');
+  await revealControl(sort); await sort.selectOption('size');
   assert.deepEqual((await names()).slice(2), ['Öffentlicher Plan.PDF', 'file10.txt', 'file2.txt', 'empty.txt']);
   await tree.locator('.file-listing-direction').click();
   assert.deepEqual((await names()).slice(2), ['empty.txt', 'file2.txt', 'file10.txt', 'Öffentlicher Plan.PDF']);
-  await sort.selectOption('type');
+  await revealControl(sort); await sort.selectOption('type');
   assert.equal(await sort.inputValue(), 'type');
   await page.screenshot({ path: path.join(out, 'details-1440.png') });
   assert.equal(await tree.evaluate(el => el.scrollWidth <= el.clientWidth), true);
   result.cases.push('Local PDF/empty filters preserve selection; date, size, type and zero-byte metadata');
-  await tree.locator('[data-mode="icons"]').click();
+  await clickControl(tree.locator('[data-mode="icons"]'));
   await page.reload();
   await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click();
   await wrapper.locator('.session-tab[data-tab="files"]').click();
   await tree.locator('.file-listing-icons').waitFor();
-  assert.equal(await width(tree), 270);
+  assert.ok(await width(tree)>1000);
+  await row('file2.txt').dblclick();await wrapper.locator('.file-browser-detail').waitFor();assert.equal(await width(tree),270);
   assert.equal(await sort.inputValue(), 'type');
   await page.setViewportSize({ width: 390, height: 844 });
   if (await page.locator('#btn-mobile-strip-files').isVisible()) await page.locator('#btn-mobile-strip-files').tap();
@@ -145,7 +150,7 @@ try {
   await page.evaluate(target => window.mmDebug.terminals.get(window.mmDebug.activeId).terminal._core._linkProviderService.linkProviders.at(-2)._handler(new MouseEvent('click'), target), fixtures);
   const modal = page.locator('#file-viewer-modal'), listRow = name => modal.locator('.file-list-item').filter({ has: page.locator('.file-name', { hasText: name }) });
   await listRow('file2.txt').click();
-  await modal.locator('[data-mode="icons"]').click();
+  await clickControl(modal.locator('[data-mode="icons"]'));
   assert.deepEqual(await chosen(modal), ['file2.txt']);
   await modal.locator('.file-listing-filter').fill('pdf');
   assert.equal(await modal.locator('.file-list-item').count(), 1);
@@ -159,7 +164,7 @@ try {
   result.largeFilterMs = Date.now() - start;
   assert.ok(result.largeFilterMs < 3000);
   await modal.locator('.file-listing-filter').fill('');
-  await modal.locator('[data-mode="details"]').click();
+  await clickControl(modal.locator('[data-mode="details"]'));
   const ordered = await modal.locator('.file-name').allTextContents();
   assert.equal(ordered[1], 'item2.txt'); assert.equal(ordered[599], 'item600.txt');
   await modal.locator('#file-viewer-dock-btn').click();

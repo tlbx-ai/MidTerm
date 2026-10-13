@@ -13,23 +13,39 @@ export function createSelectionToolbar(
   selected: () => SelectedFile[],
   open: (path: string) => void,
   sessionId: () => string | null,
+  multiSelect?: { active: () => boolean; toggle: () => void },
 ): { root: HTMLElement; update: () => void } {
   const root = document.createElement('div');
   root.className = 'file-selection-toolbar';
   const count = document.createElement('span');
+  count.className = 'file-selection-count';
   count.setAttribute('aria-live', 'polite');
   const actions = new Map<string, HTMLButtonElement>();
-  for (const action of ['open', 'details', 'copyPaths', 'download']) {
+  const actionList = document.createElement('div');
+  actionList.className = 'file-selection-read-actions';
+  for (const action of [
+    ...(multiSelect ? ['selectMultiple'] : []),
+    'open',
+    'details',
+    'copyPaths',
+    'download',
+  ]) {
     const button = document.createElement('button');
     button.type = 'button';
     button.dataset.selectionAction = action;
     button.textContent = t(`fileBrowser.${action}`);
     actions.set(action, button);
-    root.appendChild(button);
+    actionList.appendChild(button);
     button.addEventListener('click', () => {
+      const menu = button.closest('details');
+      if (menu) {
+        menu.open = false;
+        menu.querySelector<HTMLElement>('summary')?.focus();
+      }
       const files = selected();
       const first = files[0];
-      if (action === 'open' && files.length === 1 && first) open(first.path);
+      if (action === 'selectMultiple') multiSelect?.toggle();
+      else if (action === 'open' && files.length === 1 && first) open(first.path);
       else if (action === 'details') {
         void showPathDetails(
           files.map((file) => file.path),
@@ -49,11 +65,17 @@ export function createSelectionToolbar(
     });
   }
   root.prepend(count);
+  root.append(actionList);
   return {
     root,
     update: () => {
       const files = selected();
-      count.textContent = `${files.length} ${t('fileBrowser.selected')}`;
+      count.textContent = String(files.length);
+      count.title = `${files.length} ${t('fileBrowser.selected')}`;
+      count.setAttribute('aria-label', count.title);
+      count.hidden = files.length === 0;
+      root.dataset.multiSelect = String(multiSelect?.active() ?? false);
+      actions.get('selectMultiple')?.setAttribute('aria-pressed', root.dataset.multiSelect);
       const openButton = actions.get('open');
       if (openButton) openButton.disabled = files.length !== 1;
       const copy = actions.get('copyPaths');

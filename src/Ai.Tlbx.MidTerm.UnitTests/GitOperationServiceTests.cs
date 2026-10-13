@@ -58,6 +58,35 @@ public sealed class GitOperationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task LongUnicodeCommitBodyIsPreservedBeyondWindowsCommandLineLength()
+    {
+        await Init(); Write("a.txt", "Long body committed bytes\n"); await Execute(Request("stage", "a.txt"));
+        var message = "Long Unicode body\n\n# Verbatim comment\n" + string.Concat(Enumerable.Repeat("ä字😀 body\n", 5000));
+        var request = await Commit(message); var result = await Execute(request);
+        Assert.Equal("completed", result.State);
+        var stored = await GitCommandRunner.ExecuteAsync(_root, ["log", "-1", "--format=%B"], default);
+        Assert.Equal(0, stored.ExitCode); Assert.Equal(message.TrimEnd('\n'), stored.Stdout.TrimEnd('\r', '\n'));
+        Assert.Empty(Directory.EnumerateFiles(Path.Combine(_root, ".git"), "*.message"));
+    }
+
+    [Fact]
+    public async Task RepositoryLabelsRemainIndependentAcrossSessionsSharingOneCache()
+    {
+        await Init(); using var watcher = new GitWatcherService(); watcher.ConfigureSessionValidator(static _ => true);
+        await watcher.AddSessionRepoAsync("alpha", _root, "Target A", "target", "manual");
+        await watcher.AddSessionRepoAsync("beta", _root, "Supervisor B", "supervisor", "manual");
+        var alpha = Assert.Single(watcher.GetRepoBindings("alpha")).Status!;
+        var beta = Assert.Single(watcher.GetRepoBindings("beta")).Status!;
+        Assert.Equal("Target A", alpha.Label); Assert.Equal("target", alpha.Role);
+        Assert.Equal("Supervisor B", beta.Label); Assert.Equal("supervisor", beta.Role); Assert.NotSame(alpha, beta);
+        Assert.Equal("Target A", watcher.GetCachedStatus("alpha", _root)!.Label);
+        Assert.Equal("Supervisor B", watcher.GetCachedStatus("beta", _root)!.Label);
+        Assert.Equal("Target A", Assert.Single(watcher.GetRepoBindings("alpha")).Status!.Label);
+        watcher.UnregisterSession("alpha"); watcher.UnregisterSession("beta");
+        await watcher.WaitForSessionCleanupAsync("alpha"); await watcher.WaitForSessionCleanupAsync("beta");
+    }
+
+    [Fact]
     public async Task StageAndUnstagePreserveWorkingTreeAndDistinguishIndexContent()
     {
         await Init(); Write("a.txt", "A staged\n");

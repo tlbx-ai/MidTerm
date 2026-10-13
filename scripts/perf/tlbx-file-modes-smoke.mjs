@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { tapControl } from './ui-controls.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -47,7 +48,7 @@ try {
     try {
       const response = await context.request.get(url + '/locales/en.json'), css = await context.request.get(url + '/css/app.css');
       const style = await css.text();
-      assetsReady = response.ok() && JSON.parse((await response.text()).replace(/^\uFEFF/, ''))['fileViewer.modePreview'] === 'Preview' && css.ok() && style.length > 50000 && style.includes('.file-selection-target');
+      assetsReady = response.ok() && JSON.parse((await response.text()).replace(/^\uFEFF/, ''))['fileViewer.modePreview'] === 'Preview' && css.ok() && style.length > 50000 && style.includes('.file-listing-options-panel');
     } catch {}
     if (assetsReady) break; await sleep(250);
   }
@@ -72,8 +73,9 @@ try {
     assert.equal(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), true);
     await row(longName).waitFor();
     const targetRects = root => root.evaluateAll(nodes => nodes.filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden').map(el => { const r = el.getBoundingClientRect(); return { width: r.width, height: r.height, right: r.right, label: el.getAttribute('aria-label') || el.textContent }; }));
-    for (const r of await targetRects(tree.locator('.file-selection-target, .tree-expand.expandable, .file-listing-controls button, .file-selection-toolbar button, .file-actions-menu summary'))) assert.ok(r.width >= 43.9 && r.height >= 43.9, JSON.stringify(r));
-    await row(longName).locator('.file-selection-target').tap({ position: { x: 2, y: 2 } });
+    assert.equal(await tree.locator('.file-selection-checkbox').count(), 0);
+    for (const r of await targetRects(tree.locator('.tree-expand.expandable, .file-listing-controls button, .file-actions-menu summary, .file-listing-options summary'))) assert.ok(r.width >= 43.9 && r.height >= 43.9, JSON.stringify(r));
+    await tapControl(tree.locator('[data-selection-action="selectMultiple"]')); await row(longName).tap();
     assert.equal(await tree.locator('.tree-node[aria-selected="true"]').count(), 1);
     assert.equal(await preview.locator('.file-document-view').count(), 0);
     await tree.locator('.file-actions-menu summary').tap();
@@ -88,13 +90,14 @@ try {
     await row('child.txt').waitFor();
     assert.equal(await tree.locator('.tree-node[aria-selected="true"]').count(), 1);
     assert.equal(await row(longName).getAttribute('aria-selected'), 'true');
-    await tree.locator('[data-selection-action="open"]').tap(); await preview.locator('.file-document-view').waitFor();
+    await tapControl(tree.locator('[data-selection-action="open"]')); await preview.locator('.file-document-view').waitFor();
     for (const r of await targetRects(preview.locator('button'))) assert.ok(r.width >= 43.9 && r.height >= 43.9, JSON.stringify(r));
     await wrapper.locator('.file-browser-back').tap();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: path.join(out, 'touch-tree-390.png') });
     await page.setViewportSize({ width: 1440, height: 1000 });
-    result.cases.push('390px coarse-pointer targets are at least 44px; edge checkbox taps toggle once and chevrons expand without selecting or opening');
+    result.cases.push('390px coarse-pointer targets are at least 44px; contextual multi-selection toggles rows without checkboxes and chevrons expand without opening previews');
+    await tapControl(tree.locator('[data-selection-action="selectMultiple"]'));
   }
   if (keyboardAcceptance) {
     await row('nested').waitFor(); await sleep(300);
@@ -237,6 +240,7 @@ try {
       const fineRow = finePage.locator('.tree-node').filter({ has: finePage.locator('.tree-name', { hasText: 'note.md' }) }); await fineRow.waitFor();
       const rect = await fineRow.boundingBox(); assert.ok(rect.height < 44 && rect.height >= 24);
       assert.equal(await finePage.evaluate(() => matchMedia('(pointer: fine)').matches), true);
+      await finePage.screenshot({path:path.join(out,'fine-pointer-files-1440.png'),animations:'disabled'});
     } finally { await fine.close(); }
     result.cases.push('Long-name modal/dock controls fit a 390x500 viewport at 44px; a fine-pointer browser keeps compact desktop rows');
   }

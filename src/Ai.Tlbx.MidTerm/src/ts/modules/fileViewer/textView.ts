@@ -73,7 +73,7 @@ export function createTextView(options: {
     }
     root.dataset.fileMode = mode;
     status.textContent = [
-      t(readOnly ? 'fileViewer.readOnly' : 'fileViewer.writable'),
+      readOnly ? t('fileViewer.readOnly') : '',
       edit.dirty ? t('fileViewer.unsavedTitle') : '',
     ]
       .filter(Boolean)
@@ -161,13 +161,15 @@ export function createTextView(options: {
     if (mode === 'edit') syncState();
     else render();
   });
-  root.addEventListener('keydown', (event) => {
+  const saveKey = (event: KeyboardEvent): void => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
       event.preventDefault();
       event.stopPropagation();
       void options.save();
     }
-  });
+  };
+  root.addEventListener('keydown', saveKey);
+  controls.addEventListener('keydown', saveKey);
   render();
   return {
     root,

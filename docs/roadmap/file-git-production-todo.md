@@ -1421,7 +1421,7 @@ und 4 Aktionsregressionen bestehen, einschließlich Coarse-Pointer44px und Clipb
 Insert-Fehlern. 20 echte Win-Shellquotierungen und 709 Frontendtests/Typecheck/Lints
 bestehen. Evidenz `git-task-42-{browser-third,regression-*,command-quoting,frontend-final.log}`.
 
-### 43. [ ] Strengen UI-/UX-Designpass für Files und Git abschließen
+### 43. [~] Strengen UI-/UX-Designpass für Files und Git abschließen
 
 **Verbindlicher Zusatzauftrag 13.10.2026:** Files und Git müssen am Ende als
 bewusst gestaltete, konsistente tlbx-Oberflächen wirken. Funktionsprüfungen
@@ -1450,6 +1450,28 @@ Gestaltung ein eigenes verbindliches Abschlusskriterium. Nicht allein aus
 funktionierenden Buttons, DOMgeometrie oder bestandenen Tests Designqualität
 ableiten. Bestehende Kriterien für Auswahl bleiben wirksam; checkboxspezifische
 alte Abnahmen werden durch die ausdrücklich angeordnete Poweruserauswahl ersetzt.
+
+**Umsetzung und lokale Abnahme 13.10.2026:** Datei-Checkboxen samt reservierter
+Spalten entfernt; Klick/Ctrl/Cmd/Shift/Tastatur und kontextuelle Touchmehrfachauswahl
+erhalten. Eine gemeinsame Aktionsliste ersetzt die permanenten seltenen Buttons;
+Sortierung/Ansicht und Sichtbarkeit sind kontextuell, Navigation/Adresse verdichtet.
+Dateiheader enthält Lesemodi, Save nur bei Entwurf; ungenutzte Ready-/Pfadzeilen
+entfallen. Browse nutzt volle Listenfläche, Preview ist bedarfsgerecht. Git: kompakter
+Commit, kontextuelle Bulkaktionen, +/- für Gruppe/Datei/Inspector, Viewoptionen auf
+Abruf, keine verschachtelten Kartenrahmen. Cleanzustand spart Editor/Filter/Inspector.
+Native Menüs schließen außen/Escape; stabile Containerkeys reparieren tatsächlichen
+Scroll-/DOMverlust bei Clean/Dirty. Fetch/Push erhalten Auswahl. Cachelabels/rollen
+werden pro Session geklont; UTF8-Commitdatei behebt Windows-Längengrenze.
+
+Gerenderte Desktop-/250px-/390px-/Touchabläufe und tlbx-Sidebar-/Modalreferenzen
+geprüft. 13 Auswahl-, 7 Listing-/600Dateien-, 17 reale FSaktions-, 10 Sichtbarkeits-,
+6 Touch-/7 Tastatur-/4 Vollpfadfälle bestehen. Git 6 Commit-, 6 Partial-, 5 Workspace-,
+4 Aktionen-/Touch-, 3 Diffreading-, 9 Readstate-, 4 History-, 7 Filelistfälle bestehen.
+32 Hintergrund-Pixelproben und 1008 Kontrastproben bestehen (Minimum 4,979355:1),
+einschließlich Guttern/Wortmarkierungen, vier Themes/0-65-90%/drei Wallpapers.
+34 native Tests mit 1 Plattformskip und 709 Frontendtests/Typecheck/Lints bestehen.
+Evidenz `task-43-*`; letzte übrige Regressionen, Plattform-CI, integrierte Schluss-
+abnahme, zweiter Minor und Teardown stehen noch aus. Aufgabe bleibt offen.
 
 ## Release- und Abschlussnachweise
 

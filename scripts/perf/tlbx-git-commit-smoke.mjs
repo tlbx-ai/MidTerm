@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { revealControl } from './ui-controls.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -30,7 +31,7 @@ try {
   page.on('websocket', socket => socket.on('framesent', frame => { if (Buffer.isBuffer(frame.payload) && frame.payload[0] === 0x14) result.inputFrames++; }));
   await page.goto(url); await page.locator(`.session-item[data-session-id="${session}"] .session-title`).click(); await page.locator(`.session-wrapper[data-session-id="${session}"] .git-indicator`).click();
   const dock = page.locator('#git-dock'); await dock.locator('.git-dock-resize-grip').press('End'); const message = dock.locator('.git-commit-message'), commit = dock.locator('[data-action="commit-staged"]'), status = dock.locator('.git-operation-status');
-  const action = async (name, file) => { const locator = file ? dock.locator(`[data-action="${name}"][data-path="${file}"]`) : dock.locator(`[data-action="${name}"]`); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/git/operations' && r.request().method() === 'POST'); await locator.click(); const r = await response; const body = await r.json(); result.responses.push({ status: r.status(), body }); await page.waitForFunction(() => !document.querySelector('#git-dock .git-commit-message').readOnly); return body; };
+  const action = async (name, file) => { const locator = file ? dock.locator(`[data-action="${name}"][data-path="${file}"]`) : dock.locator(`[data-action="${name}"]`); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/git/operations' && r.request().method() === 'POST'); await revealControl(locator); await locator.click(); const r = await response; const body = await r.json(); result.responses.push({ status: r.status(), body }); await page.waitForFunction(() => !document.querySelector('#git-dock .git-commit-message').readOnly); return body; };
   assert.equal(await commit.isDisabled(), true); await action('stage-file', 'a.txt'); await dock.locator('.git-tree-file[data-scope="staged"][data-path="a.txt"]').waitFor();
   write('a.txt', 'A index\nA later working change\n'); await api('POST', '/api/git/repos/refresh', { sessionId: session, repoRoot: fixture });
   await page.waitForFunction(() => document.querySelectorAll('#git-dock .git-tree-file[data-path="a.txt"]').length === 2);
