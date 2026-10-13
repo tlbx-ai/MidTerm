@@ -51,8 +51,12 @@ export function renderSummary(status: GitStatusResponse): string {
 
   const branch = escapeHtml(status.branch || 'HEAD');
   const repoRoot = escapeHtml(status.repoRoot);
+  const normalized = status.repoRoot.replace(/\\/g, '/');
+  const repoName = escapeHtml(
+    status.label || normalized.slice(normalized.lastIndexOf('/') + 1) || status.repoRoot,
+  );
   const repoSubtitle = status.repoRoot
-    ? `<div class="git-panel-summary-subtitle" title="${repoRoot}">${repoRoot}</div>`
+    ? `<div class="git-panel-summary-subtitle" title="${repoRoot}">${repoName}</div>`
     : '';
 
   return `<div class="git-panel-summary">

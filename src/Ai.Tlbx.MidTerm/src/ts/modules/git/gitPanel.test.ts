@@ -32,7 +32,7 @@ vi.mock('./gitApi', () => {
 });
 
 vi.mock('../terminal', () => ({ pasteToTerminal: vi.fn() }));
-vi.mock('../i18n', () => ({ t: (key: string) => key }));
+vi.mock('../i18n', () => ({ t: (key: string) => key, getCurrentLocale: () => 'en' }));
 
 function container(): HTMLElement {
   return { querySelector: vi.fn(() => null), addEventListener: vi.fn() } as unknown as HTMLElement;

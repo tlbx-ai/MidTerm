@@ -11,14 +11,14 @@ export function renderCommandSuggestions(
   if (suggestions.length === 0)
     return `<p class="git-panel-hint">${t('git.commandShellUnsupported')}</p>`;
   const insertAllowed = canInsertCommand(sessionId);
-  return `<section class="git-command-section">
-    <div class="git-command-section-title">Suggested terminal commands</div>
+  return `<details class="git-command-section">
+    <summary class="git-command-section-title">${t('git.terminalCommands')}</summary>
     <div class="git-command-list">
       ${suggestions
         .map(
           (suggestion) => `<div class="git-command-row">
             <div class="git-command-copy">
-              <div class="git-command-label">${escapeHtml(suggestion.label)}</div>
+              <div class="git-command-label">${escapeHtml(t(suggestion.label))}</div>
               <code class="git-command-text">${escapeHtml(suggestion.command)}</code>
             </div>
             <div class="git-command-actions">
@@ -30,7 +30,7 @@ export function renderCommandSuggestions(
         )
         .join('')}
     </div>
-  </section>`;
+  </details>`;
 }
 
 export function canInsertCommand(sessionId: string): boolean {

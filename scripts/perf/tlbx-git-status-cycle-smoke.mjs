@@ -53,7 +53,7 @@ try {
   }
   async function review(scope) {
     await row(scope).click();
-    await dock.locator('.git-inspector-summary .git-summary-pill').filter({ hasText: scope }).waitFor();
+    await dock.locator('.git-inspector-summary [data-git-scope="' + scope + '"]').waitFor();
     await dock.locator('.git-diff-lines').waitFor();
     return await dock.locator('.git-diff-lines').textContent();
   }

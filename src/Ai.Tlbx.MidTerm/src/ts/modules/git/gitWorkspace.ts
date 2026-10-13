@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { escapeHtml as e } from '../../utils';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
+import { gitOperationSummary } from './gitOperations';
 import type {
   GitOperationRequest,
   GitOperationResponse,
@@ -231,8 +232,7 @@ async function finishWorkspaceOperation(
   const feedback = dialog.querySelector<HTMLElement>('.git-workspace-feedback');
   if (feedback)
     feedback.textContent =
-      result?.detail ??
-      t(result?.state === 'completed' ? 'git.operationCompleted' : 'git.outcomeUnknown');
+      gitOperationSummary(result) + (result?.detail ? '\n' + result.detail : '');
   const uncertain = !result || result.state === 'unknown';
   if (isConflict || uncertain)
     for (const control of dialog.querySelectorAll<HTMLButtonElement>('[data-workspace-action]'))

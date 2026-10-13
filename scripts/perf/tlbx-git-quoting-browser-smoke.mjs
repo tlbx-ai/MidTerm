@@ -34,6 +34,7 @@ try {
     await row.click(); await dock.locator('.git-command-text').first().waitFor();
     await dock.locator('.git-diff-lines').waitFor(); assert.ok((await dock.locator('.git-diff-lines').textContent()).includes('+Browser exact change ' + i));
     const rowText = await row.innerText(); assert.ok(rowText.includes('+1') && rowText.includes('-1'));
+    if (await dock.locator('.git-command-section').getAttribute('open') === null) await dock.locator('.git-command-section > summary').click();
     const copy = dock.locator('[data-action="copy-command"]').nth(1); await copy.click(); await dock.locator('.git-action-status').nth(1).filter({ hasText: 'Copied' }).waitFor();
     const command = await page.evaluate(() => navigator.clipboard.readText()); result.commands.push({ file, command });
     const diff = execFileSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', command], { cwd: base, windowsHide: true, stdio: 'pipe' }).toString('utf8'); assert.ok(diff.includes('+Browser exact change ' + i));

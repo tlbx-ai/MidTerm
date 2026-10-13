@@ -5,11 +5,13 @@ import os from 'node:os';
 import { spawn, execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { exerciseGitHistory } from './git-history-acceptance.mjs';
+import { exerciseGitTexts } from './git-text-acceptance.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('../../docs/marketing/ScreenshotAutomation/node_modules/playwright');
 const url = process.env.TLBX_PERF_URL, cookie = process.env.TLBX_COOKIE_HEADER;
 const navigation = process.env.TLBX_GIT_NAVIGATION === '1';
 const history = process.env.TLBX_GIT_HISTORY === '1';
+const texts = process.env.TLBX_GIT_TEXTS === '1';
 if (!url || !cookie) throw new Error('Authenticated source URL required');
 const out = path.resolve(process.env.TLBX_PERF_ARTIFACT_ROOT || '.dev/file-git-production/git-layout'); fs.mkdirSync(out, { recursive: true });
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'tlbx-git-layout-'));
@@ -23,6 +25,7 @@ const git = args => execFileSync('git', ['-C', fixture, '-c', 'core.hooksPath=' 
 git(['init', '--quiet']); git(['config', 'user.name', 'A long author name used for inspector geometry acceptance']); git(['config', 'user.email', 'layout@tlbx.invalid']); git(['add', '.']); git(['commit', '--quiet', '-m', 'Fixture root']);
 fs.appendFileSync(full, 'Normal commit line\n'); git(['commit', '--quiet', '-am', 'A long normal commit subject whose inspector must remain usable in a narrow dock']);
 const commit = git(['rev-parse', 'HEAD']).trim();
+if (texts) git(['commit','--allow-empty','-qm','A full Unicode subject ä 字 '+ 'with useful review context and a complete readable title '.repeat(9)]);
 if (history) for (let index = 0; index < 53; index++) git(['commit','--allow-empty','--allow-empty-message','-qm', index===17 ? '' : `History commit ${index} ä 字`]);
 for (let i = 0; i < 40; i++) fs.appendFileSync(path.join(fixture, `file${i}.txt`), `Changed ${i}\n`);
 fs.appendFileSync(path.join(fixture, 'file35.txt'), Array.from({ length: 100 }, (_, i) => `Long changed line ${i} ` + 'abcdefghij'.repeat(8)).join('\n') + '\n');
@@ -47,7 +50,8 @@ try {
   const wrapper = page.locator(`.session-wrapper[data-session-id="${session}"]`), dock = page.locator('#git-dock');
   await page.evaluate(() => localStorage.setItem('mt-git-dock-width', '400')); await wrapper.locator('.git-indicator').click();
   const file = dock.locator(`.git-tree-file[data-path="${relative}"]`), inspector = dock.locator('.git-panel-inspector');
-  if (history) await exerciseGitHistory({page,dock,git,fixture,out,result,api,session});
+  if (texts) await exerciseGitTexts({page,dock,git,fixture,relative,out,result,api,session,url});
+  else if (history) await exerciseGitHistory({page,dock,git,fixture,out,result,api,session});
   else {
   await file.click(); await inspector.locator('.git-diff-lines').waitFor(); assert.ok((await inspector.innerText()).includes('WORKTREE_CHANGE_'));
   async function measure(label) {
@@ -83,6 +87,7 @@ try {
     for (let cycle = 0; cycle < 3; cycle++) {
       await grip.focus(); await grip.press('End'); await page.waitForFunction(() => document.querySelector('#git-dock .git-panel-list').getClientRects().length > 0);
       assert.equal(await grip.evaluate(el => document.activeElement === el), true); assert.equal(await rows.evaluate(el => el.scrollTop), initial.list);
+      if (await inspector.locator('.git-command-section').getAttribute('open') === null) await inspector.locator('.git-command-section > summary').click();
       await inspector.locator('[data-action="copy-command"]').first().focus();
       await page.setViewportSize({ width: 900, height: 900 }); await page.setViewportSize({ width: 1920, height: 1000 });
       assert.equal(await body.evaluate(el => el === window.gitRetainedBody), true);
@@ -108,6 +113,7 @@ try {
       await dock.evaluate(el => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       await measure(`${viewport}-${width}-file`);
       const body = inspector.locator('.git-inspector-body'); await body.evaluate(el => { el.scrollTop = el.scrollHeight; });
+      if (await inspector.locator('.git-command-section').getAttribute('open') === null) await inspector.locator('.git-command-section > summary').click();
       const copy = inspector.locator('[data-action="copy-command"]').first(); await copy.click(); assert.equal(await page.evaluate(() => navigator.clipboard.readText()), await copy.getAttribute('data-command'));
       await body.evaluate(el => { el.scrollTop = 0; }); await inspector.locator('.git-path-details').click();
       const info = page.locator('.file-operation-overlay'); assert.ok((await info.locator('.file-operation-message').innerText()).includes(full)); await info.locator('[data-operation-choice="cancel"]').click();

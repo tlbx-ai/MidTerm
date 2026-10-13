@@ -30,9 +30,9 @@ try {
         const args = shell === 'Pwsh' ? ['-NoProfile', '-NonInteractive', '-Command', command] : ['--noprofile', '--norc', '-c', command];
         return execFileSync(shell === 'Pwsh' ? 'pwsh' : bash, args, { cwd: base, windowsHide: true, stdio: 'pipe' }).toString('utf8');
       };
-      const diff = run('Show diff'); assert.ok(diff.includes('+Exact reviewed change ' + i), shell + ': ' + file);
-      run('Stage file'); assert.deepEqual(git(['diff', '--cached', '--name-only', '-z']).split('\0').filter(Boolean), [file]);
-      const unstage = buildFileCommandSuggestions({ path: file, status: 'modified' }, 'staged', root, shell).find(item => item.label === 'Unstage file').command;
+      const diff = run('git.showDiff'); assert.ok(diff.includes('+Exact reviewed change ' + i), shell + ': ' + file);
+      run('git.stage'); assert.deepEqual(git(['diff', '--cached', '--name-only', '-z']).split('\0').filter(Boolean), [file]);
+      const unstage = buildFileCommandSuggestions({ path: file, status: 'modified' }, 'staged', root, shell).find(item => item.label === 'git.unstage').command;
       execFileSync(shell === 'Pwsh' ? 'pwsh' : bash, shell === 'Pwsh' ? ['-NoProfile', '-NonInteractive', '-Command', unstage] : ['--noprofile', '--norc', '-c', unstage], { cwd: base, windowsHide: true, stdio: 'pipe' });
       assert.equal(git(['diff', '--cached', '--name-only']), '');
       assert.equal(fs.readFileSync(path.join(root, file), 'utf8'), 'Exact reviewed change ' + i + '\n');

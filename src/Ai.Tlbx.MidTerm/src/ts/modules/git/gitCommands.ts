@@ -22,23 +22,23 @@ export function buildFileCommandSuggestions(
   if (quotedPath === null || quotedRoot === null || !repoRoot) return [];
   const git = `git -C ${quotedRoot} --literal-pathspecs`;
   const suggestions: GitCommandSuggestion[] = [
-    { label: 'Status', command: `${git} status --short -- ${quotedPath}` },
+    { label: 'git.commandStatus', command: `${git} status --short -- ${quotedPath}` },
   ];
 
   if (scope === 'staged') {
     suggestions.push({
-      label: 'Show staged diff',
+      label: 'git.showStagedDiff',
       command: `${git} diff --cached -- ${quotedPath}`,
     });
     suggestions.push({
-      label: 'Unstage file',
+      label: 'git.unstage',
       command: `${git} restore --staged -- ${quotedPath}`,
     });
     return suggestions;
   }
 
   suggestions.push({
-    label: 'Show diff',
+    label: 'git.showDiff',
     command:
       file.status === 'untracked'
         ? `${git} diff --no-index -- /dev/null ${quotedPath}`
@@ -46,17 +46,17 @@ export function buildFileCommandSuggestions(
   });
 
   if (file.status === 'untracked') {
-    suggestions.push({ label: 'Stage file', command: `${git} add -- ${quotedPath}` });
+    suggestions.push({ label: 'git.stage', command: `${git} add -- ${quotedPath}` });
     suggestions.push({
-      label: 'Preview clean',
+      label: 'git.previewClean',
       command: `${git} clean --dry-run -- ${quotedPath}`,
     });
     return suggestions;
   }
 
-  suggestions.push({ label: 'Stage file', command: `${git} add -- ${quotedPath}` });
+  suggestions.push({ label: 'git.stage', command: `${git} add -- ${quotedPath}` });
   suggestions.push({
-    label: 'Discard changes',
+    label: 'git.discardChanges',
     command: `${git} restore --worktree -- ${quotedPath}`,
   });
   return suggestions;
@@ -79,7 +79,7 @@ export function buildCommitCommandSuggestions(
     ? `${git} diff ${parent} ${commit.hash}`
     : `${git} diff-tree --root -r --no-commit-id -p ${commit.hash}`;
   return [
-    { label: 'Show commit', command: `${git} show ${commit.hash}` },
-    { label: 'Diff commit', command: comparison },
+    { label: 'git.showCommit', command: `${git} show ${commit.hash}` },
+    { label: 'git.compareCommit', command: comparison },
   ];
 }

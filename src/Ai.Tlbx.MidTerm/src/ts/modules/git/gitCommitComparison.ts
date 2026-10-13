@@ -1,6 +1,6 @@
 import type { GitCommitDetailsResponse } from './types';
 import { escapeHtml } from '../../utils';
-import { t } from '../i18n';
+import { t, getCurrentLocale } from '../i18n';
 
 export function captureCommitParentFocus(
   container: HTMLElement,
@@ -38,20 +38,20 @@ export function renderCommitMetadata(commit: GitCommitDetailsResponse): string {
   const bodyHtml = commit.body.trim()
     ? `<pre class="git-commit-body">${escapeHtml(commit.body.trim())}</pre>`
     : '';
-  const parentsHtml =
-    commit.parentHashes.length > 0
-      ? `<div class="git-commit-detail-row"><span class="git-commit-detail-label">Parents</span><span>${escapeHtml(commit.parentHashes.join(' '))}</span></div>`
-      : '';
-
   let html = `<div class="git-inspector-summary">
     <div class="git-inspector-title-row">
-      <span class="git-inspector-title">${escapeHtml(commit.subject || commit.shortHash)}</span>
-      <span class="git-summary-pill">${escapeHtml(commit.shortHash)}</span>
+      <span class="git-inspector-title" title="${escapeHtml(commit.subject)}">${escapeHtml(commit.subject || t('git.untitledCommit'))}</span>
     </div>
-    <div class="git-commit-detail-row"><span class="git-commit-detail-label">Author</span><span>${escapeHtml(commit.author)}</span></div>
-    <div class="git-commit-detail-row"><span class="git-commit-detail-label">Authored</span><span>${escapeHtml(formatGitDate(commit.authoredDate))}</span></div>
-    <div class="git-commit-detail-row"><span class="git-commit-detail-label">Committed</span><span>${escapeHtml(formatGitDate(commit.committedDate))}</span></div>
-    ${parentsHtml}
+    <details class="git-commit-metadata"><summary>${escapeHtml(commit.shortHash)} · ${t('git.commitDetails')}</summary>
+      <dl class="git-commit-details">
+        <dt>${t('git.subject')}</dt><dd data-git-full-subject="true">${escapeHtml(commit.subject)}</dd>
+        <dt>${t('git.commitHash')}</dt><dd>${escapeHtml(commit.hash)}</dd>
+        <dt>${t('git.author')}</dt><dd>${escapeHtml(commit.author)}</dd>
+        <dt>${t('git.authored')}</dt><dd>${escapeHtml(formatGitDate(commit.authoredDate))}</dd>
+        <dt>${t('git.committed')}</dt><dd>${escapeHtml(formatGitDate(commit.committedDate))}</dd>
+        <dt>${t('git.parents')}</dt><dd>${commit.parentHashes.map((hash) => escapeHtml(hash)).join('<br>') || t('git.emptyTree')}</dd>
+      </dl>
+    </details>
   </div>`;
   html += bodyHtml;
   return html;
@@ -63,5 +63,5 @@ export function formatGitDate(value: string): string {
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }
-  return parsed.toLocaleString();
+  return parsed.toLocaleString(getCurrentLocale());
 }

@@ -1370,7 +1370,7 @@ Der erste macOS-Lauf fand einen `/var`-/`/private/var`-Aliasfehler in der
 Konfliktprüfung; physische Rootauflösung korrigiert, alle 5 betroffenen Fälle bestehen.
 Artefakte `git-task-40-platform-second-*`, Zähler JSON; Shellquotierung besteht.
 
-### 41. [~] Clean-Zustand kompakt halten und Verlauf nutzbar machen
+### 41. [x] Clean-Zustand kompakt halten und Verlauf nutzbar machen
 
 **Befund (mittel, reproduziert):** Working tree clean füllt große Fläche;
 Historie unten bekommt kleinen eigenen Scrollbereich, Inspector bleibt daneben.
@@ -1391,9 +1391,13 @@ erhaltenen leeren Betreffen, Logendpoint nutzt den verifizierten Sessioncaller.
 4 echte Browserfälle mit 56 Commits, Pagingfehler/Retry, tatsächlichem Commitwechsel
 während einer verzögerten Seite, Clean/Dirty, 250px/390px/600px, Fokus und Scroll
 bestehen; 0 Terminalinputs/Browserfehler, Screenshots geprüft. Evidenz
-`git-task-41-{native,browser,frontend-final.log}`; Plattformabnahme noch ausstehend.
+`git-task-41-{native,browser,frontend-final.log}`. CI `38339547681`/`5b949695`
+besteht auf allen 3 Plattformen. Tatsächliche TRX: Windows 159/169 mit 10 Skips,
+Linux 162/169 mit 7, macOS 159/169 mit 10; keine Fehler. Alle 3 neuen Historyfälle
+bestehen je OS, echter LocalSystem-Caller inklusive privater History 1/1.
+Heruntergeladene Artefakte `git-task-41-platform-*` und Zähler JSON.
 
-### 42. [ ] Git-Texte, Lokalisierung und Informationshierarchie vereinheitlichen
+### 42. [x] Git-Texte, Lokalisierung und Informationshierarchie vereinheitlichen
 
 **Befund (niedrig/mittel, Code/reproduziert):** worktree, Suggested terminal
 commands und Back fest englisch neben lokalisierten Labels; Pfade mehrfach,
@@ -1404,6 +1408,18 @@ Titel priorisieren, redundante Pfadboxen entfernen, Hashdetails bei Bedarf errei
 
 **Abnahme:** Englisch/Deutsch/lange Übersetzungen, schmale Panels, vollständiger
 Betreff/Pfad/Hash erreichbar; keine Platzhalter oder technischen Backendlabels.
+
+**Umsetzung/Abnahme 13.10.2026:** Lokalisierte Scopes, Metadaten, Datumsdarstellung,
+Befehlsbeschreibungen und handlungsbezogene Fehlermeldungen. Vollständige Betreffe,
+Hashes und Parents über native Tastaturdisclosures; Terminalbefehle/technische
+Fehlerdetails bei Bedarf. Wiederholten Dateiheader entfernt, Filename priorisiert,
+vollständigen Pfad weiterhin in Details erreichbar. Disclosurezustände bleiben bei
+keyed Updates erhalten. Tatsächlicher Sprachwechsel aktualisiert Git und erhält
+Dateiauswahl/Commitentwurf. 4 Browserfälle EN/DE/lange Übersetzungen/Settingswechsel
+bestehen bei 250px, 0 Terminalinputs/Fehler. 6 Commit-, 6 Partial-, 7 Parentvergleich-
+und 4 Aktionsregressionen bestehen, einschließlich Coarse-Pointer44px und Clipboard/
+Insert-Fehlern. 20 echte Win-Shellquotierungen und 709 Frontendtests/Typecheck/Lints
+bestehen. Evidenz `git-task-42-{browser-third,regression-*,command-quoting,frontend-final.log}`.
 
 ### 43. [ ] Strengen UI-/UX-Designpass für Files und Git abschließen
 

@@ -16651,8 +16651,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   font-size: var(--fs-base);
   color: var(--text-primary);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .git-inspector-subtitle {
@@ -21476,3 +21479,10 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .git-commits-collapsed { flex: 0 0 auto; }
 .git-history-error { padding: 8px 12px; margin: 0; color: var(--accent-red); }
 .git-commit-entry:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+
+.git-commit-metadata summary, .git-command-section summary, .git-operation-details summary { padding: 6px 0; cursor: pointer; }
+.git-commit-metadata summary:focus-visible, .git-command-section summary:focus-visible, .git-operation-details summary:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.git-commit-details { display: grid; grid-template-columns: minmax(70px, auto) minmax(0, 1fr); gap: 8px 12px; margin: 10px 0 0; }
+.git-commit-details dt { color: var(--text-secondary); }
+.git-commit-details dd { margin: 0; overflow-wrap: anywhere; user-select: text; }
+.git-operation-details pre { max-height: 180px; margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; font-family: var(--font-mono); font-size: var(--fs-xs); }

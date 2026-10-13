@@ -38,6 +38,7 @@ try {
   const dock = page.locator('#git-dock'); await dock.locator('.git-dock-resize-grip').press('End');
   const filenames = () => dock.locator('.git-commit-patch-list .git-inspector-file-title').allTextContents();
   async function copiedComparison() {
+    if (await dock.locator('.git-command-section').getAttribute('open') === null) await dock.locator('.git-command-section > summary').click();
     await dock.locator('.git-command-row').filter({ has: page.locator('.git-command-label').filter({ hasText: 'Diff commit' }) }).locator('[data-action="copy-command"]').click();
     const command = await page.evaluate(() => navigator.clipboard.readText());
     return execFileSync('pwsh', ['-NoProfile','-NonInteractive','-Command', command], { windowsHide: true, stdio: 'pipe' }).toString('utf8');

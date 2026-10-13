@@ -24,7 +24,7 @@ async function openSession(session) {
   await title.click({ position: { x: 4, y: titleBox.height / 2 } });
   const root = await page.evaluate(value => CSS.escape(value), fixture);
   await page.locator(`.session-wrapper[data-session-id="${session}"] .git-indicator[data-repo-root=${root}]`).click();
-  const dock = page.locator('#git-dock'); await dock.locator('.git-dock-resize-grip').press('End'); await dock.locator('.git-tree-file[data-path="file.txt"]').click(); await dock.locator('.git-command-text').first().waitFor(); return dock;
+  const dock = page.locator('#git-dock'); await dock.locator('.git-dock-resize-grip').press('End'); await dock.locator('.git-tree-file[data-path="file.txt"]').click(); await dock.locator('.git-command-section > summary').click(); await dock.locator('.git-command-text').first().waitFor(); return dock;
 }
 async function stageAndUnstage(dock) {
   for (const action of ['stage-file', 'unstage-file']) {

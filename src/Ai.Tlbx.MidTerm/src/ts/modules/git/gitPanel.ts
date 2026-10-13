@@ -148,6 +148,16 @@ const nowrapScroll = new WeakMap<HTMLElement, number>();
 const activePanels = new WeakMap<HTMLElement, GitPanelState>();
 const boundPanelContainers = new WeakSet<HTMLElement>();
 
+if (typeof document !== 'undefined')
+  document.addEventListener('tlbx-locale-changed', () => {
+    for (const state of panelStates.values()) {
+      if (activePanels.get(state.container) !== state) continue;
+      delete state.inspectorSelection;
+      renderPanel(state);
+      void refreshPanelRead(state);
+    }
+  });
+
 addProcessStateListener((sessionId) => {
   for (const state of panelStates.values()) {
     if (state.sessionId !== sessionId || activePanels.get(state.container) !== state) continue;
@@ -626,10 +636,7 @@ function renderSection(
 
 function renderInspector(state: GitPanelState): string {
   const selection = state.selection;
-  let body = `<div class="git-inspector-empty">
-    <p>Select a file or commit to inspect changes.</p>
-    <p class="git-panel-hint">Use the dock for review, then hand off write commands to the terminal.</p>
-  </div>`;
+  let body = renderInspectorFill(t('git.chooseReview'));
 
   if (selection?.kind === 'file') {
     body = renderFileInspector(
@@ -662,7 +669,7 @@ function renderFileInspector(
   state: GitPanelState,
 ): string {
   if (selection.loading) {
-    return renderInspectorFill('Loading diff...');
+    return renderInspectorFill(t('git.loadingDiff'));
   }
 
   if (selection.error) {
@@ -682,18 +689,20 @@ function renderFileInspector(
   );
   const pathHtml = escapeHtml(file.path);
   const originalHtml = file.originalPath
-    ? `<div class="git-inspector-subtitle">from ${escapeHtml(file.originalPath)}</div>`
+    ? `<div class="git-inspector-subtitle">${t('git.renamedFrom')}: ${escapeHtml(file.originalPath)}</div>`
     : '';
 
   let html = `<div class="git-inspector-summary">
     <div class="git-inspector-title-row">
-      <span class="git-inspector-title" title="${pathHtml}">${pathHtml}</span>
-      <span class="git-summary-pill">${escapeHtml(selection.scope)}</span>
+      <span class="git-inspector-title" title="${pathHtml}">${escapeHtml(file.path.slice(file.path.lastIndexOf('/') + 1))}</span>
+      <span class="git-summary-pill" data-git-scope="${selection.scope}">${t(selection.scope === 'staged' ? 'git.stagedScope' : 'git.worktreeScope')}</span>
+      ${file.hasLineStats === false || file.isBinary ? '' : `<span class="git-file-loc"><span class="git-loc-add">+${file.additions}</span> <span class="git-loc-del">−${file.deletions}</span></span>`}
       <button class="git-path-details" data-action="path-details" data-path="${pathHtml}" data-status="${escapeHtml(selection.status)}"${file.originalPath ? ` data-original-path="${escapeHtml(file.originalPath)}"` : ''} type="button">${t('fileBrowser.details')}</button>
     </div>
     ${originalHtml}
   </div>`;
   html += renderPatchFile(file, {
+    hideFileHeader: true,
     ui: state.diffUi,
     selectable: !!diff?.canSelectLines,
     staged: selection.scope === 'staged',
@@ -710,11 +719,11 @@ function renderCommitInspector(
   diffUi: GitDiffUi,
 ): string {
   if (selection.loading) {
-    return renderInspectorFill('Loading commit...');
+    return renderInspectorFill(t('git.loadingCommit'));
   }
 
   if (selection.error || !selection.details) {
-    return renderInspectorFill(selection.error ?? 'Commit details unavailable.');
+    return renderInspectorFill(selection.error ?? t('git.commitUnavailable'));
   }
 
   const commit = selection.details;
@@ -1176,12 +1185,12 @@ function createResolvedFileSelection(
         ? diff
         : {
             scope: selection.scope,
-            title: selection.scope === 'staged' ? 'Staged diff' : 'Working tree diff',
+            title: t(selection.scope === 'staged' ? 'git.stagedScope' : 'git.worktreeScope'),
             isTruncated: false,
             files: [createFallbackDiffFile(currentSelection)],
           },
     loading: false,
-    error: diff ? null : 'Unable to load diff.',
+    error: diff ? null : t('git.diffUnavailable'),
   };
 }
 
@@ -1235,7 +1244,7 @@ async function openCommitSelection(
     parentIndex,
     details,
     loading: false,
-    error: details ? null : 'Unable to load commit details.',
+    error: details ? null : t('git.commitUnavailable'),
   };
   renderPanel(state);
   restoreParentFocus();

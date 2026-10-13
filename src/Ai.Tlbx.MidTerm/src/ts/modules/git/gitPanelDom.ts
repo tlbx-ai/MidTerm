@@ -14,7 +14,11 @@ function key(element: HTMLElement, index: number): string {
 
 function patchElement(current: HTMLElement, next: HTMLElement): void {
   for (const attribute of Array.from(current.attributes)) {
-    if (attribute.name !== 'data-reconcile-key' && !next.hasAttribute(attribute.name)) {
+    if (
+      attribute.name !== 'data-reconcile-key' &&
+      !(attribute.name === 'open' && current.tagName === 'DETAILS') &&
+      !next.hasAttribute(attribute.name)
+    ) {
       current.removeAttribute(attribute.name);
     }
   }

@@ -35,7 +35,7 @@ try {
     const section = dock.locator('.git-section[data-section="' + (scope === 'staged' ? 'staged' : name.startsWith('new') ? 'untracked' : 'changes') + '"]');
     await section.waitFor(); if (!(await section.getAttribute('class')).includes('git-section-expanded')) await section.locator('.git-section-header').click();
     await dock.locator('.git-tree-file[data-path="' + name + '"][data-scope="' + scope + '"]').click();
-    await dock.locator('.git-inspector-summary .git-summary-pill').filter({ hasText: scope }).waitFor(); await dock.locator('.git-diff-lines').first().waitFor();
+    await dock.locator('.git-inspector-summary [data-git-scope="' + scope + '"]').waitFor(); await dock.locator('.git-diff-lines').first().waitFor();
   }
   async function apply(locator, expected = 'completed') {
     const pending = page.waitForResponse(r => new URL(r.url()).pathname === '/api/git/operations' && r.request().method() === 'POST');
@@ -73,7 +73,7 @@ try {
   assert.equal(git(['show', ':new ä.txt']), 'Third 😀\n'); assert.equal(fs.readFileSync(path.join(root, 'new ä.txt'), 'utf8'), 'First ä\nSecond 字\nThird 😀\n'); result.cases.push('Ctrl-click and keyboard selection stage nonadjacent new-file lines and unstage one indexed addition without changing the working copy');
   await review('a.txt', 'worktree'); const indexBefore = git(['ls-files', '--stage']); const unreviewed = [...working]; unreviewed[4] = 'Changed after review ä字😀'; fs.writeFileSync(file, unreviewed.join('\r\n') + '\r\n');
   const stale = await apply(dock.locator('[data-action="apply-diff-hunk"]').first(), 'error'); assert.equal(stale.errorCode, 'diff_changed'); assert.equal(git(['ls-files', '--stage']), indexBefore);
-  await dock.locator('.git-operation-status').filter({ hasText: 'reviewed diff changed' }).waitFor(); result.cases.push('A real working-copy edit after review is rejected visibly before publishing any stale selected patch');
+  await dock.locator('.git-operation-details > summary').click(); await dock.locator('.git-operation-details').filter({ hasText: 'reviewed diff changed' }).waitFor(); result.cases.push('A real working-copy edit after review is rejected visibly before publishing any stale selected patch');
   assert.equal(result.inputFrames, 0); assert.deepEqual(result.errors, []); result.ok = true;
 } catch (error) { result.failure = String(error.stack || error).replaceAll(cookie, '<redacted-session-cookie>'); await page?.screenshot({ path: path.join(out, 'failure.png'), animations: 'disabled' }).catch(() => {}); process.exitCode = 1; }
 finally {

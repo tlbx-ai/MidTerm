@@ -56,6 +56,7 @@ export async function initI18n(settingsLanguage?: string): Promise<void> {
   applyTranslations();
   applyAttributeTranslations();
   document.documentElement.lang = currentLocale;
+  document.dispatchEvent(new Event('tlbx-locale-changed'));
 }
 
 /**
@@ -87,6 +88,7 @@ export async function setLocale(locale: string): Promise<void> {
   applyTranslations();
   applyAttributeTranslations();
   document.documentElement.lang = currentLocale;
+  document.dispatchEvent(new Event('tlbx-locale-changed'));
 }
 
 /**

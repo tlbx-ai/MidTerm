@@ -10,6 +10,7 @@ interface GitDiffOptions {
   busy?: boolean;
   historical?: boolean;
   tabStop?: string;
+  hideFileHeader?: boolean;
 }
 
 function renderNewFileMetadata(file: GitDiffFileView): string {
@@ -30,15 +31,10 @@ export function renderPatchFile(file: GitDiffFileView, options: GitDiffOptions =
     file.hunks[firstHunk]?.lines.findIndex((line) => line.kind === 'add' || line.kind === 'del') ??
     -1;
   options = { ...options, tabStop: options.ui?.anchor ?? `${firstHunk}:${firstLine}` };
-  const title = escapeHtml(file.path);
-  const subtitle = file.originalPath
-    ? `<div class="git-inspector-subtitle">from ${escapeHtml(file.originalPath)}</div>`
-    : '';
-
   const body = file.isBinary
-    ? `<div class="git-patch-empty">${file.isNewFile ? t('git.newFileBinary') : 'Binary file changed.'}</div>`
+    ? `<div class="git-patch-empty">${t(file.isNewFile ? 'git.newFileBinary' : 'git.binaryChanged')}</div>`
     : file.hunks.length === 0
-      ? `<div class="git-patch-empty">${file.isNewFile ? t('git.newFileEmpty') : 'No patch text available.'}</div>`
+      ? `<div class="git-patch-empty">${t(file.isNewFile ? 'git.newFileEmpty' : 'git.noPatch')}</div>`
       : file.hunks
           .map((hunk, hunkIndex) => {
             const lines = options.ui?.sideBySide
@@ -60,17 +56,11 @@ export function renderPatchFile(file: GitDiffFileView, options: GitDiffOptions =
           .join('');
 
   const truncatedHtml = file.isTruncated
-    ? `<div class="git-panel-hint">${file.isNewFile ? t('git.newFileTruncated') : 'Patch output was truncated.'}</div>`
+    ? `<div class="git-panel-hint">${t(file.isNewFile ? 'git.newFileTruncated' : 'git.patchTruncated')}</div>`
     : '';
 
   return `<section class="git-inspector-patch">
-    <div class="git-inspector-file-header">
-      <div>
-        <div class="git-inspector-file-title">${title}</div>
-        ${subtitle}
-      </div>
-      ${file.hasLineStats === false || file.isBinary ? '' : `<div class="git-file-loc"><span class="git-loc-add">+${file.additions}</span> <span class="git-loc-del">-${file.deletions}</span></div>`}
-    </div>
+    ${renderPatchHeader(file, options)}
     ${renderNewFileMetadata(file)}
     ${body}
     ${truncatedHtml}
@@ -172,4 +162,16 @@ function renderSideRows(lines: GitDiffLine[], hunk: number, options: GitDiffOpti
       return `<span class="git-diff-pair">${old}${current}</span>`;
     })
     .join('\n');
+}
+
+function renderPatchHeader(file: GitDiffFileView, options: GitDiffOptions): string {
+  if (options.hideFileHeader) return '';
+  const subtitle = file.originalPath
+    ? `<div class="git-inspector-subtitle">${t('git.renamedFrom')}: ${escapeHtml(file.originalPath)}</div>`
+    : '';
+  const stats =
+    file.hasLineStats === false || file.isBinary
+      ? ''
+      : `<div class="git-file-loc"><span class="git-loc-add">+${file.additions}</span> <span class="git-loc-del">-${file.deletions}</span></div>`;
+  return `<div class="git-inspector-file-header"><div><div class="git-inspector-file-title">${escapeHtml(file.path)}</div>${subtitle}</div>${stats}</div>`;
 }

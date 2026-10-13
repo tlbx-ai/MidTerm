@@ -44,6 +44,7 @@ export interface GitOperationsUi {
   error: string | null;
   confirmed: string | null;
   draftKey: string;
+  lastResult?: GitOperationResponse | null;
 }
 
 export function createGitOperationsUi(sessionId: string, root?: string): GitOperationsUi {
@@ -82,11 +83,13 @@ export function renderGitOperations(
   status: GitStatusResponse,
   blocked = false,
 ): string {
-  const message = state.error ?? state.confirmed ?? (state.busy ? t('git.operationBusy') : '');
+  const message = operationMessage(state);
+  const [summary, ...details] = message.split('\n');
   return `<section class="git-operations" aria-label="${t('git.commitStaged')}">
     <textarea class="git-commit-message" data-git-commit-message="true" aria-label="${t('git.commitMessage')}" placeholder="${t('git.commitMessage')}" maxlength="65536"${state.busy ? ' readonly' : ''}>${escapeHtml(state.message)}</textarea>
     ${renderOperationButtons(state, status, blocked)}
-    <div class="git-operation-status" role="${state.error ? 'alert' : 'status'}" aria-live="polite">${escapeHtml(message)}</div>
+    <div class="git-operation-status" role="${state.error ? 'alert' : 'status'}" aria-live="polite">${escapeHtml(summary ?? '')}</div>
+    ${details.length ? `<details class="git-operation-details"><summary>${t('git.errorDetails')}</summary><pre>${escapeHtml(details.join('\n'))}</pre></details>` : ''}
     ${state.pending && !state.busy ? `<button class="git-action-button" data-action="retry-operation" type="button">${t('git.retryOperation')}</button>` : ''}
   </section>`;
 }
@@ -121,6 +124,7 @@ export async function executeGitOperation(
   state.pending = request;
   state.error = null;
   state.confirmed = null;
+  state.lastResult = null;
   try {
     const response = await fetch('/api/git/operations', {
       method: 'POST',
@@ -128,12 +132,13 @@ export async function executeGitOperation(
       body: JSON.stringify(request),
     });
     const result = (await response.json()) as GitOperationResponse;
+    state.lastResult = result;
     if (!response.ok || result.state !== 'completed') {
-      state.error = `${t('git.operationFailed')}${result.detail ? `\n${result.detail}` : ''}`;
+      state.error = `${gitOperationSummary(result)}${result.detail ? `\n${result.detail}` : ''}`;
       state.pending = result.state === 'unknown' ? request : null;
     } else {
       if (request.action === 'commit') {
-        setGitCommitMessage(state, '');
+        if (request.message === state.message) setGitCommitMessage(state, '');
         state.confirmed = `${t('git.commitCreated')}: ${result.commitHash ?? ''}`;
       } else if (request.action === 'stage' || request.action === 'stage-selection')
         state.confirmed = t('git.staged');
@@ -149,6 +154,48 @@ export async function executeGitOperation(
   } finally {
     state.busy = false;
   }
+}
+
+export function gitOperationSummary(result: GitOperationResponse | null): string {
+  if (!result || result.state === 'unknown') return t('git.outcomeUnknown');
+  if (result.state === 'completed') return t('git.operationCompleted');
+  if (result.state === 'conflicted') return t('git.conflictRequiresResolution');
+  const keys: Record<string, string> = {
+    identity_missing: 'git.identityMissing',
+    git_locked: 'git.locked',
+    dirty_working_tree: 'git.dirtyWorkingTree',
+    workspace_changed: 'git.reviewChanged',
+    index_changed: 'git.reviewChanged',
+    head_changed: 'git.reviewChanged',
+    conflict_changed: 'git.reviewChanged',
+    diff_changed: 'git.reviewChanged',
+    conflict_markers: 'git.removeMarkers',
+    permission_denied: 'git.permissionDenied',
+    repository_unbound: 'git.repositoryUnbound',
+    invalid_branch: 'git.invalidBranch',
+    remote_required: 'git.selectRemote',
+  };
+  return t(keys[result.errorCode ?? ''] ?? 'git.operationFailed');
+}
+
+function operationMessage(state: GitOperationsUi): string {
+  const result = state.lastResult;
+  if (state.error && result)
+    return gitOperationSummary(result) + (result.detail ? '\n' + result.detail : '');
+  if (state.error && state.pending) return t('git.outcomeUnknown');
+  if (state.confirmed && result) return confirmedOperationMessage(result);
+  return state.error ?? state.confirmed ?? (state.busy ? t('git.operationBusy') : '');
+}
+
+function confirmedOperationMessage(result: GitOperationResponse): string {
+  if (result.action === 'commit') return `${t('git.commitCreated')}: ${result.commitHash ?? ''}`;
+  const keys: Record<string, string> = {
+    stage: 'git.staged',
+    'stage-selection': 'git.staged',
+    unstage: 'git.unstaged',
+    'unstage-selection': 'git.unstaged',
+  };
+  return t(keys[result.action] ?? 'git.operationCompleted');
 }
 
 export function buildGitMutationRequest(

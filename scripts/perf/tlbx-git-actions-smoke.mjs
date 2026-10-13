@@ -35,7 +35,7 @@ try {
     await page.goto(url); const title = page.locator(`.session-item[data-session-id="${session}"] .session-title`); await title.waitFor({ state: 'attached' });
     if (touch) { await page.locator('#btn-hamburger').tap(); await title.tap(); await page.locator('#btn-mobile-actions-menu').tap(); await page.locator('#btn-mobile-git').tap(); }
     else { await title.click(); await page.locator(`.session-wrapper[data-session-id="${session}"] .git-indicator`).click(); }
-    const dock = page.locator('#git-dock'); await dock.waitFor(); await dock.locator('.git-tree-file[data-path="file.txt"]').click(); await dock.locator('.git-command-row [data-action="copy-command"]').first().waitFor(); return dock;
+    const dock = page.locator('#git-dock'); await dock.waitFor(); await dock.locator('.git-tree-file[data-path="file.txt"]').click(); await dock.locator('.git-command-section > summary').click(); await dock.locator('.git-command-row [data-action="copy-command"]').first().waitFor(); return dock;
   }
   if (!onlyTouch) {
   for (const language of ['en', 'de', 'bn']) {
