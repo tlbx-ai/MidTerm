@@ -1295,7 +1295,7 @@ korrigiert. Evidenz `git-task-38-regression-*` und `git-task-38-actions-fourth`;
 Native Git-/Caller-Code bleibt der in Aufgaben 36/37 plattformgeprüfte Stand.
 Die abschließende Dichte-/Gestaltungsabnahme bleibt Aufgabe 43.
 
-### 39. [~] Git-Laden, fehlendes Repo und Abfragefehler unterscheiden
+### 39. [x] Git-Laden, fehlendes Repo und Abfragefehler unterscheiden
 
 **Befund (mittel, reproduziert/Code):** Erstöffnung von gebundenem Repo zeigt
 Not a git repository vor Antwort. RESTfehler werden null und teilen diesen Zustand.
@@ -1331,9 +1331,17 @@ ersten Read ohne Cache. Null Terminalinput/Browserfehler, Index/Datei unverände
 19 Commit-/Partial-/Dateilistenregressionen und 709 Frontendtests plus Typecheck/
 Lints bestehen. UI geprüft; `git-task-39-browser-accepted`, `git-task-39-native-final`,
 `git-task-39-regression-*` und Verify-Logs enthalten die Nachweise. Vollständige
-Plattform-/Caller-CI steht noch aus; Aufgabe noch nicht abgeschlossen.
+**Plattform-/Caller-Abnahme 13.10.2026:** CI `38333913466` auf `67a0c568`
+erfolgreich. Geprüfte TRX: Windows 147/157, Linux 150/157, macOS 147/157;
+10/7/10 explizite Plattform-/Fixture-Skips und null Fehler. Alle drei neuen
+GitReadState-Fälle bestehen auf jedem Betriebssystem. 20/28/28 reale Shell-
+Quotierungsfälle und tatsächlicher LocalSystem-Caller 1/1 bestehen ebenfalls.
+Artefakte `git-task-39-platform-*`, Zähler `git-task-39-platform-counters.json`.
+Finaler Browserrerun `git-task-39-browser-final` wartet ausdrücklich auf Ready
+nach Online; der Screenshot zeigt den tatsächlich wieder freigegebenen Zustand.
+Aufgabe 39 abgeschlossen; endgültige Designabnahme bleibt Aufgabe 43.
 
-### 40. [ ] Branch-, Remote-, Stash- und Konfliktabläufe tatsächlich anbieten
+### 40. [~] Branch-, Remote-, Stash- und Konfliktabläufe tatsächlich anbieten
 
 **Befund (mittel, Erwartungslücke):** Branch/Ahead/Behind/Stash nur Anzeigen;
 keine Branchwahl, Fetch/Pull/Push oder Konfliktauflösung im Gitworkflow.
