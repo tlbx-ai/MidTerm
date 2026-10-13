@@ -25,6 +25,7 @@ import { createLogger } from '../logging';
 import { requestCloseFileViewerDock } from '../fileViewer';
 import { resizeFilePane } from '../fileViewer/paneResize';
 import { t } from '../i18n';
+import { createGitDockFocus } from './gitDockFocus';
 
 const log = createLogger('gitDock');
 
@@ -36,6 +37,7 @@ let activeUnsub: (() => void) | null = null;
 let currentDockSessionId: string | null = null;
 let currentDockRepoRoot: string | undefined;
 let dockResize: ReturnType<typeof resizeFilePane> | null = null;
+let dockFocus: ReturnType<typeof createGitDockFocus> | null = null;
 
 function closeCommandsDockIfOpen(): void {
   if ($commandsPanelDocked.get()) {
@@ -68,6 +70,8 @@ async function openGitDockAfterFileDecision(
   if (activeSessionId !== $activeSessionId.get()) return false;
   closeCommandsDockIfOpen();
 
+  if (!$gitPanelDocked.get()) dockFocus?.remember();
+
   $gitPanelDocked.set(true);
   setActionButtonActive('git', true);
   currentDockSessionId = sessionId;
@@ -91,6 +95,9 @@ async function openGitDockAfterFileDecision(
   adjustInnerDockPositions();
   updateAllDockMargins();
   handleDockLayoutChange();
+
+  dockFocus?.refresh();
+  dockFocus?.enter();
 
   activeUnsub?.();
   activeUnsub = $activeSessionId.subscribe((newId) => {
@@ -144,6 +151,7 @@ export function closeGitDock(): void {
   handleDockLayoutChange();
 
   log.info(() => 'Git dock closed');
+  dockFocus?.restore();
 }
 
 export function setupGitDockResize(): void {
@@ -152,6 +160,8 @@ export function setupGitDockResize(): void {
   const refreshBtn = document.getElementById('git-dock-refresh');
   const closeBtn = document.getElementById('git-dock-close');
   if (!dockPanel || !gripEl) return;
+  dockFocus ??= createGitDockFocus(dockPanel, closeGitDock);
+  dockPanel.setAttribute('aria-label', 'Git');
 
   dockResize?.dispose();
   gripEl.setAttribute('aria-label', t('git.resizeDock'));
@@ -172,6 +182,7 @@ export function setupGitDockResize(): void {
       adjustInnerDockPositions();
       updateAllDockMargins();
       handleDockLayoutChange();
+      dockFocus?.refresh();
     },
   });
 

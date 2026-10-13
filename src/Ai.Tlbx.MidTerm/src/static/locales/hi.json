@@ -1276,5 +1276,11 @@
   "git.compareWith": "इससे तुलना करें",
   "git.parentVersion": "पैरेंट",
   "git.emptyTree": "खाली ट्री",
-  "git.noComparedChanges": "इस आधार की तुलना में कोई परिवर्तन नहीं है।"
+  "git.noComparedChanges": "इस आधार की तुलना में कोई परिवर्तन नहीं है।",
+  "git.filterFiles": "फ़ाइलें फ़िल्टर करें",
+  "git.listView": "सूची",
+  "git.treeView": "ट्री",
+  "git.stageSelectedFiles": "चयनित फ़ाइलें स्टेज करें",
+  "git.unstageSelectedFiles": "चयनित फ़ाइलें अनस्टेज करें",
+  "git.noMatchingFiles": "कोई मेल खाती फ़ाइल नहीं है।"
 }

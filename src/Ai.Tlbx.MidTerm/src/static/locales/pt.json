@@ -1276,5 +1276,11 @@
   "git.compareWith": "Comparar com",
   "git.parentVersion": "Pai",
   "git.emptyTree": "Árvore vazia",
-  "git.noComparedChanges": "Nenhuma alteração em relação a esta base."
+  "git.noComparedChanges": "Nenhuma alteração em relação a esta base.",
+  "git.filterFiles": "Filtrar arquivos",
+  "git.listView": "Lista",
+  "git.treeView": "Árvore",
+  "git.stageSelectedFiles": "Preparar arquivos selecionados",
+  "git.unstageSelectedFiles": "Retirar arquivos selecionados do índice",
+  "git.noMatchingFiles": "Nenhum arquivo correspondente."
 }

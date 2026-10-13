@@ -1276,5 +1276,11 @@
   "git.compareWith": "তুলনার ভিত্তি",
   "git.parentVersion": "প্যারেন্ট",
   "git.emptyTree": "খালি ট্রি",
-  "git.noComparedChanges": "এই ভিত্তির তুলনায় কোনো পরিবর্তন নেই।"
+  "git.noComparedChanges": "এই ভিত্তির তুলনায় কোনো পরিবর্তন নেই।",
+  "git.filterFiles": "ফাইল ফিল্টার করুন",
+  "git.listView": "তালিকা",
+  "git.treeView": "ট্রি",
+  "git.stageSelectedFiles": "নির্বাচিত ফাইল স্টেজ করুন",
+  "git.unstageSelectedFiles": "নির্বাচিত ফাইল আনস্টেজ করুন",
+  "git.noMatchingFiles": "কোনো মিলে যাওয়া ফাইল নেই।"
 }

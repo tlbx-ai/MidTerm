@@ -10553,6 +10553,7 @@ body.shared-session-mode .session-tab-bar {
     display: flex;
     padding: 0;
     padding-top: var(--mobile-safe-top);
+    padding-right: 60px;
     gap: 0;
     min-height: calc(34px + var(--mobile-safe-top));
   }
@@ -16950,6 +16951,14 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 /* --- File tree --- */
 
 .git-tree-dir {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  gap: 6px;
   display: flex;
   align-items: center;
   padding: 4px 12px;
@@ -16959,6 +16968,16 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   color: var(--text-muted);
   font-size: var(--fs-base);
 }
+
+.git-tree-dir:hover { background: var(--bg-session-hover); }
+.git-tree-dir:focus-visible, .git-tree-file:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.git-file-multi-selected { background: color-mix(in srgb, var(--accent-blue) 18%, var(--workspace-pane-chrome-background)); }
+.git-file-controls { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border-color); }
+.git-file-filter { flex: 1; width: 0; min-width: 0; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--workspace-pane-chrome-background); color: var(--text-primary); font: inherit; }
+.git-file-filter:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -1px; }
+.git-file-selection-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px; }
+.git-file-selection-actions:not(:empty) { padding-block: 6px; border-bottom: 1px solid var(--border-color); }
+.git-file-filter-empty { padding: 6px 12px; }
 
 .git-tree-file {
   display: flex;
@@ -17297,6 +17316,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .git-diff-word-change { background: color-mix(in srgb, currentColor 20%, transparent); }
 .git-diff-hunk-header > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .git-diff-hunk-action { flex: none; min-width: 24px; min-height: 24px; padding: 0 5px; font-size: var(--fs-md); }
+@media (pointer: coarse) {
+  .git-diff-hunk-action { min-width: 44px; min-height: 44px; }
+}
 .git-diff-line[role="option"] { cursor: pointer; }
 .git-diff-line[role="option"]:hover { box-shadow: inset 2px 0 var(--accent-blue); }
 .git-diff-line-selected { outline: 1px solid var(--accent-blue); outline-offset: -1px; }

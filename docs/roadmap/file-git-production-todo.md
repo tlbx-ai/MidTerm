@@ -1259,7 +1259,7 @@ tatsächliche LocalSystem-Ausführung 1/1 umfasst nun private Commit-Metadaten u
 Patchlesen. Geprüfte TRX/Quoting-Artefakte: `git-task-37-platform-*`, Zähler:
 `git-task-37-platform-counters.json`. Aufgabe 37 abgeschlossen; Designpass offen.
 
-### 38. [~] Git-Dateilisten flexibel und effizient bedienen
+### 38. [x] Git-Dateilisten flexibel und effizient bedienen
 
 **Befund (mittel, Erwartungslücke):** Nur Tree; Ordnerzeilen nicht einklappbar,
 keine Flatlist/Suche/Mehrfachauswahl. Tiefenpfade erzeugen lange starre Listen.
@@ -1274,7 +1274,28 @@ Zusätzlich: initialen Fokus im mobilen Git-Overlay setzen, Tab/Shift-Tab und
 Escape ohne Eingabe an das verdeckte Terminal prüfen; Fokus nach Dockclose
 sinnvoll zurückgeben.
 
-### 39. [ ] Git-Laden, fehlendes Repo und Abfragefehler unterscheiden
+**Verifiziert 13.10.2026:** Sieben reale Browserabläufe mit 243 Änderungen
+bestehen: Tree-/Listenansicht mit vollständigen Relativpfaden, unabhängiges
+Folderfolding und ARIA-Left/Right-Navigation, Filter/Unicode, Ctrl-/Space-/Shift-
+Auswahl sowie Ctrl+A mit 230 Dateien. Selective Stage/Unstage und gefiltertes
+Group-Staging prüfen tatsächliche Indexpfade; verborgene Änderungen bleiben
+unberührt. Echte WebSocketupdates erhalten Datei-/Filter-DOM, Auswahl, Fokus und
+Scroll. 390px-Overlay prüft initialen Fokus, ersten/letzten Tab-/Shift-Tab-Umlauf,
+Escape, Rückkehr zum sichtbaren Öffner und null Terminaleingaben/Browserfehler.
+Screenshots geprüft; `git-task-38-final` enthält die Nachweise.
+
+Drei Layout-/Navigations- und sechs selektive-Stagingregressionen bestehen.
+Vier bestehende Aktionsprüfgruppen bestehen einschließlich EN/DE/BN, echter
+Clipboard-/Paste-ACKs und Touch bei 390px. Dabei Suche/Aktionsmenü-Überlappung
+im Keyboardzustand behoben: reservierte Suchfläche bleibt erhalten. Neue Hunk-
+Icons bleiben auf Desktop kompakt (24px), bei Touch mindestens 44px. Veraltete
+Harnessannahmen zu ausgeblendeten Listbuttons wurden auf sichtbare Aktionen
+korrigiert. Evidenz `git-task-38-regression-*` und `git-task-38-actions-fourth`;
+709 Frontendtests, Typecheck und Lints bestehen, finale CSSprüfung ebenfalls.
+Native Git-/Caller-Code bleibt der in Aufgaben 36/37 plattformgeprüfte Stand.
+Die abschließende Dichte-/Gestaltungsabnahme bleibt Aufgabe 43.
+
+### 39. [~] Git-Laden, fehlendes Repo und Abfragefehler unterscheiden
 
 **Befund (mittel, reproduziert/Code):** Erstöffnung von gebundenem Repo zeigt
 Not a git repository vor Antwort. RESTfehler werden null und teilen diesen Zustand.

@@ -5,6 +5,7 @@ import type {
   GitOperationResponse,
   GitStatusResponse,
   GitDiffViewResponse,
+  GitFileEntry,
 } from './types';
 
 export function buildGitSelectionRequest(
@@ -151,12 +152,7 @@ export function buildGitMutationRequest(
   if (data.action === 'stage-section') {
     const section = data.section;
     action = section === 'staged' ? 'unstage' : 'stage';
-    const entries =
-      section === 'staged'
-        ? status.staged
-        : section === 'untracked'
-          ? status.untracked
-          : status.modified;
+    const entries = gitSectionFiles(status, section ?? '');
     paths = entries.map((file) => file.path);
   }
   const root = status.repoRoot;
@@ -174,4 +170,11 @@ export function buildGitMutationRequest(
     request.expectedHead = status.headHash ?? '';
   }
   return request;
+}
+
+export function gitSectionFiles(status: GitStatusResponse, section: string): GitFileEntry[] {
+  if (section === 'staged') return status.staged;
+  if (section === 'untracked') return status.untracked;
+  if (section === 'conflicts') return status.conflicted;
+  return status.modified;
 }

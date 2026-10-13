@@ -35,13 +35,13 @@ try {
     await page.goto(url); const title = page.locator(`.session-item[data-session-id="${session}"] .session-title`); await title.waitFor({ state: 'attached' });
     if (touch) { await page.locator('#btn-hamburger').tap(); await title.tap(); await page.locator('#btn-mobile-actions-menu').tap(); await page.locator('#btn-mobile-git').tap(); }
     else { await title.click(); await page.locator(`.session-wrapper[data-session-id="${session}"] .git-indicator`).click(); }
-    const dock = page.locator('#git-dock'); await dock.waitFor(); await dock.locator('.git-tree-file[data-path="file.txt"]').click(); await dock.locator('.git-action-button').first().waitFor(); return dock;
+    const dock = page.locator('#git-dock'); await dock.waitFor(); await dock.locator('.git-tree-file[data-path="file.txt"]').click(); await dock.locator('.git-command-row [data-action="copy-command"]').first().waitFor(); return dock;
   }
   if (!onlyTouch) {
   for (const language of ['en', 'de', 'bn']) {
     await api('PATCH', '/api/settings', { language }); const dock = await openGit(false); const grip = dock.locator('.git-dock-resize-grip'); await grip.press('Home');
-    const geometry = await dock.locator('.git-action-button').evaluateAll(buttons => buttons.map(button => { const r = button.getBoundingClientRect(), range = document.createRange(); range.selectNodeContents(button); const text = range.getBoundingClientRect(); return { text: button.textContent, width: r.width, height: r.height, x: r.x, right: r.right, textLeft: text.x, textRight: text.right, panelRight: button.closest('#git-dock').getBoundingClientRect().right }; }));
-    for (const button of geometry) { assert.ok(button.height >= 35.9 && button.width > 26); assert.ok(button.textLeft >= button.x - 1 && button.textRight <= button.right + 1 && button.right <= button.panelRight + 1, JSON.stringify(button)); }
+    const geometry = await dock.locator('.git-action-button').evaluateAll(buttons => buttons.filter(button => button.getClientRects().length).map(button => { const r = button.getBoundingClientRect(), range = document.createRange(); range.selectNodeContents(button); const text = range.getBoundingClientRect(); return { text: button.textContent, compact: button.classList.contains('git-diff-hunk-action'), width: r.width, height: r.height, x: r.x, right: r.right, textLeft: text.x, textRight: text.right, panelRight: button.closest('#git-dock').getBoundingClientRect().right }; }));
+    for (const button of geometry) { assert.ok(button.height >= (button.compact ? 23.9 : 35.9) && button.width >= (button.compact ? 23.9 : 26), JSON.stringify(button)); assert.ok(button.textLeft >= button.x - 1 && button.textRight <= button.right + 1 && button.right <= button.panelRight + 1, JSON.stringify(button)); }
     result.geometry.push({ language, touch: false, geometry });
     const copy = dock.locator('[data-action="copy-command"]').first(); await copy.focus(); await copy.press('Enter'); assert.equal(await page.evaluate(() => navigator.clipboard.readText()), await copy.getAttribute('data-command'));
     await page.screenshot({ path: path.join(out, language + '-desktop.png'), animations: 'disabled' }); await dock.locator('#git-dock-close').click();

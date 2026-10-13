@@ -1276,5 +1276,11 @@
   "git.compareWith": "Сравнить с",
   "git.parentVersion": "Родитель",
   "git.emptyTree": "Пустое дерево",
-  "git.noComparedChanges": "По сравнению с этой базой изменений нет."
+  "git.noComparedChanges": "По сравнению с этой базой изменений нет.",
+  "git.filterFiles": "Фильтр файлов",
+  "git.listView": "Список",
+  "git.treeView": "Дерево",
+  "git.stageSelectedFiles": "Добавить выбранные файлы в индекс",
+  "git.unstageSelectedFiles": "Убрать выбранные файлы из индекса",
+  "git.noMatchingFiles": "Нет подходящих файлов."
 }

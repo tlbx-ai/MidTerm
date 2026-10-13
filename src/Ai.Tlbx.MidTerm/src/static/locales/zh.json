@@ -1276,5 +1276,11 @@
   "git.compareWith": "比较对象",
   "git.parentVersion": "父提交",
   "git.emptyTree": "空目录树",
-  "git.noComparedChanges": "与此基准相比没有更改。"
+  "git.noComparedChanges": "与此基准相比没有更改。",
+  "git.filterFiles": "筛选文件",
+  "git.listView": "列表",
+  "git.treeView": "目录树",
+  "git.stageSelectedFiles": "暂存选中文件",
+  "git.unstageSelectedFiles": "取消暂存选中文件",
+  "git.noMatchingFiles": "没有匹配的文件。"
 }
