@@ -158,12 +158,17 @@ function appendPreviewFileActions(
   }
   const details = pathDetailsButton(() => [entry.fullPath]);
   items.append(details);
-  items.addEventListener('click', (event) => {
-    if (event.target instanceof HTMLElement && event.target.closest('button')) {
-      menu.open = false;
-      summary.focus();
-    }
-  });
+  // Close and focus the menu before a button opens a dialog, so the dialog owns focus.
+  items.addEventListener(
+    'click',
+    (event) => {
+      if (event.target instanceof HTMLElement && event.target.closest('button')) {
+        menu.open = false;
+        summary.focus();
+      }
+    },
+    true,
+  );
   menu.append(summary, items);
   actions.append(menu);
 }

@@ -97,7 +97,9 @@ try{
  await row('source-00.ts').dblclick();await preview.locator('.file-document-view').waitFor();
  await preview.locator('.file-preview-actions-menu summary').click();await preview.locator('[data-path-details]').click();
  await page.locator('.file-operation-overlay').waitFor();assert.ok((await page.locator('.file-operation-overlay').innerText()).includes(path.join(fixture,'source-00.ts')));
+ assert.equal(await page.locator('.file-operation-overlay').evaluate(e=>e.contains(document.activeElement)),true);
  await page.locator('.file-operation-overlay [data-operation-choice="cancel"]').click();
+ assert.equal(await preview.locator('.file-preview-actions-menu summary').evaluate(e=>e===document.activeElement),true);
  result.cases.push('Preview overflow exposes labeled actions and the full remote path');
  for(const width of [1912,1440,1024,900]){
   await page.setViewportSize({width,height:900});await page.waitForTimeout(100);

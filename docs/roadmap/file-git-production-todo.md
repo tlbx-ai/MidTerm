@@ -1461,6 +1461,23 @@ Back/Up/Previewrückkehr und erkennbare Aktionen direkt bedienen. Bestehende Kri
 für Auswahl bleiben wirksam; checkboxspezifische
 alte Abnahmen werden durch die ausdrücklich angeordnete Poweruserauswahl ersetzt.
 
+**Files-Nacharbeit 13.10.2026:** Ein einziger Breadcrumb-/Adressbalken ersetzt die
+doppelte Ortsdarstellung. Detailsliste als Standard, erkennbare View-/Aktionsmenüs,
+OS-Auswahl vor Öffnen, separate Ordnerhistorie und Previewrückkehr. Browser-Back,
+Alt-Back/Forward/Up und editierbare Vollpfade funktionieren. Der responsive Split
+folgt der Fensterbreite bis zur manuellen Größenwahl; Previewclose/Escape erhalten
+Auswahl, Entwurf, Cursor und Scroll. Command Bay entfällt ausschließlich in Files,
+sein Terminalentwurf bleibt erhalten. Touchauswahl wechselt erst nach bestätigter
+Dateinavigation; Previewmenüs schließen vor Dialogöffnung und erhalten Dialogfokus.
+
+Vollständige Screenshots bei 1912/1440/1024/900 sowie Touch390/768 angesehen,
+einschließlich echtem Benutzerwallpaper, UI65/Terminal55, leerem Ordner und langem
+Quelltext. 13 Workspace-, 11 Navigations-, 14 Touch-/Medien-/Download- und 4
+Vollpfadfälle bestehen, ferner 709 Frontendtests/Typecheck/Lints. Rohbelege unter
+`.dev/files-design/`; maßgebliche neue Gruppe `focus-accepted`, vollständige
+Benutzeroberfläche `actual-reviewed`. Diese Abnahme gilt für den gezielten
+Files-Auftrag; die separate Git-Designprüfung wird damit nicht geschlossen.
+
 **Historische Funktionsabnahme 13.10.2026 (Designabnahme zurückgezogen):** Datei-Checkboxen samt reservierter
 Spalten entfernt; Klick/Ctrl/Cmd/Shift/Tastatur und kontextuelle Touchmehrfachauswahl
 erhalten. Eine gemeinsame Aktionsliste ersetzt die permanenten seltenen Buttons;

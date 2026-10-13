@@ -21555,8 +21555,7 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .file-browser-detail .preview-toolbar { padding: 10px 48px 10px 14px; min-height: 52px; background: var(--workspace-pane-chrome-background); }
 .file-browser-detail .preview-toolbar-subtitle { display: none; }
 .file-browser-list-head { position: sticky; top: 0; z-index: 3; flex: 0 0 auto; background: var(--bg-dropdown-opaque); }
-.file-browser-tree .file-listing-controls { flex-wrap: nowrap; }
-.file-browser-tree .file-listing-controls { font-size: var(--fs-sm); }
+.file-browser-tree .file-listing-controls { flex-wrap: nowrap; font-size: var(--fs-sm); }
 .file-browser-tree :is(.file-listing-header, .tree-type, .tree-modified, .tree-size) { font-size: var(--fs-sm); }
 .file-browser[data-file-pane="tree"] .file-listing-header { grid-template-columns: minmax(100px, 520px) 90px 180px 80px; }
 .file-browser[data-file-pane="tree"] .file-listing-details .tree-node { grid-template-columns: 18px minmax(100px, 520px) 90px 180px 80px; }
