@@ -1457,6 +1457,8 @@ funktionierenden Buttons, DOMgeometrie oder bestandenen Tests Designqualität
 ableiten. Vor Abschluss vollständige Workspace-Screenshots mit den tatsächlichen
 Benutzereinstellungen ansehen: einschließlich globaler Header/Footer, leerem
 Ordner, kurzem/längeren Dokument und schmalem Bildschirm. Navigation, Cursor,
+Die tatsächliche Sidebar-/Panelbreite gehört vor Releasevorbereitung zur Prüfung
+bei üblichen Desktopgrößen; Fensterbreite allein beweist keine passende Dichte.
 Back/Up/Previewrückkehr und erkennbare Aktionen direkt bedienen. Bestehende Kriterien
 für Auswahl bleiben wirksam; checkboxspezifische
 alte Abnahmen werden durch die ausdrücklich angeordnete Poweruserauswahl ersetzt.

@@ -23,6 +23,7 @@ async function api(method,route,data){const r=await context.request.fetch(url+ro
 async function start(width,touch=false){
  context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width,height:900},hasTouch:touch,isMobile:touch});
  const eq=cookie.indexOf('=');await context.addCookies([{name:cookie.slice(0,eq),value:cookie.slice(eq+1),url}]);
+ if(!touch)await context.addCookies([{name:'mm-sidebar-width',value:'320',url}]);
  session=(await api('POST','/api/sessions',{shell:'Pwsh',cols:100,rows:30,workingDirectory:fixture,launchRequestId:crypto.randomUUID()})).id;
  page=await context.newPage();page.setDefaultTimeout(12000);page.on('pageerror',e=>result.errors.push(e.message));
  await page.goto(url);
@@ -106,6 +107,7 @@ try{
   const boxes=await root.evaluate(e=>{const t=e.querySelector('.file-browser-tree'),d=e.querySelector('.file-browser-detail');return {width:e.clientWidth,tree:t.getBoundingClientRect().width,detail:d.getBoundingClientRect().width,overflow:e.scrollWidth>e.clientWidth+1};});
   assert.equal(boxes.overflow,false);
   if(boxes.width>768){assert.ok(boxes.tree>=320);assert.ok(boxes.detail>=350);}
+  if(boxes.tree>=450)assert.ok((await tree.locator('.tree-node').first().boundingBox()).height<=36,'Desktop details must remain single-line when metadata columns fit');
   await page.screenshot({path:path.join(out,`desktop-${width}.png`)});
  }
  result.cases.push('Full screenshots at four desktop widths retain usable list and preview space without document overflow');

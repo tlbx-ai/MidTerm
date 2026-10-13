@@ -21300,7 +21300,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 .file-listing-controls :is(input, select, button):focus-visible,
 .file-listing-heading:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
 
-@container file-listing (max-width: 499px) {
+@container file-listing (max-width: 449px) {
   .file-listing-header {
     grid-template-columns: minmax(0, 1fr);
     min-width: 0;
@@ -21634,7 +21634,7 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   .file-browser-tree .file-listing-filter { max-width: none; }
 }
 
-@container file-listing (max-width: 499px) {
+@container file-listing (max-width: 449px) {
   .file-browser[data-file-pane="tree"] .file-listing-header { grid-template-columns: minmax(0, 1fr); }
   .file-browser[data-file-pane="tree"] .file-listing-details .tree-node { grid-template-columns: 18px minmax(0, 1fr); }
 }
