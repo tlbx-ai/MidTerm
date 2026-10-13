@@ -20,7 +20,7 @@ import type {
 import {
   fetchCommitDetails,
   fetchDiffView,
-  fetchGitLog,
+  fetchGitHistoryPage,
   fetchGitStatus,
   fetchGitStatusResult,
 } from './gitApi';
@@ -37,6 +37,7 @@ import { escapeHtml } from '../../utils';
 import { renderPatchFile } from './gitDiffView';
 import { renderPanelFill, renderSummary } from './gitPanelSummary';
 import { openGitWorkspace } from './gitWorkspace';
+import { renderCommitsSection, handleGitHistoryKey } from './gitHistory';
 import { renderGitFileTree } from './gitFileTree';
 import {
   createGitFileUi,
@@ -54,7 +55,6 @@ import {
   captureCommitParentFocus,
   renderEmptyComparison,
   renderCommitMetadata,
-  formatGitDate as formatDate,
 } from './gitCommitComparison';
 import {
   createGitDiffUi,
@@ -131,7 +131,10 @@ interface GitPanelState extends GitPanelLayoutState {
   expandedSections: Set<PanelSectionId>;
   selection: GitSelection;
   historyEntries: GitLogEntry[];
-  historyCount: number;
+  historyLoading: boolean;
+  historyError: string | null;
+  historyFocusedHash: string | null;
+  previousSectionCount: number;
   hasMoreHistory: boolean;
   inspectorSelection?: GitSelection;
   inspectorHtml?: string;
@@ -319,7 +322,10 @@ function createPanelState(
     detailActive: true,
     scrollPositions: new Map(),
     historyEntries: [],
-    historyCount: HISTORY_PAGE_SIZE,
+    historyLoading: false,
+    historyError: null,
+    historyFocusedHash: null,
+    previousSectionCount: -1,
     hasMoreHistory: false,
   };
 }
@@ -357,14 +363,13 @@ function syncHistoryFromStatus(state: GitPanelState, status: GitStatusResponse):
   const currentHead = state.historyEntries[0]?.hash;
   const nextHead = status.recentCommits[0]?.hash;
   const shouldReset =
-    state.historyEntries.length === 0 ||
-    state.historyEntries.length <= status.recentCommits.length ||
-    (currentHead && nextHead && currentHead !== nextHead);
+    state.historyEntries.length === 0 || (currentHead && nextHead && currentHead !== nextHead);
 
   if (shouldReset) {
     state.historyEntries = status.recentCommits;
-    state.historyCount = Math.max(HISTORY_PAGE_SIZE, status.recentCommits.length);
     state.hasMoreHistory = status.recentCommits.length >= HISTORY_PAGE_SIZE;
+    state.historyLoading = false;
+    state.historyError = null;
   }
 }
 
@@ -412,7 +417,7 @@ function hasGitRepoStatus(status: GitStatusResponse | null): status is GitStatus
 }
 
 function panelShellClass(state: GitPanelState): string {
-  return `git-panel-shell${state.selection && state.detailActive ? ' git-panel-detail-active' : ''}${state.diffUi.sideBySide ? ' git-panel-side-comparison' : ''}`;
+  return `git-panel-shell${state.selection && state.detailActive ? ' git-panel-detail-active' : ' git-panel-no-inspector'}${state.diffUi.sideBySide ? ' git-panel-side-comparison' : ''}`;
 }
 
 function tallyLoc(files: GitFileEntry[]): { add: number; del: number } {
@@ -481,6 +486,7 @@ function renderPanel(state: GitPanelState): void {
   const hasChanges = status.modified.length > 0;
   const hasUntracked = status.untracked.length > 0;
   const sectionCount = [hasConflicts, hasStaged, hasChanges, hasUntracked].filter(Boolean).length;
+  expandHistoryWhenClean(state, sectionCount);
   const singleFillSection = sectionCount === 1;
 
   let html = `<div class="${panelShellClass(state)}" data-diff-wrap="${state.wrapDiff}">`;
@@ -618,46 +624,6 @@ function renderSection(
   return html;
 }
 
-function renderCommitsSection(state: GitPanelState, fill = false): string {
-  const commits = state.historyEntries;
-  if (commits.length === 0) return '';
-
-  const isExpanded = state.expandedSections.has('commits');
-
-  let html = `<div class="git-commits-section${fill ? ' git-commits-fill' : ''}">
-    <button class="git-section-toggle" data-action="toggle-section" data-section="commits" type="button">
-      ${t('git.recentCommits')} (${commits.length})
-      <span class="git-section-chevron">${isExpanded ? '\u25BE' : '\u25B8'}</span>
-    </button>`;
-
-  if (isExpanded) {
-    html += '<div class="git-commits-list">';
-    for (const commit of commits) {
-      const metaParts = [commit.author, formatDate(commit.date)]
-        .filter((part) => part.length > 0)
-        .map((part) => escapeHtml(part));
-      const metaHtml =
-        metaParts.length > 0 ? `<div class="git-commit-meta">${metaParts.join(' | ')}</div>` : '';
-      const isSelected = state.selection?.kind === 'commit' && state.selection.hash === commit.hash;
-
-      html += `<button class="git-commit-entry${isSelected ? ' git-commit-entry-selected' : ''}" data-action="open-commit" data-hash="${escapeHtml(commit.hash)}" type="button">
-        <div class="git-commit-main">
-          <span class="git-commit-hash">${escapeHtml(commit.shortHash)}</span>
-          <span class="git-commit-msg">${escapeHtml(commit.message)}</span>
-        </div>
-        ${metaHtml}
-      </button>`;
-    }
-    if (state.hasMoreHistory) {
-      html += `<button class="git-history-more" data-action="load-more-history" type="button">Load more history</button>`;
-    }
-    html += '</div>';
-  }
-
-  html += '</div>';
-  return html;
-}
-
 function renderInspector(state: GitPanelState): string {
   const selection = state.selection;
   let body = `<div class="git-inspector-empty">
@@ -785,6 +751,18 @@ function createFallbackDiffFile(selection: GitFileSelection): GitDiffFileView {
 function bindPanelEvents(container: HTMLElement): void {
   if (boundPanelContainers.has(container)) return;
   boundPanelContainers.add(container);
+  container.addEventListener('focusin', (event) => {
+    const state = activePanels.get(container);
+    const row =
+      event.target instanceof HTMLElement
+        ? event.target.closest<HTMLElement>('.git-commit-entry')
+        : null;
+    if (!state || !row) return;
+    state.historyFocusedHash = row.dataset.hash ?? null;
+    container.querySelectorAll<HTMLElement>('.git-commit-entry').forEach((item) => {
+      item.tabIndex = item === row ? 0 : -1;
+    });
+  });
   container.addEventListener('click', (event) => {
     const state = activePanels.get(container);
     const element =
@@ -818,6 +796,7 @@ function bindPanelEvents(container: HTMLElement): void {
   });
   container.addEventListener('keydown', (event) => {
     const state = activePanels.get(container);
+    if (state) handleGitHistoryKey(state, event, container);
     if (state) handleDiffKey(state.diffUi, event, container);
     if (state)
       handleGitFileKey(state.fileUi, event, container, (row) => {
@@ -1263,20 +1242,47 @@ async function openCommitSelection(
 }
 
 async function loadMoreHistory(state: GitPanelState): Promise<void> {
-  const nextCount = state.historyCount + HISTORY_PAGE_SIZE;
-  const entries = await fetchGitLog(state.sessionId, state.repoRoot, nextCount);
-  if (entries.length === 0) {
-    state.hasMoreHistory = false;
-    renderPanel(state);
-    return;
-  }
-
-  state.historyEntries = entries;
-  state.historyCount = nextCount;
-  state.hasMoreHistory = entries.length >= nextCount;
+  if (state.historyLoading || !state.status?.headHash) return;
+  const head = state.status.headHash;
+  const root = state.status.repoRoot;
+  const previousCount = state.historyEntries.length;
+  const wasFocused =
+    document.activeElement === state.container.querySelector('[data-action="load-more-history"]');
+  state.historyLoading = true;
+  state.historyError = null;
   renderPanel(state);
+  const entries = await fetchGitHistoryPage(
+    state.sessionId,
+    root,
+    head,
+    previousCount,
+    HISTORY_PAGE_SIZE + 1,
+  );
+  if (!isCurrentHistorySnapshot(state, root, head)) return;
+  state.historyLoading = false;
+  if (entries === null) state.historyError = t('git.historyReadFailed');
+  else {
+    state.historyEntries.push(...entries.slice(0, HISTORY_PAGE_SIZE));
+    state.hasMoreHistory = entries.length > HISTORY_PAGE_SIZE;
+  }
+  renderPanel(state);
+  if (wasFocused && entries !== null)
+    state.container.querySelectorAll<HTMLElement>('.git-commit-entry')[previousCount]?.focus();
 }
 
 function isGitOperationBusy(state: GitPanelState): boolean {
   return state.operations.busy || state.operations.pending !== null || state.read.phase !== 'ready';
+}
+
+function isCurrentHistorySnapshot(state: GitPanelState, root: string, head: string): boolean {
+  return (
+    activePanels.get(state.container) === state &&
+    state.status?.headHash === head &&
+    state.status.repoRoot === root
+  );
+}
+
+function expandHistoryWhenClean(state: GitPanelState, sectionCount: number): void {
+  if (sectionCount === 0 && state.previousSectionCount > 0) state.expandedSections.add('commits');
+  state.previousSectionCount = sectionCount;
 }

@@ -1376,5 +1376,8 @@
   "git.markResolved": "Als aufgelöst markieren",
   "git.merge": "Branch mergen",
   "git.stashCreate": "Änderungen stashen",
-  "git.deletedVersion": "In dieser Version gelöscht"
+  "git.deletedVersion": "In dieser Version gelöscht",
+  "git.untitledCommit": "(Kein Commitbetreff)",
+  "git.loadMoreHistory": "Weitere Commits laden",
+  "git.historyReadFailed": "Verlauf konnte nicht geladen werden. Erneut versuchen, um weiterzublättern."
 }

@@ -1341,7 +1341,7 @@ Finaler Browserrerun `git-task-39-browser-final` wartet ausdrücklich auf Ready
 nach Online; der Screenshot zeigt den tatsächlich wieder freigegebenen Zustand.
 Aufgabe 39 abgeschlossen; endgültige Designabnahme bleibt Aufgabe 43.
 
-### 40. [~] Branch-, Remote-, Stash- und Konfliktabläufe tatsächlich anbieten
+### 40. [x] Branch-, Remote-, Stash- und Konfliktabläufe tatsächlich anbieten
 
 **Befund (mittel, Erwartungslücke):** Branch/Ahead/Behind/Stash nur Anzeigen;
 keine Branchwahl, Fetch/Pull/Push oder Konfliktauflösung im Gitworkflow.
@@ -1361,9 +1361,16 @@ mit einem Plattformskip; 709 Frontendtests und Typecheck/Lints bestehen. 5 echte
 Browserabläufe bestehen einschließlich lokaler Bare-Remote, Stashbestätigung,
 Konfliktpreview/-auflösung, Zwei-Parent-Abschluss und 390px/Fokus. 0 Terminalinputs/
 Browserfehler. Evidenz `git-task-40-{native,browser-second,frontend-final.log}`.
-Windows-/Linux-/macOS- und LocalSystem-CI noch ausstehend; Aufgabe bleibt offen.
+**Plattformabnahme:** CI `38338611212` auf `7f5ce39f` besteht auf Windows,
+Linux und macOS einschließlich aller 9 neuen Gitabläufe. Tatsächliche TRX:
+Windows 156/166 mit 10 Skips, Linux 159/166 mit 7 Skips, macOS 156/166 mit
+10 Skips; keine Fehler. Echter LocalSystem-Caller zusätzlich 1/1 einschließlich
+privater Workspaceabfrage und Brancherstellung, Rechte danach wiederhergestellt.
+Der erste macOS-Lauf fand einen `/var`-/`/private/var`-Aliasfehler in der
+Konfliktprüfung; physische Rootauflösung korrigiert, alle 5 betroffenen Fälle bestehen.
+Artefakte `git-task-40-platform-second-*`, Zähler JSON; Shellquotierung besteht.
 
-### 41. [ ] Clean-Zustand kompakt halten und Verlauf nutzbar machen
+### 41. [~] Clean-Zustand kompakt halten und Verlauf nutzbar machen
 
 **Befund (mittel, reproduziert):** Working tree clean füllt große Fläche;
 Historie unten bekommt kleinen eigenen Scrollbereich, Inspector bleibt daneben.
@@ -1373,6 +1380,18 @@ bedarfsgerechter Inspector. Verlauf ohne künstliche Leerflächen durchsuchen.
 
 **Abnahme:** Clean/Dirty/Selectionwechsel, lange History und kleine Panels;
 Historypagination, Scroll und Fokus ohne verdrängte Inhalte.
+
+**Lokale Umsetzung/Abnahme 13.10.2026:** Kompakte Cleanzeile, volle Listenbreite
+ohne geöffneten Inspector, bedarfsgerechter Inspector mit Back auf Desktop/schmal.
+Verlauf mit seitenweiser Abfrage an festem HEAD, eindeutigen Ladefehlern/Retry,
+roving Fokus und erhaltenen DOMzeilen/Scrollcontainern; alte Antworten nach
+Repository-/HEADwechsel verworfen. Native Logmetadaten jetzt NUL-getrennt mit
+erhaltenen leeren Betreffen, Logendpoint nutzt den verifizierten Sessioncaller.
+6 native Tests einschließlich 3 neuer Historyfälle und 709 Frontendtests bestehen.
+4 echte Browserfälle mit 56 Commits, Pagingfehler/Retry, tatsächlichem Commitwechsel
+während einer verzögerten Seite, Clean/Dirty, 250px/390px/600px, Fokus und Scroll
+bestehen; 0 Terminalinputs/Browserfehler, Screenshots geprüft. Evidenz
+`git-task-41-{native,browser,frontend-final.log}`; Plattformabnahme noch ausstehend.
 
 ### 42. [ ] Git-Texte, Lokalisierung und Informationshierarchie vereinheitlichen
 

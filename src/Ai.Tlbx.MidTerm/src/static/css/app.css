@@ -16804,6 +16804,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .git-panel-clean {
   color: var(--text-secondary);
+  flex: 0 0 auto;
+  min-height: 0;
+  justify-content: flex-start;
+  padding: 10px 12px;
+  text-align: left;
 }
 
 .git-panel-empty {
@@ -17068,6 +17073,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 /* --- Commits --- */
 
 .git-commits-section {
+  max-height: 42%;
   border-top: 1px solid var(--border-color);
   flex-shrink: 0;
   display: flex;
@@ -17077,6 +17083,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .git-commits-fill {
   flex: 1;
+  max-height: none;
 }
 
 .git-section-toggle {
@@ -17157,6 +17164,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .git-commit-meta {
   font-size: var(--fs-sm);
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .git-history-more {
@@ -21457,3 +21467,12 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   .git-workspace-dialog { padding: 16px; }
   .git-workspace-section label { grid-template-columns: minmax(0, 1fr); gap: 5px; }
 }
+
+/* A clean worktree is a status line; history owns the remaining list space. */
+.git-panel-no-inspector { grid-template-columns: minmax(0, 1fr); }
+.git-panel-no-inspector .git-panel-inspector { display: none; }
+.git-panel-no-inspector .git-panel-list { border-right: none; }
+.git-panel-detail-active .git-inspector-back { display: inline-flex; }
+.git-commits-collapsed { flex: 0 0 auto; }
+.git-history-error { padding: 8px 12px; margin: 0; color: var(--accent-red); }
+.git-commit-entry:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }

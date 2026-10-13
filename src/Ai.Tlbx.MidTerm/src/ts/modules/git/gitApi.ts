@@ -120,21 +120,25 @@ export async function fetchDiff(
   }
 }
 
-export async function fetchGitLog(
+export async function fetchGitHistoryPage(
   sessionId: string,
-  repoRootOrCount?: string | number,
-  count = 20,
-): Promise<GitLogEntry[]> {
+  repoRoot: string,
+  head: string,
+  skip: number,
+  count: number,
+): Promise<GitLogEntry[] | null> {
   try {
-    const repoRoot = typeof repoRootOrCount === 'string' ? repoRootOrCount : undefined;
-    const resolvedCount = typeof repoRootOrCount === 'number' ? repoRootOrCount : count;
-    const params = new URLSearchParams({ sessionId, count: String(resolvedCount) });
-    appendRepoRoot(params, repoRoot);
-    const res = await fetch(`/api/git/log?${params}`);
-    if (!res.ok) return [];
-    return (await res.json()) as GitLogEntry[];
+    const params = new URLSearchParams({
+      sessionId,
+      repoRoot,
+      head,
+      skip: String(skip),
+      count: String(count),
+    });
+    const response = await fetch(`/api/git/log?${params}`);
+    return response.ok ? ((await response.json()) as GitLogEntry[]) : null;
   } catch {
-    return [];
+    return null;
   }
 }
 

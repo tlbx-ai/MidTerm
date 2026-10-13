@@ -1480,5 +1480,8 @@
   "git.markResolved": "Mark resolved",
   "git.merge": "Merge branch",
   "git.stashCreate": "Stash changes",
-  "git.deletedVersion": "Deleted in this version"
+  "git.deletedVersion": "Deleted in this version",
+  "git.untitledCommit": "(No commit subject)",
+  "git.loadMoreHistory": "Load more history",
+  "git.historyReadFailed": "History could not be loaded. Retry to keep browsing."
 }

@@ -306,22 +306,23 @@ internal static class GitCommandRunner
         return response;
     }
 
-    internal static async Task<GitLogEntry[]> GetLogAsync(string repoRoot, int count = 20)
+    internal static async Task<GitLogEntry[]> GetLogAsync(string repoRoot, int count = 20, int skip = 0, string? head = null)
     {
-        var format = "%H%n%h%n%s%n%an%n%ai";
-        var countArgument = string.Create(CultureInfo.InvariantCulture, $"-{count}");
-        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, "log", $"--format={format}", countArgument);
-
-        if (exitCode != 0) return [];
-
-        var lines = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        if (count < 1 || count > 200 || skip < 0) throw new IOException("Invalid Git history page.");
+        if (head is not null && (head.Length is not (40 or 64) || !head.All(Uri.IsHexDigit))) throw new IOException("Invalid Git history snapshot.");
+        var revision = head ?? await GetCommittedHeadAsync(repoRoot).ConfigureAwait(false);
+        if (revision is null) return [];
+        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, "log", "--format=%H%x00%h%x00%s%x00%an%x00%ai%x00",
+            "-n", count.ToString(CultureInfo.InvariantCulture), "--skip=" + skip.ToString(CultureInfo.InvariantCulture), revision, "--").ConfigureAwait(false);
+        if (exitCode != 0) throw new IOException("Git history could not be read. " + stderr);
+        var lines = stdout.Split('\0');
         var entries = new List<GitLogEntry>();
 
         for (var i = 0; i + 4 < lines.Length; i += 5)
         {
             entries.Add(new GitLogEntry
             {
-                Hash = lines[i],
+                Hash = lines[i].TrimStart('\r', '\n'),
                 ShortHash = lines[i + 1],
                 Message = lines[i + 2],
                 Author = lines[i + 3],

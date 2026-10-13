@@ -25,7 +25,7 @@ vi.mock('./gitApi', () => {
       const value = await fetchGitStatus(session, root);
       return value ? { ok: true, status: value } : { ok: false, httpStatus: 0, detail: '' };
     }),
-    fetchGitLog: vi.fn(),
+    fetchGitHistoryPage: vi.fn(),
     fetchDiffView: vi.fn(),
     fetchCommitDetails: vi.fn(),
   };

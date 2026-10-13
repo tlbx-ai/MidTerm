@@ -262,7 +262,7 @@ public static class GitEndpoints
             }).ConfigureAwait(false);
         });
 
-        app.MapGet("/api/git/log", async (string? sessionId, string? repoRoot, int? count, CancellationToken ct) =>
+        app.MapGet("/api/git/log", async Task<IResult> (string? sessionId, string? repoRoot, int? count, int? skip, string? head, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId))
             {
@@ -272,8 +272,11 @@ public static class GitEndpoints
             var (resolvedRepoRoot, error) = await ResolveRepoAsync(sessionId, repoRoot, gitWatcher, gitMetadata, ct);
             if (error is not null) return error;
 
-            var entries = await GitCommandRunner.GetLogAsync(resolvedRepoRoot!, count ?? 20);
-            return Results.Json(entries, GitJsonContext.Default.GitLogEntryArray);
+            return await RunForGitCallerAsync(sessionId, sessionManager, settings, async () =>
+            {
+                var entries = await GitCommandRunner.GetLogAsync(resolvedRepoRoot!, count ?? 20, skip ?? 0, head).ConfigureAwait(false);
+                return Results.Json(entries, GitJsonContext.Default.GitLogEntryArray);
+            }).ConfigureAwait(false);
         });
 
         app.MapGet("/api/git/commit", async Task<IResult> (string? sessionId, string? repoRoot, string? hash, int? parentIndex, CancellationToken ct) =>

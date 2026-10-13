@@ -4,10 +4,12 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn, execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { exerciseGitHistory } from './git-history-acceptance.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('../../docs/marketing/ScreenshotAutomation/node_modules/playwright');
 const url = process.env.TLBX_PERF_URL, cookie = process.env.TLBX_COOKIE_HEADER;
 const navigation = process.env.TLBX_GIT_NAVIGATION === '1';
+const history = process.env.TLBX_GIT_HISTORY === '1';
 if (!url || !cookie) throw new Error('Authenticated source URL required');
 const out = path.resolve(process.env.TLBX_PERF_ARTIFACT_ROOT || '.dev/file-git-production/git-layout'); fs.mkdirSync(out, { recursive: true });
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'tlbx-git-layout-'));
@@ -21,6 +23,7 @@ const git = args => execFileSync('git', ['-C', fixture, '-c', 'core.hooksPath=' 
 git(['init', '--quiet']); git(['config', 'user.name', 'A long author name used for inspector geometry acceptance']); git(['config', 'user.email', 'layout@tlbx.invalid']); git(['add', '.']); git(['commit', '--quiet', '-m', 'Fixture root']);
 fs.appendFileSync(full, 'Normal commit line\n'); git(['commit', '--quiet', '-am', 'A long normal commit subject whose inspector must remain usable in a narrow dock']);
 const commit = git(['rev-parse', 'HEAD']).trim();
+if (history) for (let index = 0; index < 53; index++) git(['commit','--allow-empty','--allow-empty-message','-qm', index===17 ? '' : `History commit ${index} ä 字`]);
 for (let i = 0; i < 40; i++) fs.appendFileSync(path.join(fixture, `file${i}.txt`), `Changed ${i}\n`);
 fs.appendFileSync(path.join(fixture, 'file35.txt'), Array.from({ length: 100 }, (_, i) => `Long changed line ${i} ` + 'abcdefghij'.repeat(8)).join('\n') + '\n');
 fs.appendFileSync(full, 'WORKTREE_CHANGE_' + 'abcdefghij'.repeat(50) + '\n');
@@ -44,6 +47,8 @@ try {
   const wrapper = page.locator(`.session-wrapper[data-session-id="${session}"]`), dock = page.locator('#git-dock');
   await page.evaluate(() => localStorage.setItem('mt-git-dock-width', '400')); await wrapper.locator('.git-indicator').click();
   const file = dock.locator(`.git-tree-file[data-path="${relative}"]`), inspector = dock.locator('.git-panel-inspector');
+  if (history) await exerciseGitHistory({page,dock,git,fixture,out,result,api,session});
+  else {
   await file.click(); await inspector.locator('.git-diff-lines').waitFor(); assert.ok((await inspector.innerText()).includes('WORKTREE_CHANGE_'));
   async function measure(label) {
     const geometry = await dock.evaluate((el, label) => {
@@ -120,6 +125,7 @@ try {
     await page.screenshot({ path: path.join(out, `${viewport}-${width}-commit.png`), animations: 'disabled' });
   }
   result.cases.push('Nine real normal-commit inspectors keep long authors, parent hashes, patches and actions inside the available panel');
+  }
   }
   assert.equal(result.inputFrames, 0); assert.deepEqual(result.errors, []); result.ok = true;
 } catch (error) { result.failure = String(error.stack || error).replaceAll(cookie, '<redacted-session-cookie>'); await page?.screenshot({ path: path.join(out, 'failure.png'), animations: 'disabled' }).catch(() => {}); process.exitCode = 1; }

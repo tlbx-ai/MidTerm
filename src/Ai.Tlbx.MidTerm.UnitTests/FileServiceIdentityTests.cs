@@ -100,6 +100,7 @@ public sealed class FileServiceIdentityTests
                 };
                 Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, createBranch, default)).State);
                 Assert.Equal("caller-workspace", (await GitWorkspaceQuery.ReadAsync(root, default)).CurrentBranch);
+                Assert.Contains(await GitCommandRunner.GetLogAsync(root, 20, 0, workspace.HeadHash), entry => entry.Hash == workspace.HeadHash);
                 using var afterWorkspace = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterWorkspace.User!.Value);
 
                 var create = Request("createFolder"); create.DestinationDirectory = root; create.Name = "destination";
