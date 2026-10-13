@@ -1217,7 +1217,7 @@ dem verifizierten Caller, anschließend weiterhin kein Systemzugriff auf dessen
 Datei. TRX/Quoting-Nachweise: `git-task-36-platform-*`; kompakte geprüfte Zähler:
 `git-task-36-platform-counters.json`. Der endgültige Designpass bleibt Aufgabe 43.
 
-### 37. [~] Merge-Commits nachvollziehbar gegen Parents vergleichen
+### 37. [x] Merge-Commits nachvollziehbar gegen Parents vergleichen
 
 **Befund (mittel, reproduziert/Code):** Merge 786357d2 zeigt Metadaten/Text ohne
 Patches, obwohl first-parent-Vergleich Dateien enthält. Normales git show erklärt
@@ -1250,9 +1250,16 @@ bestehen nach Extraktion der Tree-/Commit-Metadatenrenderer; 709 Frontendtests,
 Typecheck und Lints bestehen. `git-task-37-browser-complete`, `git-task-37-native-final`,
 `git-task-37-regression-*` und Verify-/Lint-Logs enthalten die Nachweise.
 LocalSystem-Fixture um private Commit-Metadaten-/Patchleseprüfung erweitert;
-Plattform-/Caller-CI steht noch aus, daher Aufgabe noch nicht abgeschlossen.
+**Plattform-/Caller-Abnahme 13.10.2026:** CI `38324648126` auf `7df3b40d` ist
+erfolgreich: Windows 144/154, Linux 147/154, macOS 144/154; 10/7/10 explizite
+Plattform-/Fixture-Skips, null Fehler. Alle sechs neuen Commitvergleichsfälle
+bestehen auf jedem Betriebssystem, einschließlich SHA-256-Root und abgelehntem
+fehlerhaften Vergleich. Shellquotierung 20/28/28 Fälle erfolgreich. Zusätzliche
+tatsächliche LocalSystem-Ausführung 1/1 umfasst nun private Commit-Metadaten und
+Patchlesen. Geprüfte TRX/Quoting-Artefakte: `git-task-37-platform-*`, Zähler:
+`git-task-37-platform-counters.json`. Aufgabe 37 abgeschlossen; Designpass offen.
 
-### 38. [ ] Git-Dateilisten flexibel und effizient bedienen
+### 38. [~] Git-Dateilisten flexibel und effizient bedienen
 
 **Befund (mittel, Erwartungslücke):** Nur Tree; Ordnerzeilen nicht einklappbar,
 keine Flatlist/Suche/Mehrfachauswahl. Tiefenpfade erzeugen lange starre Listen.
