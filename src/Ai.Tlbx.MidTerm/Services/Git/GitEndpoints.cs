@@ -48,6 +48,8 @@ public static class GitEndpoints
         TtyHostSessionManager sessionManager,
         SessionGitMetadataService gitMetadata)
     {
+        GitOperationEndpoints.Map(app, gitWatcher, sessionManager, gitMetadata);
+        var settings = app.Services.GetRequiredService<SettingsService>();
         app.MapGet("/api/git/debug", async (string? sessionId) =>
         {
             var session = string.IsNullOrEmpty(sessionId) ? null : sessionManager.GetSession(sessionId);
@@ -179,7 +181,7 @@ public static class GitEndpoints
                 GitJsonContext.Default.GitRepoListResponse);
         });
 
-        app.MapGet("/api/git/status", async (string? sessionId, string? repoRoot, CancellationToken ct) =>
+        app.MapGet("/api/git/status", async Task<IResult> (string? sessionId, string? repoRoot, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId))
             {
@@ -196,18 +198,16 @@ public static class GitEndpoints
 
             if (resolvedRepoRoot is null)
             {
-                return Results.Json(new GitStatusResponse(), GitJsonContext.Default.GitStatusResponse);
+                if (!string.IsNullOrEmpty(repoRoot)) return Results.Json(new GitStatusResponse { ReadState = "error", ErrorCode = "repository_unbound" }, GitJsonContext.Default.GitStatusResponse, statusCode: 403);
+                return Results.Json(new GitStatusResponse { ReadState = "no-repo" }, GitJsonContext.Default.GitStatusResponse);
             }
 
-            var cached = gitWatcher.GetCachedStatus(sessionId, resolvedRepoRoot);
-            if (cached is not null)
+            return await RunForGitCallerAsync(sessionId, sessionManager, settings, async () =>
             {
-                return Results.Json(cached, GitJsonContext.Default.GitStatusResponse);
-            }
-
-            await gitWatcher.RefreshStatusAsync(resolvedRepoRoot);
-            var status = gitWatcher.GetCachedStatus(sessionId, resolvedRepoRoot) ?? new GitStatusResponse { RepoRoot = resolvedRepoRoot };
-            return Results.Json(status, GitJsonContext.Default.GitStatusResponse);
+                await gitWatcher.RefreshStatusAsync(resolvedRepoRoot).ConfigureAwait(false);
+                var status = gitWatcher.GetCachedStatus(sessionId, resolvedRepoRoot) ?? new GitStatusResponse { RepoRoot = resolvedRepoRoot, ReadState = "error", ErrorCode = "git_read_failed" };
+                return Results.Json(status, GitJsonContext.Default.GitStatusResponse);
+            }).ConfigureAwait(false);
         });
 
         app.MapGet("/api/git/diff", async (string? sessionId, string? repoRoot, string? path, bool? staged, CancellationToken ct) =>
@@ -224,7 +224,7 @@ public static class GitEndpoints
             return Results.Text(diff, "text/plain");
         });
 
-        app.MapGet("/api/git/diff-view", async (string? sessionId, string? repoRoot, string? path, string? scope, CancellationToken ct) =>
+        app.MapGet("/api/git/diff-view", async Task<IResult> (string? sessionId, string? repoRoot, string? path, string? scope, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(path))
             {
@@ -238,16 +238,31 @@ public static class GitEndpoints
             var (resolvedRepoRoot, error) = await ResolveRepoAsync(sessionId, repoRoot, gitWatcher, gitMetadata, ct);
             if (error is not null) return error;
 
-            var (patch, isTruncated) = await GitCommandRunner.GetDiffPatchAsync(
-                resolvedRepoRoot!,
-                path,
-                normalizedScope == "staged");
-
-            var response = GitPatchParser.ParseDiff(normalizedScope, patch, isTruncated);
-            return Results.Json(response, GitJsonContext.Default.GitDiffViewResponse);
+            return await RunForGitCallerAsync(sessionId, sessionManager, settings, async () =>
+            {
+                var status = await GitCommandRunner.GetStatusAsync(resolvedRepoRoot!).ConfigureAwait(false);
+                var snapshot = await GitPatchSelection.ReadAsync(resolvedRepoRoot!, path, normalizedScope == "staged", status).ConfigureAwait(false);
+                GitDiffViewResponse response;
+                if (normalizedScope == "worktree" && status.Untracked.Any(file => file.Path == path))
+                {
+                    response = await GitNewFileReview.ReadAsync(resolvedRepoRoot!, path, ct).ConfigureAwait(false);
+                    response.PatchVersion = snapshot.View.PatchVersion;
+                    response.IndexVersion = snapshot.View.IndexVersion;
+                    response.CanSelectLines = snapshot.View.CanSelectLines && !response.IsTruncated && !response.Files[0].IsBinary;
+                    if (response.CanSelectLines)
+                    {
+                        // Selection coordinates and their version must describe the same native snapshot.
+                        response.Files[0].Hunks = snapshot.View.Files[0].Hunks;
+                        response.Files[0].Additions = snapshot.View.Files[0].Additions;
+                    }
+                }
+                else
+                    response = snapshot.View;
+                return Results.Json(response, GitJsonContext.Default.GitDiffViewResponse);
+            }).ConfigureAwait(false);
         });
 
-        app.MapGet("/api/git/log", async (string? sessionId, string? repoRoot, int? count, CancellationToken ct) =>
+        app.MapGet("/api/git/log", async Task<IResult> (string? sessionId, string? repoRoot, int? count, int? skip, string? head, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId))
             {
@@ -257,11 +272,14 @@ public static class GitEndpoints
             var (resolvedRepoRoot, error) = await ResolveRepoAsync(sessionId, repoRoot, gitWatcher, gitMetadata, ct);
             if (error is not null) return error;
 
-            var entries = await GitCommandRunner.GetLogAsync(resolvedRepoRoot!, count ?? 20);
-            return Results.Json(entries, GitJsonContext.Default.GitLogEntryArray);
+            return await RunForGitCallerAsync(sessionId, sessionManager, settings, async () =>
+            {
+                var entries = await GitCommandRunner.GetLogAsync(resolvedRepoRoot!, count ?? 20, skip ?? 0, head).ConfigureAwait(false);
+                return Results.Json(entries, GitJsonContext.Default.GitLogEntryArray);
+            }).ConfigureAwait(false);
         });
 
-        app.MapGet("/api/git/commit", async (string? sessionId, string? repoRoot, string? hash, CancellationToken ct) =>
+        app.MapGet("/api/git/commit", async Task<IResult> (string? sessionId, string? repoRoot, string? hash, int? parentIndex, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(hash))
             {
@@ -271,15 +289,18 @@ public static class GitEndpoints
             var (resolvedRepoRoot, error) = await ResolveRepoAsync(sessionId, repoRoot, gitWatcher, gitMetadata, ct);
             if (error is not null) return error;
 
-            var metadata = await GitCommandRunner.GetCommitMetadataAsync(resolvedRepoRoot!, hash);
-            if (metadata is null)
+            return await RunForGitCallerAsync(sessionId, sessionManager, settings, async () =>
             {
-                return Results.NotFound("Commit not found");
-            }
-
-            var (patch, isTruncated) = await GitCommandRunner.GetCommitPatchAsync(resolvedRepoRoot!, hash);
-            var response = GitPatchParser.ParseCommitDetails(metadata, patch, isTruncated);
-            return Results.Json(response, GitJsonContext.Default.GitCommitDetailsResponse);
+                var metadata = await GitCommandRunner.GetCommitMetadataAsync(resolvedRepoRoot!, hash).ConfigureAwait(false);
+                if (metadata is null) return Results.NotFound("Commit not found");
+                var comparison = parentIndex ?? 0;
+                if (comparison < 0 || comparison >= Math.Max(1, metadata.ParentHashes.Length))
+                    return Results.BadRequest("Select an actual parent of this commit.");
+                var parent = metadata.ParentHashes.Length == 0 ? null : metadata.ParentHashes[comparison];
+                var (patch, isTruncated) = await GitCommandRunner.GetCommitPatchAsync(resolvedRepoRoot!, metadata.Hash, parent).ConfigureAwait(false);
+                var response = GitPatchParser.ParseCommitDetails(metadata, patch, isTruncated, comparison);
+                return Results.Json(response, GitJsonContext.Default.GitCommitDetailsResponse);
+            }).ConfigureAwait(false);
         });
     }
 
@@ -293,6 +314,21 @@ public static class GitEndpoints
         }
 
         return Results.Problem(result.Error, statusCode: result.StatusCode);
+    }
+
+    private static async Task<IResult> RunForGitCallerAsync(string sessionId, TtyHostSessionManager sessions,
+        SettingsService settings, Func<Task<IResult>> action)
+    {
+        try
+        {
+            if (!OperatingSystem.IsWindows() || !settings.IsRunningAsService) return await action().ConfigureAwait(false);
+            var host = sessions.GetVerifiedHostIdentity(sessionId);
+            if (host is null) return Results.Text("The session identity is unavailable.", statusCode: 409);
+            return await SessionCallerIdentity.RunForSessionAsync(host.Value.Pid, host.Value.Started, action).ConfigureAwait(false);
+        }
+        catch (UnauthorizedAccessException error) { return Results.Text(error.Message, statusCode: 403); }
+        catch (Exception error) when (error is IOException or SessionCallerIdentityException)
+        { return Results.Text(error.Message, statusCode: 409); }
     }
 
     private static async Task<(string? RepoRoot, IResult? Error)> ResolveRepoAsync(

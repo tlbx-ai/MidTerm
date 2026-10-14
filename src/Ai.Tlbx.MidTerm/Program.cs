@@ -171,7 +171,7 @@ public class Program
         var logDirectory = LogPaths.GetLogDirectory(settingsService.IsRunningAsService);
         Log.Initialize("mt", logDirectory, LogSeverity.Error);
         Log.SetupCrashHandlers();
-        ConfigureRuntimePriority(settings);
+        ConfigureRuntimePriority(settings, resolvedInstanceIdentity);
         _ = MidTermProcessPriority.TryApplyToCurrentProcess(
             "mt",
             message => Log.Info(() => message),
@@ -202,9 +202,23 @@ public class Program
             browserPreviewOriginService,
             browserPreviewRegistry);
 
-        TlbxDirectory.Initialize(port, authService);
+        TlbxDirectory.Initialize(port, authService, bindAddress);
 
         var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
+        var cliContext = app.Services.GetRequiredService<SessionCliContextService>();
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path != "/api/sessions/process-context" &&
+                context.Request.Headers.TryGetValue(SessionCliContextService.LeaseHeader, out var lease) &&
+                cliContext.ValidateLease(lease.ToString()) is { } error)
+            {
+                context.Response.StatusCode = 409;
+                context.Response.ContentType = "text/plain; charset=utf-8";
+                await context.Response.WriteAsync(error, context.RequestAborted);
+                return;
+            }
+            await next(context);
+        });
         var layoutStateService = app.Services.GetRequiredService<SessionLayoutStateService>();
         var muxManager = app.Services.GetRequiredService<TtyHostMuxConnectionManager>();
         var sessionTelemetry = app.Services.GetRequiredService<SessionTelemetryService>();
@@ -329,11 +343,16 @@ public class Program
 
         settingsService.AddSettingsListener(newSettings =>
         {
-            ConfigureRuntimePriority(newSettings);
+            ConfigureRuntimePriority(newSettings, resolvedInstanceIdentity);
             _ = MidTermProcessPriority.TryApplyToCurrentProcess(
                 "mt",
                 message => Log.Info(() => message),
                 message => Log.Warn(() => message));
+            foreach (var session in sessionManager.GetAllSessions())
+            {
+                _ = MidTermProcessPriority.TryApplyToProcessId(session.HostPid, "mthost",
+                    message => Log.Info(() => message), message => Log.Warn(() => message));
+            }
 
             var (isValid, _) = UserValidationService.ValidateRunAsUser(newSettings.RunAsUser);
             if (isValid)
@@ -592,10 +611,11 @@ public class Program
         }
     }
 
-    private static void ConfigureRuntimePriority(MidTermSettings settings)
+    private static void ConfigureRuntimePriority(MidTermSettings settings, MidTermInstanceIdentity identity)
     {
         MidTermProcessPriority.Configure(
             settings.RuntimePriorityBoostEnabled,
-            settings.RuntimePriorityClass);
+            settings.RuntimePriorityClass,
+            $"{identity.InstanceId}:{identity.OwnerToken}");
     }
 }

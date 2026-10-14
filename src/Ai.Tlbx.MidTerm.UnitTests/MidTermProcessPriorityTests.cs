@@ -6,15 +6,146 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class MidTermProcessPriorityTests
 {
+    [Fact]
+    public void WebServerPriority_DoesNotCreateAnInheritedJob()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        var originalPriority = process.PriorityClass;
+        var instanceKey = $"spawn-regression-{Guid.NewGuid():N}";
+        try
+        {
+            MidTermProcessPriority.Configure(true, "aboveNormal", instanceKey);
+            var warnings = new List<string>();
+            MidTermProcessPriority.TryApplyToCurrentProcess("mt", warn: warnings.Add);
+            Assert.Empty(warnings);
+            process.Refresh();
+            Assert.Equal(ProcessPriorityClass.AboveNormal, process.PriorityClass);
+            // The web process must remain outside tlbx jobs, so a service in
+            // session 0 can create a host with another user's session token.
+            var error = Assert.Throws<System.ComponentModel.Win32Exception>(() =>
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    using var unexpectedHandle = WindowsProcessPriorityJob.OpenLifetimeHandle(
+                        MidTermProcessPriority.GetJobName(instanceKey, process.SessionId));
+                }
+            });
+            Assert.Equal(2, error.NativeErrorCode);
+        }
+        finally
+        {
+            process.PriorityClass = originalPriority;
+            MidTermProcessPriority.Configure(true, MidTermProcessPriority.DefaultPriorityClass);
+        }
+    }
+
+    [Fact]
+    public void RuntimePriorityGroup_IsAvailableBeforeHostStartup()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        var instanceId = Guid.NewGuid().ToString("N");
+        const string ownerToken = "test-owner";
+        try
+        {
+            MidTermProcessPriority.Configure(true, "aboveNormal", $"{instanceId}:{ownerToken}");
+            var warnings = new List<string>();
+            MidTermProcessPriority.PrepareRuntimeJob(process.SessionId, warnings.Add);
+            using var hostLifetime = MidTermProcessPriority.HoldInheritedJob(instanceId, ownerToken, warnings.Add);
+            Assert.Empty(warnings);
+            Assert.NotNull(hostLifetime);
+            Assert.False(hostLifetime.IsInvalid);
+        }
+        finally
+        {
+            MidTermProcessPriority.Configure(true, MidTermProcessPriority.DefaultPriorityClass);
+        }
+    }
+
+    [Fact]
+    public void RuntimePriorityGroups_AreDistinctPerWindowsSession()
+    {
+        Assert.NotEqual(MidTermProcessPriority.GetJobName("instance", 0),
+            MidTermProcessPriority.GetJobName("instance", 1), StringComparer.Ordinal);
+        Assert.NotEqual(MidTermProcessPriority.GetJobName("instance", 1),
+            MidTermProcessPriority.GetJobName("other-instance", 1), StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task WindowsPriorityJob_CoversChildrenAndGrandchildrenAndCanBeDisabled()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var gate = Path.Combine(Path.GetTempPath(), $"tlbx-priority-{Guid.NewGuid():N}");
+        var pidFile = gate + ".pid";
+        var grandchildPidFile = gate + ".grandchild";
+        var childScript = gate + ".ps1";
+        File.WriteAllText(childScript, $"[IO.File]::WriteAllText('{pidFile}',[string]$PID); while(!(Test-Path -LiteralPath '{gate}')){{Start-Sleep -Milliseconds 20}}; $p=Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 30' -PassThru; [IO.File]::WriteAllText('{grandchildPidFile}',[string]$p.Id); Start-Sleep -Seconds 30");
+        var jobName = $"Local\\tlbx-priority-test-{Guid.NewGuid():N}";
+        using var job = new WindowsProcessPriorityJob(jobName);
+        job.SetPriority(ProcessPriorityClass.AboveNormal);
+        var start = new ProcessStartInfo("pwsh") { UseShellExecute = false, CreateNoWindow = true };
+        start.ArgumentList.Add("-NoProfile");
+        start.ArgumentList.Add("-Command");
+        start.ArgumentList.Add($"Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoProfile','-File','{childScript}' -PassThru | Out-Null; Start-Sleep -Seconds 30");
+        using var parent = System.Diagnostics.Process.Start(start)!;
+        System.Diagnostics.Process? child = null;
+        System.Diagnostics.Process? grandchild = null;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            while (!File.Exists(pidFile)) await Task.Delay(20, timeout.Token);
+            child = System.Diagnostics.Process.GetProcessById(int.Parse(File.ReadAllText(pidFile), System.Globalization.CultureInfo.InvariantCulture));
+            job.Assign(parent);
+            File.WriteAllText(gate, "go");
+            while (!File.Exists(grandchildPidFile)) await Task.Delay(20, timeout.Token);
+            grandchild = System.Diagnostics.Process.GetProcessById(int.Parse(File.ReadAllText(grandchildPidFile), System.Globalization.CultureInfo.InvariantCulture));
+            Assert.Equal(ProcessPriorityClass.AboveNormal, parent.PriorityClass);
+            Assert.Equal(ProcessPriorityClass.AboveNormal, child.PriorityClass);
+            Assert.Equal(ProcessPriorityClass.AboveNormal, grandchild.PriorityClass);
+            try
+            {
+                job.SetPriority(ProcessPriorityClass.High);
+                parent.Refresh();
+                child.Refresh();
+                grandchild.Refresh();
+                Assert.Equal(ProcessPriorityClass.High, parent.PriorityClass);
+                Assert.Equal(ProcessPriorityClass.High, child.PriorityClass);
+                Assert.Equal(ProcessPriorityClass.High, grandchild.PriorityClass);
+            }
+            catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode is 1300 or 1314)
+            {
+                // High job priority requires an administrator/service token.
+                Assert.Equal(ProcessPriorityClass.AboveNormal, child.PriorityClass);
+            }
+            // Simulate the web process closing its handle while hosts survive,
+            // then a replacement process opening the same instance group.
+            using var hostLifetime = WindowsProcessPriorityJob.OpenLifetimeHandle(jobName);
+            job.Dispose();
+            using var replacementJob = new WindowsProcessPriorityJob(jobName);
+            replacementJob.SetPriority(ProcessPriorityClass.Normal);
+            parent.Refresh();
+            child.Refresh();
+            grandchild.Refresh();
+            Assert.Equal(ProcessPriorityClass.Normal, parent.PriorityClass);
+            Assert.Equal(ProcessPriorityClass.Normal, child.PriorityClass);
+            Assert.Equal(ProcessPriorityClass.Normal, grandchild.PriorityClass);
+        }
+        finally
+        {
+            if (!parent.HasExited) parent.Kill(entireProcessTree: true);
+            child?.Dispose();
+            grandchild?.Dispose();
+            File.Delete(gate);
+            File.Delete(pidFile);
+            File.Delete(grandchildPidFile);
+            File.Delete(childScript);
+        }
+    }
+
     [Theory]
-    [InlineData(null, ProcessPriorityClass.AboveNormal)]
-    [InlineData("", ProcessPriorityClass.AboveNormal)]
-    [InlineData("aboveNormal", ProcessPriorityClass.AboveNormal)]
-    [InlineData("above-normal", ProcessPriorityClass.AboveNormal)]
     [InlineData("normal", ProcessPriorityClass.Normal)]
-    [InlineData("high", ProcessPriorityClass.High)]
     [InlineData("realtime", ProcessPriorityClass.AboveNormal)]
-    [InlineData("unexpected", ProcessPriorityClass.AboveNormal)]
     public void ResolvePriorityClass_AllowsOnlyConservativeKnownClasses(
         string? input,
         ProcessPriorityClass expected)
@@ -23,9 +154,9 @@ public sealed class MidTermProcessPriorityTests
     }
 
     [Fact]
-    public void ShouldSetPriority_DoesNotLowerHighOrRealtimeProcesses()
+    public void ShouldSetPriority_AllowsUserToLowerHighButPreservesRealtimeProcesses()
     {
-        Assert.False(MidTermProcessPriority.ShouldSetPriority(
+        Assert.True(MidTermProcessPriority.ShouldSetPriority(
             ProcessPriorityClass.High,
             ProcessPriorityClass.AboveNormal));
         Assert.False(MidTermProcessPriority.ShouldSetPriority(

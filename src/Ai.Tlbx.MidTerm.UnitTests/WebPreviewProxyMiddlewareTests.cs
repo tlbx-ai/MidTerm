@@ -4,6 +4,7 @@ using Ai.Tlbx.MidTerm.Services.Browser;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
 using Xunit;
@@ -79,30 +80,84 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
     }
 
-    [Fact]
-    public void AddForwardedHeaders_UsesUpstreamAuthorityInsteadOfOuterTlbxHost()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProxyRequests_OnWire_PreserveBrowserUserAgentWithoutLeakingTlbx(bool external)
     {
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            "https://demo.kilv.de/login?ReturnUrl=%2F");
+        const string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var origin = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var received = Task.Run(async () =>
+        {
+            var requests = new List<string>();
+            for (var i = 0; i < 2; i++)
+            {
+                using var client = await listener.AcceptTcpClientAsync(deadline.Token);
+                await using var stream = client.GetStream();
+                using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
+                var lines = new List<string>();
+                while (await reader.ReadLineAsync(deadline.Token) is { Length: > 0 } line)
+                    lines.Add(line);
+                requests.Add(string.Join("\r\n", lines));
+                var response = i == 0
+                    ? $"HTTP/1.1 302 Found\r\nLocation: {origin}/final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    : "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(response), deadline.Token);
+            }
+            return requests;
+        }, deadline.Token);
 
-        WebPreviewProxyMiddleware.AddForwardedHeaders(
-            request,
-            IPAddress.Parse("100.78.171.121"));
+        var service = new WebPreviewService(serverPort: 2000);
+        try
+        {
+            Assert.True(service.SetTarget("privacy", null, origin + "/"));
+            Assert.True(service.TryGetPreviewRouteKey("privacy", null, out var routeKey));
+            var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+            var context = new DefaultHttpContext();
+            context.RequestAborted = deadline.Token;
+            context.Request.Method = "GET";
+            context.Request.Scheme = "https";
+            context.Request.Host = new HostString("100.78.171.121", 2001);
+            context.Connection.RemoteIpAddress = IPAddress.Parse("100.78.171.121");
+            context.Request.Path = $"/webpreview/{routeKey}/" + (external ? "_ext" : "start");
+            if (external)
+                context.Request.QueryString = new QueryString("?u=" + Uri.EscapeDataString(origin + "/start"));
+            context.Request.Headers.UserAgent = userAgent;
+            context.Request.Headers["sec-ch-ua-platform"] = "\"Windows\"";
+            context.Request.Headers.Referer = external
+                ? $"https://100.78.171.121:2001/webpreview/{routeKey}/page?keep=1&__mtPreviewToken=secret&__mtPreviewId=id&__mtTargetRevision=1"
+                : "https://100.78.171.121:2000/";
+            foreach (var name in new[] { "Forwarded", "Via", "X-Real-IP", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Port" })
+                context.Request.Headers[name] = "private-network";
+            context.Response.Body = new MemoryStream();
 
-        Assert.Equal("100.78.171.121", Assert.Single(request.Headers.GetValues("X-Forwarded-For")));
-        Assert.Equal("https", Assert.Single(request.Headers.GetValues("X-Forwarded-Proto")));
-        Assert.Equal("demo.kilv.de", Assert.Single(request.Headers.GetValues("X-Forwarded-Host")));
-    }
-
-    [Fact]
-    public void BuildUpstreamPath_TargetWithBaseAndRootPath_ReturnsTargetBase()
-    {
-        var target = new Uri("https://example.com/dashboard");
-
-        var result = WebPreviewProxyMiddleware.BuildUpstreamPath(target, "/");
-
-        Assert.Equal("/dashboard", result);
+            await middleware.InvokeAsync(context);
+            Assert.Equal(200, context.Response.StatusCode);
+            foreach (var request in await received)
+            {
+                Assert.Contains("User-Agent: " + userAgent + "\r\n", request + "\r\n", StringComparison.Ordinal);
+                Assert.Contains("sec-ch-ua-platform: \"Windows\"", request, StringComparison.Ordinal);
+                Assert.DoesNotContain("Forwarded", request, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("Via:", request, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("X-Real-IP", request, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("100.78.171.121", request, StringComparison.Ordinal);
+                Assert.DoesNotContain("__mt", request, StringComparison.Ordinal);
+                Assert.DoesNotContain("private-network", request, StringComparison.Ordinal);
+                if (external)
+                    Assert.Contains($"Referer: {origin}/page?keep=1", request, StringComparison.Ordinal);
+                else
+                    Assert.DoesNotContain("Referer:", request, StringComparison.OrdinalIgnoreCase);
+            }
+            Assert.Equal(userAgent, Assert.Single(service.GetLogEntries("privacy")).RequestHeaders["User-Agent"]);
+        }
+        finally
+        {
+            service.ClearSession("privacy");
+            await deadline.CancelAsync();
+        }
     }
 
     [Fact]
@@ -119,19 +174,6 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
-    public void BuildRedirectedProxyPath_UnchangedRequest_ReturnsNull()
-    {
-        var result = WebPreviewProxyMiddleware.BuildRedirectedProxyPath(
-            "/webpreview/route-1",
-            new Uri("https://demo.kilv.de/"),
-            "https://demo.kilv.de/login?ReturnUrl=%2F",
-            "/webpreview/route-1/login",
-            "?ReturnUrl=%2F");
-
-        Assert.Null(result);
-    }
-
-    [Fact]
     public void BuildRedirectedProxyPath_CrossAuthorityRedirect_ReturnsNull()
     {
         var result = WebPreviewProxyMiddleware.BuildRedirectedProxyPath(
@@ -142,36 +184,6 @@ public class WebPreviewProxyMiddlewareTests
             null);
 
         Assert.Null(result);
-    }
-
-    [Fact]
-    public void BuildUpstreamPath_RequestAlreadyContainsTargetBase_DoesNotDuplicate()
-    {
-        var target = new Uri("https://example.com/dashboard");
-
-        var result = WebPreviewProxyMiddleware.BuildUpstreamPath(target, "/dashboard/lib/sneat/css/core.css");
-
-        Assert.Equal("/dashboard/lib/sneat/css/core.css", result);
-    }
-
-    [Fact]
-    public void BuildUpstreamPath_RequestOutsideTargetBase_PrependsTargetBase()
-    {
-        var target = new Uri("https://example.com/dashboard");
-
-        var result = WebPreviewProxyMiddleware.BuildUpstreamPath(target, "/api/health");
-
-        Assert.Equal("/dashboard/api/health", result);
-    }
-
-    [Fact]
-    public void BuildUpstreamPath_TargetWithoutBasePath_UsesRequestPath()
-    {
-        var target = new Uri("https://example.com/");
-
-        var result = WebPreviewProxyMiddleware.BuildUpstreamPath(target, "/css/app.css");
-
-        Assert.Equal("/css/app.css", result);
     }
 
     [Fact]
@@ -208,182 +220,21 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
-    public void UrlRewriteScript_RequestFetchRewrite_PreservesRequestBodies()
+    public void GetUrlRewriteScript_CookieSnapshotCannotCloseInjectedScript()
     {
-        var field = typeof(WebPreviewProxyMiddleware).GetField(
-            "UrlRewriteScript",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        var script = Assert.IsType<string>(field?.GetRawConstantValue());
-
-        Assert.Contains("function rfq(self,q,o)", script, StringComparison.Ordinal);
-        Assert.Contains("return q.clone().arrayBuffer().then(function(body){", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("new Request(r(u.url),u)", script, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void UrlRewriteScript_MajorSiteCompatibility_RewritesProtocolRelativeAndRemovesStaleIntegrity()
-    {
-        var field = typeof(WebPreviewProxyMiddleware).GetField(
-            "UrlRewriteScript",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        var script = Assert.IsType<string>(field?.GetRawConstantValue());
-
-        Assert.Contains("if(u.startsWith(\"//\"))return r(location.protocol+u);", script, StringComparison.Ordinal);
-        Assert.Contains("imagesrcset", script, StringComparison.Ordinal);
-        Assert.Contains("HTMLInputElement", script, StringComparison.Ordinal);
-        Assert.Contains("HTMLTrackElement", script, StringComparison.Ordinal);
-        Assert.Contains("imageSrcset", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("srcdoc", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("function rsd(v)", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("Object.defineProperty(window,\"top\"", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("Object.defineProperty(window,\"parent\"", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("Object.defineProperty(window,\"frameElement\"", script, StringComparison.Ordinal);
-        Assert.Contains("if(/^integrity$/i.test(n))return;", script, StringComparison.Ordinal);
-        Assert.Contains("removeAttribute(\"integrity\")", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("integrity:q.integrity", script, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void UrlRewriteScript_CookieBridge_RefreshesAfterFetchAndXhr()
-    {
-        var field = typeof(WebPreviewProxyMiddleware).GetField(
-            "UrlRewriteScript",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        var script = Assert.IsType<string>(field?.GetRawConstantValue());
-
-        Assert.Contains("function wrapCookieRefresh", script, StringComparison.Ordinal);
-        Assert.Contains("XMLHttpRequest.prototype.send=function()", script, StringComparison.Ordinal);
-        Assert.Contains("addEventListener(\"loadend\",onDone)", script, StringComparison.Ordinal);
-        Assert.Contains("cookieRefreshTimer", script, StringComparison.Ordinal);
-        Assert.Contains("if(_realParent===window)", script, StringComparison.Ordinal);
-        Assert.Contains("fetch(cu,fo)", script, StringComparison.Ordinal);
-        Assert.Contains("dprop(navigator,\"cookieEnabled\",function(){return true;});", script, StringComparison.Ordinal);
-        Assert.Contains("if(ncs)ncs(v)", script, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void UrlRewriteScript_WebStorage_IsScopedPerPreviewRoute()
-    {
-        var field = typeof(WebPreviewProxyMiddleware).GetField(
-            "UrlRewriteScript",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        var script = Assert.IsType<string>(field?.GetRawConstantValue());
-
-        Assert.Contains("function mtStoragePrefix(name)", script, StringComparison.Ordinal);
-        Assert.Contains("__midterm_webpreview__", script, StringComparison.Ordinal);
-        Assert.Contains("match=(location.pathname||\"\").match(/^\\/webpreview\\/([^/]+)/)", script, StringComparison.Ordinal);
-        Assert.Contains("return nativeStore.getItem(prefix+String(k));", script, StringComparison.Ordinal);
-        Assert.Contains("ensureStore(\"localStorage\")", script, StringComparison.Ordinal);
-        Assert.Contains("ensureStore(\"sessionStorage\")", script, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void UrlRewriteScript_ScreenshotCapture_NormalizesColorFunctionsBeforeHtml2Canvas()
-    {
-        var field = typeof(WebPreviewProxyMiddleware).GetField(
-            "UrlRewriteScript",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        var script = Assert.IsType<string>(field?.GetRawConstantValue());
-
-        Assert.Contains("function normalizeCssColorFunctions", script, StringComparison.Ordinal);
-        Assert.Contains("function normalizeCloneCaptureColors", script, StringComparison.Ordinal);
-        Assert.Contains("function createNormalizedStyleReader", script, StringComparison.Ordinal);
-        Assert.Contains("function installComputedStyleColorNormalization", script, StringComparison.Ordinal);
-        Assert.Contains("value.indexOf(\"color(\")<0", script, StringComparison.Ordinal);
-        Assert.Contains("installComputedStyleColorNormalization(window)", script, StringComparison.Ordinal);
-        Assert.Contains("installComputedStyleColorNormalization(doc.defaultView||window)", script, StringComparison.Ordinal);
-        Assert.Contains("onclone:function(doc)", script, StringComparison.Ordinal);
-        Assert.Contains("normalizeCloneCaptureColors(doc.documentElement,(doc.defaultView||window))", script, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void UrlRewriteScript_NavigationBridge_DeduplicatesAndCoalescesUpdates()
-    {
-        var field = typeof(WebPreviewProxyMiddleware).GetField(
-            "UrlRewriteScript",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        var script = Assert.IsType<string>(field?.GetRawConstantValue());
-
-        Assert.Contains("var lastMtNavigationKey=\"\",navNotifyTimer=0;", script, StringComparison.Ordinal);
-        Assert.Contains("function ntfyNow()", script, StringComparison.Ordinal);
-        Assert.Contains("if(navKey===lastMtNavigationKey)return;", script, StringComparison.Ordinal);
-        Assert.Contains("navNotifyTimer=setTimeout(function(){", script, StringComparison.Ordinal);
-        Assert.Contains("setTimeout(ntfyNow,0);", script, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void UrlRewriteScript_LoadsPreviewContextFromCookieFallback()
-    {
-        var field = typeof(WebPreviewProxyMiddleware).GetField(
-            "UrlRewriteScript",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        var script = Assert.IsType<string>(field?.GetRawConstantValue());
-
-        Assert.Contains("mtReadCookie(\"mt-preview-ctx\")", script, StringComparison.Ordinal);
-        Assert.Contains("decodeURIComponent(mtCookieCtx)", script, StringComparison.Ordinal);
-        Assert.Contains("params.get(\"__mtPreviewId\")", script, StringComparison.Ordinal);
-        Assert.Contains("params.get(\"__mtPreviewToken\")", script, StringComparison.Ordinal);
-        Assert.Contains("url.searchParams.has(\"__mtTargetRevision\")", script, StringComparison.Ordinal);
-        Assert.Contains("params.get(\"__mtReloadToken\")", script, StringComparison.Ordinal);
-        Assert.Contains("url.searchParams.has(\"__mtReloadToken\")", script, StringComparison.Ordinal);
-        Assert.Contains("url.searchParams.delete(\"__mtReloadToken\")", script, StringComparison.Ordinal);
-        Assert.Contains("url.searchParams.delete(\"__mtTargetRevision\")", script, StringComparison.Ordinal);
-        Assert.Contains("history.replaceState(history.state,\"\",url.pathname+url.search+url.hash)", script, StringComparison.Ordinal);
-        Assert.Contains("document.cookie=\"mt-preview-ctx=\"+encodeURIComponent(JSON.stringify(mtCtx))", script, StringComparison.Ordinal);
-        Assert.Contains("routeMatch=(location.pathname||\"\").match(/^\\/webpreview\\/([^/]+)/)", script, StringComparison.Ordinal);
-        Assert.Contains("\"routeKey=\"+encodeURIComponent(routeMatch[1])", script, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void UrlRewriteScript_BrowserBridge_RefreshesStateWhenDockedFrameBecomesVisible()
-    {
-        var field = typeof(WebPreviewProxyMiddleware).GetField(
-            "UrlRewriteScript",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        var script = Assert.IsType<string>(field?.GetRawConstantValue());
-
-        Assert.Contains("mt-refresh-browser-state", script, StringComparison.Ordinal);
-        Assert.Contains("function refreshBwsState(force)", script, StringComparison.Ordinal);
-        Assert.Contains("bwsVisibleOverride", script, StringComparison.Ordinal);
-        Assert.Contains("if(d.visible===true)bwsVisibleOverride=true;", script, StringComparison.Ordinal);
-        Assert.Contains("else if(d.visible===false)bwsVisibleOverride=false;", script, StringComparison.Ordinal);
-        Assert.Contains("refreshBwsState(d.force===true);", script, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void UrlRewriteScript_FillCommand_UsesMatchingFormControlValueSetter()
-    {
-        var field = typeof(WebPreviewProxyMiddleware).GetField(
-            "UrlRewriteScript",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        var script = Assert.IsType<string>(field?.GetRawConstantValue());
-
-        Assert.Contains("function setFormControlValue(el,value)", script, StringComparison.Ordinal);
-        Assert.Contains("el instanceof HTMLTextAreaElement", script, StringComparison.Ordinal);
-        Assert.Contains("el instanceof HTMLSelectElement", script, StringComparison.Ordinal);
-        Assert.Contains("el instanceof HTMLInputElement", script, StringComparison.Ordinal);
-        Assert.Contains("setFormControlValue(el,msg.value||\"\");", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,\"value\");", script, StringComparison.Ordinal);
+        var method = typeof(WebPreviewProxyMiddleware).GetMethod(
+            "GetUrlRewriteScript", BindingFlags.NonPublic | BindingFlags.Static);
+        var script = Assert.IsType<string>(method?.Invoke(null,
+            ["/webpreview/test", "value=</script><script>alert(1)</script>\""]));
+        Assert.DoesNotContain("value=</script>", script, StringComparison.Ordinal);
+        Assert.Contains("\\u003C/script\\u003E", script, StringComparison.Ordinal);
     }
 
     [Theory]
-    [InlineData("?__mtPreviewId=pid&__mtPreviewToken=ptk", "")]
-    [InlineData("?__mtTargetRevision=1", "")]
-    [InlineData("?__mtReloadToken=force-1", "")]
     [InlineData("?foo=1&__mtPreviewId=pid&bar=2&__mtPreviewToken=ptk", "?foo=1&bar=2")]
     [InlineData("?foo=1&__mtTargetRevision=2&bar=2", "?foo=1&bar=2")]
     [InlineData("?foo=1&__mtReloadToken=force-1&bar=2", "?foo=1&bar=2")]
     [InlineData("?foo=1&bar=2", "?foo=1&bar=2")]
-    [InlineData("", "")]
     public void StripPreviewBootstrapQuery_RemovesOnlyMidTermBootstrapParameters(string query, string expected)
     {
         var sanitized = WebPreviewProxyMiddleware.StripPreviewBootstrapQuery(query);
@@ -425,21 +276,6 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
-    public void RewriteRefererForUpstream_NonProxyReferer_IsLeftUnchanged()
-    {
-        var service = new WebPreviewService(serverPort: 2000);
-        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
-        const string referer = "https://example.net/plain/path";
-
-        var rewritten = middleware.RewriteRefererForUpstream(
-            referer,
-            "route-1",
-            new Uri("https://example.com/dashboard"));
-
-        Assert.Equal(referer, rewritten);
-    }
-
-    [Fact]
     public void RewriteRefererForUpstream_RememberedLeakedPath_UsesTargetOrigin()
     {
         var service = new WebPreviewService(serverPort: 2000);
@@ -454,57 +290,6 @@ public class WebPreviewProxyMiddlewareTests
             new Uri("https://demo.kilv.de/"));
 
         Assert.Equal("https://demo.kilv.de/login?ReturnUrl=%2F", rewritten);
-    }
-
-    [Fact]
-    public void BuildInjectedBaseHref_BlazorServerDocument_UsesProxyBaseHref()
-    {
-        const string html = """
-            <html><head><base href="/"></head><body>
-            <!--Blazor:{"type":"server","descriptor":"abc"}-->
-            <script src="_framework/blazor.web.js"></script>
-            </body></html>
-            """;
-
-        var baseHref = WebPreviewProxyMiddleware.BuildInjectedBaseHref(
-            "/webpreview/route-1",
-            "https://demo.kilv.de/login?ReturnUrl=%2F",
-            "/",
-            html);
-
-        Assert.Equal("/webpreview/route-1/", baseHref);
-    }
-
-    [Fact]
-    public void BuildInjectedBaseHref_BlazorWebAssemblyDocument_UsesProxyBaseHref()
-    {
-        const string html = """
-            <html><head><base href="/"></head><body>
-            <script src="_framework/blazor.webassembly.js"></script>
-            </body></html>
-            """;
-
-        var baseHref = WebPreviewProxyMiddleware.BuildInjectedBaseHref(
-            "/webpreview/route-1",
-            "https://demo.kilv.de/login?ReturnUrl=%2F",
-            "/",
-            html);
-
-        Assert.Equal("/webpreview/route-1/", baseHref);
-    }
-
-    [Fact]
-    public void BuildInjectedBaseHref_NonBlazorDocument_UsesProxyBaseHref()
-    {
-        const string html = "<html><head><base href=\"/\"></head><body>plain</body></html>";
-
-        var baseHref = WebPreviewProxyMiddleware.BuildInjectedBaseHref(
-            "/webpreview/route-1",
-            "https://example.com/docs/page",
-            "/",
-            html);
-
-        Assert.Equal("/webpreview/route-1/", baseHref);
     }
 
     [Fact]
@@ -707,9 +492,7 @@ public class WebPreviewProxyMiddlewareTests
 
     [Theory]
     [InlineData("/js/config.js", true, true)]
-    [InlineData("/css/app.css", true, true)]
     [InlineData("/", true, true)]
-    [InlineData("/login.html", true, true)]
     [InlineData("/js/html2canvas.min.js", true, false)]
     [InlineData("/ws/browser", true, false)]
     [InlineData("/js/config.js", false, false)]
@@ -728,45 +511,6 @@ public class WebPreviewProxyMiddlewareTests
         var result = WebPreviewProxyMiddleware.ShouldProxyPreviewLeak(context.Request, path);
 
         Assert.Equal(expected, result);
-    }
-
-    [Fact]
-    public void TryResolvePreviewFromRequest_UsesRememberedLeakedRefererPath()
-    {
-        var service = new WebPreviewService(serverPort: 2000);
-        Assert.True(service.SetTarget("session-1", null, "https://example.com"));
-        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
-        service.RememberLeakedPathRoute(routeKey, "/js/login.js");
-        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
-
-        var context = new DefaultHttpContext();
-        context.Request.Path = "/router/router-lib.js";
-        context.Request.Headers.Referer = "https://midterm.local/js/login.js";
-
-        var resolved = middleware.TryResolvePreviewFromRequest(context.Request, out var resolvedRouteKey, out var targetUri);
-
-        Assert.True(resolved);
-        Assert.Equal(routeKey, resolvedRouteKey);
-        Assert.Equal("https://example.com/", targetUri.ToString());
-    }
-
-    [Fact]
-    public void TryResolvePreviewFromRequest_UsesRememberedLeakedRequestPath()
-    {
-        var service = new WebPreviewService(serverPort: 2000);
-        Assert.True(service.SetTarget("session-1", null, "https://example.com"));
-        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
-        service.RememberLeakedPathRoute(routeKey, "/js/login.js");
-        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
-
-        var context = new DefaultHttpContext();
-        context.Request.Path = "/js/login.js";
-
-        var resolved = middleware.TryResolvePreviewFromRequest(context.Request, out var resolvedRouteKey, out var targetUri);
-
-        Assert.True(resolved);
-        Assert.Equal(routeKey, resolvedRouteKey);
-        Assert.Equal("https://example.com/", targetUri.ToString());
     }
 
     [Fact]

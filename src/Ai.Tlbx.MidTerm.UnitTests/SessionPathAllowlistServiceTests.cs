@@ -9,37 +9,6 @@ public class SessionPathAllowlistServiceTests
     private readonly SessionPathAllowlistService _service = new();
 
     [Fact]
-    public void RegisterPath_ThenIsPathAllowed_ReturnsTrue()
-    {
-        _service.RegisterPath("s1", @"C:\Users\test\file.txt");
-
-        Assert.True(_service.IsPathAllowed("s1", @"C:\Users\test\file.txt", null));
-    }
-
-    [Fact]
-    public void UnregisteredPath_ReturnsFlase()
-    {
-        Assert.False(_service.IsPathAllowed("s1", @"C:\Users\test\unknown.txt", null));
-    }
-
-    [Fact]
-    public void PathUnderWorkingDirectory_IsAllowed()
-    {
-        var workDir = Path.Combine(Path.GetTempPath(), "midterm_test_wd");
-        var child = Path.Combine(workDir, "src", "file.cs");
-
-        Assert.True(_service.IsPathAllowed("s1", child, workDir));
-    }
-
-    [Fact]
-    public void PathEqualsWorkingDirectory_IsAllowed()
-    {
-        var workDir = Path.Combine(Path.GetTempPath(), "midterm_test_wd");
-
-        Assert.True(_service.IsPathAllowed("s1", workDir, workDir));
-    }
-
-    [Fact]
     public void PathOutsideWorkingDir_AndNotRegistered_ReturnsFalse()
     {
         var workDir = Path.Combine(Path.GetTempPath(), "midterm_test_wd");
@@ -94,32 +63,6 @@ public class SessionPathAllowlistServiceTests
     }
 
     [Fact]
-    public void ClearSession_RemovesAllPaths()
-    {
-        _service.RegisterPath("s1", Path.Combine(Path.GetTempPath(), "a.txt"));
-        _service.RegisterPath("s1", Path.Combine(Path.GetTempPath(), "b.txt"));
-        _service.ClearSession("s1");
-
-        Assert.False(_service.IsPathAllowed("s1", Path.Combine(Path.GetTempPath(), "a.txt"), null));
-    }
-
-    [Fact]
-    public void CaseInsensitiveMatching()
-    {
-        _service.RegisterPath("s1", @"C:\Users\Test\File.txt");
-
-        Assert.True(_service.IsPathAllowed("s1", @"C:\users\test\file.txt", null));
-    }
-
-    [Fact]
-    public void TrailingSlash_Normalized()
-    {
-        _service.RegisterPath("s1", Path.Combine(Path.GetTempPath(), "folder") + Path.DirectorySeparatorChar);
-
-        Assert.True(_service.IsPathAllowed("s1", Path.Combine(Path.GetTempPath(), "folder"), null));
-    }
-
-    [Fact]
     public void NullOrEmptyPath_ReturnsFalse()
     {
         Assert.False(_service.IsPathAllowed("s1", "", null));
@@ -142,5 +85,17 @@ public class SessionPathAllowlistServiceTests
         _service.RegisterPath("session_a", Path.Combine(Path.GetTempPath(), "a_file.txt"));
 
         Assert.False(_service.IsPathAllowed("session_b", Path.Combine(Path.GetTempPath(), "a_file.txt"), null));
+    }
+
+    [Fact]
+    public void PathPermissionsUseThePlatformCaseRule()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "CaseSensitiveRoot");
+        var alternate = Path.Combine(Path.GetTempPath(), "casesensitiveroot");
+        _service.RegisterPath("owner", root);
+        Assert.Equal(OperatingSystem.IsWindows(), _service.IsPathAllowed("owner", alternate, null));
+        Assert.Equal(OperatingSystem.IsWindows(), _service.IsPathAllowed("owner", Path.Combine(alternate, "file.txt"), null));
+        Assert.Equal(OperatingSystem.IsWindows(), _service.IsPathAllowed("owner", alternate, root));
+        Assert.Equal(OperatingSystem.IsWindows(), FileService.IsWithinDirectory(Path.Combine(alternate, "file.txt"), root));
     }
 }

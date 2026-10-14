@@ -4,10 +4,10 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 
 public static class TlbxCliScriptWriter
 {
-    internal static void WriteScripts(string tlbxDir, int port, string authToken)
+    internal static void WriteScripts(string tlbxDir, int port, string authToken, string host = "localhost")
     {
         var shPath = Path.Combine(tlbxDir, "tlbx_cli.sh");
-        File.WriteAllText(shPath, GenerateShellScript(port, authToken));
+        File.WriteAllText(shPath, GenerateShellScript(port, authToken, host));
         if (!OperatingSystem.IsWindows())
         {
             File.SetUnixFileMode(shPath,
@@ -17,10 +17,10 @@ public static class TlbxCliScriptWriter
         }
 
         var ps1Path = Path.Combine(tlbxDir, "tlbx_cli.ps1");
-        File.WriteAllText(ps1Path, GeneratePowerShellScript(port, authToken));
+        File.WriteAllText(ps1Path, GeneratePowerShellScript(port, authToken, host));
     }
 
-    private static string GenerateShellScript(int port, string token) =>
+    private static string GenerateShellScript(int port, string token, string host) =>
         $$"""
         #!/bin/bash
         # tlbx CLI helpers — auto-generated, do not edit.
@@ -34,9 +34,9 @@ public static class TlbxCliScriptWriter
         if [ -n "${MT_BASE_URL:-}" ]; then
           _MT="${MT_BASE_URL%/}"
         elif [ -n "${MT_PORT:-}" ]; then
-          _MT="https://localhost:$MT_PORT"
+          _MT="https://{{host}}:$MT_PORT"
         else
-          _MT="https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
+          _MT="https://{{host}}:{{port.ToString(CultureInfo.InvariantCulture)}}"
         fi
         if [ -n "${MT_TOKEN:-}" ]; then
           _MK="mm-session=$MT_TOKEN"
@@ -44,6 +44,8 @@ public static class TlbxCliScriptWriter
           _MK="mm-session={{token}}"
         fi
         _MTDIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+        _MLEASE=""
+        _MCTXERROR=""
         _MCURL() {
           if command -v curl.exe >/dev/null 2>&1; then
             curl.exe "$@"
@@ -52,21 +54,78 @@ public static class TlbxCliScriptWriter
           fi
         }
         _MC() {
+          local context_headers=()
+          _MCLICTX "$@" || return $?
+          [ -z "${_MLEASE:-}" ] || context_headers=(-H "X-Tlbx-Cli-Context: $_MLEASE")
           if [ -n "${MT_API_KEY:-}" ]; then
-            _MCURL --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "$@"
+            _MCURL --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "${context_headers[@]}" "$@"
           else
-            _MCURL --fail-with-body -sSk -b "$_MK" "$@"
+            _MCURL --fail-with-body -sSk -b "$_MK" "${context_headers[@]}" "$@"
           fi
         }
         _MJ() { _MC -X POST -H "Content-Type: application/json" "$@"; }
         _MBR() {
+          local context_headers=()
+          _MCLICTX "$@" || return $?
+          [ -z "${_MLEASE:-}" ] || context_headers=(-H "X-Tlbx-Cli-Context: $_MLEASE")
           if [ -n "${MT_API_KEY:-}" ]; then
-            _MCURL --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "$@"
+            _MCURL --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "${context_headers[@]}" "$@"
           else
-            _MCURL --fail-with-body -sSk -b "$_MK" "$@"
+            _MCURL --fail-with-body -sSk -b "$_MK" "${context_headers[@]}" "$@"
           fi
         }
         _MJR() { _MBR -X POST -H "Content-Type: application/json" "$@"; }
+        # Resolve before any command; a stale ID can still be live in another terminal.
+        # Git Bash uses emulated PIDs, so translate to the native Windows PID.
+        _MRESOLVECTX() {
+          local pid=$$ resolved root="${CODEX_SESSION_ID:-}" thread="${CODEX_THREAD_ID:-}" codex_home="${CODEX_HOME:-$HOME/.codex}" query="" auth=()
+          [ -n "$root" ] || root="$thread"
+          [ -n "$thread" ] || thread="$root"
+          if [ -r "/proc/$$/winpid" ]; then
+            read -r pid < "/proc/$$/winpid"
+            if command -v cygpath >/dev/null 2>&1; then codex_home=$(cygpath -w "$codex_home"); fi
+          fi
+          if [ -n "$root$thread" ]; then
+            unset MT_SESSION_ID MT_PREVIEW_NAME
+            _MLEASE=""
+            query="&codexSessionId=$(_MURLENC "$root")&codexThreadId=$(_MURLENC "$thread")&codexHome=$(_MURLENC "$codex_home")&fresh=${1:-false}"
+          fi
+          if [ -n "${MT_API_KEY:-}" ]; then auth=(-H "Authorization: Bearer $MT_API_KEY"); else auth=(-b "$_MK"); fi
+          resolved=$(_MCURL --fail-with-body -sSk "${auth[@]}" --max-time 12 "$_MT/api/sessions/process-context?processId=$pid$query" 2>/dev/null) || true
+          if [ -n "$root$thread" ]; then
+            if [[ "$resolved" =~ ^([A-Za-z0-9]{8}):([a-f0-9]{32})$ ]]; then
+              export MT_SESSION_ID="${BASH_REMATCH[1]}"
+              _MLEASE="${BASH_REMATCH[2]}"
+              _MCTXERROR=""
+            else
+              _MCTXERROR="$resolved"
+              [[ "$_MCTXERROR" == *TLBX* ]] || _MCTXERROR="TLBX_CONTEXT_UNAVAILABLE: No operation was executed. Verify the tlbx server $_MT, update its generated helper, then retry. Do not export an inherited session ID."
+            fi
+            return 0
+          fi
+          if [[ "$resolved" =~ ^[A-Za-z0-9]{8}$ ]]; then
+            if [ "${MT_SESSION_ID:-}" != "$resolved" ]; then unset MT_PREVIEW_NAME; fi
+            export MT_SESSION_ID="$resolved"
+          fi
+        }
+        _MCLICTX() {
+          [ -n "${CODEX_SESSION_ID:-}${CODEX_THREAD_ID:-}" ] || return 0
+          local arg
+          for arg in "$@"; do
+            case "$arg" in
+              */api/sessions|*/api/sessions\?*|*/api/sessions/attention*|*/api/version|*/api/browser/ui-clients*) _MLEASE=""; return 0 ;;
+            esac
+          done
+          local expected="${MT_SESSION_ID:-}"
+          _MRESOLVECTX
+          if [ -n "$expected" ] && [ -n "${MT_SESSION_ID:-}" ] && [ "$expected" != "$MT_SESSION_ID" ]; then
+            printf '%s\n' 'TLBX_CONTEXT_CHANGED: No operation was executed. Retry the original command so its arguments use the current verified context.' >&2
+            return 1
+          fi
+          [ -n "${MT_SESSION_ID:-}" ] && [ -n "${_MLEASE:-}" ] && return 0
+          _MCTXERR
+          return 1
+        }
         # Send null-delimited args to text CLI endpoint (browser commands)
         _MB() { printf '%s\0' "$@" | _MBR --data-binary @- -X POST "$_MT/api/browser"; }
         _MSID() { printf '%s' "${MT_SESSION_ID:-}"; }
@@ -75,6 +134,7 @@ public static class TlbxCliScriptWriter
         _MPWSHQ() { local s="${1:-}"; s="${s//\'/\'\'}"; printf '%s' "$s"; }
         _MCTXERR() {
           local cmd="${1:-This command}"
+          if [ -n "${_MCTXERROR:-}" ]; then printf '%s\n' "$_MCTXERROR" >&2; return; fi
           printf '%s\n' \
             "$cmd requires tlbx session context, but MT_SESSION_ID is empty in this shell." \
             "This usually means a nested shell was spawned without forwarding MT_SESSION_ID and MT_PREVIEW_NAME." \
@@ -82,6 +142,7 @@ public static class TlbxCliScriptWriter
         }
         _MREQUIRECTX() {
           local cmd="${1:-This command}"
+          if [ -n "${CODEX_SESSION_ID:-}${CODEX_THREAD_ID:-}" ]; then _MRESOLVECTX; fi
           [ -n "$(_MSID)" ] && return 0
           _MCTXERR "$cmd"
           return 1
@@ -93,7 +154,7 @@ public static class TlbxCliScriptWriter
           esac
         }
         _MURLENC() {
-          local value="${1:-}" i c
+          local LC_ALL=C value="${1:-}" i c
           for ((i=0; i<${#value}; i++)); do
             c="${value:i:1}"
             case "$c" in
@@ -102,6 +163,7 @@ public static class TlbxCliScriptWriter
             esac
           done
         }
+        _MRESOLVECTX
         _MJSONESC() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/\\n}"; printf '%s' "$s"; }
         _MHAS() { local want="$1"; shift; for arg in "$@"; do [ "$arg" = "$want" ] && return 0; done; return 1; }
         _MISID() { [[ "${1:-}" =~ ^[A-Za-z0-9]{8}$ ]]; }
@@ -164,22 +226,35 @@ public static class TlbxCliScriptWriter
         }
         mt_context() {
           local format="${1:-text}"
+          if [ "$format" = repair ]; then
+            _MRESOLVECTX true
+            if [ -n "${_MCTXERROR:-}" ]; then
+              local proof="${_MCTXERROR%%$'\n'*}"
+              proof="${proof%$'\r'}"
+              if [[ "$_MCTXERROR" == *TLBX_CONTEXT_UNBOUND* ]] && [[ "$proof" =~ ^TLBXCTX:[a-f0-9]{32}$ ]]; then
+                printf '%s\n' "$proof"
+              else printf '%s\n' "$_MCTXERROR"; fi
+              return 0
+            fi
+          fi
           _MREQUIRECTX "mt_context" || return $?
           case "$format" in
             --bash|bash)
-              printf 'export MT_SESSION_ID=%q; export MT_PREVIEW_NAME=%q\n' "$(_MSID)" "$(_MPREVIEW)"
+              printf 'export MT_BASE_URL=%q; export MT_SESSION_ID=%q; export MT_PREVIEW_NAME=%q\n' "$_MT" "$(_MSID)" "$(_MPREVIEW)"
               ;;
             --pwsh|pwsh|powershell)
+              printf '$env:MT_BASE_URL='
+              printf "'%s'; " "$(_MPWSHQ "$_MT")"
               printf '$env:MT_SESSION_ID='
               printf "'%s'; " "$(_MPWSHQ "$(_MSID)")"
               printf '$env:MT_PREVIEW_NAME='
               printf "'%s'\n" "$(_MPWSHQ "$(_MPREVIEW)")"
               ;;
             --json|json)
-              printf '{"sessionId":"%s","previewName":"%s"}\n' "$(_MJSONESC "$(_MSID)")" "$(_MJSONESC "$(_MPREVIEW)")"
+              printf '{"baseUrl":"%s","sessionId":"%s","previewName":"%s"}\n' "$(_MJSONESC "$_MT")" "$(_MJSONESC "$(_MSID)")" "$(_MJSONESC "$(_MPREVIEW)")"
               ;;
             ""|text)
-              printf 'sessionId=%s\npreviewName=%s\n' "$(_MSID)" "$(_MPREVIEW)"
+              printf 'baseUrl=%s\nsessionId=%s\npreviewName=%s\n' "$_MT" "$(_MSID)" "$(_MPREVIEW)"
               ;;
             *)
               echo "Usage: mt_context [text|bash|pwsh|json]" >&2
@@ -276,12 +351,19 @@ public static class TlbxCliScriptWriter
           if [ -z "$code" ] && [ ! -t 0 ]; then code=$(cat); fi
           _MBB exec "$code"
         }
-        # mt_wait SELECTOR [TIMEOUT]  — wait for element (default 5s)
+        # mt_wait SELECTOR [TIMEOUT]  — wait for element (default 15s)
         mt_wait() {
-          local t=${2:-5}
+          local t=${2:-15}
           _MBB wait "$1" --timeout "$t"
         }
-        mt_screenshot() { _MBB screenshot; }
+        mt_screenshot() { _MBB screenshot "$@"; }
+        # One HTTP request, ordered steps, stops on the first error; never retries actions.
+        mt_batch() {
+          _MREQUIRECTX "mt_batch" || return $?
+          [ $# -ge 1 ] || { echo 'usage: mt_batch JSON_COMMAND_ARRAY [timeout_seconds]' >&2; return 1; }
+          local timeout_seconds="${2:-60}"
+          _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"commands\":$1,\"timeout\":$timeout_seconds}" "$_MT/api/browser/batch"
+        }
         mt_snapshot()   { _MBB snapshot; }
         # mt_outline [DEPTH]  — page structure tree (default depth 4)
         mt_outline() { local d=${1:-4}; _MBB outline "$d"; }
@@ -372,12 +454,6 @@ public static class TlbxCliScriptWriter
             return $code
           }
           [ -n "$open_out" ] && printf '%s\n' "$open_out"
-          status=$(_MWAITCONTROLLABLE 25) || {
-            local code=$?
-            [ -n "$status" ] && printf '%s\n' "$status" >&2
-            echo "mt_open failed: preview did not become controllable." >&2
-            return $code
-          }
         }
         # mt_close_preview  — close the current preview; named previews are removed entirely
         mt_close_preview() {
@@ -413,7 +489,7 @@ public static class TlbxCliScriptWriter
         mt_cookies()    { _MREQUIRECTX "mt_cookies" || return $?; _MC "$_MT/api/webpreview/cookies$(_MQ)"; }
         mt_previews()   { _MREQUIRECTX "mt_previews" || return $?; _MC "$_MT/api/webpreview/previews?sessionId=$(_MURLENC "$(_MSID)")"; }
         # mt_claim_preview  — explicitly assign this named preview to the connected tlbx browser
-        mt_claim_preview() { _MREQUIRECTX "mt_claim_preview" || return $?; _MBB claim; }
+        mt_claim_preview() { _MREQUIRECTX "mt_claim_preview" || return $?; _MBB claim "$@"; }
         # mt_claim_main_browser [browser-id]  — make the selected preview/browser the leading browser for terminal sizing
         mt_claim_main_browser() {
           _MREQUIRECTX "mt_claim_main_browser" || return $?
@@ -432,35 +508,50 @@ public static class TlbxCliScriptWriter
           if [ "${1:-}" = "--clear" ]; then topic=""; fi
           _MJ -X PUT -d "{\"topic\":\"$(_ME "$topic")\"}" "$_MT/api/sessions/$(_MURLENC "$(_MSID)")/topic"
         }
-        # mt_repo list|status|add|remove|refresh [args]  — session-scoped multi-repo Git tracking for IDE bar and /api/git
+        _MREPOREQUEST() {
+          local sid="$1" result
+          shift
+          _MC "$@" && return 0
+          result=$?
+          printf 'Git request for session %s at %s failed. Run mt_sessions on this server and use mt_repo --session ID ACTION; preserve the server with mt_context when entering another shell.\n' "$sid" "$_MT" >&2
+          return "$result"
+        }
+        # mt_repo [--session ID] list|status|add|remove|refresh [args]
         mt_repo() {
+          if [ -n "${CODEX_SESSION_ID:-}${CODEX_THREAD_ID:-}" ]; then _MREQUIRECTX mt_repo || return $?; fi
+          local sid="$(_MSID)"
+          if [ "${1:-}" = "--session" ]; then
+            [ $# -ge 2 ] || { echo "Usage: mt_repo --session ID ACTION [args]" >&2; return 1; }
+            sid="$2"
+            shift 2
+          fi
           local action="${1:-list}"
           [ $# -gt 0 ] && shift
-          _MREQUIRECTX "mt_repo" || return $?
+          _MISID "$sid" || { echo "mt_repo requires an eight-character tlbx session id. Run mt_sessions, then use mt_repo --session ID ACTION (or set MT_SESSION_ID)." >&2; return 1; }
           case "$action" in
             list|status)
-              _MC "$_MT/api/git/repos?sessionId=$(_MURLENC "$(_MSID)")"
+              _MREPOREQUEST "$sid" "$_MT/api/git/repos?sessionId=$(_MURLENC "$sid")"
               ;;
             add)
               local path="${1:-}" role="${2:-target}" label="${3:-}"
               [ -n "$path" ] || { echo "Usage: mt_repo add PATH [ROLE] [LABEL]" >&2; return 1; }
-              _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"path\":\"$(_ME "$path")\",\"role\":\"$(_ME "$role")\",\"label\":\"$(_ME "$label")\"}" "$_MT/api/git/repos"
+              _MREPOREQUEST "$sid" -X POST -H "Content-Type: application/json" -d "{\"sessionId\":\"$(_ME "$sid")\",\"path\":\"$(_ME "$path")\",\"role\":\"$(_ME "$role")\",\"label\":\"$(_ME "$label")\"}" "$_MT/api/git/repos"
               ;;
             remove|rm)
               local root="${1:-}"
               [ -n "$root" ] || { echo "Usage: mt_repo remove REPO_ROOT" >&2; return 1; }
-              _MC -X DELETE "$_MT/api/git/repos?sessionId=$(_MURLENC "$(_MSID)")&repoRoot=$(_MURLENC "$root")"
+              _MREPOREQUEST "$sid" -X DELETE "$_MT/api/git/repos?sessionId=$(_MURLENC "$sid")&repoRoot=$(_MURLENC "$root")"
               ;;
             refresh)
               local root="${1:-}"
               if [ -n "$root" ]; then
-                _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"repoRoot\":\"$(_ME "$root")\"}" "$_MT/api/git/repos/refresh"
+                _MREPOREQUEST "$sid" -X POST -H "Content-Type: application/json" -d "{\"sessionId\":\"$(_ME "$sid")\",\"repoRoot\":\"$(_ME "$root")\"}" "$_MT/api/git/repos/refresh"
               else
-                _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\"}" "$_MT/api/git/repos/refresh"
+                _MREPOREQUEST "$sid" -X POST -H "Content-Type: application/json" -d "{\"sessionId\":\"$(_ME "$sid")\"}" "$_MT/api/git/repos/refresh"
               fi
               ;;
             *)
-              echo "Usage: mt_repo list|status|add PATH [ROLE] [LABEL]|remove REPO_ROOT|refresh [REPO_ROOT]" >&2
+              echo "Usage: mt_repo [--session ID] list|status|add PATH [ROLE] [LABEL]|remove REPO_ROOT|refresh [REPO_ROOT]" >&2
               return 1
               ;;
           esac
@@ -506,7 +597,7 @@ public static class TlbxCliScriptWriter
           sleep 3
           local i version
           for ((i=0; i<90; i++)); do
-            version=$(_MCURL -sfk "$_MT/api/version" 2>/dev/null) || version=""
+            version=$(_MC --max-time 5 "$_MT/api/version" 2>/dev/null) || version=""
             version=${version#\"}; version=${version%\"}
             if [ -n "$version" ] && { [ -z "$target" ] || [ "$version" = "$target" ]; }; then
               printf 'Current version: %s\n' "$version"
@@ -1085,7 +1176,7 @@ public static class TlbxCliScriptWriter
         fi
         """;
 
-    private static string GeneratePowerShellScript(int port, string token) =>
+    private static string GeneratePowerShellScript(int port, string token, string host) =>
         $$"""
         # tlbx CLI helpers — auto-generated, do not edit.
         # Dot-source: . .tlbx\tlbx_cli.ps1   |   Run: pwsh .tlbx\tlbx_cli.ps1 <cmd> [args]
@@ -1098,17 +1189,20 @@ public static class TlbxCliScriptWriter
         $script:_MT = if ($env:MT_BASE_URL) {
             $env:MT_BASE_URL.TrimEnd('/')
         } elseif ($env:MT_PORT) {
-            "https://localhost:$($env:MT_PORT)"
+            "https://{{host}}:$($env:MT_PORT)"
         } else {
-            "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
+            "https://{{host}}:{{port.ToString(CultureInfo.InvariantCulture)}}"
         }
         $script:_MK = if ($env:MT_TOKEN) { "mm-session=$($env:MT_TOKEN)" } else { "mm-session={{token}}" }
+        $script:_MCurl = (Get-Command curl -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 
         function script:_MC {
+            _MEnsureCliRequestContext @args
+            $contextHeaders = if ($script:_MLease) { @('-H', "X-Tlbx-Cli-Context: $script:_MLease") } else { @() }
             $output = if ($env:MT_API_KEY) {
-                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @args 2>&1
+                & $script:_MCurl --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @contextHeaders @args 2>&1
             } else {
-                & curl.exe --fail-with-body -sSk -b $script:_MK @args 2>&1
+                & $script:_MCurl --fail-with-body -sSk -b $script:_MK @contextHeaders @args 2>&1
             }
             $exitCode = $LASTEXITCODE
             if ($exitCode -ne 0) {
@@ -1120,10 +1214,12 @@ public static class TlbxCliScriptWriter
         }
         function script:_MJ { _MC -X POST -H "Content-Type: application/json" @args }
         function script:_MBR {
+            _MEnsureCliRequestContext @args
+            $contextHeaders = if ($script:_MLease) { @('-H', "X-Tlbx-Cli-Context: $script:_MLease") } else { @() }
             $output = if ($env:MT_API_KEY) {
-                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @args 2>&1
+                & $script:_MCurl --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @contextHeaders @args 2>&1
             } else {
-                & curl.exe --fail-with-body -sSk -b $script:_MK @args 2>&1
+                & $script:_MCurl --fail-with-body -sSk -b $script:_MK @contextHeaders @args 2>&1
             }
             $exitCode = $LASTEXITCODE
             if ($exitCode -ne 0) {
@@ -1134,9 +1230,72 @@ public static class TlbxCliScriptWriter
             $output
         }
         function script:_MJR { _MBR -X POST -H "Content-Type: application/json" @args }
+        # Resolve before any command, including when the inherited ID belongs to a live sibling.
+        function script:_MResolveContext {
+            param([switch]$Fresh)
+            $root = if ($env:CODEX_SESSION_ID) { $env:CODEX_SESSION_ID } else { $env:CODEX_THREAD_ID }
+            $thread = if ($env:CODEX_THREAD_ID) { $env:CODEX_THREAD_ID } else { $root }
+            $query = ""
+            if ($root -or $thread) {
+                Remove-Item Env:MT_SESSION_ID,Env:MT_PREVIEW_NAME -ErrorAction SilentlyContinue
+                $script:_MLease = $null
+                $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex' }
+                $query = "&codexSessionId=$([Uri]::EscapeDataString($root))&codexThreadId=$([Uri]::EscapeDataString($thread))&codexHome=$([Uri]::EscapeDataString($codexHome))&fresh=$($Fresh.IsPresent.ToString().ToLowerInvariant())"
+            }
+            $resolvedContext = if ($env:MT_API_KEY) {
+                & $script:_MCurl --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>$null
+            } else {
+                & $script:_MCurl --fail-with-body -sSk -b $script:_MK --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>$null
+            }
+            $resolvedContext = ($resolvedContext | Out-String).Trim()
+            if ($root -or $thread) {
+                if ($resolvedContext -match '^([A-Za-z0-9]{8}):([a-f0-9]{32})$') {
+                    $env:MT_SESSION_ID = $Matches[1]
+                    $script:_MLease = $Matches[2]
+                    $script:_MContextError = $null
+                } else {
+                    $script:_MContextError = if ($resolvedContext -match 'TLBX') { $resolvedContext } else {
+                        "TLBX_CONTEXT_UNAVAILABLE: No operation was executed. Verify the tlbx server $script:_MT, update its generated helper, then retry. Do not export an inherited session ID."
+                    }
+                }
+                return
+            }
+            if ($resolvedContext -match '^[A-Za-z0-9]{8}$') {
+                if ($env:MT_SESSION_ID -ne $resolvedContext) { Remove-Item Env:MT_PREVIEW_NAME -ErrorAction SilentlyContinue }
+                $env:MT_SESSION_ID = $resolvedContext
+            }
+        }
+        function script:_MEnsureCliRequestContext {
+            if (-not ($env:CODEX_SESSION_ID -or $env:CODEX_THREAD_ID)) { return }
+            foreach ($argument in $args) {
+                if ($argument -match '/api/(sessions(?:\?.*)?|sessions/attention.*|version|browser/ui-clients.*)$') { $script:_MLease = $null; return }
+            }
+            $expectedContext = $env:MT_SESSION_ID
+            _MResolveContext
+            if ($expectedContext -and $env:MT_SESSION_ID -and $expectedContext -ne $env:MT_SESSION_ID) {
+                throw 'TLBX_CONTEXT_CHANGED: No operation was executed. Retry the original command so its arguments use the current verified context.'
+            }
+            if ($env:MT_SESSION_ID -and $script:_MLease) { return }
+            [Console]::WriteLine($script:_MContextError)
+            throw 'tlbx context unresolved; no operation was executed. Follow the correction above.'
+        }
+        $script:_MLease = $null
+        $script:_MContextError = $null
+        try { _MResolveContext } catch { }
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
-        function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Compress }
-        function script:_MSID { $env:MT_SESSION_ID }
+        function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Depth 8 -Compress }
+        function script:_MSID {
+            if ($env:CODEX_SESSION_ID -or $env:CODEX_THREAD_ID) {
+                _MResolveContext
+                if (-not $env:MT_SESSION_ID) {
+                    # A default-parameter expression captures pipeline output. Write the
+                    # correction directly so its first proof line survives the exception.
+                    [Console]::WriteLine($script:_MContextError)
+                    throw 'tlbx context unresolved; no operation was executed. Follow the correction above.'
+                }
+            }
+            $env:MT_SESSION_ID
+        }
         function script:_MSource { if ($env:MT_AGENT_NAME) { $env:MT_AGENT_NAME } else { "tlbx_cli" } }
         function script:_MPwshQuote {
             param([string]$Value)
@@ -1177,6 +1336,7 @@ public static class TlbxCliScriptWriter
         }
         function script:_MContextMissingMessage {
             param([string]$CommandName = "This command")
+            if ($script:_MContextError) { return $script:_MContextError }
             @(
                 "$CommandName requires tlbx session context, but MT_SESSION_ID is empty in this shell.",
                 "This usually means a nested shell was spawned without forwarding MT_SESSION_ID and MT_PREVIEW_NAME.",
@@ -1337,17 +1497,26 @@ public static class TlbxCliScriptWriter
         }
         function Mt-Context {
             param([string]$Format = "text")
+            if ($Format -eq 'repair') {
+                _MResolveContext -Fresh
+                if ($script:_MContextError) {
+                    $proof = [regex]::Match($script:_MContextError, 'TLBXCTX:[a-f0-9]{32}').Value
+                    if ($proof -and $script:_MContextError -match 'TLBX_CONTEXT_UNBOUND') { Write-Output $proof }
+                    else { Write-Output $script:_MContextError }
+                    return
+                }
+            }
             _MRequireSessionContext "mt_context"
             switch ($Format.ToLowerInvariant()) {
-                "--bash" { Write-Output "export MT_SESSION_ID=$(_MBashQuote (_MSID)); export MT_PREVIEW_NAME=$(_MBashQuote (_MPreview))"; return }
-                "bash" { Write-Output "export MT_SESSION_ID=$(_MBashQuote (_MSID)); export MT_PREVIEW_NAME=$(_MBashQuote (_MPreview))"; return }
-                "--pwsh" { Write-Output "`$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
-                "pwsh" { Write-Output "`$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
-                "powershell" { Write-Output "`$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
-                "--json" { Write-Output (_MH @{ sessionId = (_MSID); previewName = (_MPreview) }); return }
-                "json" { Write-Output (_MH @{ sessionId = (_MSID); previewName = (_MPreview) }); return }
-                "text" { Write-Output "sessionId=$(_MSID)"; Write-Output "previewName=$(_MPreview)"; return }
-                "" { Write-Output "sessionId=$(_MSID)"; Write-Output "previewName=$(_MPreview)"; return }
+                "--bash" { Write-Output "export MT_BASE_URL=$(_MBashQuote $script:_MT); export MT_SESSION_ID=$(_MBashQuote (_MSID)); export MT_PREVIEW_NAME=$(_MBashQuote (_MPreview))"; return }
+                "bash" { Write-Output "export MT_BASE_URL=$(_MBashQuote $script:_MT); export MT_SESSION_ID=$(_MBashQuote (_MSID)); export MT_PREVIEW_NAME=$(_MBashQuote (_MPreview))"; return }
+                "--pwsh" { Write-Output "`$env:MT_BASE_URL='$(_MPwshQuote $script:_MT)'; `$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
+                "pwsh" { Write-Output "`$env:MT_BASE_URL='$(_MPwshQuote $script:_MT)'; `$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
+                "powershell" { Write-Output "`$env:MT_BASE_URL='$(_MPwshQuote $script:_MT)'; `$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
+                "--json" { Write-Output (_MH @{ baseUrl = $script:_MT; sessionId = (_MSID); previewName = (_MPreview) }); return }
+                "json" { Write-Output (_MH @{ baseUrl = $script:_MT; sessionId = (_MSID); previewName = (_MPreview) }); return }
+                "text" { Write-Output "baseUrl=$script:_MT"; Write-Output "sessionId=$(_MSID)"; Write-Output "previewName=$(_MPreview)"; return }
+                "" { Write-Output "baseUrl=$script:_MT"; Write-Output "sessionId=$(_MSID)"; Write-Output "previewName=$(_MPreview)"; return }
                 default { throw "Usage: mt_context [text|bash|pwsh|json]" }
             }
         }
@@ -1484,12 +1653,20 @@ public static class TlbxCliScriptWriter
                 _MBB exec $Code
             }
         }
-        # Mt-Wait -Selector CSS_SELECTOR [-Timeout N]  — wait for element (default 5s)
+        # Mt-Wait -Selector CSS_SELECTOR [-Timeout N]  — wait for element (default 15s)
         function Mt-Wait {
-            param([string]$Selector, [int]$Timeout = 5)
+            param([string]$Selector, [int]$Timeout = 15)
             _MBB wait $Selector --timeout $Timeout
         }
-        function Mt-Screenshot { _MBB screenshot }
+        function Mt-Screenshot {
+            param([switch]$FullPage)
+            if ($FullPage) { _MBB screenshot --full-page } else { _MBB screenshot }
+        }
+        function Mt-Batch {
+            param([Parameter(Mandatory)][object[]]$Commands, [int]$Timeout = 60)
+            _MRequireSessionContext "mt_batch"
+            _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); commands=@($Commands); timeout=$Timeout}) "$script:_MT/api/browser/batch"
+        }
         function Mt-Snapshot   { _MBB snapshot }
         # Mt-Outline [-Depth N]  — page structure tree (default depth 4)
         function Mt-Outline { param([int]$Depth = 4) _MBB outline $Depth }
@@ -1568,14 +1745,6 @@ public static class TlbxCliScriptWriter
             if ($openResponse) {
                 $openResponse
             }
-            $status = _MWaitForControllableStatus
-            if (-not $status.Ready) {
-                if ($status.Output) {
-                    throw $status.Output
-                }
-
-                throw "mt_open failed: preview did not become controllable."
-            }
         }
         # Mt-ClosePreview  — close the current preview; named previews are removed entirely
         function Mt-ClosePreview {
@@ -1627,7 +1796,7 @@ public static class TlbxCliScriptWriter
         function Mt-Cookies    { _MRequireSessionContext "mt_cookies"; _MC "$script:_MT/api/webpreview/cookies$(_MQuery)" }
         function Mt-Previews   { _MRequireSessionContext "mt_previews"; _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
         # Mt-ClaimPreview  — explicitly assign this named preview to the connected tlbx browser
-        function Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim }
+        function Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim @args }
         # Mt-ClaimMainBrowser [-BrowserId ID]  — make the selected preview/browser the leading browser for terminal sizing
         function Mt-ClaimMainBrowser {
             param([string]$BrowserId)
@@ -1647,34 +1816,43 @@ public static class TlbxCliScriptWriter
             $topic = if ($Clear) { $null } else { ($InputArgs -join " ") }
             _MJ -X PUT -d (_MH @{topic=$topic}) "$script:_MT/api/sessions/$([Uri]::EscapeDataString((_MSID)))/topic"
         }
-        # Mt-Repo list|status|add|remove|refresh [args]  — session-scoped multi-repo Git tracking for IDE bar and /api/git
+        function script:_MRepoRequest {
+            param([string]$SessionId, [string[]]$RequestArgs)
+            try { _MC @RequestArgs }
+            catch {
+                throw "Git request for session '$SessionId' at '$script:_MT' failed. Run mt_sessions on this server and use Mt-Repo ACTION -SessionId ID; preserve the server with mt_context when entering another shell. $($_.Exception.Message)"
+            }
+        }
+        # Mt-Repo list|status|add|remove|refresh [args] [-SessionId ID]
         function Mt-Repo {
-            param([string]$Action = "list", [string]$PathOrRoot, [string]$Role = "target", [string]$Label)
-            _MRequireSessionContext "mt_repo"
+            param([string]$Action = "list", [string]$PathOrRoot, [string]$Role = "target", [string]$Label, [string]$SessionId = (_MSID))
+            if (-not (_MIsSessionId $SessionId)) {
+                throw "mt_repo requires an eight-character tlbx session id. Run mt_sessions, then use Mt-Repo ACTION -SessionId ID (or set MT_SESSION_ID)."
+            }
             switch ($Action.ToLowerInvariant()) {
-                "list" { _MC "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))"; return }
-                "status" { _MC "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))"; return }
+                "list" { _MRepoRequest $SessionId @("$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString($SessionId))"); return }
+                "status" { _MRepoRequest $SessionId @("$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString($SessionId))"); return }
                 "add" {
                     if (-not $PathOrRoot) { throw "Usage: Mt-Repo add PATH [ROLE] [LABEL]" }
-                    _MJ -d (_MH @{sessionId=(_MSID); path=$PathOrRoot; role=$Role; label=$Label}) "$script:_MT/api/git/repos"
+                    _MRepoRequest $SessionId @('-X', 'POST', '-H', 'Content-Type: application/json', '-d', (_MH @{sessionId=$SessionId; path=$PathOrRoot; role=$Role; label=$Label}), "$script:_MT/api/git/repos")
                     return
                 }
                 "remove" {
                     if (-not $PathOrRoot) { throw "Usage: Mt-Repo remove REPO_ROOT" }
-                    _MC -X DELETE "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))&repoRoot=$([Uri]::EscapeDataString($PathOrRoot))"
+                    _MRepoRequest $SessionId @('-X', 'DELETE', "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString($SessionId))&repoRoot=$([Uri]::EscapeDataString($PathOrRoot))")
                     return
                 }
                 "rm" {
                     if (-not $PathOrRoot) { throw "Usage: Mt-Repo remove REPO_ROOT" }
-                    _MC -X DELETE "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))&repoRoot=$([Uri]::EscapeDataString($PathOrRoot))"
+                    _MRepoRequest $SessionId @('-X', 'DELETE', "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString($SessionId))&repoRoot=$([Uri]::EscapeDataString($PathOrRoot))")
                     return
                 }
                 "refresh" {
-                    $body = if ($PathOrRoot) { @{sessionId=(_MSID); repoRoot=$PathOrRoot} } else { @{sessionId=(_MSID)} }
-                    _MJ -d (_MH $body) "$script:_MT/api/git/repos/refresh"
+                    $body = if ($PathOrRoot) { @{sessionId=$SessionId; repoRoot=$PathOrRoot} } else { @{sessionId=$SessionId} }
+                    _MRepoRequest $SessionId @('-X', 'POST', '-H', 'Content-Type: application/json', '-d', (_MH $body), "$script:_MT/api/git/repos/refresh")
                     return
                 }
-                default { throw "Usage: Mt-Repo list|status|add PATH [ROLE] [LABEL]|remove REPO_ROOT|refresh [REPO_ROOT]" }
+                default { throw "Usage: Mt-Repo list|status|add PATH [ROLE] [LABEL]|remove REPO_ROOT|refresh [REPO_ROOT] [-SessionId ID]" }
             }
         }
         # Mt-Inspect [-Screenshot]  — compact page/status/proxy diagnostic bundle
@@ -1722,8 +1900,9 @@ public static class TlbxCliScriptWriter
             Start-Sleep -Seconds 3
             $currentVersion = $null
             for ($i = 0; $i -lt 90; $i++) {
-                $version = & curl.exe -sfk "$script:_MT/api/version" 2>$null
-                if ($LASTEXITCODE -eq 0 -and $version) {
+                try { $version = _MC --max-time 5 "$script:_MT/api/version" }
+                catch { $version = $null }
+                if ($version) {
                     $currentVersion = $version.Trim().Trim('"')
                     if (-not $targetVersion -or $currentVersion -eq $targetVersion) {
                         Write-Output "Current version: $currentVersion"
@@ -1983,9 +2162,9 @@ public static class TlbxCliScriptWriter
             )
             if (-not $SessionId) { $SessionId = _MSID }
             if (-not $SessionId) { Write-Error "Session id required. Use -SessionId or Mt-Context."; return }
-            $body = _MH @{ sessionId=$SessionId; title=$Title; body=$Message }
+            $body = @{ sessionId=$SessionId; title=$Title; body=$Message }
             if ($Priority) { $body.priority = $Priority }
-            _MJ -d $body "$script:_MT/api/notifications"
+            _MJ -d (_MH $body) "$script:_MT/api/notifications"
         }
         # Mt-Activity [SESSION_ID] [SECONDS] [BELL_LIMIT]  — output heatmap + bell history as JSON
         function Mt-Activity {
@@ -2312,6 +2491,7 @@ public static class TlbxCliScriptWriter
         Set-Alias -Name mt_exec -Value Mt-Exec
         Set-Alias -Name mt_wait -Value Mt-Wait
         Set-Alias -Name mt_screenshot -Value Mt-Screenshot
+        Set-Alias -Name mt_batch -Value Mt-Batch
         Set-Alias -Name mt_snapshot -Value Mt-Snapshot
         Set-Alias -Name mt_outline -Value Mt-Outline
         Set-Alias -Name mt_attrs -Value Mt-Attrs

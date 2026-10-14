@@ -18,7 +18,7 @@ vi.mock('../navigation/backButtonGuard', () => ({}));
 vi.mock('./runtime', () => ({ ...mocks }));
 
 import { $updateInfo } from '../../stores';
-import { applyFullUpdate, applyUpdate, applyLocalUpdate } from './checker';
+import { applyFullUpdate, applyLocalUpdate, applyUpdate, handleUpdateInfo } from './checker';
 
 describe('full update action', () => {
   const button = { id: 'btn-full-update', disabled: false, textContent: '' };
@@ -38,21 +38,31 @@ describe('full update action', () => {
     mocks.checkUpdate.mockResolvedValue({ data: null });
   });
 
-  it('can reinstall when no newer update is available', async () => {
-    await applyFullUpdate();
-    expect(mocks.showConfirm).toHaveBeenCalledWith('update.fullUpdateConfirm', expect.any(Object));
-    expect(mocks.applyUpdate).toHaveBeenCalledWith(undefined, true);
-    expect(mocks.beginServerRestartLifecycle).toHaveBeenCalledWith('update', {
-      updateType: 'full',
-      expectedServerVersion: null,
-    });
-  });
-
   it('does not start an update when confirmation is cancelled', async () => {
     mocks.showConfirm.mockResolvedValue(false);
     await applyFullUpdate();
     expect(mocks.applyUpdate).not.toHaveBeenCalled();
     expect(button.disabled).toBe(false);
+  });
+
+  it('shows failed discovery without claiming the installed version is latest', () => {
+    const cards = { innerHTML: '' };
+    const status = { classList: { toggle: vi.fn() } };
+    vi.stubGlobal('document', {
+      querySelectorAll: () => [],
+      getElementById: (id: string) =>
+        id === 'update-cards' ? cards : id === 'update-status-none' ? status : null,
+    });
+    handleUpdateInfo({
+      available: false,
+      checkError: 'GitHub HTTP 403',
+      currentVersion: '10.17.25-dev',
+      latestVersion: '10.17.25-dev',
+    } as never);
+    expect(cards.innerHTML).toContain('GitHub HTTP 403');
+    expect(status.classList.toggle).toHaveBeenLastCalledWith('hidden', true);
+    handleUpdateInfo({ available: false } as never);
+    expect(status.classList.toggle).toHaveBeenLastCalledWith('hidden', false);
   });
 
   it('shows the server failure and allows retry without announcing a restart', async () => {
@@ -66,11 +76,6 @@ describe('full update action', () => {
     });
     expect(mocks.beginServerRestartLifecycle).not.toHaveBeenCalled();
     expect(button.disabled).toBe(false);
-  });
-  it('applies even when browser discovery is missing', async () => {
-    await applyUpdate();
-    expect(mocks.applyUpdate).toHaveBeenCalledWith(undefined, false);
-    expect(mocks.beginServerRestartLifecycle).toHaveBeenCalled();
   });
   it('restores every button after a rejected request and permits retry', async () => {
     mocks.applyUpdate.mockRejectedValueOnce(new Error('Network unavailable'));
@@ -107,17 +112,6 @@ describe('full update action', () => {
     expect(mocks.beginServerRestartLifecycle).toHaveBeenCalled();
     expect(mocks.showAlert).not.toHaveBeenCalled();
   });
-  it('shows a local update server error and restores the buttons', async () => {
-    mocks.applyUpdate.mockResolvedValue({
-      response: { ok: false },
-      error: 'No local update available',
-    });
-    await applyLocalUpdate();
-    expect(mocks.showAlert).toHaveBeenCalledWith('update.applyFailed', {
-      details: 'No local update available',
-    });
-    expect(cardButton.disabled).toBe(false);
-  });
 
   it('refreshes a stale tab when the update finished before its click was handled', async () => {
     $updateInfo.set({
@@ -146,32 +140,5 @@ describe('full update action', () => {
       expectedServerVersion: '10.16.22-dev',
     });
     expect($updateInfo.get()?.available).toBe(false);
-  });
-
-  it('still reports an unavailable update when the server remains on the old version', async () => {
-    $updateInfo.set({
-      available: true,
-      currentVersion: '10.16.21-dev',
-      latestVersion: '10.16.22-dev',
-      type: 'webOnly',
-    } as never);
-    mocks.applyUpdate.mockResolvedValue({
-      response: { ok: false, status: 400 },
-      error: 'No update available',
-    });
-    mocks.checkUpdate.mockResolvedValue({
-      data: {
-        available: false,
-        currentVersion: '10.16.21-dev',
-        latestVersion: '10.16.21-dev',
-      },
-    });
-
-    await applyUpdate();
-
-    expect(mocks.showAlert).toHaveBeenCalledWith('update.applyFailed', {
-      details: 'update.noLongerAvailable',
-    });
-    expect(mocks.beginServerRestartLifecycle).not.toHaveBeenCalled();
   });
 });

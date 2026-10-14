@@ -2,11 +2,17 @@ namespace Ai.Tlbx.MidTerm.Models.Git;
 
 public sealed class GitStatusResponse
 {
+    public string ReadState { get; set; } = "ready";
+    public string? ErrorCode { get; set; }
+    public string? ErrorDetail { get; set; }
+    public DateTimeOffset? ReadAt { get; set; }
     public string Label { get; set; } = "";
     public string Role { get; set; } = "";
     public string Source { get; set; } = "";
     public bool IsPrimary { get; set; }
     public string Branch { get; set; } = "";
+    public string HeadHash { get; set; } = "";
+    public string IndexVersion { get; set; } = "";
     public int Ahead { get; set; }
     public int Behind { get; set; }
     public GitFileEntry[] Staged { get; set; } = [];
@@ -18,6 +24,20 @@ public sealed class GitStatusResponse
     public string RepoRoot { get; set; } = "";
     public int TotalAdditions { get; set; }
     public int TotalDeletions { get; set; }
+
+    internal GitStatusResponse WithReadFailure(GitStatusResponse failure)
+    {
+        var copy = (GitStatusResponse)MemberwiseClone();
+        copy.ReadState = "stale"; copy.ErrorCode = failure.ErrorCode; copy.ErrorDetail = failure.ErrorDetail;
+        return copy;
+    }
+
+    internal GitStatusResponse WithBindingMetadata(string label, string role, string source, bool isPrimary)
+    {
+        var copy = (GitStatusResponse)MemberwiseClone();
+        copy.Label = label; copy.Role = role; copy.Source = source; copy.IsPrimary = isPrimary;
+        return copy;
+    }
 }
 
 public sealed class GitRepoBinding

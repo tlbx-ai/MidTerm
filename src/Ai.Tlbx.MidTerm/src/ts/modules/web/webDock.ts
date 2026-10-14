@@ -72,7 +72,7 @@ export function adjustInnerDockPositions(): void {
   const wpWidth = getWebPreviewDockWidth();
   for (const id of ['git-dock', 'commands-dock', 'file-viewer-dock']) {
     const el = document.getElementById(id);
-    if (el) el.style.right = wpWidth > 0 ? `${wpWidth}px` : '';
+    if (el) el.style.right = wpWidth > 0 && el.dataset.gitOverlay !== 'true' ? `${wpWidth}px` : '';
   }
 }
 
@@ -84,7 +84,13 @@ export function updateAllDockMargins(): void {
   let total = 0;
   for (const id of ['git-dock', 'commands-dock', 'file-viewer-dock', 'web-preview-dock']) {
     const el = document.getElementById(id);
-    if (el && !el.classList.contains('hidden')) total += el.offsetWidth;
+    if (
+      el &&
+      !el.classList.contains('hidden') &&
+      el.dataset.fileOverlay !== 'true' &&
+      el.dataset.gitOverlay !== 'true'
+    )
+      total += el.offsetWidth;
   }
   document.querySelectorAll<HTMLElement>('.session-tab-panels').forEach((p) => {
     p.style.marginRight = total > 0 ? `${total}px` : '';
@@ -237,17 +243,12 @@ export function hideWebPreviewDockForDetach(): void {
   handleDockLayoutChange();
 }
 
-/** Fully hide the web preview: close dock, unload iframe, clear target, and clean up detach state. */
+/** Hide the dock during session selection without clearing an established preview target. */
 export function applyWebPreviewHiddenState(): void {
   const previousWidth = getWebPreviewDockWidth();
-  const activeId = $activeSessionId.get();
-  const activePreviewName = getActivePreviewName();
   $webPreviewDocked.set(false);
   setActionButtonActive('web', false);
   hideIframe();
-  if (activeId) {
-    void clearWebPreviewTarget(activeId, activePreviewName);
-  }
 
   const dockPanel = document.getElementById('web-preview-dock');
   if (dockPanel) {

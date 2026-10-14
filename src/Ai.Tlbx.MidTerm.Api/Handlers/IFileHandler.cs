@@ -13,11 +13,17 @@ namespace Ai.Tlbx.MidTerm.Api.Handlers;
 
 public interface IFileHandler
 {
+    Task<IResult> ExecuteOperationAsync(FileOperationRequest request, string sessionId);
+    IResult GetOperation(string id, string sessionId);
+    IResult GetRecovery(string directory, string sessionId, string? cursor);
+    Task<IResult> RestoreAsync(FileRestoreRequest request, string sessionId);
     IResult RegisterPaths(FileRegisterRequest request);
     Task<IResult> CheckPathsAsync(FileCheckRequest request, string? sessionId);
-    IResult ListDirectory(string path, string? sessionId);
+    IResult ListDirectory(string path, string? sessionId, bool showHidden, bool showIgnored);
+    Task<IResult> GetNavigationAsync(string path, string? sessionId);
     IResult ViewFile(string path, string? sessionId);
     IResult DownloadFile(string path, string? sessionId);
     Task<IResult> ResolvePathAsync(string sessionId, string path, bool deep);
     Task<IResult> SaveFileAsync(FileSaveRequest request, string? sessionId);
+    Task<IResult> ReadDocumentAsync(string path, string? sessionId, bool full, long offset);
 }

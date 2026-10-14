@@ -314,16 +314,21 @@ function getSmartInputVisibilityState(): SmartInputVisibilityState {
   };
 }
 
-/** Full-surface overlays (settings, action graphs) take the footer with them. */
-function isFullSurfaceOverlayOpen(): boolean {
-  return $settingsOpen.get() || $actionGraphsOpen.get();
+/** Files and full-surface overlays leave no terminal input controls in the workspace. */
+function isFooterSuppressed(): boolean {
+  const sessionId = $activeSessionId.get();
+  return (
+    $settingsOpen.get() ||
+    $actionGraphsOpen.get() ||
+    (!!sessionId && getActiveTab(sessionId) === 'files')
+  );
 }
 
 function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {
   const visibilityState = getSmartInputVisibilityState();
   const settings = $currentSettings.get();
-  const settingsOpen = isFullSurfaceOverlayOpen();
   const activeSessionId = visibilityState.activeSessionId ?? null;
+  const settingsOpen = isFooterSuppressed();
   const isMobile = isMobileViewport();
   const appServerControlActive = visibilityState.appServerControlActive;
   const showInput = !settingsOpen && shouldShowDockedSmartInput(visibilityState);
@@ -1328,6 +1333,15 @@ function createDockedDOM(): void {
     },
     onPhotoInputChange: (files) => {
       void handleSmartInputSelectedFiles(files);
+    },
+    onEscapeClick: () => {
+      const sessionId = $activeSessionId.get();
+      if (!sessionId) return;
+      if (isAppServerControlActiveSession(sessionId)) {
+        void handleAppServerControlEscape(sessionId);
+      } else {
+        sendInput(sessionId, '\x1b');
+      }
     },
     onSendClick: () => {
       if (suppressNextSendClick) {

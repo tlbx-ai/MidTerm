@@ -5,6 +5,10 @@ Every release entry point (`release-dev.ps1`, `release-local.ps1`, `release.ps1`
 Choose after reviewing **all changes since the previous release**, including shared
 code, dependencies and build configuration; the dev release prints that diff.
 
+Fresh patch releases skip versions already tagged or reserved in fetched task
+history. Resuming or re-preparing a candidate keeps its exact version and still
+rejects reuse of a published version.
+
 ```powershell
 ./scripts/release-dev.ps1 -Bump patch -ReleaseTitle 'Fix terminal layout' `
     -ReleaseNotes @('Keep the terminal input visible after resizing.') `
@@ -33,6 +37,19 @@ Use `all` by itself. Otherwise pass one category or a PowerShell array such as
 install is reused by the selected checks and audit. Hosted server dependency audits,
 package signing, SBOM/provenance and platform builds remain release gates.
 
+Dependency advisories block **security regressions**, compared with the last
+published release in the same channel. `audit-supply-chain.ps1` queries current
+advisory data for the candidate and baseline locked graphs. Existing findings,
+including newly reported advisories affecting unchanged dependencies, are reported
+without blocking. Newly introduced vulnerable packages/advisories, greater severity,
+additional vulnerable installations or development-to-runtime exposure block.
+Changing between versions affected by the same advisory does not itself constitute
+a regression. Drafts are excluded from baseline selection; manifest-only baseline
+inputs are retained in `.git/tlbx-advisory-baselines/`. Locked restores, registry
+signatures, package integrity/provenance and complete audit responses remain enforced.
+Offline behavioral tests run through `test-release-build-system.ps1` on Windows
+and Linux, including unchanged findings, regressions and failed audit responses.
+
 ## PR workflow (tlbx code repository only)
 
 `dev` and `main` require PRs and passing checks, including for administrators.
@@ -57,7 +74,8 @@ version bump and generated assets on the task branch, verifies locally, then
 pushes and creates/reuses the PR into dev. It waits for required GitHub checks,
 merges with the exact prepared head SHA, and tags that merge commit. Tags cannot
 publish unless Release CI finds the matching merged PR and version. This is a
-submission until the Release run and all platform assets succeed.
+submission until the Release publication gate succeeds and its available platform
+assets are verified.
 
 Add `-PrepareOnly` to file the PR without merging/tagging. Re-run the same command
 without that switch to finish. Retry state is stored inside this checkout's Git
@@ -75,9 +93,17 @@ Do not re-prepare a merged/closed PR or reuse a retired task branch name.
 
 Live milestones and the PR URL are flushed to stderr and appended to
 `.git/tlbx-release-progress.log`, independent of buffered build output. Dev and
-stable releases remain draft until all six platform archives and their six
-SBOMs pass the publication gate. SBOM generation retries once on failure; a
-second failure still blocks publication. No checksum or attestation is skipped.
+stable releases remain draft until shared frontend and supply-chain checks succeed
+(plus frontend/.NET release tests for stable; dev uses the required PR checks)
+and at least one complete platform archive with its matching SPDX SBOM
+passes the publication gate. Each platform build may fail independently, including
+signing or Apple notarization, without blocking other complete packages. Every
+included package still passes signing, checksums and attestations before upload.
+Empty, unknown, duplicate or incomplete archive/SBOM pairs block publication;
+zero usable platforms also blocks it. Missing platforms are listed in the release
+notes and workflow summary. SBOM generation retries once; a second failure
+excludes that platform. Installers, the npm launcher and the built-in updater
+select a published release containing their platform's archive.
 
 For stable releases, invoke `promote.ps1 -TestCategories all` from clean updated
 dev. It freezes the accepted candidate on `chore/promote-X-Y-Z`, includes stable

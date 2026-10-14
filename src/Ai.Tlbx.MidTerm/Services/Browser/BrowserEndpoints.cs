@@ -89,21 +89,20 @@ public static class BrowserEndpoints
             var browserId = BrowserIdentity.Build(
                 ctx.Request.Cookies["mt-client-id"],
                 request.TabId ?? ctx.Request.Query["tabId"].FirstOrDefault());
+            previewOwnerService.ResolveOwnerBrowserId(preview.SessionId, preview.PreviewName);
             var created = previewRegistry.Create(
                 preview.SessionId,
                 preview.PreviewName,
                 preview.RouteKey,
-                browserId);
-            previewOwnerService.ClaimIfMissing(
-                preview.SessionId,
-                preview.PreviewName,
-                browserId);
+                browserId,
+                previewOwnerService.GetGeneration(preview.SessionId, preview.PreviewName));
             var response = new BrowserPreviewClientResponse
             {
                 SessionId = created.SessionId,
                 PreviewName = created.PreviewName,
                 RouteKey = created.RouteKey,
                 PreviewId = created.PreviewId,
+                OwnershipGeneration = created.OwnershipGeneration,
                 PreviewToken = created.PreviewToken,
                 Origin = previewOriginService.GetOrigin(ctx.Request)
             };
@@ -119,6 +118,8 @@ public static class BrowserEndpoints
         BrowserPreviewRegistry previewRegistry,
         BrowserPreviewOwnerService previewOwnerService)
     {
+        app.MapGet("/api/browser/ui-clients", () => Results.Json(uiBridge.GetConnectedBrowserIds(), AppJsonContext.Default.StringArray));
+
         app.MapPost("/api/browser/agent-wheel", async (
             Models.Browser.AgentHistoryWheelRequest request,
             HttpContext ctx) =>
@@ -219,7 +220,7 @@ public static class BrowserEndpoints
             var sessionId = NormalizeOptional(request.SessionId);
             var previewName = NormalizeOptional(request.PreviewName);
             var url = request.Url ?? "";
-            var activateSession = request.ActivateSession ?? true;
+            var activateSession = request.ActivateSession ?? false;
             if (string.IsNullOrWhiteSpace(sessionId))
             {
                 return Results.BadRequest("sessionId required");
@@ -237,6 +238,8 @@ public static class BrowserEndpoints
                     }
 
                     var targetRevision = webPreviewService.GetPreviewSession(sessionId, previewName)?.TargetRevision;
+                    previewOwnerService.ResolveOwnerBrowserId(sessionId, previewName);
+
                     var openResult = await uiBridge.RequestOpenWhenAvailableAsync(
                         sessionId,
                         previewName,
@@ -249,6 +252,7 @@ public static class BrowserEndpoints
                         return Results.Text(openResult.Error + "\n", statusCode: 409);
                     }
 
+                    var generation = openResult.OwnershipGeneration;
                     var status = await commandService.WaitForControllableAsync(
                         url,
                         sessionId,
@@ -256,17 +260,32 @@ public static class BrowserEndpoints
                         requireClientConnectedAfterUtc: commandStartedAt,
                         requireVisibleClient: activateSession,
                         connectedUiClientCountProvider: () => uiBridge.ConnectedBrowserCount,
-                        cancellationToken: cancellationToken);
+                        cancellationToken: cancellationToken,
+                        requiredTargetRevision: targetRevision);
                     var statusText = commandService.GetStatusText(
                         url,
                         sessionId,
                         previewName,
                         connectedUiClientCount: uiBridge.ConnectedBrowserCount);
                     var ready = status.Controllable
+                        && previewOwnerService.GetGeneration(sessionId, previewName) == generation
                         && (!activateSession || status.DefaultClient?.IsVisible == true);
+                    if (ready)
+                    {
+                        // An ACK only means the UI handled the instruction. Verify the actual bridge.
+                        var probe = await commandService.ExecuteCommandAsync(new BrowserCommandRequest
+                        {
+                            Command = "ready", SessionId = sessionId, PreviewName = previewName,
+                            PreviewId = status.DefaultClient?.PreviewId, Timeout = 15
+                        }, cancellationToken);
+                        if (!probe.Success) return Results.Text(probe.Error + "\n", statusCode: 409);
+                        if (previewOwnerService.GetGeneration(sessionId, previewName) != generation
+                            || webPreviewService.GetPreviewSession(sessionId, previewName)?.TargetRevision != targetRevision)
+                            return Results.Text("The preview target changed before open completed. Retry mt_open.\n", statusCode: 409);
+                    }
                     return ready
                         ? Results.Text(statusText)
-                        : Results.Text(statusText, statusCode: 409);
+                        : Results.Text("Open failed: " + (status.StatusMessage ?? "Preview ownership or visibility changed before readiness.") + "\n" + statusText, statusCode: 409);
                 },
                 cancellationToken);
         });
@@ -389,7 +408,7 @@ public static class BrowserEndpoints
                     return Results.Text("sessionId required\n", statusCode: 400);
                 }
 
-                return uiBridge.RequestClaim(sessionId, previewName, out var error)
+                return uiBridge.RequestClaim(sessionId, previewName, out var error, GetFlagValue(args, "--browser"))
                     ? Results.Text($"claimed preview '{previewName ?? WebPreviewService.DefaultPreviewName}' in session '{sessionId}'\n")
                     : Results.Text(error + "\n", statusCode: 409);
             }
@@ -535,7 +554,7 @@ public static class BrowserEndpoints
             return uiBridge.RequestClaim(
                 NormalizeOptional(request.SessionId),
                 NormalizeOptional(request.PreviewName),
-                out var error)
+                out var error, request.BrowserId)
                 ? Results.Ok()
                 : Results.Text(error + "\n", statusCode: 409);
         });
@@ -548,6 +567,19 @@ public static class BrowserEndpoints
                     : new BrowserWsResult { Success = false, Error = error }
                 : commandService.ClaimMainBrowser(request);
             return ToJsonResult(result);
+        });
+
+        app.MapPost("/api/browser/batch", async (BrowserBatchRequest request, HttpContext ctx) =>
+        {
+            var result = await commandService.ExecuteBatchAsync(request, ctx.RequestAborted);
+            foreach (var step in result.Results.Where(s => s.Success && s.Command == "screenshot"))
+            {
+                var path = await SaveResultToDiskAsync("screenshot", new BrowserWsResult { Success = true, Result = step.Result },
+                    new BrowserCommandRequest { SessionId = request.SessionId, PreviewName = request.PreviewName }, sessionManager, webPreviewService);
+                if (path is not null) step.Result = path;
+            }
+            // Keep partial results inspectable, including the failed step. Never replay a batch.
+            return Results.Json(result, AppJsonContext.Default.BrowserBatchResponse);
         });
 
         app.MapPost("/api/browser/command", async (BrowserCommandRequest request, HttpContext ctx) =>
@@ -754,7 +786,8 @@ public static class BrowserEndpoints
                 "mt_log error",
                 "mt_forms",
                 "mt_links",
-                "mt_screenshot"
+                "mt_screenshot",
+                "mt_batch <commands>"
             ],
             RecoveryCommands =
             [
@@ -772,7 +805,7 @@ public static class BrowserEndpoints
                 "Use mt_topic with a 3-6 word high-level work topic, updating it when the user's work area shifts.",
                 "Use mt_wake for delayed prompts that should stay visible and cancelable in the Command Bay queue.",
                 "Use mt_repo to bind every additional repository you use that is not the current working directory so tlbx shows it in the IDE bar and sidebar.",
-                "Docked preview screenshots use in-page html2canvas; an open Chrome mobile device uses native CDP capture instead.",
+                "Docked screenshots capture the viewport by default; use --full-page for the slower full document. Rendering uses html2canvas; Chrome mobile devices use native CDP capture.",
                 "Chrome mobile device control runs in the optional extension on the owning browser machine, so the tlbx server may remain remote."
             ]
         };
@@ -973,6 +1006,7 @@ public static class BrowserEndpoints
             "screenshot" => new BrowserCommandRequest
             {
                 Command = "screenshot",
+                FullPage = HasFlag(args, "--full-page"),
                 SessionId = GetFlagValue(args, "--session")
             },
             "snapshot" => new BrowserCommandRequest
@@ -984,7 +1018,7 @@ public static class BrowserEndpoints
             {
                 Command = "wait",
                 Selector = GetPositional(args, 1),
-                Timeout = GetIntFlag(args, "--timeout") ?? 5
+                Timeout = GetIntFlag(args, "--timeout") ?? 15
             },
             "navigate" => new BrowserCommandRequest
             {
@@ -1051,6 +1085,7 @@ public static class BrowserEndpoints
                 DeltaX = request.DeltaX,
                 DeltaY = request.DeltaY,
                 Steps = request.Steps,
+                FullPage = request.FullPage,
                 SessionId = GetFlagValue(args, "--session"),
                 PreviewName = GetFlagValue(args, "--preview"),
                 PreviewId = request.PreviewId
@@ -1085,7 +1120,7 @@ public static class BrowserEndpoints
             var screenshotsDir = TlbxDirectory.EnsureSubdirectory(cwd, "screenshots");
 
             var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-            var filePath = Path.Combine(screenshotsDir, $"screenshot_{ts}.png");
+            var filePath = Path.Combine(screenshotsDir, $"screenshot_{ts}_{Guid.NewGuid():N}.png");
 
             try
             {
@@ -1140,7 +1175,8 @@ public static class BrowserEndpoints
             PreviewId = request.PreviewId,
             DeltaX = request.DeltaX,
             DeltaY = request.DeltaY,
-            Steps = request.Steps
+            Steps = request.Steps,
+            FullPage = request.FullPage
         };
 
     private static IResult ToJsonResult(BrowserWsResult result)

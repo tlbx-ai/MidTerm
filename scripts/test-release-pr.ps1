@@ -14,6 +14,17 @@ function Assert-Rejected([scriptblock]$Action, [string]$Message) {
     try { & $Action | Out-Null } catch { $failed = $true }
     Assert-Test $failed $Message
 }
+$partialRelease = @{isDraft=$false; assets=@(
+    @{name='mt-win-x64.zip'; size=100}, @{name='mt-win-x64.spdx.json'; size=100}
+)}
+Assert-PublishedReleaseAssets $partialRelease
+Assert-Test $true 'A published single-platform release is valid for task retirement.'
+Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$true; assets=$partialRelease.assets} } 'Draft release accepted for retirement.'
+Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@()} } 'Empty release accepted for retirement.'
+Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@($partialRelease.assets[0])} } 'Incomplete pair accepted for retirement.'
+Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@(@{name='extra.zip'; size=100})} } 'Unknown asset accepted for retirement.'
+Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@($partialRelease.assets + $partialRelease.assets)} } 'Duplicate assets accepted for retirement.'
+Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@(@{name='mt-win-x64.zip'; size=0}, $partialRelease.assets[1])} } 'Empty asset accepted for retirement.'
 $global:TlbxPrFixture = @{ Pr=$null; Prs=@(); Creates=0; Merges=0; FailChecks=$false; ChangeHead=$false; Remote=$remote }
 function global:gh {
     $a = @($args); $f = $global:TlbxPrFixture; $global:LASTEXITCODE=0
@@ -174,10 +185,19 @@ try {
     Assert-Rejected { & ./scripts/verify-release-merge.ps1 -Tag v1.0.2 } 'Release gate accepted a mismatched version.'
     Invoke-ReleaseGit switch --detach $promotion.Head | Out-Null
     Assert-Rejected { & ./scripts/verify-release-merge.ps1 -Tag v1.0.1 } 'Release gate accepted the unmerged task commit.'
+    # A parallel task reserves the next patch without merging it into dev.
+    Invoke-ReleaseGit switch -c fix/reserved-fixture origin/dev | Out-Null
+    $reserved = Get-Content src/version.json -Raw | ConvertFrom-Json
+    $reserved.web = '1.0.2-dev'
+    $reserved | ConvertTo-Json | Set-Content src/version.json
+    Invoke-ReleaseGit add src/version.json
+    Invoke-ReleaseGit commit -m 'Reserve a parallel dev patch' | Out-Null
+    Invoke-ReleaseGit push origin fix/reserved-fixture | Out-Null
     Invoke-ReleaseGit switch -c fix/reprepare-fixture origin/dev | Out-Null
     $devArgs = @{Bump='patch'; ReleaseTitle='Verify candidate retry'; ReleaseNotes=@('Retain the candidate while correcting the same release PR.'); mthostUpdate='yes'; TestCategories=@('assets'); PrepareOnly=$true}
     & ./scripts/release-dev.ps1 @devArgs
     $candidate = Get-ReleaseState fix/reprepare-fixture
+    Assert-Test ($candidate.Version -eq '1.0.3-dev') 'Fresh patch selection reused a parallel reserved version.'
     $creates = $global:TlbxPrFixture.Creates
     'Corrected implementation' | Set-Content correction.txt
     Invoke-ReleaseGit add correction.txt

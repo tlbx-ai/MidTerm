@@ -26,9 +26,14 @@ public static class FileEndpointDefinitions
             await handler.CheckPathsAsync(request, sessionId))
             .Produces<FileCheckResponse>(StatusCodes.Status200OK, "application/json");
 
-        app.MapGet("/api/files/list", (string path, IFileHandler handler, string? sessionId) =>
-            handler.ListDirectory(path, sessionId))
+        app.MapGet("/api/files/list", (string path, IFileHandler handler, string? sessionId, bool showHidden = false, bool showIgnored = true) =>
+            handler.ListDirectory(path, sessionId, showHidden, showIgnored))
             .Produces<DirectoryListResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapGet("/api/files/navigation", async (string path, IFileHandler handler, string? sessionId) =>
+            await handler.GetNavigationAsync(path, sessionId))
+            .Produces<FileNavigationResponse>(StatusCodes.Status200OK, "application/json")
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status403Forbidden);
 
         app.MapGet("/api/files/view", (string path, IFileHandler handler, string? sessionId) =>
             handler.ViewFile(path, sessionId))
@@ -44,8 +49,29 @@ public static class FileEndpointDefinitions
 
         app.MapPut("/api/files/save", async (FileSaveRequest request, IFileHandler handler, string? sessionId) =>
             await handler.SaveFileAsync(request, sessionId))
-            .Produces<FileSaveResponse>(StatusCodes.Status200OK, "application/json");
+            .Produces<FileSaveResponse>(StatusCodes.Status200OK, "application/json")
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status428PreconditionRequired);
 
+        app.MapGet("/api/files/document", async (string path, IFileHandler handler, string? sessionId, bool full = false, long offset = 0) =>
+            await handler.ReadDocumentAsync(path, sessionId, full, offset))
+            .Produces<FileDocumentResponse>(StatusCodes.Status200OK, "application/json")
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status403Forbidden)
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status422UnprocessableEntity);
+
+        app.MapPost("/api/files/operations", async (FileOperationRequest request, string sessionId, IFileHandler handler) =>
+            await handler.ExecuteOperationAsync(request, sessionId))
+            .Produces<FileOperationResponse>(StatusCodes.Status200OK, "application/json")
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status403Forbidden)
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status409Conflict);
+        app.MapGet("/api/files/operations/{id}", (string id, string sessionId, IFileHandler handler) => handler.GetOperation(id, sessionId))
+            .Produces<FileOperationResponse>(StatusCodes.Status200OK, "application/json");
+        app.MapGet("/api/files/recovery", (string directory, string sessionId, IFileHandler handler, string? cursor) => handler.GetRecovery(directory, sessionId, cursor))
+            .Produces<FileRecoveryResponse>(StatusCodes.Status200OK, "application/json");
+        app.MapPost("/api/files/restore", async (FileRestoreRequest request, string sessionId, IFileHandler handler) => await handler.RestoreAsync(request, sessionId))
+            .Produces<FileOperationItem>(StatusCodes.Status200OK, "application/json")
+            .Produces<FileDocumentErrorResponse>(StatusCodes.Status409Conflict);
         return app;
     }
 }

@@ -10,6 +10,7 @@ import type {
   GitLogEntry,
   GitRepoListResponse,
   GitStatusResponse,
+  GitStatusReadResult,
 } from './types';
 
 function appendRepoRoot(params: URLSearchParams, repoRoot?: string): void {
@@ -82,14 +83,23 @@ export async function fetchGitStatus(
   sessionId: string,
   repoRoot?: string,
 ): Promise<GitStatusResponse | null> {
+  const result = await fetchGitStatusResult(sessionId, repoRoot);
+  return result.ok ? result.status : null;
+}
+
+export async function fetchGitStatusResult(
+  sessionId: string,
+  repoRoot?: string,
+): Promise<GitStatusReadResult> {
   try {
     const params = new URLSearchParams({ sessionId });
     appendRepoRoot(params, repoRoot);
     const res = await fetch(`/api/git/status?${params}`);
-    if (!res.ok) return null;
-    return (await res.json()) as GitStatusResponse;
+    if (!res.ok)
+      return { ok: false, httpStatus: res.status, detail: (await res.text()).slice(0, 2000) };
+    return { ok: true, status: (await res.json()) as GitStatusResponse };
   } catch {
-    return null;
+    return { ok: false, httpStatus: 0, detail: '' };
   }
 }
 
@@ -110,21 +120,25 @@ export async function fetchDiff(
   }
 }
 
-export async function fetchGitLog(
+export async function fetchGitHistoryPage(
   sessionId: string,
-  repoRootOrCount?: string | number,
-  count = 20,
-): Promise<GitLogEntry[]> {
+  repoRoot: string,
+  head: string,
+  skip: number,
+  count: number,
+): Promise<GitLogEntry[] | null> {
   try {
-    const repoRoot = typeof repoRootOrCount === 'string' ? repoRootOrCount : undefined;
-    const resolvedCount = typeof repoRootOrCount === 'number' ? repoRootOrCount : count;
-    const params = new URLSearchParams({ sessionId, count: String(resolvedCount) });
-    appendRepoRoot(params, repoRoot);
-    const res = await fetch(`/api/git/log?${params}`);
-    if (!res.ok) return [];
-    return (await res.json()) as GitLogEntry[];
+    const params = new URLSearchParams({
+      sessionId,
+      repoRoot,
+      head,
+      skip: String(skip),
+      count: String(count),
+    });
+    const response = await fetch(`/api/git/log?${params}`);
+    return response.ok ? ((await response.json()) as GitLogEntry[]) : null;
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -152,11 +166,13 @@ export async function fetchCommitDetails(
   sessionId: string,
   repoRootOrHash: string | undefined,
   hashOrUndefined?: string,
+  parentIndex = 0,
 ): Promise<GitCommitDetailsResponse | null> {
   try {
     const repoRoot = hashOrUndefined ? repoRootOrHash : undefined;
     const hash = hashOrUndefined ?? repoRootOrHash ?? '';
     const params = new URLSearchParams({ sessionId, hash });
+    if (parentIndex !== 0) params.set('parentIndex', String(parentIndex));
     appendRepoRoot(params, repoRoot);
     const res = await fetch(`/api/git/commit?${params}`);
     if (!res.ok) return null;

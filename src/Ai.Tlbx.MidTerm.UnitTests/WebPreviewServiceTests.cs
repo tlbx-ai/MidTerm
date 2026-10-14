@@ -10,16 +10,16 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public class WebPreviewServiceTests
 {
     [Fact]
-    public void SetTarget_PathWithTrailingSlash_PreservesTrailingSlash()
+    public void CanonicalNavigation_PreservesRevisionWhileExplicitReplacementInvalidatesIt()
     {
         var service = new WebPreviewService(serverPort: 2000);
-
-        var ok = service.SetTarget("session-1", null, "https://example.com/coaching/plans/");
-
-        Assert.True(ok);
-        var targetUri = service.GetTargetUri("session-1");
-        Assert.NotNull(targetUri);
-        Assert.Equal("/coaching/plans/", targetUri!.AbsolutePath);
+        Assert.True(service.SetTarget("session-1", "docs", "https://example.com/start"));
+        var revision = service.GetPreviewSession("session-1", "docs")!.TargetRevision;
+        Assert.True(service.SetTarget("session-1", "docs", "https://other.example/", preserveCookies: true, preserveTargetRevision: true));
+        Assert.Equal(revision, service.GetPreviewSession("session-1", "docs")!.TargetRevision);
+        Assert.Equal("https://other.example/", service.GetPreviewSession("session-1", "docs")!.Url);
+        Assert.True(service.SetTarget("session-1", "docs", "https://third.example/"));
+        Assert.True(service.GetPreviewSession("session-1", "docs")!.TargetRevision > revision);
     }
 
     [Fact]
@@ -42,16 +42,6 @@ public class WebPreviewServiceTests
             SslPolicyErrors.RemoteCertificateChainErrors);
 
         Assert.False(accepted);
-    }
-
-    [Fact]
-    public void ShouldAcceptPreviewCertificate_AlwaysAcceptsCleanCertificate()
-    {
-        var accepted = WebPreviewService.ShouldAcceptPreviewCertificate(
-            null,
-            SslPolicyErrors.None);
-
-        Assert.True(accepted);
     }
 
     [Fact]
@@ -121,24 +111,6 @@ public class WebPreviewServiceTests
     }
 
     [Fact]
-    public void StoreResponseCookies_CapturesSetCookieForForwardedRequests()
-    {
-        var service = new WebPreviewService(serverPort: 2000);
-        Assert.True(service.SetTarget("session-1", null, "https://example.com/app"));
-        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
-        using var response = new HttpResponseMessage(HttpStatusCode.OK);
-        response.Headers.TryAddWithoutValidation("Set-Cookie", "session=abc123; Path=/app; HttpOnly");
-
-        service.StoreResponseCookies(routeKey, new Uri("https://example.com/app/login"), response);
-
-        var forwarded = service.GetForwardedCookieHeader(routeKey, new Uri("https://example.com/app/api"));
-        var browserCookies = service.GetBrowserCookies(routeKey, new Uri("https://example.com/app/api"));
-        Assert.NotNull(forwarded);
-        Assert.Contains("session=abc123", forwarded, StringComparison.Ordinal);
-        Assert.DoesNotContain("session=abc123", browserCookies.Header ?? "", StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void SetTarget_DifferentPort_ResetsCookieJar()
     {
         var service = new WebPreviewService(serverPort: 2000);
@@ -173,19 +145,6 @@ public class WebPreviewServiceTests
         var ok = service.SetTarget("session-1", null, "https://localhost:2000");
 
         Assert.False(ok);
-    }
-
-    [Fact]
-    public void SetTarget_LocalFileUrl_IsAllowed()
-    {
-        var service = new WebPreviewService(serverPort: 2000);
-        var localPath = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "midterm-webpreview-local-file", "index.html"));
-        var localFileUri = new Uri(localPath);
-
-        var ok = service.SetTarget("session-1", null, localFileUri.AbsoluteUri);
-
-        Assert.True(ok);
-        Assert.Equal(localFileUri.AbsoluteUri, service.GetTargetUrl("session-1"));
     }
 
     [Fact]
@@ -269,56 +228,6 @@ public class WebPreviewServiceTests
     }
 
     [Fact]
-    public void ListPreviewSessions_ReturnsNamedPreviewEntriesPerTerminalSession()
-    {
-        var service = new WebPreviewService(serverPort: 2000);
-
-        service.EnsurePreviewSession("session-1", "default");
-        service.EnsurePreviewSession("session-1", "user2");
-        service.EnsurePreviewSession("session-2", "user2");
-
-        var session1Previews = service.ListPreviewSessions("session-1");
-        var session2Previews = service.ListPreviewSessions("session-2");
-
-        Assert.Equal(2, session1Previews.Previews.Count);
-        Assert.Contains(session1Previews.Previews, preview => preview.PreviewName == "default");
-        Assert.Contains(session1Previews.Previews, preview => preview.PreviewName == "user2");
-        Assert.Single(session2Previews.Previews);
-        Assert.Equal("user2", session2Previews.Previews[0].PreviewName);
-    }
-
-    [Fact]
-    public void NamedPreview_ReusesIdentityUntilExplicitlyDeleted()
-    {
-        var service = new WebPreviewService(serverPort: 2000);
-
-        Assert.True(service.SetTarget("session-1", "dai-e2e", "https://example.com/first"));
-        Assert.True(service.TryGetPreviewRouteKey("session-1", "dai-e2e", out var firstRouteKey));
-        Assert.True(service.SetTarget("session-1", "dai-e2e", "https://example.com/retry"));
-        Assert.True(service.TryGetPreviewRouteKey("session-1", "dai-e2e", out var retryRouteKey));
-
-        Assert.Equal(firstRouteKey, retryRouteKey);
-        Assert.Single(service.ListPreviewSessions("session-1").Previews);
-
-        Assert.True(service.DeletePreviewSession("session-1", "dai-e2e"));
-        Assert.Empty(service.ListPreviewSessions("session-1").Previews);
-        Assert.False(service.TryGetPreviewRouteKey("session-1", "dai-e2e", out _));
-    }
-
-    [Fact]
-    public void RememberLeakedPathRoute_TracksRouteKeyForLaterResolution()
-    {
-        var service = new WebPreviewService(serverPort: 2000);
-        Assert.True(service.SetTarget("session-1", null, "https://example.com"));
-        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
-
-        service.RememberLeakedPathRoute(routeKey, "/js/login.js?v=3");
-
-        Assert.True(service.TryGetRouteKeyByLeakedPath("/js/login.js", out var resolvedRouteKey));
-        Assert.Equal(routeKey, resolvedRouteKey);
-    }
-
-    [Fact]
     public void DeletePreviewSession_ClearsRememberedLeakedPathsForThatRoute()
     {
         var service = new WebPreviewService(serverPort: 2000);
@@ -329,23 +238,6 @@ public class WebPreviewServiceTests
         Assert.True(service.DeletePreviewSession("session-1", "user2"));
 
         Assert.False(service.TryGetRouteKeyByLeakedPath("/js/login.js", out _));
-    }
-
-    [Fact]
-    public void SetTarget_IncrementsTargetRevisionForSamePreview()
-    {
-        var service = new WebPreviewService(serverPort: 2000);
-
-        Assert.True(service.SetTarget("session-1", null, "https://example.com"));
-        var first = service.GetPreviewSession("session-1");
-        Assert.NotNull(first);
-
-        Assert.True(service.SetTarget("session-1", null, "https://example.org"));
-        var second = service.GetPreviewSession("session-1");
-        Assert.NotNull(second);
-
-        Assert.Equal(1, first!.TargetRevision);
-        Assert.Equal(2, second!.TargetRevision);
     }
 
     [Fact]

@@ -1,4 +1,7 @@
-This terminal runs inside MidTerm (web terminal multiplexer).
+Use tlbx supervision when this terminal actually runs inside tlbx.
+For recovery from a broken tlbx instance in an external terminal, use direct
+Windows diagnostics, Git and repository scripts. Do not retry session-context
+binding or require tlbx CLI operations that this terminal cannot perform.
 
 If `.tlbx/AGENTS.md` exists, follow it for browser control and tmux workflows.
 If it does not exist, do not assume extra MidTerm-specific workflow permissions.
@@ -15,6 +18,10 @@ contents. The choice is independent of `-mthostUpdate`: changed host runtimes
 still need `yes`, even when the build can fall back from reuse to compilation.
 
 Release requests authorize the complete matching script workflow in the current turn. Do not run unrelated release, tag, publish, promote, or merge-to-main workflows outside the requested path.
+
+Dependency advisories block releases only for a regression against the last published release in the same channel. Audit both locked graphs against current advisory data: unchanged findings, including newly reported advisories for existing dependencies, remain visible without blocking. Newly introduced vulnerabilities, increased severity or exposure must block. Draft releases are never baselines. Lockfile, signature, provenance and audit-completion checks remain mandatory. See `scripts/audit-supply-chain.ps1` and `docs/BUILD-RELEASE.md`.
+
+A release is valid with at least one complete verified platform archive and its matching SBOM after shared checks pass. Missing platforms must be listed explicitly; their build/signing/notarization failures must not block other platforms. Never skip integrity checks for included packages or publish an incomplete archive/SBOM pair. See `docs/BUILD-RELEASE.md`.
 
 ## Repository branch workflow
 
@@ -51,12 +58,15 @@ Rules:
 
 ## Terminal Design Constraints
 
+- Windows Codex CLI acceptance must cover the installed service identity (normally LocalSystem) accessing a user-private daemon socket. An interactive-user source server does not cover that boundary. Use only the exact tool caller's token for private Codex state; never widen existing ACLs. Distinguish a model-issued `exec_command` from a manually submitted `thread/shellCommand`; report an unavailable path as unverified. A timeout fallback must preserve its unobserved printed challenge for the documented retry.
+- CLI context verification must include metadata from a preserved installed mthost after a web-only update, with an unchanged Codex foreground PID, and the first scoped command resolving without manual repair for private TUI ancestry. Shared app-server ancestry must still require fresh terminal evidence, established automatically during the first command through the local daemon. Verify the unchanged FIRST scoped command with two real shared-daemon TUI clients, including while another tool is running; manual proof/retry success is not first-call acceptance. Also verify sibling startup, context repair, scoped mutation/readback, and rejection of duplicated proof. Cover nonce-only TUI redraws, missing host-side process classification, and Unicode terminal output; record the exact context error.
+- Explicit terminal launch commands and bookmarks are user-controlled. Never silently inject provider-specific CLI flags. Keep supplied arguments and quoting; use provider defaults only when no command was supplied.
 - Do not suggest hiding, virtualizing, or lazily deactivating visible terminal sessions as a latency optimization.
 - In MidTerm, sessions that are shown are intentionally kept as genuinely active terminals; latency work must preserve that UX model.
 
 ## Terminal Size Ownership
 
-- Session-scoped browser automation follows the exact terminal size-owner tab. Global main-browser selection and stale preview claims must not route automation to a passive tab; an offline size owner requires reconnect or an explicit size takeover.
+- Browser execution ownership is sticky per session and named preview, using an exact browser tab identity independently of terminal size. Initialize from a connected size-owner tab or the sole connected UI; otherwise require explicit selection. An established offline preview owner never moves automatically. Commands, UI dispatch and status share that owner. Use `mt_claim_preview --browser <browserId>` (candidates: `/api/browser/ui-clients`) for explicit handoff; global main-browser selection and newest-connection heuristics must not route scoped commands.
 
 - Terminal row/column size ownership is server-authoritative and scoped per terminal session, never global to the whole browser.
 - For owned sessions, only the current owner may send authoritative `cols`/`rows`; every resize must carry the server-issued ownership epoch. Headless REST/tmux resize is permitted only while the session is unowned. Followers render the canonical PTY size and CSS-scale locally.

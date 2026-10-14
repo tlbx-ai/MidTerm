@@ -36,9 +36,10 @@ import type { Terminal } from '@xterm/xterm';
 import { LinkProvider } from 'xterm-link-provider';
 import type { FilePathInfo, FileCheckResponse, FileResolveResponse } from '../../types';
 import { openFile } from '../fileViewer';
+import { beginFileOpen, isFileOpenCurrent, type FileOpenRequest } from '../fileViewer/loadState';
 import { createLogger } from '../logging';
 import { t } from '../i18n';
-import { $activeSessionId, $currentSettings } from '../../stores';
+import { $currentSettings } from '../../stores';
 import { sessionTerminals } from '../../state';
 import {
   UNIX_PATH_PATTERN,
@@ -621,8 +622,10 @@ function addToAllowlist(allowlist: Set<string>, path: string): boolean {
   return true;
 }
 
-async function checkPathExists(path: string): Promise<FilePathInfo | null> {
-  const sessionId = $activeSessionId.get();
+async function checkPathExists(
+  path: string,
+  sessionId: string | null,
+): Promise<FilePathInfo | null> {
   const cacheKey = buildExistenceCacheKey(path, sessionId);
   const cached = existenceCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
@@ -786,14 +789,15 @@ function throttledResolveRelativePath(
 // Click Handlers
 // ===========================================================================
 
-async function handlePathClick(path: string): Promise<void> {
+async function handlePathClick(path: string, clickedSessionId: string): Promise<void> {
+  const request = beginFileOpen(clickedSessionId);
   const normalizedPath = normalizePathCandidate(path);
   if (!isValidPath(normalizedPath)) {
     showFileNotFoundToast(path);
     return;
   }
 
-  const sessionId = $activeSessionId.get();
+  const sessionId = request.sessionId;
   if (sessionId) {
     // Avoid first-click race: wait briefly for allowlist registration to settle.
     await Promise.race([
@@ -802,44 +806,53 @@ async function handlePathClick(path: string): Promise<void> {
     ]);
   }
 
-  const info = await checkPathExists(normalizedPath);
+  if (!isFileOpenCurrent(request)) return;
+  const info = await checkPathExists(normalizedPath, sessionId);
+  if (!isFileOpenCurrent(request)) return;
   if (info?.exists) {
-    void openFile(normalizedPath, info);
+    void openFile(normalizedPath, info, request);
     return;
   }
 
-  // Fallback: Unix-style paths on Windows (e.g., /foo/bar.cs) aren't truly absolute
-  // Try resolving as relative path with deep search
-  if (sessionId) {
-    // Strip leading slash for relative resolution
-    const relativePath = normalizedPath.startsWith('/') ? normalizedPath.slice(1) : normalizedPath;
-    const resolved = await resolveRelativePath(sessionId, relativePath, true);
-    if (resolved?.exists && resolved.resolvedPath) {
-      registerPathsWithBackend(sessionId, [resolved.resolvedPath]);
-      const resolvedInfo: FilePathInfo = {
-        exists: true,
-        isDirectory: resolved.isDirectory,
-        size: resolved.size ?? null,
-        mimeType: resolved.mimeType ?? '',
-        modified: resolved.modified ?? null,
-        isText: resolved.isText ?? false,
-      };
-      void openFile(resolved.resolvedPath, resolvedInfo);
-      return;
-    }
-  }
-
-  showFileNotFoundToast(normalizedPath);
+  if (sessionId && (await tryRelativeFileFallback(normalizedPath, sessionId, request))) return;
+  if (isFileOpenCurrent(request)) showFileNotFoundToast(normalizedPath);
 }
 
-async function handleRelativePathClick(relativePath: string): Promise<void> {
+async function tryRelativeFileFallback(
+  path: string,
+  sessionId: string,
+  request: FileOpenRequest,
+): Promise<boolean> {
+  // Unix-looking paths printed by Windows tools need resolution against the clicked session.
+  const relativePath = path.startsWith('/') ? path.slice(1) : path;
+  const resolved = await resolveRelativePath(sessionId, relativePath, true);
+  if (!isFileOpenCurrent(request)) return true;
+  if (!resolved?.exists || !resolved.resolvedPath) return false;
+  registerPathsWithBackend(sessionId, [resolved.resolvedPath]);
+  const info: FilePathInfo = {
+    exists: true,
+    isDirectory: resolved.isDirectory,
+    size: resolved.size ?? null,
+    mimeType: resolved.mimeType ?? '',
+    modified: resolved.modified ?? null,
+    isText: resolved.isText ?? false,
+  };
+  void openFile(resolved.resolvedPath, info, request);
+  return true;
+}
+
+async function handleRelativePathClick(
+  relativePath: string,
+  clickedSessionId: string,
+): Promise<void> {
+  const request = beginFileOpen(clickedSessionId);
   const normalizedRelativePath = normalizePathCandidate(relativePath);
   if (!normalizedRelativePath) {
     showFileNotFoundToast(relativePath);
     return;
   }
 
-  const sessionId = $activeSessionId.get();
+  const sessionId = request.sessionId;
   if (!sessionId) {
     showFileNotFoundToast(normalizedRelativePath);
     return;
@@ -847,6 +860,7 @@ async function handleRelativePathClick(relativePath: string): Promise<void> {
 
   // Use deep=true for click - search subdirectories if exact path not found
   const resolved = await resolveRelativePath(sessionId, normalizedRelativePath, true);
+  if (!isFileOpenCurrent(request)) return;
   if (resolved?.exists && resolved.resolvedPath) {
     // Register resolved path with backend allowlist (fire-and-forget)
     registerPathsWithBackend(sessionId, [resolved.resolvedPath]);
@@ -859,20 +873,21 @@ async function handleRelativePathClick(relativePath: string): Promise<void> {
       modified: resolved.modified ?? null,
       isText: resolved.isText ?? false,
     };
-    void openFile(resolved.resolvedPath, info);
+    void openFile(resolved.resolvedPath, info, request);
   } else {
     showFileNotFoundToast(normalizedRelativePath);
   }
 }
 
-async function handleFolderPathClick(folderPath: string): Promise<void> {
+async function handleFolderPathClick(folderPath: string, clickedSessionId: string): Promise<void> {
+  const request = beginFileOpen(clickedSessionId);
   const normalizedFolderPath = normalizePathCandidate(folderPath);
   if (!normalizedFolderPath) {
     showFileNotFoundToast(folderPath);
     return;
   }
 
-  const sessionId = $activeSessionId.get();
+  const sessionId = request.sessionId;
   if (!sessionId) {
     showFileNotFoundToast(normalizedFolderPath);
     return;
@@ -883,6 +898,7 @@ async function handleFolderPathClick(folderPath: string): Promise<void> {
 
   // Try to resolve the folder path
   const resolved = await resolveRelativePath(sessionId, pathWithoutSlash, true);
+  if (!isFileOpenCurrent(request)) return;
   if (resolved?.exists && resolved.resolvedPath && resolved.isDirectory) {
     registerPathsWithBackend(sessionId, [resolved.resolvedPath]);
     const info: FilePathInfo = {
@@ -893,7 +909,7 @@ async function handleFolderPathClick(folderPath: string): Promise<void> {
       modified: null,
       isText: false,
     };
-    void openFile(resolved.resolvedPath, info);
+    void openFile(resolved.resolvedPath, info, request);
   } else {
     showFileNotFoundToast(normalizedFolderPath);
   }
@@ -924,7 +940,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       term,
       FOLDER_PATH_PATTERN,
       (_event, folderPath) => {
-        void handleFolderPathClick(folderPath);
+        void handleFolderPathClick(folderPath, sessionId);
       },
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
@@ -961,7 +977,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       term,
       KNOWN_FILE_PATTERN,
       (_event, relativePath) => {
-        void handleRelativePathClick(relativePath);
+        void handleRelativePathClick(relativePath, sessionId);
       },
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
@@ -989,7 +1005,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       term,
       RELATIVE_PATH_PATTERN,
       (_event, relativePath) => {
-        void handleRelativePathClick(relativePath);
+        void handleRelativePathClick(relativePath, sessionId);
       },
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
@@ -1021,7 +1037,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       term,
       QUOTED_ABSOLUTE_PATH_PATTERN,
       (_event, path) => {
-        void handlePathClick(path);
+        void handlePathClick(path, sessionId);
       },
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
@@ -1037,7 +1053,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       term,
       UNC_PATH_PATTERN,
       (_event, path) => {
-        void handlePathClick(path);
+        void handlePathClick(path, sessionId);
       },
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
@@ -1053,7 +1069,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       term,
       WIN_PATH_PATTERN,
       (_event, path) => {
-        void handlePathClick(path);
+        void handlePathClick(path, sessionId);
       },
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {
@@ -1069,7 +1085,7 @@ export function registerFileLinkProvider(terminal: Terminal, sessionId: string):
       term,
       UNIX_PATH_PATTERN,
       (_event, path) => {
-        void handlePathClick(path);
+        void handlePathClick(path, sessionId);
       },
       {
         matchCallback: (match: RegExpMatchArray, callback: (match: string | undefined) => void) => {

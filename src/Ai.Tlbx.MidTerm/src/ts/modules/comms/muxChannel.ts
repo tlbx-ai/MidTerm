@@ -1,3 +1,8 @@
+import {
+  SocketReadiness,
+  RESUME_PROBE_TIMEOUT_MS,
+  SOCKET_PROGRESS_TIMEOUT_MS,
+} from './socketReadiness';
 /* eslint-disable max-lines -- Mux transport remains the protocol coordinator; hot-path helpers are split out as they become stable. */
 /**
  * Mux WebSocket terminal I/O. Output ordering is strict per session, not global;
@@ -49,6 +54,7 @@ import {
 import * as muxSessionRouting from './muxSessionRouting';
 import { resolveMuxDataLossReason } from './muxDataLoss';
 import { createMuxInputFrame } from './muxInputFrame';
+import { tryMergeOutputPayloads } from './muxOutputPayload';
 import { createPrintableInputBurstCoalescer } from './printableInputBurst';
 import {
   appendTerminalWriteBatch,
@@ -124,6 +130,7 @@ import {
 
 const log = createLogger('mux');
 const muxReconnect = new ReconnectController();
+const muxReadiness = new SocketReadiness();
 const textEncoder = new TextEncoder();
 
 let syncCompleteTimeout: number | null = null;
@@ -213,7 +220,6 @@ let pongCallback: ((mode: number, rtt: number, timestamp: number) => void) | nul
 /** A resume probe is independent of the latency panel's outstanding ping. */
 export function probeMuxWebSocket(): Promise<boolean> {
   const socket = muxWs;
-  if (socket?.readyState === WebSocket.CONNECTING) return Promise.resolve(true);
   if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.resolve(false);
   return new Promise((resolve) => {
     const finish = (healthy: boolean): void => {
@@ -228,7 +234,7 @@ export function probeMuxWebSocket(): Promise<boolean> {
     };
     const timeout = setTimeout(() => {
       finish(false);
-    }, 2000);
+    }, RESUME_PROBE_TIMEOUT_MS);
     socket.addEventListener('message', received, { once: true });
     const frame = new Uint8Array(MUX_HEADER_SIZE + 9);
     frame[0] = MUX_TYPE_PING;
@@ -394,10 +400,12 @@ interface SessionOutputQueue {
 const MAX_QUEUED_FRAMES_PER_SESSION = 2000;
 const MAX_QUEUED_BYTES_PER_SESSION = 4 * 1024 * 1024;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
-const MAX_COALESCED_BROWSER_OUTPUT_BYTES = 64 * 1024;
 const QUEUE_COMPACT_THRESHOLD = 1000;
-const OUTPUT_DRAIN_BUDGET_MS = 8;
+const OUTPUT_DRAIN_BUDGET_MS = 3;
 const MAX_TERMINAL_WRITE_BATCH_BYTES = 64 * 1024;
+// xterm checks its time budget between writes, never inside one input chunk.
+// Keep large transport batches from becoming indivisible parser long tasks.
+const MAX_XTERM_WRITE_BYTES = 4 * 1024;
 const MAX_XTERM_UNPARSED_BYTES = 512 * 1024;
 const XTERM_PARSE_BARRIER_TIMEOUT_MS = 5000;
 const MAX_PRINTABLE_INPUT_COALESCING_MS = 200;
@@ -646,7 +654,12 @@ function dequeueOutputFrame(sessionId: string): OutputFrameItem | null {
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
   const queue = getOrCreateSessionQueue(sessionId);
   const lastItem = queue.items[queue.items.length - 1];
-  if (!compressed && lastItem && !lastItem.compressed) {
+  if (
+    !compressed &&
+    lastItem &&
+    !lastItem.compressed &&
+    queue.bytes + payload.byteLength - 12 <= MAX_QUEUED_BYTES_PER_SESSION
+  ) {
     const mergedPayload = tryMergeOutputPayloads(lastItem.payload, payload);
     if (
       mergedPayload &&
@@ -678,37 +691,6 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
   queue.items.push({ sessionId, generation: getOutputGeneration(sessionId), payload, compressed });
   queue.bytes += payload.byteLength;
   scheduleSessionOutputQueue(sessionId, getOutputGeneration(sessionId));
-}
-
-function tryMergeOutputPayloads(
-  previousPayload: Uint8Array,
-  incomingPayload: Uint8Array,
-): Uint8Array | null {
-  const previous = parseOutputFrame(previousPayload);
-  const incoming = parseOutputFrame(incomingPayload);
-  const incomingLength = BigInt(incoming.data.byteLength);
-  if (
-    !previous.valid ||
-    !incoming.valid ||
-    previous.cols !== incoming.cols ||
-    previous.rows !== incoming.rows ||
-    incoming.sequenceEnd < incomingLength ||
-    previous.sequenceEnd !== incoming.sequenceEnd - incomingLength ||
-    previous.data.byteLength + incoming.data.byteLength > MAX_COALESCED_BROWSER_OUTPUT_BYTES
-  ) {
-    return null;
-  }
-
-  const merged = new Uint8Array(12 + previous.data.byteLength + incoming.data.byteLength);
-  const view = new DataView(merged.buffer);
-  view.setBigUint64(0, incoming.sequenceEnd, true);
-  merged[8] = incoming.cols & 0xff;
-  merged[9] = (incoming.cols >> 8) & 0xff;
-  merged[10] = incoming.rows & 0xff;
-  merged[11] = (incoming.rows >> 8) & 0xff;
-  merged.set(previous.data, 12);
-  merged.set(incoming.data, 12 + previous.data.byteLength);
-  return merged;
 }
 
 function scheduleSessionOutputQueue(sessionId: string, generation: number): void {
@@ -1075,7 +1057,18 @@ function writeTerminalData(
     });
   };
   try {
-    state.terminal.write(data, () => {
+    for (
+      let offset = 0;
+      offset + MAX_XTERM_WRITE_BYTES < data.length;
+      offset += MAX_XTERM_WRITE_BYTES
+    ) {
+      state.terminal.write(data.subarray(offset, offset + MAX_XTERM_WRITE_BYTES));
+    }
+    const finalOffset =
+      data.length > 0
+        ? Math.floor((data.length - 1) / MAX_XTERM_WRITE_BYTES) * MAX_XTERM_WRITE_BYTES
+        : 0;
+    state.terminal.write(data.subarray(finalOffset), () => {
       release();
       if (!isOutputGenerationCurrent(sessionId, generation)) {
         onParsed?.();
@@ -1258,6 +1251,7 @@ function finishInitialSyncWhenRecoveriesAreParsed(): void {
   }
 
   syncCompletePending = false;
+  $muxWsConnected.set(true);
   if (syncCompleteTimeout !== null) {
     clearTimeout(syncCompleteTimeout);
     syncCompleteTimeout = null;
@@ -1641,7 +1635,6 @@ export function connectMuxWebSocket(): void {
     const localTerminalCount = countLocalTerminals(sessionTerminals, isHubSessionId);
     const isReconnect = $muxHasConnected.get() && localTerminalCount > 0;
 
-    $muxWsConnected.set(true);
     $muxHasConnected.set(true);
 
     // On reconnect, check if server version changed (update applied) and reload
@@ -1746,6 +1739,14 @@ export function connectMuxWebSocket(): void {
     if (muxWs !== ws) return;
     log.error(() => `WebSocket error: ${e.type}`);
   };
+  muxReadiness.watch(
+    ws,
+    () => muxWs === ws,
+    () => $muxWsConnected.get(),
+    connectMuxWebSocket,
+    // Let the existing five-second xterm parse-stall repair finish first.
+    () => (activeSessionRecoveries.size > 0 ? 6000 : SOCKET_PROGRESS_TIMEOUT_MS),
+  );
 }
 
 /**

@@ -2337,6 +2337,7 @@
                         <span id="setting-ui-transparency-value" class="slider-value">0%</span>
                       </div>
                     </div>
+                    <p class="setting-hint" data-i18n="settings.appearance.readingContrast">File and Git reading panes limit transparency to keep text readable.</p>
                   </div>
                 </section>
 
@@ -2390,6 +2391,19 @@
 
                   <div class="settings-section">
                     <h3 data-i18n="settings.sessionsStartup.runtime">Session Runtime</h3>
+                    <div class="setting-row">
+                      <label for="setting-runtime-priority-boost" data-i18n="settings.behavior.runtimePriorityBoost">Boost process priority</label>
+                      <input type="checkbox" id="setting-runtime-priority-boost" />
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-runtime-priority-class" data-i18n="settings.behavior.runtimePriorityClass">Process priority</label>
+                      <select id="setting-runtime-priority-class">
+                        <option value="normal" data-i18n="settings.options.runtimePriorityNormal">Normal</option>
+                        <option value="aboveNormal" data-i18n="settings.options.runtimePriorityAboveNormal">Above normal</option>
+                        <option value="high" data-i18n="settings.options.runtimePriorityHigh">High</option>
+                      </select>
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.runtimePriorityHint">Windows: applies immediately to tlbx and its hosted processes, including all child processes. New processes inherit the selected priority. Child processes include compilers launched in terminals. High requires a Windows service or elevated privileges.</p>
                     <div class="setting-row">
                       <label for="setting-resume-mode" data-i18n="settings.behavior.resumeMode"
                         >Session Resume Mode</label
@@ -3794,10 +3808,10 @@ Enable terminal key log to capture Enter and modifier events.</pre
     <!-- File Viewer Modal -->
     <div id="file-viewer-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
-      <div class="modal-content file-viewer-modal-content">
+      <div class="modal-content file-viewer-modal-content" role="dialog" aria-modal="true" aria-labelledby="file-viewer-dialog-title" tabindex="-1">
         <div class="modal-header">
           <div class="file-viewer-header-info">
-            <h3 class="file-viewer-title" data-i18n="modal.file">File</h3>
+            <h3 id="file-viewer-dialog-title" class="file-viewer-title" data-i18n="modal.file">File</h3>
             <span class="file-viewer-path"></span>
           </div>
           <div class="file-viewer-header-actions">

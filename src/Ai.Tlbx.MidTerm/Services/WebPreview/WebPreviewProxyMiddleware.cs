@@ -97,6 +97,10 @@ public sealed partial class WebPreviewProxyMiddleware
           if(!mtCtx){
             mtCtx=mtReadBootstrapContext();
           }
+          if(mtCtx){
+            var revisionParam=new URLSearchParams(location.search).get("__mtTargetRevision");
+            if(revisionParam!==null)mtCtx.targetRevision=Number(revisionParam);
+          }
           mtPersistPreviewContext();
           mtStripBootstrapQuery();
           function mtMsg(type,extra){
@@ -105,6 +109,7 @@ public sealed partial class WebPreviewProxyMiddleware
             var msg=extra||{};
             msg.type=type;
             if(mtCtx.sessionId)msg.sessionId=mtCtx.sessionId;
+            if(mtCtx.targetRevision!==undefined)msg.targetRevision=mtCtx.targetRevision;
             if(mtCtx.previewId)msg.previewId=mtCtx.previewId;
             if(mtCtx.previewToken)msg.previewToken=mtCtx.previewToken;
             return msg;
@@ -262,7 +267,8 @@ public sealed partial class WebPreviewProxyMiddleware
           // r(u): rewrite a URL to go through the proxy (add /webpreview prefix or _ext proxy)
           function r(u){
             if(typeof u!=="string")return u;
-            if(u.startsWith("data:")||u.startsWith("blob:")||u.startsWith("about:")||u.startsWith("javascript:")||u.startsWith("#"))return u;
+            // Non-network schemes must not recurse through relative URL resolution.
+            if(u.startsWith("#")||(/^[a-z][a-z0-9+.-]*:/i.test(u)&&!/^https?:|^wss?:/i.test(u)))return u;
             if(u.startsWith("//"))return r(location.protocol+u);
             if(window.__mtExternalDocument){
               if(u.startsWith(PP+"/")||u.startsWith(location.origin+PP+"/"))return ar(u);
@@ -307,13 +313,20 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!p||typeof p.then!=="function"){qrc();return p;}
             return p.then(function(v){qrc();return v;},function(err){qrc();throw err;});
           }
+          function proxyFetch(self,u,o){
+            if(typeof u==="string")return wrapCookieRefresh(F.call(self,r(u),o));
+            if(u&&typeof u==="object"&&u.url){try{return wrapCookieRefresh(rfq(self,u,o));}catch(e){}}
+            return wrapCookieRefresh(F.call(self,u,o));
+          }
           window.fetch=function(u,o){
-            if(typeof u==="string")return wrapCookieRefresh(F.call(this,r(u),o));
-            if(u&&typeof u==="object"&&u.url){try{return wrapCookieRefresh(rfq(this,u,o));}catch(e){}}
-            return wrapCookieRefresh(F.call(this,u,o));
+            var self=this;
+            return cookieWrites?cookieWriteQueue.then(function(){return proxyFetch(self,u,o);}):proxyFetch(self,u,o);
           };
           var X=XMLHttpRequest.prototype.open;
-          XMLHttpRequest.prototype.open=function(m,u){var a=[].slice.call(arguments);a[1]=r(u);return X.apply(this,a);};
+          var synchronousXhrs=new WeakSet(),xhrSendVersions=new WeakMap();
+          XMLHttpRequest.prototype.open=function(m,u){var a=[].slice.call(arguments);a[1]=r(u);xhrSendVersions.set(this,(xhrSendVersions.get(this)||0)+1);if(a[2]===false)synchronousXhrs.add(this);else synchronousXhrs.delete(this);return X.apply(this,a);};
+          var XA=XMLHttpRequest.prototype.abort;
+          XMLHttpRequest.prototype.abort=function(){xhrSendVersions.set(this,(xhrSendVersions.get(this)||0)+1);return XA.apply(this,arguments);};
           var XS=XMLHttpRequest.prototype.send;
           XMLHttpRequest.prototype.send=function(){
             var xhr=this,done=false;
@@ -324,7 +337,13 @@ public sealed partial class WebPreviewProxyMiddleware
               try{xhr.removeEventListener("loadend",onDone);}catch(e){}
             }
             try{xhr.addEventListener("loadend",onDone);}catch(e){}
-            try{return XS.apply(xhr,arguments);}catch(err){onDone();throw err;}
+            var sendArgs=arguments;
+            if(cookieWrites&&!synchronousXhrs.has(xhr)){
+              var sendVersion=xhrSendVersions.get(xhr);
+              cookieWriteQueue.then(function(){if(xhrSendVersions.get(xhr)!==sendVersion){onDone();return;}try{XS.apply(xhr,sendArgs);}catch(err){onDone();xhr.dispatchEvent(new Event("error"));}});
+              return;
+            }
+            try{return XS.apply(xhr,sendArgs);}catch(err){onDone();throw err;}
           };
           if(navigator.sendBeacon){var sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){var ok=sb(r(u),d);if(ok)qrc();return ok;};}
           // === Element property setters ===
@@ -478,7 +497,8 @@ public sealed partial class WebPreviewProxyMiddleware
           window.addEventListener("hashchange",ntfy);
           setTimeout(ntfyNow,0);
           // === Cookie bridge ===
-          var cc="",cookieSeq=0,cookiePending={},cookieRefreshTimer=0;
+          var cc=/*__MT_INITIAL_COOKIES__*/"",cookieSeq=0,cookiePending={},cookieRefreshTimer=0;
+          var cookieWriteQueue=Promise.resolve(),cookieWrites=0,cookieWriteVersion=0;
           window.addEventListener("message",function(ev){
             var d=ev.data;
             if(!d||d.type!=="mt-cookie-response")return;
@@ -488,19 +508,20 @@ public sealed partial class WebPreviewProxyMiddleware
             delete cookiePending[d.requestId];
             done(d.error?null:d);
           });
-          function reqCookie(action,raw){
+          function reqCookie(action,raw,upstreamUrl){
             return new Promise(function(resolve){
-              var msg=mtMsg("mt-cookie-request",{requestId:"c"+(++cookieSeq),action:action,raw:raw||"",upstreamUrl:curU()});
+              upstreamUrl=upstreamUrl||curU();
+              var msg=mtMsg("mt-cookie-request",{requestId:"c"+(++cookieSeq),action:action,raw:raw||"",upstreamUrl:upstreamUrl});
               if(!msg){resolve(null);return;}
               if(_realParent===window){
                 try{
-                  var cu=PP+"/_cookies?u="+encodeURIComponent(curU());
+                  var cu=PP+"/_cookies?u="+encodeURIComponent(upstreamUrl);
                   var fo={method:action==="set"?"POST":"GET"};
                   if(action==="set"){
                     fo.headers={"Content-Type":"application/json"};
                     fo.body=JSON.stringify({raw:raw||""});
                   }
-                  fetch(cu,fo).then(function(r){return r.ok?r.json():null;}).then(resolve).catch(function(){resolve(null);});
+                  F.call(window,cu,fo).then(function(r){return r.ok?r.json():null;}).then(resolve).catch(function(){resolve(null);});
                   return;
                 }catch(e){}
               }
@@ -514,7 +535,7 @@ public sealed partial class WebPreviewProxyMiddleware
               },5000);
             });
           }
-          function rc(){return reqCookie("get").then(function(j){cc=j&&j.header?j.header:"";}).catch(function(){});}
+          function rc(){var version=cookieWriteVersion;return reqCookie("get").then(function(j){if(!cookieWrites&&version===cookieWriteVersion&&j)cc=j.header||"";}).catch(function(){});}
           function qrc(){
             if(cookieRefreshTimer)return;
             cookieRefreshTimer=setTimeout(function(){
@@ -526,14 +547,12 @@ public sealed partial class WebPreviewProxyMiddleware
           try{
             var d=Object.getOwnPropertyDescriptor(Document.prototype,"cookie")||Object.getOwnPropertyDescriptor(HTMLDocument.prototype,"cookie");
             if(d&&d.configurable){
-              var ncg=typeof d.get==="function"?d.get.bind(document):null,ncs=typeof d.set==="function"?d.set.bind(document):null;
               Object.defineProperty(document,"cookie",{configurable:true,get:function(){return cc;},set:function(v){
                 if(typeof v!=="string")return;
-                try{if(ncs)ncs(v);}catch(e){}
                 var n=v.split(";")[0]||"";if(n){var i=n.indexOf("="),k=i>0?n.slice(0,i).trim():"";if(k){var p=cc?cc.split(/;\s*/):[];var nx=[];for(var z=0;z<p.length;z++){if(!p[z].startsWith(k+"="))nx.push(p[z]);}nx.push(n.trim());cc=nx.join("; ");}}
-                reqCookie("set",v).then(function(j){if(j&&typeof j.header==="string")cc=j.header;}).catch(function(){});
+                var version=++cookieWriteVersion,url=curU();cookieWrites++;
+                cookieWriteQueue=cookieWriteQueue.then(function(){return reqCookie("set",v,url);}).then(function(j){if(version===cookieWriteVersion&&j&&typeof j.header==="string")cc=j.header;}).catch(function(){}).then(function(){cookieWrites--;});
               }});
-              setTimeout(function(){try{var nc=ncg?ncg():"";if(nc&&!cc)cc=nc;}catch(e){}},0);
             }
           }catch(e){}
           // === MutationObserver: catch dynamically added elements ===
@@ -565,9 +584,10 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!isFinite(num))return 1;
             return Math.max(0,Math.min(1,num));
           }
+          var captureColorContext=null,captureColorCache=new Map();
           function normalizeCssColorFunctions(value){
-            if(typeof value!=="string"||value.indexOf("color(")<0)return value;
-            return value.replace(/color\(\s*srgb\s+([^\s)\/]+)\s+([^\s)\/]+)\s+([^\s)\/]+)(?:\s*\/\s*([^)]+?))?\s*\)/gi,function(_,r,g,b,a){
+            if(typeof value!=="string"||!/(?:oklch|oklab|lch|lab|color|color-mix)\(/i.test(value))return value;
+            value=value.replace(/color\(\s*srgb\s+([^\s)\/]+)\s+([^\s)\/]+)\s+([^\s)\/]+)(?:\s*\/\s*([^)]+?))?\s*\)/gi,function(_,r,g,b,a){
               var rr=parseSrgbChannel(r),gg=parseSrgbChannel(g),bb=parseSrgbChannel(b);
               if(rr===null||gg===null||bb===null)return _;
               var aa=parseSrgbAlpha(a);
@@ -575,29 +595,27 @@ public sealed partial class WebPreviewProxyMiddleware
               var alphaText=(Math.round(aa*1000)/1000).toString();
               return "rgba("+rr+", "+gg+", "+bb+", "+alphaText+")";
             });
-          }
-          function normalizeCloneCaptureColors(root,view){
-            if(!root||!view||!view.getComputedStyle)return;
-            var nodes=[root];
-            if(root.querySelectorAll){
-              var all=root.querySelectorAll("*");
-              for(var i=0;i<all.length;i++)nodes.push(all[i]);
-            }
-            for(var n=0;n<nodes.length;n++){
-              var node=nodes[n];
-              if(!node||!node.style)continue;
-              var styles;
-              try{styles=view.getComputedStyle(node);}catch(e){continue;}
-              if(!styles)continue;
-              for(var i=0;i<styles.length;i++){
-                var prop=styles[i],value=styles.getPropertyValue(prop);
-                if(typeof value!=="string"||value.indexOf("color(")<0)continue;
-                var normalized=normalizeCssColorFunctions(value);
-                if(normalized!==value){
-                  try{node.style.setProperty(prop,normalized);}catch(e){}
-                }
+            // Let the browser convert modern color spaces to sRGB for html2canvas.
+            // Cache each color; gradients/shadows can contain multiple or nested functions.
+            var pattern=/(?:oklch|oklab|lch|lab|color-mix|color)\(/gi,match,output="",cursor=0;
+            while((match=pattern.exec(value))!==null){
+              var end=pattern.lastIndex,depth=1;
+              while(end<value.length&&depth){var c=value.charAt(end++);if(c==="(")depth++;else if(c===")")depth--;}
+              if(depth)break;
+              var token=value.slice(match.index,end),converted=captureColorCache.get(token);
+              if(!converted){
+                try{
+                  if(!CSS.supports("color",token))throw new Error("Invalid color");
+                  if(!captureColorContext){var canvas=document.createElement("canvas");canvas.width=canvas.height=1;captureColorContext=canvas.getContext("2d",{willReadFrequently:true});}
+                  var ctx=captureColorContext;ctx.clearRect(0,0,1,1);ctx.fillStyle=token;ctx.fillRect(0,0,1,1);
+                  var pixel=ctx.getImageData(0,0,1,1).data;
+                  converted="rgba("+pixel[0]+", "+pixel[1]+", "+pixel[2]+", "+(Math.round(pixel[3]/255*1000)/1000)+")";
+                  captureColorCache.set(token,converted);
+                }catch(e){converted=token;}
               }
+              output+=value.slice(cursor,match.index)+converted;cursor=end;pattern.lastIndex=end;
             }
+            return output+value.slice(cursor);
           }
           function createNormalizedStyleReader(styles,captureProperties){
             if(!styles||typeof styles!=="object")return styles;
@@ -838,7 +856,7 @@ public sealed partial class WebPreviewProxyMiddleware
                         if(!accepted){cancelled++;}
                         else if(typeof el.scrollBy==="function")el.scrollBy({top:dy,left:dx,behavior:"instant"});
                         else{el.scrollTop+=dy;el.scrollLeft+=dx;}
-                        await new Promise(function(resolve){requestAnimationFrame(function(){requestAnimationFrame(resolve);});});
+                        await new Promise(function(resolve){setTimeout(resolve,16);});
                         samples.push(metrics());
                       }
                       res.result=JSON.stringify({
@@ -880,15 +898,29 @@ public sealed partial class WebPreviewProxyMiddleware
                   })();return;}
                 case"screenshot":{
                   var restoreComputedStyles=installComputedStyleColorNormalization(window);
+                  var fullPage=msg.fullPage===true;
+                  var captureX=window.scrollX,captureY=window.scrollY;
                   ensureH2c().then(function(){
                     return window.html2canvas(document.documentElement,{
                       useCORS:true,
                       logging:false,
                       scale:1,
+                      x:fullPage?0:captureX,
+                      y:fullPage?0:captureY,
+                      width:fullPage?undefined:window.innerWidth,
+                      height:fullPage?undefined:window.innerHeight,
+                      imageTimeout:1500,
+                      ignoreElements:function(el){
+                        if(fullPage||!el.getBoundingClientRect)return false;
+                        // Prune only below the viewport: removing earlier flow content
+                        // would shift the visible layout in the clone.
+                        if(/^(HTML|HEAD|BODY|STYLE|LINK|SCRIPT)$/.test(el.tagName))return false;
+                        var rect=el.getBoundingClientRect();
+                        return rect.top>=window.innerHeight&&rect.height>0;
+                      },
                       onclone:function(doc){
                         try{
                           installComputedStyleColorNormalization(doc.defaultView||window);
-                          normalizeCloneCaptureColors(doc.documentElement,(doc.defaultView||window));
                         }catch(e){}
                       }
                     });
@@ -905,7 +937,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"navigate":{
                   if(!msg.value){res.success=false;res.error="url required";break;}
-                  location.href=msg.value;res.result="navigating";
+                  location.href=mtNavigationUrl(msg.value);res.result="navigating";
                   break;}
                 case"reload":{
                   if((msg.value||"")==="force"){
@@ -1050,6 +1082,16 @@ public sealed partial class WebPreviewProxyMiddleware
                 case"url":{
                   res.result=curU();
                   break;}
+                case"ready":{
+                  if(document.readyState==="loading"){
+                    document.addEventListener("DOMContentLoaded",function(){
+                      res.result=curU();
+                      if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
+                    },{once:true});
+                    return;
+                  }
+                  res.result=curU();
+                  break;}
                 case"clearcookies":{
                   var all=document.cookie.split(";");
                   for(var i=0;i<all.length;i++){var n=all[i].split("=")[0].trim();if(n)document.cookie=n+"=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/";}
@@ -1119,10 +1161,12 @@ public sealed partial class WebPreviewProxyMiddleware
             var nextKey=curBwsStateKey();
             if(!force&&nextKey===bwsStateKey)return;
             bwsStateKey=nextKey;
-            if(bws&&(bws.readyState===0||bws.readyState===1)){
-              try{bws.close();}catch(e){}
+            if(bws&&bws.readyState===1){
+              var state=curBwsState();state.type="browser-state";
+              bws.send(JSON.stringify(state));
               return;
             }
+            if(bws&&bws.readyState===0)return;
             schedBwsReconnect(50);
           }
           window.addEventListener("message",function(e){
@@ -1148,12 +1192,13 @@ public sealed partial class WebPreviewProxyMiddleware
               }
               if(mtCtx&&mtCtx.previewId&&mtCtx.previewToken){
                 wsUrl+=(wsUrl.indexOf("?")>=0?"&":"?")+"previewId="+encodeURIComponent(mtCtx.previewId)+"&token="+encodeURIComponent(mtCtx.previewToken);
+                if(mtCtx.targetRevision!==undefined)wsUrl+="&targetRevision="+encodeURIComponent(mtCtx.targetRevision);
                 if(mtCtx.sessionId)wsUrl+="&sessionId="+encodeURIComponent(mtCtx.sessionId);
               }
               wsUrl=withBwsState(wsUrl);
               var stateKey=curBwsStateKey();
               bws=new OWS(wsUrl);
-              bws.onopen=function(){bwsReady=true;bwsStateKey=stateKey;};
+              bws.onopen=function(){bwsReady=true;bwsStateKey=stateKey;refreshBwsState(true);};
               bws.onmessage=function(e){try{handleBCmd(JSON.parse(e.data));}catch(ex){}};
               bws.onclose=function(){bwsReady=false;bws=null;schedBwsReconnect(3000);};
               bws.onerror=function(){};
@@ -1167,12 +1212,15 @@ public sealed partial class WebPreviewProxyMiddleware
         })();</script>
         """;
 
-    private static string GetUrlRewriteScript(string routePrefix)
+    private static string GetUrlRewriteScript(string routePrefix, string initialCookieHeader = "")
     {
         return UrlRewriteScript.Replace(
             "var P=\"/webpreview\"",
             $"var P=\"{routePrefix}\"",
-            StringComparison.Ordinal);
+            StringComparison.Ordinal).Replace(
+                "/*__MT_INITIAL_COOKIES__*/\"\"",
+                $"\"{JsonEncodedText.Encode(initialCookieHeader)}\"",
+                StringComparison.Ordinal);
     }
 
 
@@ -1202,8 +1250,9 @@ public sealed partial class WebPreviewProxyMiddleware
         "Host",
         // Browser cookies are MT session cookies — upstream cookies come from CookieContainer
         "Cookie",
-        // MidTerm owns forwarded headers and must not let them accumulate across self-proxy hops
-        "X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host",
+        // Preview targets are independent websites, not trusted reverse-proxy backends.
+        // Never disclose the user's network or the supervising tlbx host.
+        "Forwarded", "Via", "X-Real-IP",
         // Internal loop-prevention header is for server-originated requests only
         InternalProxyRequestHeaderName,
         // WebSocket negotiation headers managed by ClientWebSocket
@@ -1584,7 +1633,6 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var msg = new HttpRequestMessage(method, url);
             ForwardRequestHeaders(context.Request, msg, routeKey, targetUri, upstreamOrigin);
-            AddForwardedHeaders(msg, context.Connection.RemoteIpAddress);
             if (_service.IsSelfTarget(msg.RequestUri!))
             {
                 msg.Headers.TryAddWithoutValidation(
@@ -1650,7 +1698,7 @@ public sealed partial class WebPreviewProxyMiddleware
             var canonicalTarget = canonicalUri.GetLeftPart(UriPartial.Authority) + targetUri.AbsolutePath;
             if (_service.GetPreviewSessionByRouteKey(routeKey) is { SessionId: var sessionId, PreviewName: var previewName })
             {
-                _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true);
+                _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true, preserveTargetRevision: true);
             }
         }
 
@@ -1683,9 +1731,9 @@ public sealed partial class WebPreviewProxyMiddleware
         }
     }
 
-    private async Task ProxyHtmlResponseAsync(HttpContext context, string routeKey, Uri targetUri, HttpResponseMessage upstreamResponse, string? finalUrl)
+    private async Task ProxyHtmlResponseAsync(HttpContext context, string routeKey, Uri targetUri, HttpResponseMessage upstreamResponse, string? finalUrl, string? documentHtml = null)
     {
-        var html = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
+        var html = documentHtml ?? await DecompressTextAsync(upstreamResponse, context.RequestAborted);
         var reloadToken = GetPreviewReloadToken(context.Request.Query);
 
         // Capture this before URL rewriting removes or changes the upstream base tag.
@@ -1772,7 +1820,8 @@ public sealed partial class WebPreviewProxyMiddleware
             : $"<script>history.replaceState(history.state,\"\",\"{JsonEncodedText.Encode(redirectedProxyPath)}\");</script>";
         html = MarkSubframeSources(html);
         html = InjectHeadContent(html,
-            $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix) + redirectPathScript);
+            $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix,
+                _service.GetBrowserCookies(routeKey, documentUri ?? targetUri).Header ?? "") + redirectPathScript);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");
@@ -2049,7 +2098,7 @@ public sealed partial class WebPreviewProxyMiddleware
                 var canonicalTarget = canonicalUri.GetLeftPart(UriPartial.Authority) + "/";
                 if (_service.GetPreviewSessionByRouteKey(routeKey) is { SessionId: var sessionId, PreviewName: var previewName })
                 {
-                    _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true);
+                    _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true, preserveTargetRevision: true);
                 }
             }
 
@@ -2080,7 +2129,7 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         foreach (var header in source.Headers)
         {
-            if (BlockedRequestHeaders.Contains(header.Key)
+            if (IsBlockedRequestHeader(header.Key)
                 || IsTlbxAuthenticationHeader(source, header.Key))
                 continue;
 
@@ -2091,8 +2140,9 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
             {
-                var refValue = RewriteRefererForUpstream(header.Value.ToString(), routeKey, currentTargetUri);
-                target.Headers.TryAddWithoutValidation(header.Key, refValue);
+                var refValue = RewriteRefererForUpstream(header.Value.ToString(), routeKey, currentTargetUri, source);
+                if (!string.IsNullOrEmpty(refValue))
+                    target.Headers.TryAddWithoutValidation(header.Key, refValue);
                 continue;
             }
 
@@ -2101,23 +2151,15 @@ public sealed partial class WebPreviewProxyMiddleware
 
     }
 
-    internal static void AddForwardedHeaders(HttpRequestMessage target, IPAddress? remoteAddress)
-    {
-        var targetUri = target.RequestUri
-            ?? throw new InvalidOperationException("A web preview upstream request must have a target URI.");
+    internal static bool IsBlockedRequestHeader(string name) =>
+        BlockedRequestHeaders.Contains(name)
+        || name.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase);
 
-        target.Headers.TryAddWithoutValidation(
-            "X-Forwarded-For",
-            remoteAddress?.ToString() ?? IPAddress.Loopback.ToString());
-        target.Headers.TryAddWithoutValidation("X-Forwarded-Proto", targetUri.Scheme);
-        target.Headers.TryAddWithoutValidation("X-Forwarded-Host", targetUri.Authority);
-    }
-
-    internal string RewriteRefererForUpstream(string refererValue, string currentRouteKey, Uri currentTargetUri)
+    internal string RewriteRefererForUpstream(string refererValue, string currentRouteKey, Uri currentTargetUri, HttpRequest? source = null)
     {
         if (!Uri.TryCreate(refererValue, UriKind.Absolute, out var refererUri))
         {
-            return refererValue;
+            return "";
         }
 
         if (!TryParseProxyRoute(refererUri.AbsolutePath, out var refererRouteKey, out var refererRemainingPath))
@@ -2126,9 +2168,13 @@ public sealed partial class WebPreviewProxyMiddleware
                 && _service.TryGetTargetUriByRouteKey(leakedRouteKey, out var leakedTargetUri)
                 && leakedTargetUri is not null)
             {
-                return BuildUpstreamUrlFromPath(leakedTargetUri, BuildUpstreamPath(leakedTargetUri, refererUri.AbsolutePath), refererUri.Query);
+                return BuildUpstreamUrlFromPath(leakedTargetUri, BuildUpstreamPath(leakedTargetUri, refererUri.AbsolutePath), StripPreviewBootstrapQuery(refererUri.Query));
             }
 
+            // Initial navigation refers to the tlbx shell, not an upstream page.
+            if (_service.IsSelfTarget(refererUri)
+                || (source is not null && refererUri.Host.Equals(source.Host.Host, StringComparison.OrdinalIgnoreCase)))
+                return "";
             return refererValue;
         }
 
@@ -2138,7 +2184,7 @@ public sealed partial class WebPreviewProxyMiddleware
             return !string.IsNullOrWhiteSpace(externalUrl)
                 && Uri.TryCreate(externalUrl, UriKind.Absolute, out var externalUri)
                 ? externalUri.ToString()
-                : refererValue;
+                : "";
         }
 
         var refererTarget = _service.GetTargetUriByRouteKey(refererRouteKey);
@@ -2150,11 +2196,11 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (refererTarget is null)
         {
-            return refererValue;
+            return "";
         }
 
         var upstreamPath = BuildUpstreamPath(refererTarget, refererRemainingPath);
-        return BuildUpstreamUrlFromPath(refererTarget, upstreamPath, refererUri.Query);
+        return BuildUpstreamUrlFromPath(refererTarget, upstreamPath, StripPreviewBootstrapQuery(refererUri.Query));
     }
 
     private static void AttachRequestBody(
@@ -2317,7 +2363,9 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (request is not null)
         {
-            foreach (var h in request.Headers)
+            // Typed header enumeration splits User-Agent into products/comments.
+            // Preserve its original spacing instead of inventing comma separators.
+            foreach (var h in request.Headers.NonValidated)
                 entry.RequestHeaders[h.Key] = string.Join(", ", h.Value);
             var cookieHeader = request.RequestUri is not null
                 ? _service.GetForwardedCookieHeader(routeKey, request.RequestUri)
@@ -2401,6 +2449,19 @@ public sealed partial class WebPreviewProxyMiddleware
 
             await ProxyHtmlResponseAsync(context, routeKey, targetUri, upstreamResponse, finalUrl);
         }
+        else if (ShouldRenderTextDocument(context.Request, upstreamResponse))
+        {
+            var targetUri = _service.GetTargetUriByRouteKey(routeKey);
+            if (targetUri is null)
+            {
+                context.Response.StatusCode = StatusCodes.Status502BadGateway;
+                return;
+            }
+
+            var text = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
+            await ProxyHtmlResponseAsync(context, routeKey, targetUri, upstreamResponse, finalUrl,
+                RenderTextDocument(text));
+        }
         else if (contentType is "text/css")
         {
             await ProxyCssResponseAsync(context, routeKey, upstreamResponse);
@@ -2415,6 +2476,31 @@ public sealed partial class WebPreviewProxyMiddleware
             await stream.CopyToAsync(context.Response.Body, context.RequestAborted);
         }
     }
+
+    internal static bool ShouldRenderTextDocument(HttpRequest request, HttpResponseMessage response)
+    {
+        // Only browser document navigations get a readable, controllable viewer.
+        // API calls, script loads and downloads retain their original bytes/type.
+        if (!string.Equals(request.Headers["Sec-Fetch-Mode"], "navigate", StringComparison.OrdinalIgnoreCase))
+            return false;
+        var destination = request.Headers["Sec-Fetch-Dest"].ToString();
+        if (destination is not ("document" or "iframe" or "frame"))
+            return false;
+        if (string.Equals(response.Content.Headers.ContentDisposition?.DispositionType, "attachment", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var mediaType = response.Content.Headers.ContentType?.MediaType;
+        return string.Equals(mediaType, "text/plain", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "text/json", StringComparison.OrdinalIgnoreCase)
+            || (mediaType?.StartsWith("application/", StringComparison.OrdinalIgnoreCase) == true
+                && mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase));
+    }
+
+    internal static string RenderTextDocument(string text) =>
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>Response</title>"
+        + "<style>body{margin:16px}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style>"
+        + "</head><body><pre>" + WebUtility.HtmlEncode(text) + "</pre></body></html>";
 
     private async Task ProxyFileAsync(HttpContext context, string routeKey, Uri targetUri, string path)
     {
@@ -2739,7 +2825,7 @@ public sealed partial class WebPreviewProxyMiddleware
         // Forward all request headers except blocked ones (same blocklist as HTTP)
         foreach (var header in context.Request.Headers)
         {
-            if (BlockedRequestHeaders.Contains(header.Key)
+            if (IsBlockedRequestHeader(header.Key)
                 || IsTlbxAuthenticationHeader(context.Request, header.Key))
                 continue;
             // Skip WebSocket upgrade headers — ClientWebSocket manages these
@@ -2756,7 +2842,9 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             else if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
             {
-                value = RewriteRefererForUpstream(value, routeKey, targetUri ?? new Uri(upstreamOrigin));
+                value = RewriteRefererForUpstream(value, routeKey, targetUri ?? new Uri(upstreamOrigin), context.Request);
+                if (string.IsNullOrEmpty(value))
+                    continue;
             }
 
             try

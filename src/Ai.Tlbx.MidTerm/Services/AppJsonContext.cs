@@ -27,6 +27,7 @@ using Ai.Tlbx.MidTerm.Services.Security;
 namespace Ai.Tlbx.MidTerm.Services;
 
 // --- Agent control plane ---
+[JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(ControlPlaneWorkItem))]
 [JsonSerializable(typeof(ControlPlaneWorkItemListResponse))]
 [JsonSerializable(typeof(CreateControlPlaneWorkItemRequest))]
@@ -215,6 +216,14 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(FileTreeEntry[]))]
 [JsonSerializable(typeof(FileSaveRequest))]
 [JsonSerializable(typeof(FileSaveResponse))]
+[JsonSerializable(typeof(FileDocumentResponse))]
+[JsonSerializable(typeof(FileOperationRequest))]
+[JsonSerializable(typeof(FileOperationResponse))]
+[JsonSerializable(typeof(FileOperationItem))]
+[JsonSerializable(typeof(FileRecoveryResponse))]
+[JsonSerializable(typeof(FileRestoreRequest))]
+[JsonSerializable(typeof(FileNavigationResponse))]
+[JsonSerializable(typeof(FileDocumentErrorResponse))]
 [JsonSerializable(typeof(LauncherPathResponse))]
 [JsonSerializable(typeof(LauncherDirectoryEntry))]
 [JsonSerializable(typeof(LauncherDirectoryEntry[]))]
@@ -330,6 +339,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(GitDebugSessionInfo))]
 [JsonSerializable(typeof(GitDebugSessionInfo[]))]
 [JsonSerializable(typeof(GitCommandLog))]
+[JsonSerializable(typeof(GitOperationRequest))]
+[JsonSerializable(typeof(GitOperationResponse))]
 
 // --- WebPreview ---
 [JsonSerializable(typeof(WebPreviewTargetRequest))]
@@ -355,6 +366,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 // --- Browser ---
 [JsonSerializable(typeof(BrowserCommandRequest))]
+[JsonSerializable(typeof(BrowserBatchRequest))]
+[JsonSerializable(typeof(BrowserBatchResponse))]
 [JsonSerializable(typeof(BrowserCommandResponse))]
 [JsonSerializable(typeof(BrowserCapabilitiesResponse))]
 [JsonSerializable(typeof(BrowserStatusResponse))]

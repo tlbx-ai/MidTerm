@@ -170,6 +170,15 @@ function measureTerminalCellDimensions(
   return { cellWidth, cellHeight };
 }
 
+function getTerminalViewportRect(
+  state: Pick<TerminalState, 'container'>,
+  container: HTMLElement,
+  isLayoutPane: boolean,
+): DOMRect {
+  // Split leaves include the session header; their terminal container does not.
+  return (isLayoutPane ? state.container : container).getBoundingClientRect();
+}
+
 function calculateOptimalDimensionsForViewport(
   state: Pick<TerminalState, 'terminal' | 'container'>,
   container: HTMLElement,
@@ -178,7 +187,7 @@ function calculateOptimalDimensionsForViewport(
   const cellDims = measureTerminalCellDimensions(state);
   if (!cellDims) return null;
 
-  const rect = container.getBoundingClientRect();
+  const rect = getTerminalViewportRect(state, container, isLayoutPane);
   const tabBarH = isLayoutPane ? 0 : getTabBarHeight();
   const dockWidth = isLayoutPane ? 0 : getDockPanelWidth();
   const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH - dockWidth;
@@ -571,8 +580,8 @@ function calculateViewportFit(
   container: HTMLElement,
   isLayoutPane: boolean,
 ): { cols: number; rows: number; cellWidth: number; cellHeight: number } | null {
-  const rect = container.getBoundingClientRect();
-  if (rect.width < 100 || rect.height < 100) {
+  const rect = getTerminalViewportRect(state, container, isLayoutPane);
+  if (rect.width <= 0 || rect.height <= 0) {
     return null;
   }
 
@@ -836,8 +845,20 @@ function prepareTerminalPresentation(state: TerminalState, context: TerminalScal
     label:
       scale < 1 ? buildScaledOverlayLabel(container, scale) : t('terminal.scaledViewExplanation'),
     mode,
-    scaleOwner: ownsSize && isMobileDenseTerminalModeEnabled(),
+    scaleOwner: shouldScaleTerminalOwner(state, ownsSize),
   } as const;
+}
+
+function shouldScaleTerminalOwner(state: TerminalState, ownsSize: boolean): boolean {
+  if (!ownsSize) {
+    return false;
+  }
+  const minimumRowsHeight =
+    MIN_TERMINAL_ROWS * (measureTerminalCellDimensions(state)?.cellHeight ?? 0);
+  // The PTY cannot shrink below its minimum rows. Present all of those rows
+  // inside a shorter split instead of clipping its bottom; keep normal owners natural.
+  const height = state.container.clientHeight;
+  return isMobileDenseTerminalModeEnabled() || (height > 0 && height < minimumRowsHeight);
 }
 
 function canonicalTerminalDimension(serverValue: number, terminalValue: number): number {
@@ -915,7 +936,7 @@ function normalizeTerminalScalingFactor(
   hasOptimalSizeMismatch: boolean,
 ): number {
   const scale = Math.min(availWidth / termWidth, availHeight / termHeight, 1);
-  if (!hasOptimalSizeMismatch && scale > SCALE_TOLERANCE) {
+  if (!hasOptimalSizeMismatch && scale > SCALE_TOLERANCE && termHeight <= availHeight) {
     return 1;
   }
 
@@ -1109,6 +1130,8 @@ function scheduleFooterReserveResize(): void {
 let foregroundResizeRecoveryScheduled = false;
 let foregroundResizeRecoveryTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
 let foregroundResizeRecoveryGeneration = 0;
+let foregroundResizeRecoveryPromise: Promise<void> | null = null;
+let finishForegroundResizeRecoveryPromise: (() => void) | null = null;
 let foregroundResizeRecoveryRetryCount = 0;
 let foregroundResizeRecoveryNeedsEmergencyFallback = false;
 const FOREGROUND_RESIZE_RECOVERY_TIMEOUT_MS = 250;
@@ -1142,6 +1165,11 @@ function finishForegroundResizeRecovery(generation: number): void {
     foregroundResizeRecoveryTimeout = null;
   }
   runForegroundResizeRecoveryPass();
+  const complete = finishForegroundResizeRecoveryPromise;
+  finishForegroundResizeRecoveryPromise = null;
+  foregroundResizeRecoveryPromise = null;
+  // The recovery pass may have replaced the renderer. Give its paint a frame.
+  requestAnimationFrame(() => requestAnimationFrame(() => complete?.()));
 }
 
 function requestForegroundResizeRecoveryFrame(generation: number): void {
@@ -1181,8 +1209,11 @@ function retryForegroundResizeRecovery(generation: number): void {
   }, FOREGROUND_RESIZE_RECOVERY_RETRY_MS);
 }
 
-export function scheduleForegroundResizeRecovery(): void {
-  if (foregroundResizeRecoveryScheduled) return;
+export function scheduleForegroundResizeRecovery(): Promise<void> {
+  if (foregroundResizeRecoveryPromise) return foregroundResizeRecoveryPromise;
+  foregroundResizeRecoveryPromise = new Promise<void>((resolve) => {
+    finishForegroundResizeRecoveryPromise = resolve;
+  });
   foregroundResizeRecoveryScheduled = true;
   foregroundResizeRecoveryRetryCount = 0;
   foregroundResizeRecoveryNeedsEmergencyFallback = false;
@@ -1191,6 +1222,7 @@ export function scheduleForegroundResizeRecovery(): void {
   foregroundResizeRecoveryTimeout = globalThis.setTimeout(() => {
     retryForegroundResizeRecovery(generation);
   }, FOREGROUND_RESIZE_RECOVERY_TIMEOUT_MS);
+  return foregroundResizeRecoveryPromise;
 }
 
 /**
@@ -1333,7 +1365,7 @@ export function setupResizeObserver(): void {
   });
 
   setupTerminalForegroundRecovery(() => {
-    scheduleForegroundResizeRecovery();
+    void scheduleForegroundResizeRecovery();
     claimEligibleVisibleTerminalSizes(true);
   });
 

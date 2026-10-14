@@ -1,5 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 namespace Ai.Tlbx.MidTerm.Common.Process;
 
@@ -10,13 +13,70 @@ public static class MidTermProcessPriority
     private static readonly Lock Sync = new();
     private static bool _enabled = true;
     private static ProcessPriorityClass _priorityClass = ProcessPriorityClass.AboveNormal;
+    // Process-lifetime handle; closing it never terminates hosted sessions.
+    private static readonly Dictionary<int, WindowsProcessPriorityJob> Jobs = [];
+    private static string? _instanceKey;
 
-    public static void Configure(bool enabled, string? priorityClassName)
+    public static void Configure(bool enabled, string? priorityClassName, string? instanceKey = null)
     {
         lock (Sync)
         {
             _enabled = enabled;
             _priorityClass = ResolvePriorityClass(priorityClassName);
+            // Reopen the same group after web-only updates with preserved hosts.
+            // Hash the private instance key so another user cannot precreate it.
+            _instanceKey = instanceKey;
+        }
+    }
+
+    internal static string GetJobName(string instanceKey, int sessionId) =>
+        string.Create(CultureInfo.InvariantCulture,
+            $"Global\\tlbx-priority-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(instanceKey)))}-session-{sessionId}");
+
+    public static SafeFileHandle? HoldInheritedJob(string? instanceId, string? ownerToken, Action<string>? warn = null)
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrEmpty(instanceId) || string.IsNullOrEmpty(ownerToken))
+            return null;
+        try
+        {
+            using var process = System.Diagnostics.Process.GetCurrentProcess();
+            return WindowsProcessPriorityJob.OpenLifetimeHandle(GetJobName($"{instanceId}:{ownerToken}", process.SessionId));
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            // Standalone hosts and old web servers have no priority group.
+            if (ex.NativeErrorCode != 2) warn?.Invoke($"Unable to retain runtime priority group: {ex.Message}");
+            return null;
+        }
+    }
+
+    public static void PrepareRuntimeJob(int sessionId, Action<string>? warn = null)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        try
+        {
+            lock (Sync)
+            {
+                // Publish the query-only lifetime handle before the host starts,
+                // without assigning the web service to this empty job.
+                EnsureRuntimeJob(sessionId);
+                if (Jobs.TryGetValue(sessionId, out var job))
+                    job.SetPriority(_enabled ? _priorityClass : ProcessPriorityClass.Normal);
+            }
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            warn?.Invoke($"Unable to prepare runtime priority group: {ex.Message}");
+        }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static void EnsureRuntimeJob(int sessionId)
+    {
+        if (!Jobs.ContainsKey(sessionId) && (_enabled || _instanceKey is not null))
+        {
+            Jobs.Add(sessionId, new WindowsProcessPriorityJob(
+                _instanceKey is null ? null : GetJobName(_instanceKey, sessionId)));
         }
     }
 
@@ -77,7 +137,7 @@ public static class MidTermProcessPriority
             return false;
         }
 
-        return current is not ProcessPriorityClass.High and not ProcessPriorityClass.RealTime;
+        return current is not ProcessPriorityClass.RealTime;
     }
 
     private static bool TryApply(
@@ -91,18 +151,7 @@ public static class MidTermProcessPriority
             return false;
         }
 
-        bool enabled;
         ProcessPriorityClass target;
-        lock (Sync)
-        {
-            enabled = _enabled;
-            target = _priorityClass;
-        }
-
-        if (!enabled)
-        {
-            return false;
-        }
 
         try
         {
@@ -112,12 +161,26 @@ public static class MidTermProcessPriority
             }
 
             var current = process.PriorityClass;
+            if (current == ProcessPriorityClass.RealTime) return false;
+            lock (Sync)
+            {
+                target = _enabled ? _priorityClass : ProcessPriorityClass.Normal;
+                // A job cannot span Windows logon sessions. In particular, mt
+                // runs in session 0 as LocalSystem and CreateProcessAsUser must
+                // not inherit its job when launching an interactive user's host.
+                // Keep mt outside the jobs and group hosted runtimes per session.
+                if (role != "mt") EnsureRuntimeJob(process.SessionId);
+                foreach (var job in Jobs.Values) job.SetPriority(target);
+                // Retain the job when disabled so existing children also return
+                // to Normal and future descendants follow the changed setting.
+                if (role != "mt" && Jobs.TryGetValue(process.SessionId, out var runtimeJob)) runtimeJob.Assign(process);
+                if (ShouldSetPriority(process.PriorityClass, target)) process.PriorityClass = target;
+            }
             if (!ShouldSetPriority(current, target))
             {
                 return false;
             }
 
-            process.PriorityClass = target;
             info?.Invoke(string.Create(
                 CultureInfo.InvariantCulture,
                 $"Applied tlbx process priority {target} to {role} PID {process.Id}"));

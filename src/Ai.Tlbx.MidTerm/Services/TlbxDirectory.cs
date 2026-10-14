@@ -13,11 +13,13 @@ public static class TlbxDirectory
     private static readonly object DirectoryGate = new();
 
     private static int _port;
+    private static string _cliHost = "localhost";
     private static AuthService? _authService;
 
-    public static void Initialize(int port, AuthService authService)
+    public static void Initialize(int port, AuthService authService, string bindAddress)
     {
         _port = port;
+        _cliHost = ResolveCliHost(bindAddress);
         _authService = authService;
     }
 
@@ -174,7 +176,7 @@ public static class TlbxDirectory
         {
             var token = _authService.CreateSessionToken();
             WriteInstanceCliScripts(tlbxDir, _port, token,
-                Environment.GetEnvironmentVariable("MIDTERM_LAUNCH_MODE") == "source-dev");
+                Environment.GetEnvironmentVariable("MIDTERM_LAUNCH_MODE") == "source-dev", _cliHost);
         }
         catch (Exception ex)
         {
@@ -182,7 +184,7 @@ public static class TlbxDirectory
         }
     }
 
-    internal static void WriteInstanceCliScripts(string tlbxDir, int port, string token, bool sourceDev)
+    internal static void WriteInstanceCliScripts(string tlbxDir, int port, string token, bool sourceDev, string host = "localhost")
     {
         if (sourceDev)
         {
@@ -190,21 +192,27 @@ public static class TlbxDirectory
             // Keep its fallback URL/credential pair together without replacing the supervisor's.
             var instanceDir = Path.Combine(tlbxDir, "instances", port.ToString(CultureInfo.InvariantCulture));
             Directory.CreateDirectory(instanceDir);
-            TlbxCliScriptWriter.WriteScripts(instanceDir, port, token);
-            TlbxGraphsScriptWriter.WriteScripts(instanceDir, port, token);
+            TlbxCliScriptWriter.WriteScripts(instanceDir, port, token, host);
+            TlbxGraphsScriptWriter.WriteScripts(instanceDir, port, token, host);
             if (File.Exists(Path.Combine(tlbxDir, "tlbx_cli.ps1")) ||
                 File.Exists(Path.Combine(tlbxDir, "tlbx_cli.sh")))
                 return;
         }
 
-        TlbxCliScriptWriter.WriteScripts(tlbxDir, port, token);
-        TlbxGraphsScriptWriter.WriteScripts(tlbxDir, port, token);
+        TlbxCliScriptWriter.WriteScripts(tlbxDir, port, token, host);
+        TlbxGraphsScriptWriter.WriteScripts(tlbxDir, port, token, host);
         if (!sourceDev)
         {
             TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.sh"));
             TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.ps1"));
         }
     }
+
+    internal static string ResolveCliHost(string bindAddress) => bindAddress switch
+    {
+        "0.0.0.0" or "::" or "[::]" or "*" or "+" => "localhost",
+        _ => new UriBuilder("https", bindAddress).Uri.Host
+    };
 
     private static void TryDeleteLegacyCli(string path)
     {
@@ -280,10 +288,16 @@ public static class TlbxDirectory
 
         ## Browser Control
 
-        Requires the web preview panel to be open in tlbx.
+        Requires a connected tlbx UI tab. `mt_open <url>` creates a background preview without switching the active terminal; the preview dock need not be visible.
+        Execution ownership is per terminal and named preview, independent of terminal sizing after initialization. A connected size-owner tab or the sole connected UI initializes ownership. Established owners remain sticky, even offline.
+        If ownership is ambiguous or the owner is offline, list exact connected tab IDs with `GET /api/browser/ui-clients`, then run `mt_claim_preview --browser <browserId>` and `mt_open <url>` to hand off explicitly.
+        Handoffs advance the ownership generation; stale in-flight replies fail. A command whose response was lost may have executed: inspect state before retrying an action.
         tlbx injects `MT_SESSION_ID` automatically for this terminal session.
+        CLI helpers resolve ordinary shells and dedicated Agent Controller hosts from live process ancestry. Native Codex tools carry `CODEX_SESSION_ID` and `CODEX_THREAD_ID`; with a shared daemon, ancestry and inherited `MT_SESSION_ID` cannot identify the terminal. Keep Codex's IDs unchanged. Private Codex tool ancestry resolves automatically until a shared app-server boundary is encountered. For a shared backend tlbx automatically asks the local Codex daemon to echo a fresh `TLBXCTX:...` challenge in the root thread, waits for exactly one live terminal to display it, then continues the original command. This local echo uses no model call. If automatic discovery is unavailable, the helper returns the proof and blocks the operation. For UNBOUND, the required next action is to retry the exact original command in a separate shell tool call after the error is displayed, before continuing other work. The failed operation is still pending. If tool output is hidden, print only the proof line in a separate tool call before retrying. If the proof is ambiguous, run `mt_context repair`, then retry. Input, thread/client changes and expired proofs require a fresh proof. Titles and cwd never identify ownership. Explicit target IDs remain authoritative after the calling context is verified; never guess an ID to bypass a context error.
+        Explicit terminal launch commands, bookmarks and worker commands keep the arguments you supplied. tlbx does not insert Codex CLI flags; resumes retain the saved command and append the requested resume target.
         Browser helpers default to the current `MT_SESSION_ID` plus `MT_PREVIEW_NAME` (`default` unless changed).
-        When spawning a nested `bash` or `pwsh`, forward that context explicitly; `mt_context --bash` and `mt_context --pwsh` print reusable export commands for child shells.
+        When spawning a nested `bash` or `pwsh`, forward that context explicitly; `mt_context --bash` and `mt_context --pwsh` export the owning server (`MT_BASE_URL`), session ID and preview. Apply these exports before loading the child shell's helper. A session ID belongs to one server; copying only the ID can cause a false-looking 404 on another instance.
+        For Git commands in a shell without inherited context, run `mt_sessions` on the intended server, then `Mt-Repo add PATH -SessionId ID` (PowerShell) or `mt_repo --session ID add PATH` (Bash). Use the verified live ID; do not reuse IDs from previous sessions or select another session automatically after a failure.
         Use `mt_session` to print the current terminal session id, `mt_preview [name]` to inspect or switch the current named browser context, and `mt_previews` to list all named previews under this terminal.
         Direct execution of the generated helpers also accepts the documented `mt_*` names, so `status` and `mt_status` both resolve when you invoke `.tlbx/tlbx_cli.sh` or `.tlbx/tlbx_cli.ps1` directly.
 
@@ -295,6 +309,7 @@ public static class TlbxDirectory
         - Start with `mt_outline` (10x smaller than `mt_query`)
         - Use `mt_query SELECTOR --text` for text-only output
         - Batch JS reads: `mt_exec "({a: expr1, b: expr2})"`. Objects and arrays return JSON; promises are awaited and rejected promises report errors.
+        - Batch actions: PowerShell `mt_batch @(@{command='fill';selector='#name';value='test'},@{command='query';selector='#name'})`; bash `mt_batch '[{"command":"query","selector":"h1"},{"command":"screenshot"}]'`. Results include per-step duration and `failedIndex`. Never replay a failed batch blindly. For a click/submit that loads a new document, set `waitForNavigation=true`; use a following `wait` for SPA state changes.
         - Use DOM reads for exact text/state. Docked screenshots reconstruct the page and may differ for CSS masks, popovers, or other complex graphics; compare the actual browser before judging a visual defect.
         - After actions, verify with `mt_wait` or `mt_query`, not `mt_outline`
         - Check `mt_log error` after unexpected behavior
@@ -314,11 +329,12 @@ public static class TlbxDirectory
         | `mt_scroll [sel] [deltaY\|top\|bottom] [deltaX]` | Scroll page or a scrollable container |
         | `mt_wheel [sel] [up\|down\|deltaY] [steps]` | Send mouse-wheel-style input and return measured scroll position/progress |
         | `mt_exec <js>` | Execute JS in page context |
-        | `mt_wait <sel> [timeout]` | Wait for element (default 5s) |
+        | `mt_wait <sel> [timeout]` | Wait for element (default 15s; returns immediately when found) |
         | `mt_log [error\|warn\|all]` | Console log buffer |
         | `mt_links` | All links on page |
         | `mt_forms [sel]` | Form structure and values |
-        | `mt_screenshot` | Save screenshot to .tlbx/screenshots/ |
+        | `mt_screenshot [-FullPage / --full-page]` | Save a viewport screenshot; full-page capture is explicit and slower |
+        | `mt_batch <commands>` | Run 1–32 ordered browser commands in one HTTP request; stops on first error and returns partial results |
         | `mt_snapshot` | Save DOM snapshot to .tlbx/snapshot_*/ |
         | `mt_session` | Print the current tlbx terminal session id |
         | `mt_context [format]` | Print reusable session-context exports (`text`, `bash`, `pwsh`, or `json`) |
@@ -326,7 +342,7 @@ public static class TlbxDirectory
         | `mt_topic <text>` | Set the current ad-hoc session topic shown in the sidebar (`mt_topic --clear` clears it) |
         | `mt_preview [name]` | Print or switch the current named preview (`default`, `user1`, `user2`, ...) |
         | `mt_previews` | List named previews for the current terminal session |
-        | `mt_claim_preview` | Explicitly assign the current named preview to the connected tlbx browser |
+        | `mt_claim_preview [--browser <browserId>]` | Explicitly hand off this preview to an exact connected UI tab; the ID may be omitted only with one UI |
         | `mt_claim_main_browser [browserId]` | Make the selected browser the leading browser for terminal sizing |
         | `mt_navigate <url>` | Set the current named web preview target |
         | `mt_url` | Upstream page URL (not proxy URL) |
@@ -591,7 +607,7 @@ public static class TlbxDirectory
         - If mt_status still shows `state: waiting` after mt_open, treat that as a tlbx browser-attachment bug and inspect mt_proxylog plus mt_log error
         - If mt_status shows `ui clients: 0`, the owning tlbx browser tab is gone; reopen the outer tlbx UI before debugging the preview target itself
         - Browser command failures now print the server error body instead of silently returning nothing
-        - If mt_status reports multiple clients, tlbx prefers the focused/visible preview client first, then falls back to the main browser's newest preview connection
+        - Scoped browser commands and status use the same exact preview owner. Focus, visibility, global main-browser selection and newer connections never redirect them; use `mt_claim_preview --browser <browserId>` for handoff.
         - If mt_open returns "No tlbx browser UI is connected", there is no live browser tab attached to /ws/state
         - tmux list-panes shows pane IDs (%0, %1, ...) — use these with send-keys and capture-pane
         """;

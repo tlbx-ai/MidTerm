@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Terminal } from '@xterm/xterm';
 import * as constants from '../../constants';
 import * as state from '../../state';
 import * as stores from '../../stores';
@@ -292,6 +293,10 @@ async function loadHarness(nowValues: number[]): Promise<Harness> {
     throw new Error('Mock WebSocket was not created');
   }
 
+  const initialSync = new Uint8Array(constants.MUX_HEADER_SIZE);
+  initialSync[0] = constants.MUX_TYPE_SYNC_COMPLETE;
+  ws.onmessage?.({ data: initialSync.buffer } as MessageEvent<ArrayBuffer>);
+
   return {
     decodeSessionId,
     encodeSessionId,
@@ -312,18 +317,18 @@ describe('muxChannel', () => {
     socket.dispatchEvent(new MessageEvent('message', { data: new ArrayBuffer(0) }));
     expect(await result).toBe(true);
     expect(socket.close).not.toHaveBeenCalled();
-    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith('message', expect.any(Function));
   });
 
   it('detects a silent stale-open mux and ignores results for replaced sockets', async () => {
     vi.useFakeTimers();
     await loadHarness([0]);
     const result = probeMuxWebSocket();
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(await result).toBe(false);
     const retired = probeMuxWebSocket();
     connectMuxWebSocket();
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(await retired).toBe(true);
     vi.useRealTimers();
   });
@@ -438,6 +443,8 @@ describe('muxChannel', () => {
       backgroundColor: 'rgb(0, 0, 0)',
     }));
     vi.stubGlobal('document', {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
       createElement: () => ({
         className: '',
         style: {},
@@ -484,6 +491,52 @@ describe('muxChannel', () => {
     expect(harness.stores.$dataLossDetected.get()).toBeNull();
   });
 
+  it('preserves split UTF-8 and VT sequences through the real xterm parser', async () => {
+    const harness = await loadHarness(new Array(64).fill(0));
+    const sessionId = 'sess1234';
+    const fake = attachFakeTerminal(harness.sessionTerminals, sessionId);
+    const terminal = new Terminal({ cols: 100, rows: 24, scrollback: 100 });
+    const text = 'x'.repeat(4095) + '€' + 'y'.repeat(4092) + '\x1b[31mRED\x1b[0m';
+    const bytes = new TextEncoder().encode(text);
+    let finish!: () => void;
+    const parsed = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    fake.writeMock.mockImplementation((data, callback) => {
+      terminal.write(
+        data,
+        callback
+          ? () => {
+              callback();
+              finish();
+            }
+          : undefined,
+      );
+    });
+    try {
+      harness.ws.onmessage?.({
+        data: buildSequencedOutputMessage(
+          harness.encodeSessionId,
+          harness.constants.MUX_TYPE_OUTPUT,
+          harness.constants.MUX_HEADER_SIZE,
+          sessionId,
+          BigInt(bytes.length),
+          text,
+        ),
+      } as MessageEvent<ArrayBuffer>);
+      await parsed;
+      const rendered = Array.from(
+        { length: terminal.buffer.active.length },
+        (_, i) => terminal.buffer.active.getLine(i)?.translateToString(true) ?? '',
+      ).join('');
+      expect(rendered).toBe('x'.repeat(4095) + '€' + 'y'.repeat(4092) + 'RED');
+      expect(fake.writeMock.mock.calls.every(([data]) => data.length <= 4096)).toBe(true);
+      expect(getBrowserTransportSnapshot(sessionId)?.renderedSeq).toBe(BigInt(bytes.length));
+    } finally {
+      terminal.dispose();
+    }
+  });
+
   it('bounds bytes handed to xterm until its parse callbacks catch up', async () => {
     const harness = await loadHarness(new Array(64).fill(0));
     const sessionId = 'sess1234';
@@ -505,13 +558,19 @@ describe('muxChannel', () => {
 
     await Promise.resolve();
     await Promise.resolve();
-    expect(terminal.writeMock).toHaveBeenCalledTimes(8);
+    expect(terminal.writeMock.mock.calls.reduce((bytes, [data]) => bytes + data.length, 0)).toBe(
+      512 * 1024,
+    );
     expect(terminal.pendingCallbacks).toHaveLength(8);
+    expect(terminal.writeMock.mock.calls.every(([data]) => data.length <= 4096)).toBe(true);
+    expect(getBrowserTransportSnapshot(sessionId)?.renderedSeq).toBe(0n);
 
     terminal.pendingCallbacks.splice(0).forEach((callback) => callback());
     await Promise.resolve();
     await Promise.resolve();
-    expect(terminal.writeMock).toHaveBeenCalledTimes(9);
+    expect(terminal.writeMock.mock.calls.reduce((bytes, [data]) => bytes + data.length, 0)).toBe(
+      576 * 1024,
+    );
     expect(harness.stores.$dataLossDetected.get()).toBeNull();
   });
 
@@ -539,10 +598,14 @@ describe('muxChannel', () => {
 
     await Promise.resolve();
     await Promise.resolve();
-    expect(terminal.writeMock).toHaveBeenCalledTimes(8);
+    expect(terminal.writeMock.mock.calls.reduce((bytes, [data]) => bytes + data.length, 0)).toBe(
+      512 * 1024,
+    );
 
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(terminal.writeMock).toHaveBeenCalledTimes(8);
+    expect(terminal.writeMock.mock.calls.reduce((bytes, [data]) => bytes + data.length, 0)).toBe(
+      512 * 1024,
+    );
     expect(stalled).toHaveBeenCalledTimes(1);
     const cursorBeforeRetiredCallbacks = getBrowserTransportSnapshot(sessionId)?.renderedSeq;
     terminal.pendingCallbacks.splice(0).forEach((callback) => callback());
@@ -1214,7 +1277,7 @@ describe('muxChannel', () => {
     expect(getBrowserTransportSnapshot(sessionId)?.receivedSeq).toBe(11n);
 
     harness.ws.send.mockClear();
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(1000);
 
     const backgroundDeltaRequest = harness.ws.send.mock.calls
       .map((call) => call[0] as Uint8Array)

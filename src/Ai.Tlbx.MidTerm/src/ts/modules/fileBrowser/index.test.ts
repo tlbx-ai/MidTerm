@@ -6,7 +6,7 @@ const processListeners: Array<
 > = [];
 
 const createTreeViewMock = vi.fn();
-const setTreeRootMock = vi.fn();
+const setCwdMock = vi.fn();
 const destroyTreeViewMock = vi.fn();
 const renderPreviewMock = vi.fn();
 const clearPreviewMock = vi.fn();
@@ -38,8 +38,20 @@ vi.mock('../process', () => ({
 
 vi.mock('./treeView', () => ({
   createTreeView: createTreeViewMock,
-  setTreeRoot: setTreeRootMock,
+  applyTreeRoot: vi.fn(),
+  getTreeSelection: vi.fn(() => null),
+  setTreeSelection: vi.fn(),
   destroyTreeView: destroyTreeViewMock,
+}));
+
+vi.mock('./navigation', () => ({
+  BrowserNavigation: class {
+    root = {};
+    hasLocation = false;
+    busy = false;
+    setCwd = setCwdMock;
+    setActive = vi.fn();
+  },
 }));
 
 vi.mock('./filePreview', () => ({
@@ -52,7 +64,7 @@ describe('fileBrowser', () => {
     tabActivatedCallbacks.clear();
     processListeners.length = 0;
     createTreeViewMock.mockReset();
-    setTreeRootMock.mockReset();
+    setCwdMock.mockReset();
     destroyTreeViewMock.mockReset();
     renderPreviewMock.mockReset();
     clearPreviewMock.mockReset();
@@ -82,10 +94,12 @@ describe('fileBrowser', () => {
 
     const treeContainer = {} as HTMLElement;
     const previewContainer = {} as HTMLElement;
+    const browser = { prepend: vi.fn(), dataset: {} };
     const panel = {
       querySelector: vi.fn((selector: string) => {
         if (selector === '.file-browser-tree') return treeContainer;
         if (selector === '.file-browser-preview') return previewContainer;
+        if (selector === '.file-browser') return browser;
         return null;
       }),
     };
@@ -96,8 +110,15 @@ describe('fileBrowser', () => {
       treeContainer,
       'session-1',
       expect.any(Function),
+      expect.any(Function),
+      expect.any(Function),
     );
     expect(clearPreviewMock).toHaveBeenCalledWith(previewContainer);
-    expect(setTreeRootMock).toHaveBeenCalledWith('session-1', 'Q:\\repos\\MidTerm');
+    expect(setCwdMock).toHaveBeenCalledWith('Q:\\repos\\MidTerm');
+    processListeners.forEach((listener) =>
+      listener('session-1', { foregroundCwd: 'Q:\\repos\\Another' }),
+    );
+    expect(setCwdMock).toHaveBeenLastCalledWith('Q:\\repos\\Another');
+    expect(clearPreviewMock).toHaveBeenCalledTimes(1);
   });
 });

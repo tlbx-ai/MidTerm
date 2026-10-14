@@ -15,13 +15,19 @@ import {
 } from '../stores';
 import { openGitDock, closeGitDock } from './git/gitDock';
 import { openCommandsDock, closeCommandsDock } from './commands/dock';
-import { closeFileViewerDock, openFileViewerDock } from './fileViewer';
+import {
+  closeFileViewerDock,
+  getFileViewerNavigationState,
+  openFileViewerDock,
+} from './fileViewer';
+import type { FileNavigationSnapshot } from './fileViewer/navigationHistory';
 
 type InnerDock = 'none' | 'git' | 'commands' | 'file-viewer';
 
 interface SessionDockInfo {
   innerDock: InnerDock;
   filePath: string | null;
+  fileNavigation?: FileNavigationSnapshot;
 }
 
 const sessionDocks = new Map<string, SessionDockInfo>();
@@ -29,7 +35,12 @@ const sessionDocks = new Map<string, SessionDockInfo>();
 function readCurrentDock(): SessionDockInfo {
   if ($gitPanelDocked.get()) return { innerDock: 'git', filePath: null };
   if ($commandsPanelDocked.get()) return { innerDock: 'commands', filePath: null };
-  if ($fileViewerDocked.get()) return { innerDock: 'file-viewer', filePath: $dockedFilePath.get() };
+  if ($fileViewerDocked.get())
+    return {
+      innerDock: 'file-viewer',
+      filePath: $dockedFilePath.get(),
+      fileNavigation: getFileViewerNavigationState(),
+    };
   return { innerDock: 'none', filePath: null };
 }
 
@@ -50,7 +61,7 @@ function restoreDock(sessionId: string, info: SessionDockInfo): void {
       openCommandsDock(sessionId);
       break;
     case 'file-viewer':
-      if (info.filePath) openFileViewerDock(info.filePath);
+      if (info.filePath) openFileViewerDock(info.filePath, info.fileNavigation);
       break;
   }
 }

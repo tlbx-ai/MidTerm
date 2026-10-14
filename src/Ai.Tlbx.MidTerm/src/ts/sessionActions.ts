@@ -88,6 +88,7 @@ import { t } from './modules/i18n';
 import { closeOperatorView } from './modules/operator';
 import { closeActionGraphsView } from './modules/actionGraphs';
 import { repairTerminalDisplay } from './modules/terminal/displayRepair';
+import { hasDirtySessionFiles, confirmSessionFileNavigation } from './modules/fileViewer/editState';
 
 const log = createLogger('main');
 
@@ -148,6 +149,9 @@ function focusAlreadyVisibleSession(sessionId: string, focusTerminal: boolean): 
 }
 
 function hideStandaloneTerminalContainers(): void {
+  dom.terminalsArea?.querySelectorAll(':scope > .session-wrapper').forEach((wrapper) => {
+    wrapper.classList.add('hidden');
+  });
   sessionTerminals.forEach((state, id) => {
     if (!isSessionInLayout(id)) {
       state.container.classList.add('hidden');
@@ -163,7 +167,7 @@ export function createSessionActionHandlers({
   isAppServerControlOnlySession,
 }: SessionActionsDeps) {
   function syncStandaloneSessionWrapper(sessionId: string): void {
-    dom.terminalsArea?.querySelectorAll('.session-wrapper').forEach((wrapper) => {
+    dom.terminalsArea?.querySelectorAll(':scope > .session-wrapper').forEach((wrapper) => {
       (wrapper as HTMLElement).classList.toggle(
         'hidden',
         wrapper.getAttribute('data-session-id') !== sessionId,
@@ -288,6 +292,13 @@ export function createSessionActionHandlers({
   }
 
   function selectSession(sessionId: string, options?: SessionSelectionOptions): void {
+    const previous = $activeSessionId.get();
+    if (previous && previous !== sessionId && hasDirtySessionFiles(previous)) {
+      void confirmSessionFileNavigation(previous).then((accepted) => {
+        if (accepted && $activeSessionId.get() === previous) selectSession(sessionId, options);
+      });
+      return;
+    }
     closeOverlayViews();
     closeMobileActionsMenu();
     if (options?.closeSettingsPanel !== false) {
@@ -311,6 +322,12 @@ export function createSessionActionHandlers({
   const closingSessions = new Set<string>();
 
   function deleteSession(sessionId: string): void {
+    if (hasDirtySessionFiles(sessionId)) {
+      void confirmSessionFileNavigation(sessionId).then((accepted) => {
+        if (accepted) deleteSession(sessionId);
+      });
+      return;
+    }
     if (isHubSessionId(sessionId)) {
       const record = getHubSessionRecord(sessionId);
       destroySessionWrapper(sessionId);

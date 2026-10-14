@@ -1,3 +1,4 @@
+import { recoverSettingsAfterBrowserResume } from './modules/comms/settingsChannel';
 /**
  * tlbx Terminal Client
  *
@@ -619,6 +620,7 @@ function bindTerminalVisibilitySync(): void {
 
   $activeSessionId.subscribe(() => {
     syncMuxTerminalVisibility();
+    syncMobileTabActionState();
     reportBrowserActivity(undefined, true);
   });
 
@@ -733,7 +735,6 @@ function setupVisibilityChangeHandler(includeSettingsChannel: boolean): void {
   setupBrowserLifecycleRecovery({
     getVisibleTerminalSessionIds,
     syncMuxTerminalVisibility,
-    focusActiveTerminal,
     applyScrollbackProtection,
     recoverTerminalPresentationAfterResume: scheduleForegroundResizeRecovery,
     keepTerminalOutputActiveWhileHidden: isMobilePiPActive,
@@ -751,7 +752,7 @@ function setupVisibilityChangeHandler(includeSettingsChannel: boolean): void {
       ? { recoverAppServerControlAfterResume: recoverAppServerControlAfterBrowserResume }
       : {}),
     ...(includeSettingsChannel
-      ? { reconnectSettingsAfterLongResume: connectSettingsWebSocket }
+      ? { recoverSettingsAfterResume: recoverSettingsAfterBrowserResume }
       : {}),
   });
 }
@@ -1294,7 +1295,7 @@ function bindEvents(): void {
     clickActiveSessionTabBarControl('[data-action="share"]');
   });
   bindClick('btn-mobile-git', () => {
-    clickActiveSessionTabBarControl('[data-action="git"]');
+    clickActiveSessionTabBarControl('button[data-action="git"]');
   });
 
   // Fullscreen toggle (mobile) - hide button if API not supported
