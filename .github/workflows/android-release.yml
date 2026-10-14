@@ -53,6 +53,15 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
 
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          cmdline-tools-version: '16111833'
+
+      - name: Install Android 16 SDK
+        run: |
+          android --sdk "$ANDROID_HOME" sdk install 'platforms/android-36'
+          android --sdk "$ANDROID_HOME" sdk install 'build-tools/37.0.0'
+
       - name: Decode keystore
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > $RUNNER_TEMP/upload.jks
 

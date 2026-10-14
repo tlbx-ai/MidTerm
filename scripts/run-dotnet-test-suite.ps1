@@ -8,6 +8,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$dotnetHostPath = (Get-Command dotnet -CommandType Application | Select-Object -First 1).Source
 
 $projects = @(
     @{
@@ -42,7 +43,8 @@ try {
             $project.Path,
             "-c", $Configuration,
             "--no-logo",
-            "-v", "minimal"
+            "-v", "minimal",
+            "--environment", "DOTNET_HOST_PATH=$dotnetHostPath"
         ) + $project.ExtraArgs
 
         if ($WarnAsError) {

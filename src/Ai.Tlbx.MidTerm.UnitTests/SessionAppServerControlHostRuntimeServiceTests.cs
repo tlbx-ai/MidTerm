@@ -372,7 +372,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
 
             var attached = await runtime.EnsureAttachedAsync(session.Id, session, ct: Xunit.TestContext.Current.CancellationToken);
 
-            Assert.True(attached);
+            Assert.True(attached, GetTrackedHostError(hostRuntime, session.Id));
             Assert.True(runtime.IsAttached(session.Id));
         }
         finally
@@ -415,7 +415,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
 
             var attached = await runtime.EnsureAttachedAsync(session.Id, session, ct: Xunit.TestContext.Current.CancellationToken);
 
-            Assert.True(attached);
+            Assert.True(attached, GetTrackedHostError(hostRuntime, session.Id));
             Assert.True(runtime.IsAttached(session.Id));
 
             var turn = await runtime.StartTurnAsync(
@@ -933,5 +933,12 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
         var args = new object?[] { sessionId, null };
         var found = tryGetValue.Invoke(states, args) as bool? == true;
         return found ? args[1] : null;
+    }
+
+    private static string? GetTrackedHostError(SessionAppServerControlHostRuntimeService runtime, string sessionId)
+    {
+        var state = GetTrackedHostState(runtime, sessionId);
+        var error = state?.GetType().GetProperty("LastError", BindingFlags.Instance | BindingFlags.Public)?.GetValue(state) as string;
+        return $"{error}; base={AppContext.BaseDirectory}; dotnet={Environment.GetEnvironmentVariable("DOTNET_HOST_PATH")}; host={SessionAppServerControlHostRuntimeService.ResolveDevHostDllPath(AppContext.BaseDirectory)}";
     }
 }

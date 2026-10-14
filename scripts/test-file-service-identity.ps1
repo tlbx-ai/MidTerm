@@ -29,7 +29,7 @@ try {
     if (Test-Path -LiteralPath $exitPath) { Remove-Item -LiteralPath $exitPath }
     $config = @{ root=$fixtureRoot; sid=$ownerIdentity.User.Value; pid=$PID; started=(Get-Process -Id $PID).StartTime.ToFileTimeUtc(); storage=(Join-Path $artifactDirectory 'state'); outside=$outside }
     [IO.File]::WriteAllText($configPath, ($config | ConvertTo-Json -Compress))
-    $dotnetPath = (Get-Command dotnet -CommandType Application).Source
+    $dotnetPath = (Get-Command dotnet -CommandType Application | Select-Object -First 1).Source
     $project = Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm.UnitTests/Ai.Tlbx.MidTerm.UnitTests.csproj'
     $workerPath = Join-Path $artifactDirectory 'worker.ps1'
     $worker = @'
