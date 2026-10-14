@@ -62,9 +62,9 @@ public class BrowserBatchTests
     {
         var service = new BrowserCommandService();
         var task = service.WaitForControllableAsync("https://example.com", "s", "default",
-            timeout: TimeSpan.FromSeconds(5), pollInterval: TimeSpan.FromSeconds(4));
+            timeout: TimeSpan.FromSeconds(5), pollInterval: TimeSpan.FromSeconds(4), cancellationToken: Xunit.TestContext.Current.CancellationToken);
         service.TryRegisterClient("c", "s", "default", "p", _ => { });
-        var result = await task.WaitAsync(TimeSpan.FromSeconds(1));
+        var result = await task.WaitAsync(TimeSpan.FromSeconds(1), Xunit.TestContext.Current.CancellationToken);
         Assert.True(result.Controllable);
     }
 

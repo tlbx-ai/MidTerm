@@ -49,10 +49,15 @@ function loadFromStorage(): void {
     }
     const level = localStorage.getItem(LEVEL_STORAGE_KEY);
     if (level !== null) {
-      const num = parseInt(level, 10);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison -- Validate the numeric storage value against the enum bounds.
-      if (num >= LogLevel.Exception && num <= LogLevel.Verbose) {
-        minLevel = num;
+      const storedLevel = [
+        LogLevel.Exception,
+        LogLevel.Error,
+        LogLevel.Warn,
+        LogLevel.Info,
+        LogLevel.Verbose,
+      ].find((candidate) => String(candidate) === level);
+      if (storedLevel !== undefined) {
+        minLevel = storedLevel;
       }
     }
   } catch {

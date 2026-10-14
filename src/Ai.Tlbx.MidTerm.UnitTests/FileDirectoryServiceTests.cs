@@ -62,8 +62,8 @@ public sealed class FileDirectoryServiceTests : IDisposable
         { WorkingDirectory = _folder, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true } };
         foreach (var arg in args) process.StartInfo.ArgumentList.Add(arg);
         process.Start();
-        var stdout = process.StandardOutput.ReadToEndAsync(); var stderr = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync(); await stdout;
+        var stdout = process.StandardOutput.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken); var stderr = process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+        await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken); await stdout;
         Assert.True(process.ExitCode == 0, await stderr);
     }
 

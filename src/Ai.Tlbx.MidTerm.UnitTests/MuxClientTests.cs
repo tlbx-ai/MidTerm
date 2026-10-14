@@ -183,7 +183,7 @@ public sealed class MuxClientTests
 
         Assert.True(client.QueueOutput("hidden01", 14, 120, 30, RentOutput("fresh")));
         await WaitForAsync(() => socket.SentFrames.Count >= 1);
-        await Task.Delay(30);
+        await Task.Delay(30, Xunit.TestContext.Current.CancellationToken);
 
         var frame = Assert.Single(socket.SentFrames);
         Assert.True(MuxProtocol.TryParseFrame(frame, out var outputType, out var outputSessionId, out var outputPayload));
@@ -214,14 +214,14 @@ public sealed class MuxClientTests
                 return new MuxClient.RecoveryResult(true, 0, 0, false);
             },
             CancellationToken.None);
-        await recoveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await recoveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
 
         Assert.True(client.QueueOutput(sessionId, 4, 120, 30, RentOutput("live")));
         Assert.False(await client.ExecuteRecoveryAsync(
             sessionId,
             static (_, _) => Task.FromResult(new MuxClient.RecoveryResult(true, 0, 0, false)),
             CancellationToken.None));
-        await Task.Delay(30);
+        await Task.Delay(30, Xunit.TestContext.Current.CancellationToken);
         Assert.Empty(socket.SentFrames);
 
         releaseRecovery.TrySetResult();
@@ -251,7 +251,7 @@ public sealed class MuxClientTests
         client.SetActiveSession(sessionId);
 
         Assert.True(client.QueueOutput(sessionId, 4, 120, 30, RentOutput("live")));
-        await Task.Delay(30);
+        await Task.Delay(30, Xunit.TestContext.Current.CancellationToken);
         Assert.Empty(socket.SentFrames);
 
         client.ResumeFlush();
@@ -293,7 +293,7 @@ public sealed class MuxClientTests
                 return new MuxClient.RecoveryResult(true, 10, 10, false);
             },
             CancellationToken.None);
-        await recoveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await recoveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
 
         client.NotifyDataLoss(
             sessionId,
@@ -301,7 +301,7 @@ public sealed class MuxClientTests
             2,
             missingSequenceStart: 10,
             missingSequenceEndExclusive: 12);
-        await Task.Delay(30);
+        await Task.Delay(30, Xunit.TestContext.Current.CancellationToken);
         Assert.Single(socket.SentFrames);
 
         releaseRecovery.TrySetResult();
@@ -338,10 +338,10 @@ public sealed class MuxClientTests
                 return new MuxClient.RecoveryResult(true, 0, 0, false);
             },
             CancellationToken.None);
-        await recoveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await recoveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
 
         sessionActive = false;
-        await client.RemoveSessionAsync(sessionId).WaitAsync(TimeSpan.FromSeconds(2));
+        await client.RemoveSessionAsync(sessionId).WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
 
         Assert.False(await recovery);
         Assert.False(client.TryGetPausedSession(sessionId, out _));
@@ -378,7 +378,7 @@ public sealed class MuxClientTests
 
         var first = SharedOutputBuffer.Rent(32 * 1024);
         Assert.True(client.QueueOutput("session-1", 32 * 1024, 120, 30, first));
-        await socket.SendStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        await socket.SendStarted.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
 
         var accepted = 0;
         for (var i = 0; i < 2_000; i++)
@@ -415,7 +415,7 @@ public sealed class MuxClientTests
         Assert.True(client.HasSessionBufferForTests(sessionId));
 
         sessionActive = false;
-        await client.RemoveSessionAsync(sessionId).WaitAsync(TimeSpan.FromSeconds(2));
+        await client.RemoveSessionAsync(sessionId).WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         Assert.False(client.HasSessionBufferForTests(sessionId));
 
         var late = RentOutput("late");
@@ -441,7 +441,7 @@ public sealed class MuxClientTests
             client.SetBackgroundSessions(new HashSet<string>(StringComparer.Ordinal) { backgroundSessionId });
 
             Assert.True(client.QueueOutput(activeSessionId, 1, 120, 30, RentOutput("1")));
-            await socket.FirstActiveFrameStarted.WaitAsync(TimeSpan.FromSeconds(2));
+            await socket.FirstActiveFrameStarted.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
 
             for (var sequence = 1; sequence <= 63; sequence++)
             {
@@ -464,7 +464,7 @@ public sealed class MuxClientTests
 
             Assert.NotNull(lateBackgroundBuffer);
             socket.ReleaseFirstActiveFrame();
-            await socket.SecondActiveFrameStarted.WaitAsync(TimeSpan.FromSeconds(2));
+            await socket.SecondActiveFrameStarted.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
 
             // The live pump may drain and transfer background buffers to the
             // owned writer queue while the first physical send is blocked. The
@@ -649,7 +649,7 @@ public sealed class MuxClientTests
         Assert.True(client.QueueOutput(sessionId, 2, 120, 30, RentOutput("b")));
 
         await WaitForAsync(() => socket.SentFrames.Count >= 1);
-        await Task.Delay(30);
+        await Task.Delay(30, Xunit.TestContext.Current.CancellationToken);
 
         var frame = Assert.Single(socket.SentFrames);
         Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out var parsedSessionId, out var payload));
@@ -673,7 +673,7 @@ public sealed class MuxClientTests
         client.SetBackgroundSessions(new HashSet<string>(StringComparer.Ordinal) { sessionId });
 
         Assert.True(client.QueueOutput(sessionId, 1, 120, 30, RentOutput("a")));
-        await Task.Delay(80);
+        await Task.Delay(80, Xunit.TestContext.Current.CancellationToken);
         Assert.Empty(socket.SentFrames);
 
         await WaitForAsync(() => socket.SentFrames.Count == 1);

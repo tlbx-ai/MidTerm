@@ -35,8 +35,9 @@ try {
     $worker = @'
 $ErrorActionPreference = 'Stop'
 $env:TLBX_FILE_IDENTITY_FIXTURE = '__CONFIG__'
+Set-Location (Split-Path '__PROJECT__' -Parent)
 try {
-    & '__DOTNET__' test '__PROJECT__' -c '__CONFIGURATION__' --no-build --no-restore --filter 'FullyQualifiedName~FileServiceIdentityTests' --logger 'trx;LogFileName=service-identity.trx' --results-directory '__ARTIFACTS__' 1> '__STDOUT__' 2> '__STDERR__'
+    & '__DOTNET__' test --project '__PROJECT__' -c '__CONFIGURATION__' --no-build --no-restore --filter-class '*FileServiceIdentityTests' --report-trx --report-trx-filename 'service-identity.trx' --results-directory '__ARTIFACTS__' 1> '__STDOUT__' 2> '__STDERR__'
     $testCode = $LASTEXITCODE
 } catch { $_ | Out-String | Add-Content -LiteralPath '__STDERR__'; $testCode = 1 }
 [IO.File]::WriteAllText('__EXIT__', (@{ exitCode=$testCode } | ConvertTo-Json -Compress))

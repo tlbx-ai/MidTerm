@@ -9,7 +9,7 @@ internal static class AppServerControlHostTestClient
     public static async Task WriteCommandAsync(StreamWriter writer, AppServerControlHostCommandEnvelope command)
     {
         await writer.WriteLineAsync(JsonSerializer.Serialize(command, AppServerControlHostJsonContext.Default.AppServerControlHostCommandEnvelope));
-        await writer.FlushAsync();
+        await writer.FlushAsync(Xunit.TestContext.Current.CancellationToken);
     }
 
     public static async Task<AppServerControlHostHello> ReadHelloAsync(StreamReader reader)
@@ -187,7 +187,7 @@ internal static class AppServerControlHostTestClient
                 return window;
             }
 
-            await Task.Delay(100);
+            await Task.Delay(100, Xunit.TestContext.Current.CancellationToken);
         }
 
         throw new TimeoutException($"Timed out waiting for a matching history window for AppServerControl session '{sessionId}'.");
@@ -238,9 +238,9 @@ internal static class AppServerControlHostTestClient
 
     private static async Task<string> ReadLineWithTimeoutAsync(StreamReader reader, TimeSpan? timeout = null)
     {
-        var readTask = reader.ReadLineAsync();
+        var readTask = reader.ReadLineAsync(Xunit.TestContext.Current.CancellationToken);
         var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(30);
-        var completed = await Task.WhenAny(readTask, Task.Delay(effectiveTimeout));
+        var completed = await Task.WhenAny(readTask, Task.Delay(effectiveTimeout, Xunit.TestContext.Current.CancellationToken));
         if (!ReferenceEquals(completed, readTask))
         {
             var secondsText = effectiveTimeout.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);

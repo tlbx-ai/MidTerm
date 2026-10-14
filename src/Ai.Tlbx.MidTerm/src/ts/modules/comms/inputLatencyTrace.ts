@@ -143,7 +143,7 @@ function getInputTraceSessionState(sessionId: string): {
 export function maybeSendInputTraceMarker(
   sessionId: string,
   nowMs: number,
-  sendFrame: (frame: Uint8Array) => void,
+  sendFrame: (frame: Uint8Array<ArrayBuffer>) => void,
   encodeSessionId: (buffer: Uint8Array, offset: number, sessionId: string) => void,
 ): void {
   if (!inputLatencyTracingEnabled) {

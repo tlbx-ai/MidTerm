@@ -178,8 +178,8 @@ public sealed class MtAgentHostIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -243,8 +243,8 @@ public sealed class MtAgentHostIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 

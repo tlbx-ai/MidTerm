@@ -12,8 +12,9 @@
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
     <PublishAot>true</PublishAot>
     <ServerGarbageCollection>false</ServerGarbageCollection>
-    <SqlitePclRawVersion>2.1.13</SqlitePclRawVersion>
-    <SkiaSharpVersion>4.151.2</SkiaSharpVersion>
+    <SqlitePclRawVersion>3.0.5</SqlitePclRawVersion>
+    <SqliteNativeVersion>3.53.4</SqliteNativeVersion>
+    <SkiaSharpVersion>4.153.1</SkiaSharpVersion>
     <RuntimeIdentifiers>win-x64;win-x86;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
   </PropertyGroup>
 
@@ -78,10 +79,11 @@
        conditions RID-less, so putting these in a RID-conditional group has no effect. -->
   <ItemGroup>
     <PackageReference Include="Acornima" Version="1.8.0" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.13" />
     <PackageReference Include="SkiaSharp" Version="$(SkiaSharpVersion)" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="$(SkiaSharpVersion)" />
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="$(SqlitePclRawVersion)" />
+    <PackageReference Include="SQLitePCLRaw.config.e_sqlite3" Version="$(SqlitePclRawVersion)" />
+    <PackageReference Include="SourceGear.sqlite3" Version="$(SqliteNativeVersion)" />
   </ItemGroup>
 
   <!-- RID builds embed the matching SQLite native library so mt stays a single binary:
@@ -91,7 +93,7 @@
     <_SqliteNativeFileName Condition="$(RuntimeIdentifier.StartsWith('win'))">e_sqlite3.dll</_SqliteNativeFileName>
     <_SqliteNativeFileName Condition="$(RuntimeIdentifier.StartsWith('linux'))">libe_sqlite3.so</_SqliteNativeFileName>
     <_SqliteNativeFileName Condition="$(RuntimeIdentifier.StartsWith('osx'))">libe_sqlite3.dylib</_SqliteNativeFileName>
-    <_SqliteNativeLibPath>$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))sqlitepclraw.lib.e_sqlite3/$(SqlitePclRawVersion)/runtimes/$(RuntimeIdentifier)/native/$(_SqliteNativeFileName)</_SqliteNativeLibPath>
+    <_SqliteNativeLibPath>$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))sourcegear.sqlite3/$(SqliteNativeVersion)/runtimes/$(RuntimeIdentifier)/native/$(_SqliteNativeFileName)</_SqliteNativeLibPath>
   </PropertyGroup>
   <ItemGroup Condition="'$(RuntimeIdentifier)' != '' And Exists('$(_SqliteNativeLibPath)')">
     <EmbeddedResource Include="$(_SqliteNativeLibPath)" LogicalName="tlbx.native.$(_SqliteNativeFileName)" />
@@ -121,12 +123,12 @@
 
   <!-- Windows-specific: CsWin32 for ConPTY P/Invoke -->
   <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('win')) Or '$(RuntimeIdentifier)' == ''">
-    <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.333">
+    <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.363">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.11" />
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.13" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.13" />
   </ItemGroup>
 
   <!-- ============================================ -->

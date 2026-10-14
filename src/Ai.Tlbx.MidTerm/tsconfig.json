@@ -21,9 +21,15 @@
     "declaration": false,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./src/ts",
-    "baseUrl": "./src/ts"
+    "rootDir": "./src/ts"
   },
-  "include": ["src/ts/**/*.ts"],
-  "exclude": ["node_modules", "dist", "wwwroot", "**/*.test.ts"]
+  "include": [
+    "src/ts/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "wwwroot",
+    "**/*.test.ts"
+  ]
 }

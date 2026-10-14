@@ -24,7 +24,7 @@ public sealed class MtAgentHostGrokIntegrationTests
         var imagePath = Path.Combine(fakeGrok.Root, "pasted-image.png");
         var imageBytes = Convert.FromBase64String(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
-        await File.WriteAllBytesAsync(imagePath, imageBytes);
+        await File.WriteAllBytesAsync(imagePath, imageBytes, Xunit.TestContext.Current.CancellationToken);
 
         try
         {
@@ -245,8 +245,8 @@ public sealed class MtAgentHostGrokIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -293,8 +293,8 @@ public sealed class MtAgentHostGrokIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -316,7 +316,7 @@ public sealed class MtAgentHostGrokIntegrationTests
             {
                 try
                 {
-                    var json = await File.ReadAllTextAsync(capturePath);
+                    var json = await File.ReadAllTextAsync(capturePath, Xunit.TestContext.Current.CancellationToken);
                     if (!string.IsNullOrWhiteSpace(json))
                     {
                         var capture = JsonSerializer.Deserialize<FakeGrokLaunchCapture>(json);
@@ -334,7 +334,7 @@ public sealed class MtAgentHostGrokIntegrationTests
                 }
             }
 
-            await Task.Delay(50);
+            await Task.Delay(50, Xunit.TestContext.Current.CancellationToken);
         }
 
         throw new TimeoutException($"Timed out waiting for fake Grok launch capture at '{capturePath}'.");

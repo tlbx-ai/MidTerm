@@ -18,10 +18,10 @@ public sealed class MuxInboundDispatcherTests
         var order = new ConcurrentQueue<int>();
         await dispatcher.EnqueueAsync("recovery:a", async ct => { replay.TrySetResult(); await Task.Delay(Timeout.Infinite, ct); });
         await dispatcher.EnqueueAsync("input:a", async ct => { input.TrySetResult(); await Task.Delay(Timeout.Infinite, ct); }, 10);
-        await Task.WhenAll(replay.Task, input.Task).WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.WhenAll(replay.Task, input.Task).WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         await dispatcher.EnqueueAsync("input:b", _ => { order.Enqueue(1); return Task.CompletedTask; }, 4);
         await dispatcher.EnqueueAsync("input:b", _ => { order.Enqueue(2); peer.TrySetResult(); return Task.CompletedTask; }, 10);
-        await peer.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await peer.Task.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         Assert.Equal(new[] { 1, 2 }, order);
     }
 
@@ -34,12 +34,12 @@ public sealed class MuxInboundDispatcherTests
         var all = Signal();
         var completed = 0;
         await dispatcher.EnqueueAsync("input:a", async ct => { entered.TrySetResult(); await release.Task.WaitAsync(ct); }, MuxInboundDispatcher.MaxBytes);
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         var admission = dispatcher.EnqueueAsync("input:b", _ => { Interlocked.Increment(ref completed); all.TrySetResult(); return Task.CompletedTask; }, 1).AsTask();
         Assert.False(admission.IsCompleted);
         release.TrySetResult();
-        await admission.WaitAsync(TimeSpan.FromSeconds(2));
-        await all.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await admission.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
+        await all.Task.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         Assert.Equal(1, completed);
     }
 
@@ -54,12 +54,12 @@ public sealed class MuxInboundDispatcherTests
         var followup = Signal();
         var calls = new ConcurrentQueue<string>();
         await dispatcher.EnqueueAsync("recovery:a", async ct => { entered.TrySetResult(); await release.Task.WaitAsync(ct); }, mergePriority: 0);
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         await dispatcher.EnqueueAsync("recovery:a", _ => { calls.Enqueue("strongest"); followup.TrySetResult(); return Task.CompletedTask; }, mergePriority: strongest);
         for (var i = 0; i < 100; i++)
             await dispatcher.EnqueueAsync("recovery:a", _ => { calls.Enqueue("weaker"); return Task.CompletedTask; }, mergePriority: weaker);
         release.TrySetResult();
-        await followup.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await followup.Task.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         Assert.Equal(new[] { "strongest" }, calls, StringComparer.Ordinal);
     }
 
@@ -84,8 +84,8 @@ public sealed class MuxInboundDispatcherTests
                 }, 32);
             }
         });
-        await Task.WhenAll(producers).WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.WhenAll(done.Select(signal => signal.Task)).WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(producers).WaitAsync(TimeSpan.FromSeconds(5), Xunit.TestContext.Current.CancellationToken);
+        await Task.WhenAll(done.Select(signal => signal.Task)).WaitAsync(TimeSpan.FromSeconds(5), Xunit.TestContext.Current.CancellationToken);
         foreach (var result in results) Assert.Equal(Enumerable.Range(0, 250), result);
     }
 
@@ -97,12 +97,12 @@ public sealed class MuxInboundDispatcherTests
         var release = Signal();
         var output = new ConcurrentQueue<int>();
         await dispatcher.EnqueueAsync("input:a", async ct => { entered.TrySetResult(); await release.Task.WaitAsync(ct); output.Enqueue(1); }, 10);
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         await dispatcher.EnqueueAsync("input:a", _ => { output.Enqueue(2); return Task.CompletedTask; }, 10);
         var closing = dispatcher.CompleteAsync(CancellationToken.None);
         Assert.False(closing.IsCompleted);
         release.TrySetResult();
-        await closing.WaitAsync(TimeSpan.FromSeconds(2));
+        await closing.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         Assert.Equal(new[] { 1, 2 }, output);
     }
 
@@ -112,9 +112,9 @@ public sealed class MuxInboundDispatcherTests
         var dispatcher = new MuxInboundDispatcher(_ => Assert.Fail("Unexpected work failure"), CancellationToken.None);
         var entered = Signal();
         await dispatcher.EnqueueAsync("input:a", async ct => { entered.TrySetResult(); await Task.Delay(Timeout.Infinite, ct); }, MuxInboundDispatcher.MaxBytes);
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         var admission = dispatcher.EnqueueAsync("input:b", _ => Task.CompletedTask, 1).AsTask();
-        await dispatcher.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        await dispatcher.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => admission);
     }
 }

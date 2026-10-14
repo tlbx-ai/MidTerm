@@ -38,14 +38,15 @@ try {
         Write-Host "Running .NET tests: $($project.Name)" -ForegroundColor Cyan
         $args = @(
             "test",
+            "--project",
             $project.Path,
             "-c", $Configuration,
-            "--nologo",
-            "--verbosity", "minimal"
+            "--no-logo",
+            "-v", "minimal"
         ) + $project.ExtraArgs
 
         if ($WarnAsError) {
-            $args += "-warnaserror"
+            $args += "-p:TreatWarningsAsErrors=true"
         }
 
         & dotnet @args

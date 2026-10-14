@@ -19,14 +19,14 @@ public sealed class GitReadStateTests : IDisposable
     private async Task<GitOperationRequest> PrepareCommit()
     {
         await Git("init", "--quiet"); await Git("config", "user.name", "Read state acceptance"); await Git("config", "user.email", "state@tlbx.invalid"); await Git("config", "commit.gpgSign", "false"); await Git("config", "core.autocrlf", "false");
-        await File.WriteAllTextAsync(Path.Combine(_root, "file.txt"), "Baseline\n"); await Git("add", "."); await Git("commit", "--quiet", "-m", "Baseline");
-        await File.WriteAllTextAsync(Path.Combine(_root, "file.txt"), "Reviewed content ä\n"); await Git("add", ".");
+        await File.WriteAllTextAsync(Path.Combine(_root, "file.txt"), "Baseline\n", Xunit.TestContext.Current.CancellationToken); await Git("add", "."); await Git("commit", "--quiet", "-m", "Baseline");
+        await File.WriteAllTextAsync(Path.Combine(_root, "file.txt"), "Reviewed content ä\n", Xunit.TestContext.Current.CancellationToken); await Git("add", ".");
         var status = await GitCommandRunner.GetStatusAsync(_root);
         return new() { Action = "commit", OperationId = Guid.NewGuid().ToString("D"), Message = "Confirmed independently", ExpectedIndexVersion = status.IndexVersion, ExpectedHead = status.HeadHash };
     }
     private async Task Hook(string text)
     {
-        var path = Path.Combine(_root, ".git", "hooks", "post-commit"); await File.WriteAllTextAsync(path, "#!/bin/sh\n" + text + "\n");
+        var path = Path.Combine(_root, ".git", "hooks", "post-commit"); await File.WriteAllTextAsync(path, "#!/bin/sh\n" + text + "\n", Xunit.TestContext.Current.CancellationToken);
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
     }
 

@@ -47,9 +47,9 @@ public sealed class CodexCliIdentityServiceTests
         try
         {
             Assert.False(await CodexCliIdentityService.ExistsAsync(root, home, CancellationToken.None));
-            await File.WriteAllTextAsync(path, "{\"type\":\"session_meta\",\"payload\":{\"id\":\"wrong\"}}\n");
+            await File.WriteAllTextAsync(path, "{\"type\":\"session_meta\",\"payload\":{\"id\":\"wrong\"}}\n", Xunit.TestContext.Current.CancellationToken);
             Assert.False(await CodexCliIdentityService.ExistsAsync(root, home, CancellationToken.None));
-            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new { type = "session_meta", payload = new { id = root } }) + "\n");
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new { type = "session_meta", payload = new { id = root } }) + "\n", Xunit.TestContext.Current.CancellationToken);
             // Codex keeps resumed rollouts open for append. Readers must share write access on Windows.
             using var writer = activeWriter
                 ? new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete)

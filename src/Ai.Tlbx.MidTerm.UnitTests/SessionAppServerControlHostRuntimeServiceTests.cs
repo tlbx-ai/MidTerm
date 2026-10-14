@@ -65,7 +65,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             ForegroundName = "codex"
         };
 
-        var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+        var attached = await runtime.EnsureAttachedAsync(session.Id, session, ct: Xunit.TestContext.Current.CancellationToken);
         Assert.True(attached);
         Assert.True(runtime.IsAttached(session.Id));
 
@@ -75,7 +75,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             {
                 Text = "Inspect the workspace.",
                 Attachments = []
-            });
+            }, Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal("codex", turn.Provider);
         Assert.Equal("accepted", turn.Status);
@@ -86,7 +86,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             new AppServerControlRequestDecisionRequest
             {
                 Decision = "accept"
-            });
+            }, Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal("accepted", resolved.Status);
 
@@ -115,7 +115,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
         await using var runtime = new SessionAppServerControlRuntimeService(sessionManager, profileService, hostRuntime);
 
         var imagePath = Path.Combine(fakeCodex.Root, "sample.png");
-        await File.WriteAllBytesAsync(imagePath, [1, 2, 3, 4]);
+        await File.WriteAllBytesAsync(imagePath, [1, 2, 3, 4], Xunit.TestContext.Current.CancellationToken);
 
         var session = new SessionInfoDto
         {
@@ -124,7 +124,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             ForegroundName = "codex"
         };
 
-        var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+        var attached = await runtime.EnsureAttachedAsync(session.Id, session, ct: Xunit.TestContext.Current.CancellationToken);
         Assert.True(attached);
         Assert.True(runtime.IsAttached(session.Id));
 
@@ -142,7 +142,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                         MimeType = "image/png"
                     }
                 ]
-            });
+            }, Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal("codex", turn.Provider);
         Assert.Equal("accepted", turn.Status);
@@ -160,7 +160,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             new AppServerControlRequestDecisionRequest
             {
                 Decision = "accept"
-            });
+            }, Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal("accepted", resolved.Status);
 
@@ -201,7 +201,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             ForegroundName = "codex"
         };
 
-        var attached = await runtime.EnsureAttachedAsync(sessionId, codexSession);
+        var attached = await runtime.EnsureAttachedAsync(sessionId, codexSession, ct: Xunit.TestContext.Current.CancellationToken);
         Assert.True(attached);
         Assert.True(runtime.IsAttached(sessionId));
 
@@ -213,7 +213,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             ForegroundProcessIdentity = "shell"
         };
 
-        var reusedAttach = await runtime.EnsureAttachedAsync(sessionId, shellSession);
+        var reusedAttach = await runtime.EnsureAttachedAsync(sessionId, shellSession, ct: Xunit.TestContext.Current.CancellationToken);
         Assert.True(reusedAttach);
 
         var turn = await runtime.StartTurnAsync(
@@ -222,7 +222,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             {
                 Text = "Confirm the reused attach still accepts turns.",
                 Attachments = []
-            });
+            }, Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal("accepted", turn.Status);
 
@@ -250,7 +250,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             ForegroundName = "codex"
         };
 
-        var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+        var attached = await runtime.EnsureAttachedAsync(session.Id, session, ct: Xunit.TestContext.Current.CancellationToken);
         Assert.True(attached);
         _ = await runtime.StartTurnAsync(
             session.Id,
@@ -258,7 +258,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             {
                 Text = "Inspect the repo and ask user for the mode.",
                 Attachments = []
-            });
+            }, Xunit.TestContext.Current.CancellationToken);
 
         var requestSnapshot = await WaitForSnapshotAsync(
             runtime,
@@ -280,7 +280,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                         Answers = ["Safe"]
                     }
                 ]
-            });
+            }, Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal("accepted", resolved.Status);
 
@@ -315,7 +315,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             ForegroundName = "codex"
         };
 
-        var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+        var attached = await runtime.EnsureAttachedAsync(session.Id, session, ct: Xunit.TestContext.Current.CancellationToken);
         Assert.True(attached);
         _ = await runtime.StartTurnAsync(
             session.Id,
@@ -323,7 +323,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             {
                 Text = "Run a turn that will be interrupted.",
                 Attachments = []
-            });
+            }, Xunit.TestContext.Current.CancellationToken);
 
         var startedSnapshot = await WaitForSnapshotAsync(
             runtime,
@@ -337,7 +337,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             new AppServerControlInterruptRequest
             {
                 TurnId = startedSnapshot!.CurrentTurn.TurnId
-            });
+            }, Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal("accepted", interrupted.Status);
 
@@ -370,7 +370,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 ForegroundCommandLine = $"\"{fakeCodex.ExecutablePath}\" --yolo"
             };
 
-            var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+            var attached = await runtime.EnsureAttachedAsync(session.Id, session, ct: Xunit.TestContext.Current.CancellationToken);
 
             Assert.True(attached);
             Assert.True(runtime.IsAttached(session.Id));
@@ -413,7 +413,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 }
             };
 
-            var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+            var attached = await runtime.EnsureAttachedAsync(session.Id, session, ct: Xunit.TestContext.Current.CancellationToken);
 
             Assert.True(attached);
             Assert.True(runtime.IsAttached(session.Id));
@@ -424,7 +424,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 {
                     Text = "Continue from the existing thread.",
                     Attachments = []
-                });
+                }, Xunit.TestContext.Current.CancellationToken);
 
             Assert.Equal("accepted", turn.Status);
             Assert.Equal("thread-remote-1", turn.ThreadId);
@@ -480,7 +480,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             ForegroundName = "codex"
         };
 
-        var attached = await runtime.EnsureAttachedAsync(session.Id, session);
+        var attached = await runtime.EnsureAttachedAsync(session.Id, session, ct: Xunit.TestContext.Current.CancellationToken);
 
         Assert.False(attached);
         Assert.False(runtime.IsAttached(session.Id));
@@ -493,7 +493,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 {
                     Text = "Host attach failed, so App Server Controller must not invent a second Codex runtime.",
                     Attachments = []
-                }));
+                }, Xunit.TestContext.Current.CancellationToken));
 
         Assert.Equal("App Server Controller runtime is not attached.", error.Message);
     }
@@ -520,7 +520,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 instanceIdentity,
                 mode: "synthetic");
 
-            Assert.True(await initialRuntime.EnsureAttachedAsync(session.Id, "codex", session));
+            Assert.True(await initialRuntime.EnsureAttachedAsync(session.Id, "codex", session, ct: Xunit.TestContext.Current.CancellationToken));
             var hostPid = await WaitForHostPidAsync(instanceIdentity, session.Id);
 
             await using var restartedRuntime = new SessionAppServerControlHostRuntimeService(
@@ -528,9 +528,9 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 instanceIdentity,
                 mode: "synthetic");
 
-            Assert.True(await restartedRuntime.RecoverExistingHostAsync(session.Id, "codex", session));
+            Assert.True(await restartedRuntime.RecoverExistingHostAsync(session.Id, "codex", session, ct: Xunit.TestContext.Current.CancellationToken));
 
-            var terminated = await restartedRuntime.TerminateAllOwnedHostsAsync();
+            var terminated = await restartedRuntime.TerminateAllOwnedHostsAsync(Xunit.TestContext.Current.CancellationToken);
 
             Assert.Equal(1, terminated);
             Assert.True(await WaitForConditionAsync(() => !ProcessExists(hostPid)));
@@ -570,7 +570,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 instanceIdentity,
                 mode: "synthetic");
 
-            var attached = await initialRuntime.EnsureAttachedAsync(session.Id, "codex", session);
+            var attached = await initialRuntime.EnsureAttachedAsync(session.Id, "codex", session, ct: Xunit.TestContext.Current.CancellationToken);
             Assert.True(attached);
 
             var turn = await initialRuntime.StartTurnAsync(
@@ -579,7 +579,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 {
                     Text = "Persist this App Server Controller conversation across restart.",
                     Attachments = []
-                });
+                }, Xunit.TestContext.Current.CancellationToken);
 
             Assert.Equal("accepted", turn.Status);
             var initialSnapshot = await WaitForSnapshotAsync(
@@ -594,7 +594,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 instanceIdentity,
                 mode: "synthetic");
 
-            var recovered = await restartedRuntime.RecoverExistingHostAsync(session.Id, "codex", session);
+            var recovered = await restartedRuntime.RecoverExistingHostAsync(session.Id, "codex", session, ct: Xunit.TestContext.Current.CancellationToken);
             Assert.True(recovered);
 
             var recoveredSnapshot = await WaitForSnapshotAsync(
@@ -603,14 +603,14 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 current => current.CurrentTurn.State == "completed" &&
                            current.Streams.AssistantText.Contains("Persist this App Server Controller conversation across restart.", StringComparison.Ordinal));
             Assert.NotNull(recoveredSnapshot);
-            var fullHistorySnapshot = await restartedRuntime.GetHistoryWindowAsync(session.Id, 0, 200);
+            var fullHistorySnapshot = await restartedRuntime.GetHistoryWindowAsync(session.Id, 0, 200, ct: Xunit.TestContext.Current.CancellationToken);
             Assert.NotNull(fullHistorySnapshot);
             Assert.Contains(
                 fullHistorySnapshot!.History,
                 entry => entry.ItemType == "user_message" &&
                          entry.Body.Contains("Persist this App Server Controller conversation across restart.", StringComparison.Ordinal));
             Assert.Equal(initialSnapshot!.Streams.AssistantText, recoveredSnapshot.Streams.AssistantText);
-            await restartedRuntime.DetachAsync(session.Id);
+            await restartedRuntime.DetachAsync(session.Id, Xunit.TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -652,14 +652,14 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 profileService,
                 initialHostRuntime);
 
-            Assert.True(await initialRuntime.EnsureAttachedAsync(initialSession.Id, initialSession));
+            Assert.True(await initialRuntime.EnsureAttachedAsync(initialSession.Id, initialSession, ct: Xunit.TestContext.Current.CancellationToken));
             var turn = await initialRuntime.StartTurnAsync(
                 initialSession.Id,
                 new AppServerControlTurnRequest
                 {
                     Text = prompt,
                     Attachments = []
-                });
+                }, Xunit.TestContext.Current.CancellationToken);
 
             Assert.Equal("accepted", turn.Status);
             var initialSnapshot = await WaitForSnapshotAsync(
@@ -689,7 +689,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 ForegroundProcessIdentity = "shell"
             };
 
-            var attached = await restartedRuntime.EnsureAttachedAsync(shellLikeSession.Id, shellLikeSession);
+            var attached = await restartedRuntime.EnsureAttachedAsync(shellLikeSession.Id, shellLikeSession, ct: Xunit.TestContext.Current.CancellationToken);
 
             Assert.True(attached);
             var recoveredSnapshot = await WaitForSnapshotAsync(
@@ -700,14 +700,14 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
             Assert.NotNull(recoveredSnapshot);
             Assert.Equal(initialSnapshot!.Thread.ThreadId, recoveredSnapshot!.Thread.ThreadId);
 
-            var fullHistorySnapshot = await restartedRuntime.GetHistoryWindowAsync(shellLikeSession.Id, 0, 200);
+            var fullHistorySnapshot = await restartedRuntime.GetHistoryWindowAsync(shellLikeSession.Id, 0, 200, ct: Xunit.TestContext.Current.CancellationToken);
             Assert.NotNull(fullHistorySnapshot);
             Assert.Contains(
                 fullHistorySnapshot!.History,
                 entry => entry.ItemType == "user_message" &&
                          entry.Body.Contains(prompt, StringComparison.Ordinal));
 
-            await restartedRuntime.DetachAsync(shellLikeSession.Id);
+            await restartedRuntime.DetachAsync(shellLikeSession.Id, Xunit.TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -743,7 +743,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 instanceIdentity,
                 mode: "synthetic");
 
-            Assert.True(await initialRuntime.EnsureAttachedAsync(session.Id, "codex", session));
+            Assert.True(await initialRuntime.EnsureAttachedAsync(session.Id, "codex", session, ct: Xunit.TestContext.Current.CancellationToken));
 
             var hostPid = await WaitForTrackedHostPidAsync(initialRuntime, session.Id);
             Assert.True(hostPid > 0);
@@ -754,7 +754,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 instanceIdentity,
                 mode: "synthetic");
 
-            Assert.True(await recoveredRuntime.RecoverExistingHostAsync(session.Id, "codex", session));
+            Assert.True(await recoveredRuntime.RecoverExistingHostAsync(session.Id, "codex", session, ct: Xunit.TestContext.Current.CancellationToken));
             Assert.False(HasTrackedHostProcess(recoveredRuntime, session.Id));
 
             recoveredRuntime.Forget(session.Id);
@@ -781,16 +781,16 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
         for (var i = 0; i < 80; i++)
         {
             runtime.TryGetCachedHistoryWindow(sessionId, out var snapshot);
-            snapshot ??= await runtime.GetHistoryWindowAsync(sessionId);
+            snapshot ??= await runtime.GetHistoryWindowAsync(sessionId, ct: Xunit.TestContext.Current.CancellationToken);
             if (snapshot is not null && predicate(snapshot))
             {
                 return snapshot;
             }
 
-            await Task.Delay(25);
+            await Task.Delay(25, Xunit.TestContext.Current.CancellationToken);
         }
 
-        return await runtime.GetHistoryWindowAsync(sessionId).ConfigureAwait(false) ??
+        return await runtime.GetHistoryWindowAsync(sessionId, ct: Xunit.TestContext.Current.CancellationToken).ConfigureAwait(false) ??
                (runtime.TryGetCachedHistoryWindow(sessionId, out var finalSnapshot) ? finalSnapshot : null);
     }
 
@@ -802,16 +802,16 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
         for (var i = 0; i < 80; i++)
         {
             hostRuntime.TryGetCachedHistoryWindow(sessionId, out var snapshot);
-            snapshot ??= await hostRuntime.GetHistoryWindowAsync(sessionId);
+            snapshot ??= await hostRuntime.GetHistoryWindowAsync(sessionId, ct: Xunit.TestContext.Current.CancellationToken);
             if (snapshot is not null && predicate(snapshot))
             {
                 return snapshot;
             }
 
-            await Task.Delay(25);
+            await Task.Delay(25, Xunit.TestContext.Current.CancellationToken);
         }
 
-        return await hostRuntime.GetHistoryWindowAsync(sessionId).ConfigureAwait(false) ??
+        return await hostRuntime.GetHistoryWindowAsync(sessionId, ct: Xunit.TestContext.Current.CancellationToken).ConfigureAwait(false) ??
                (hostRuntime.TryGetCachedHistoryWindow(sessionId, out var finalSnapshot) ? finalSnapshot : null);
     }
 
@@ -825,7 +825,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
         {
             if (File.Exists(registryPath))
             {
-                using var document = JsonDocument.Parse(await File.ReadAllTextAsync(registryPath));
+                using var document = JsonDocument.Parse(await File.ReadAllTextAsync(registryPath, Xunit.TestContext.Current.CancellationToken));
                 if (document.RootElement.TryGetProperty("Sessions", out var sessions))
                 {
                     using var entries = sessions.EnumerateArray();
@@ -848,7 +848,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 }
             }
 
-            await Task.Delay(25);
+            await Task.Delay(25, Xunit.TestContext.Current.CancellationToken);
         }
 
         throw new InvalidOperationException($"Timed out waiting for host pid for session '{sessionId}'.");
@@ -863,7 +863,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 return true;
             }
 
-            await Task.Delay(25);
+            await Task.Delay(25, Xunit.TestContext.Current.CancellationToken);
         }
 
         return predicate();
@@ -892,7 +892,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
                 return hostPid;
             }
 
-            await Task.Delay(25);
+            await Task.Delay(25, Xunit.TestContext.Current.CancellationToken);
         }
 
         return GetTrackedHostPid(runtime, sessionId);

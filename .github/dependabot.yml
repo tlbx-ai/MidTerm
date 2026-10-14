@@ -18,6 +18,26 @@ updates:
       marketing-automation:
         dependency-type: development
 
+  - package-ecosystem: npm
+    directory: /src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge
+    target-branch: dev
+    schedule:
+      interval: weekly
+    groups:
+      claude-sdk:
+        patterns:
+          - "*"
+
+  - package-ecosystem: pip
+    directory: /docs/marketing
+    target-branch: dev
+    schedule:
+      interval: weekly
+    groups:
+      ai-tooling:
+        patterns:
+          - "*"
+
   - package-ecosystem: nuget
     directory: /src
     target-branch: dev

@@ -22,9 +22,9 @@ public sealed class DevAssetHtmlTests : IDisposable
         {
             await using var output = File.Create(Path.Combine(_directory, "index.html.br"));
             await using var compressor = new BrotliStream(output, CompressionLevel.Optimal);
-            await compressor.WriteAsync(Encoding.UTF8.GetBytes(Html));
+            await compressor.WriteAsync(Encoding.UTF8.GetBytes(Html), Xunit.TestContext.Current.CancellationToken);
         }
-        else await File.WriteAllTextAsync(Path.Combine(_directory, "index.html"), Html);
+        else await File.WriteAllTextAsync(Path.Combine(_directory, "index.html"), Html, Xunit.TestContext.Current.CancellationToken);
         using var provider = new PhysicalFileProvider(_directory);
         var actual = await ServerSetup.ReadHtmlEntryPointAsync(provider, "/index.html", CancellationToken.None);
         Assert.Equal(Html, actual);
@@ -38,8 +38,8 @@ public sealed class DevAssetHtmlTests : IDisposable
     public async Task Overlay_PrefersUpdatedUncompressedHtmlAndReturnsNullForMissingAsset()
     {
         Directory.CreateDirectory(_directory);
-        await File.WriteAllTextAsync(Path.Combine(_directory, "index.html"), Html);
-        await File.WriteAllTextAsync(Path.Combine(_directory, "index.html.br"), "stale invalid compressed data");
+        await File.WriteAllTextAsync(Path.Combine(_directory, "index.html"), Html, Xunit.TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(Path.Combine(_directory, "index.html.br"), "stale invalid compressed data", Xunit.TestContext.Current.CancellationToken);
         using var provider = new PhysicalFileProvider(_directory);
         Assert.Equal(Html, await ServerSetup.ReadHtmlEntryPointAsync(provider, "/index.html", CancellationToken.None));
         Assert.Null(await ServerSetup.ReadHtmlEntryPointAsync(provider, "/missing.html", CancellationToken.None));

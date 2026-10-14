@@ -11,7 +11,7 @@ public sealed class TtyHostClientCloseTests
     public async Task DisconnectedUnverifiedProcessIsNotReportedClosedOrKilled()
     {
         await using var client = new TtyHostClient("unverified", Environment.ProcessId);
-        Assert.False(await client.CloseAsync());
+        Assert.False(await client.CloseAsync(Xunit.TestContext.Current.CancellationToken));
     }
 
     [Fact]

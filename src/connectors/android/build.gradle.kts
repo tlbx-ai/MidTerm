@@ -1,8 +1,13 @@
 import org.gradle.api.artifacts.dsl.LockMode
 
+buildscript {
+    dependencies {
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.21")
+    }
+}
+
 plugins {
-    id("com.android.application") version "8.13.2" apply false
-    id("org.jetbrains.kotlin.android") version "2.1.21" apply false
+    id("com.android.application") version "9.4.1" apply false
 }
 
 allprojects {
@@ -13,23 +18,23 @@ allprojects {
 
     configurations.configureEach {
         resolutionStrategy.force(
-            "com.google.protobuf:protobuf-java:3.25.9",
-            "com.google.protobuf:protobuf-java-util:3.25.9",
-            "com.google.protobuf:protobuf-kotlin:3.25.9",
+            "com.google.protobuf:protobuf-java:4.36.2",
+            "com.google.protobuf:protobuf-java-util:4.36.2",
+            "com.google.protobuf:protobuf-kotlin:4.36.2",
             "commons-io:commons-io:2.22.0",
-            "io.netty:netty-codec:4.1.137.Final",
-            "io.netty:netty-codec-http:4.1.137.Final",
-            "io.netty:netty-codec-http2:4.1.137.Final",
-            "io.netty:netty-common:4.1.137.Final",
-            "io.netty:netty-handler:4.1.137.Final",
-            "io.netty:netty-handler-proxy:4.1.137.Final"
+            "io.netty:netty-codec:4.2.19.Final",
+            "io.netty:netty-codec-http:4.2.19.Final",
+            "io.netty:netty-codec-http2:4.2.19.Final",
+            "io.netty:netty-common:4.2.19.Final",
+            "io.netty:netty-handler:4.2.19.Final",
+            "io.netty:netty-handler-proxy:4.2.19.Final"
         )
         resolutionStrategy.eachDependency {
             when {
-                requested.group == "io.netty" && requested.version?.startsWith("4.1.") == true ->
-                    useVersion("4.1.137.Final")
-                requested.group == "com.google.protobuf" && requested.version?.startsWith("3.") == true ->
-                    useVersion("3.25.9")
+                requested.group == "io.netty" ->
+                    useVersion("4.2.19.Final")
+                requested.group == "com.google.protobuf" ->
+                    useVersion("4.36.2")
                 requested.group == "commons-io" && requested.name == "commons-io" ->
                     useVersion("2.22.0")
             }

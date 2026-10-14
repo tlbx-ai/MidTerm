@@ -78,7 +78,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.Common\Ai.Tlbx.MidTerm.Common.csproj" />
-    <PackageReference Include="Microsoft.Windows.Console.ConPTY" Version="1.24.260710001" GeneratePathProperty="true" />
+    <PackageReference Include="Microsoft.Windows.Console.ConPTY" Version="1.25.260930003" GeneratePathProperty="true" />
   </ItemGroup>
 
   <!--
