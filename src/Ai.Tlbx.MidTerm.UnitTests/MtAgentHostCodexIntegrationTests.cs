@@ -128,8 +128,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -139,9 +139,9 @@ public sealed class MtAgentHostCodexIntegrationTests
         using var fakeCodex = FakeCodexPathScope.Create();
         var hostDll = ResolveAgentHostDll();
         var imagePath = Path.Combine(fakeCodex.Root, "sample.png");
-        await File.WriteAllBytesAsync(imagePath, [1, 2, 3, 4]);
+        await File.WriteAllBytesAsync(imagePath, [1, 2, 3, 4], Xunit.TestContext.Current.CancellationToken);
         var filePath = Path.Combine(fakeCodex.Root, "notes.txt");
-        await File.WriteAllTextAsync(filePath, "attached text file");
+        await File.WriteAllTextAsync(filePath, "attached text file", Xunit.TestContext.Current.CancellationToken);
 
         using var process = StartAgentHost(hostDll);
         var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
@@ -249,8 +249,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -354,8 +354,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -462,8 +462,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
             Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", originalYoloDefault);
             Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL", originalDefaultModel);
             Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED", originalRemoteCompactionDisabled);
@@ -545,8 +545,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
             Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL", originalDefaultModel);
         }
     }
@@ -604,8 +604,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
             Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", originalYoloDefault);
             Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED", originalRemoteCompactionDisabled);
         }
@@ -705,8 +705,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -761,8 +761,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -845,8 +845,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -930,8 +930,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -1022,8 +1022,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -1113,8 +1113,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -1209,8 +1209,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -1305,8 +1305,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -1376,8 +1376,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -1444,8 +1444,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -1530,8 +1530,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -1628,8 +1628,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 
@@ -1686,7 +1686,7 @@ public sealed class MtAgentHostCodexIntegrationTests
             {
                 try
                 {
-                    var json = await File.ReadAllTextAsync(capturePath);
+                    var json = await File.ReadAllTextAsync(capturePath, Xunit.TestContext.Current.CancellationToken);
                     if (!string.IsNullOrWhiteSpace(json))
                     {
                         var capture = JsonSerializer.Deserialize<FakeCodexLaunchCapture>(json);
@@ -1704,7 +1704,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                 }
             }
 
-            await Task.Delay(50);
+            await Task.Delay(50, Xunit.TestContext.Current.CancellationToken);
         }
 
         throw new TimeoutException($"Timed out waiting for fake Codex launch capture at '{capturePath}'.");

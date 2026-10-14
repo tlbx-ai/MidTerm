@@ -23,19 +23,19 @@ public sealed class GitNewFileReviewTests : IDisposable
     public async Task NewTextReviewDecodesTheActualFileAndBuildsAdditionsAgainstEmpty(string encoding)
     {
         var codec = encoding switch { "utf8-bom" => (Encoding)new UTF8Encoding(true), "utf16" => new UnicodeEncoding(false, true), _ => new UTF8Encoding(false) };
-        var path = Path.Combine(_root, "new ä.txt"); await File.WriteAllTextAsync(path, "First ä\r\nSecond 字\r\n", codec);
-        var bytes = await File.ReadAllBytesAsync(path); var response = await GitNewFileReview.ReadAsync(_root, "new ä.txt", default);
+        var path = Path.Combine(_root, "new ä.txt"); await File.WriteAllTextAsync(path, "First ä\r\nSecond 字\r\n", codec, Xunit.TestContext.Current.CancellationToken);
+        var bytes = await File.ReadAllBytesAsync(path, Xunit.TestContext.Current.CancellationToken); var response = await GitNewFileReview.ReadAsync(_root, "new ä.txt", default);
         var file = Assert.Single(response.Files); Assert.True(file.IsNewFile); Assert.False(file.IsBinary); Assert.Equal(2, file.Additions); Assert.Equal(0, file.Deletions);
         Assert.Equal(bytes.Length, file.SizeBytes); Assert.True(file.HasLineStats); Assert.NotNull(file.ContentVersion);
         Assert.Equal(new[] { "+First ä", "+Second 字" }, Assert.Single(file.Hunks).Lines.Select(line => line.Text), StringComparer.Ordinal);
-        Assert.Equal(bytes, await File.ReadAllBytesAsync(path));
+        Assert.Equal(bytes, await File.ReadAllBytesAsync(path, Xunit.TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task BinaryAndEmptyFilesHaveHonestMetadataAndNoInventedText()
     {
-        await File.WriteAllBytesAsync(Path.Combine(_root, "new.bin"), [0, 255, 1, 2]);
-        await File.WriteAllBytesAsync(Path.Combine(_root, "empty.txt"), []);
+        await File.WriteAllBytesAsync(Path.Combine(_root, "new.bin"), [0, 255, 1, 2], Xunit.TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(Path.Combine(_root, "empty.txt"), [], Xunit.TestContext.Current.CancellationToken);
         var binary = Assert.Single((await GitNewFileReview.ReadAsync(_root, "new.bin", default)).Files);
         Assert.True(binary.IsBinary); Assert.False(binary.HasLineStats); Assert.Equal(4, binary.SizeBytes); Assert.Empty(binary.Hunks);
         var empty = Assert.Single((await GitNewFileReview.ReadAsync(_root, "empty.txt", default)).Files);
@@ -45,7 +45,7 @@ public sealed class GitNewFileReviewTests : IDisposable
     [Fact]
     public async Task LargeTextIsBoundedAndClearlyNotACompleteLineCount()
     {
-        await File.WriteAllTextAsync(Path.Combine(_root, "large.txt"), string.Concat(Enumerable.Repeat("Large reviewed line ä\n", 100000)));
+        await File.WriteAllTextAsync(Path.Combine(_root, "large.txt"), string.Concat(Enumerable.Repeat("Large reviewed line ä\n", 100000)), Xunit.TestContext.Current.CancellationToken);
         var response = await GitNewFileReview.ReadAsync(_root, "large.txt", default); var file = Assert.Single(response.Files);
         Assert.True(response.IsTruncated); Assert.True(file.IsTruncated); Assert.False(file.HasLineStats); Assert.Null(file.ContentVersion);
         Assert.True(file.SizeBytes > 2_000_000); Assert.True(file.Hunks.SelectMany(hunk => hunk.Lines).Sum(line => line.Text.Length) < 600000);
@@ -56,7 +56,7 @@ public sealed class GitNewFileReviewTests : IDisposable
     {
         foreach (var args in new[] { new[] { "init", "--quiet" }, ["config", "user.name", "New file acceptance"], ["config", "user.email", "new@tlbx.invalid"], ["config", "commit.gpgSign", "false"] })
             Assert.Equal(0, (await GitCommandRunner.ExecuteAsync(_root, args, default)).ExitCode);
-        Directory.CreateDirectory(Path.Combine(_root, "folder")); await File.WriteAllTextAsync(Path.Combine(_root, "folder", "new.txt"), "Reviewed content\n");
+        Directory.CreateDirectory(Path.Combine(_root, "folder")); await File.WriteAllTextAsync(Path.Combine(_root, "folder", "new.txt"), "Reviewed content\n", Xunit.TestContext.Current.CancellationToken);
         var status = await GitCommandRunner.GetStatusAsync(_root); Assert.Equal("folder/new.txt", Assert.Single(status.Untracked).Path);
         var review = await GitNewFileReview.ReadAsync(_root, "folder/new.txt", default); Assert.Equal("+Reviewed content", Assert.Single(Assert.Single(Assert.Single(review.Files).Hunks).Lines).Text);
         var operations = new GitOperationService();
@@ -71,7 +71,7 @@ public sealed class GitNewFileReviewTests : IDisposable
     public async Task ANewSymlinkReviewsTheLinkTextWithoutFollowingAnOutsideTarget()
     {
         var target = Path.Combine(Path.GetTempPath(), "tlbx_outside_link_" + Guid.NewGuid().ToString("N") + ".txt");
-        await File.WriteAllTextAsync(target, "Must not appear in review");
+        await File.WriteAllTextAsync(target, "Must not appear in review", Xunit.TestContext.Current.CancellationToken);
         try
         {
             File.CreateSymbolicLink(Path.Combine(_root, "new-link"), target);

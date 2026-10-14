@@ -44,7 +44,7 @@ public sealed class TtyHostSessionManagerStateTests
         var ok = await manager.SetSessionExtraGitReposMetadataAsync("s1",
         [
             new TtyHostGitRepoMetadata { RepoRoot = @"Q:\repos\tlbx", Label = "tlbx", Role = "target", Source = "manual" }
-        ]);
+        ], Xunit.TestContext.Current.CancellationToken);
 
         Assert.False(ok);
         Assert.Empty(manager.GetPersistedSessionExtraGitRepos("s1"));
@@ -58,7 +58,7 @@ public sealed class TtyHostSessionManagerStateTests
         info.Name = "Before";
         AddDisconnectedClient(manager, "s1");
 
-        var ok = await manager.SetSessionNameAsync("s1", "After", isManual: true);
+        var ok = await manager.SetSessionNameAsync("s1", "After", isManual: true, ct: Xunit.TestContext.Current.CancellationToken);
 
         Assert.False(ok);
         Assert.Equal("Before", info.Name);
@@ -114,7 +114,7 @@ public sealed class TtyHostSessionManagerStateTests
     {
         await using var manager = CreateManager();
 
-        var success = await manager.RedrawSessionAsync("not-a-session");
+        var success = await manager.RedrawSessionAsync("not-a-session", Xunit.TestContext.Current.CancellationToken);
 
         Assert.False(success);
         var gates = GetField<ConcurrentDictionary<string, SemaphoreSlim>>(manager, "_resizeGates");
@@ -127,12 +127,12 @@ public sealed class TtyHostSessionManagerStateTests
         await using var manager = CreateManager();
         AddCachedSession(manager, "s1");
         AddDisconnectedClient(manager, "s1");
-        Assert.False(await manager.ResizeSessionAsync("s1", 120, 30));
+        Assert.False(await manager.ResizeSessionAsync("s1", 120, 30, Xunit.TestContext.Current.CancellationToken));
 
         var gates = GetField<ConcurrentDictionary<string, SemaphoreSlim>>(manager, "_resizeGates");
         var resizeGate = gates["s1"];
-        await resizeGate.WaitAsync();
-        var closeTask = manager.CloseSessionAsync("s1");
+        await resizeGate.WaitAsync(Xunit.TestContext.Current.CancellationToken);
+        var closeTask = manager.CloseSessionAsync("s1", Xunit.TestContext.Current.CancellationToken);
         try
         {
             Assert.False(closeTask.IsCompleted);

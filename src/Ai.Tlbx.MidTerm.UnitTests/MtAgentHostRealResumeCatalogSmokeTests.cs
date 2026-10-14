@@ -4,7 +4,6 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
@@ -118,8 +117,8 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 

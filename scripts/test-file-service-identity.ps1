@@ -29,20 +29,24 @@ try {
     if (Test-Path -LiteralPath $exitPath) { Remove-Item -LiteralPath $exitPath }
     $config = @{ root=$fixtureRoot; sid=$ownerIdentity.User.Value; pid=$PID; started=(Get-Process -Id $PID).StartTime.ToFileTimeUtc(); storage=(Join-Path $artifactDirectory 'state'); outside=$outside }
     [IO.File]::WriteAllText($configPath, ($config | ConvertTo-Json -Compress))
-    $dotnetPath = (Get-Command dotnet -CommandType Application).Source
-    $project = Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm.UnitTests/Ai.Tlbx.MidTerm.UnitTests.csproj'
+    $dotnetPath = (Get-Command dotnet -CommandType Application | Select-Object -First 1).Source
+    $testAssembly = Join-Path $repoRoot "src/Ai.Tlbx.MidTerm.UnitTests/bin/$Configuration/net10.0/Ai.Tlbx.MidTerm.UnitTests.dll"
+    if (-not (Test-Path -LiteralPath $testAssembly)) { throw 'Build the UnitTests project before running LocalSystem acceptance.' }
     $workerPath = Join-Path $artifactDirectory 'worker.ps1'
     $worker = @'
 $ErrorActionPreference = 'Stop'
 $env:TLBX_FILE_IDENTITY_FIXTURE = '__CONFIG__'
+$env:DOTNET_HOST_PATH = '__DOTNET__'
+Set-Location '__REPO__'
 try {
-    & '__DOTNET__' test '__PROJECT__' -c '__CONFIGURATION__' --no-build --no-restore --filter 'FullyQualifiedName~FileServiceIdentityTests' --logger 'trx;LogFileName=service-identity.trx' --results-directory '__ARTIFACTS__' 1> '__STDOUT__' 2> '__STDERR__'
+    # Run the built MTP entry point: SYSTEM has a different NuGet/MSBuild profile.
+    & '__DOTNET__' '__ASSEMBLY__' --filter-class '*FileServiceIdentityTests' --report-trx --report-trx-filename 'service-identity.trx' --results-directory '__ARTIFACTS__' 1> '__STDOUT__' 2> '__STDERR__'
     $testCode = $LASTEXITCODE
 } catch { $_ | Out-String | Add-Content -LiteralPath '__STDERR__'; $testCode = 1 }
 [IO.File]::WriteAllText('__EXIT__', (@{ exitCode=$testCode } | ConvertTo-Json -Compress))
 exit $testCode
 '@
-    $substitutions = @{ CONFIG=$configPath; DOTNET=$dotnetPath; PROJECT=$project; CONFIGURATION=$Configuration; ARTIFACTS=$artifactDirectory; STDOUT=(Join-Path $artifactDirectory 'stdout.log'); STDERR=(Join-Path $artifactDirectory 'stderr.log'); EXIT=$exitPath }
+    $substitutions = @{ CONFIG=$configPath; DOTNET=$dotnetPath; ASSEMBLY=$testAssembly; REPO=$repoRoot; ARTIFACTS=$artifactDirectory; STDOUT=(Join-Path $artifactDirectory 'stdout.log'); STDERR=(Join-Path $artifactDirectory 'stderr.log'); EXIT=$exitPath }
     foreach ($key in $substitutions.Keys) { $worker = $worker.Replace('__' + $key + '__', $substitutions[$key].Replace("'", "''")) }
     [IO.File]::WriteAllText($workerPath, $worker)
     $taskName = 'tlbx-files-identity-' + [guid]::NewGuid().ToString('N')

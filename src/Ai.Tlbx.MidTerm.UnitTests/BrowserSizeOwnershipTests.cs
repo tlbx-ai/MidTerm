@@ -82,7 +82,7 @@ public sealed class BrowserSizeOwnershipTests : IDisposable
             (id, _, _, _, _, _) => requestId = id);
         AddUi(bridge, "b:tab");
         bridge.RequestClaim("s", "default", out _, "a:tab");
-        var pending = bridge.RequestOpenAsync("s", "default", "https://example.com", false, 1);
+        var pending = bridge.RequestOpenAsync("s", "default", "https://example.com", false, 1, Xunit.TestContext.Current.CancellationToken);
         Assert.NotNull(requestId);
         bridge.RequestClaim("s", "default", out _, "b:tab");
         bridge.RequestClaim("s", "default", out _, "a:tab"); // Returning to the same tab is a new generation.
@@ -111,7 +111,7 @@ public sealed class BrowserSizeOwnershipTests : IDisposable
         service.TryRegisterClient("c", "s", "default", "p", _ => { }, "a", isVisible: visible, targetRevision: revision);
         var status = await service.WaitForControllableAsync("https://example.com", "s", "default",
             requireVisibleClient: true, requiredTargetRevision: 1,
-            timeout: TimeSpan.FromMilliseconds(25), pollInterval: TimeSpan.FromMilliseconds(5));
+            timeout: TimeSpan.FromMilliseconds(25), pollInterval: TimeSpan.FromMilliseconds(5), cancellationToken: Xunit.TestContext.Current.CancellationToken);
         Assert.False(status.Controllable);
         Assert.Equal("waiting", status.State);
     }

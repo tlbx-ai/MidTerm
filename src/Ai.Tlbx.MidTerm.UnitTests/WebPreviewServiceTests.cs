@@ -50,13 +50,13 @@ public class WebPreviewServiceTests
         using var listener = new TcpListener(IPAddress.Loopback, port: 0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var acceptTask = listener.AcceptTcpClientAsync();
+        var acceptTask = listener.AcceptTcpClientAsync(Xunit.TestContext.Current.CancellationToken).AsTask();
 
         await using var stream = await WebPreviewService.ConnectPreviewSocketAsync(
             "localhost",
             port,
             CancellationToken.None);
-        using var accepted = await acceptTask.WaitAsync(TimeSpan.FromSeconds(5));
+        using var accepted = await acceptTask.WaitAsync(TimeSpan.FromSeconds(5), Xunit.TestContext.Current.CancellationToken);
 
         Assert.True(stream.CanRead);
         Assert.True(accepted.Connected);

@@ -457,7 +457,7 @@ public class WebPreviewProxyMiddlewareTests
         var tempDir = Path.Combine(Path.GetTempPath(), "midterm-webpreview-file-target", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
         var indexPath = Path.Combine(tempDir, "index.html");
-        await File.WriteAllTextAsync(indexPath, "<html><head></head><body>preview</body></html>");
+        await File.WriteAllTextAsync(indexPath, "<html><head></head><body>preview</body></html>", Xunit.TestContext.Current.CancellationToken);
 
         try
         {

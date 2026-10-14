@@ -80,7 +80,8 @@ public sealed class MidTermProcessPriorityTests
         var pidFile = gate + ".pid";
         var grandchildPidFile = gate + ".grandchild";
         var childScript = gate + ".ps1";
-        File.WriteAllText(childScript, $"[IO.File]::WriteAllText('{pidFile}',[string]$PID); while(!(Test-Path -LiteralPath '{gate}')){{Start-Sleep -Milliseconds 20}}; $p=Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 30' -PassThru; [IO.File]::WriteAllText('{grandchildPidFile}',[string]$p.Id); Start-Sleep -Seconds 30");
+        // Publish each PID only after its writer has closed the complete file.
+        File.WriteAllText(childScript, $"[IO.File]::WriteAllText('{pidFile}.tmp',[string]$PID); [IO.File]::Move('{pidFile}.tmp','{pidFile}'); while(!(Test-Path -LiteralPath '{gate}')){{Start-Sleep -Milliseconds 20}}; $p=Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 30' -PassThru; [IO.File]::WriteAllText('{grandchildPidFile}.tmp',[string]$p.Id); [IO.File]::Move('{grandchildPidFile}.tmp','{grandchildPidFile}'); Start-Sleep -Seconds 30");
         var jobName = $"Local\\tlbx-priority-test-{Guid.NewGuid():N}";
         using var job = new WindowsProcessPriorityJob(jobName);
         job.SetPriority(ProcessPriorityClass.AboveNormal);
@@ -133,12 +134,20 @@ public sealed class MidTermProcessPriorityTests
         }
         finally
         {
-            if (!parent.HasExited) parent.Kill(entireProcessTree: true);
+            foreach (var process in new[] { parent, child, grandchild })
+            {
+                if (process is null) continue;
+                if (!process.HasExited) process.Kill(entireProcessTree: true);
+                // Cleanup must finish even when the test cancellation token is cancelled.
+                await process.WaitForExitAsync(CancellationToken.None);
+            }
             child?.Dispose();
             grandchild?.Dispose();
             File.Delete(gate);
             File.Delete(pidFile);
+            File.Delete(pidFile + ".tmp");
             File.Delete(grandchildPidFile);
+            File.Delete(grandchildPidFile + ".tmp");
             File.Delete(childScript);
         }
     }

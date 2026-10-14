@@ -26,7 +26,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     {
         var runtime = new FakeRuntime(["session-1"]) { CurrentHeat = 0, RawLastOutputAt = _timeProvider.GetUtcNow() };
         await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
-        var (accepted, entry) = await service.SubmitPromptAsync("session-1", new AppServerControlTurnRequest { Text = "status" });
+        var (accepted, entry) = await service.SubmitPromptAsync("session-1", new AppServerControlTurnRequest { Text = "status" }, Xunit.TestContext.Current.CancellationToken);
         Assert.True(accepted);
         Assert.Null(entry);
         Assert.Equal(["status"], runtime.SentPrompts);
@@ -67,7 +67,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         var (accepted, entry) = await service.SubmitPromptAsync(
             "session-2",
-            new AppServerControlTurnRequest { Text = "now" });
+            new AppServerControlTurnRequest { Text = "now" }, Xunit.TestContext.Current.CancellationToken);
 
         Assert.True(accepted);
         Assert.Null(entry);
@@ -101,16 +101,16 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         service.EnqueuePrompt("session-1", new AppServerControlTurnRequest { Text = "first" });
         service.EnqueuePrompt("session-1", new AppServerControlTurnRequest { Text = "second" });
 
-        await Task.Delay(1200);
+        await Task.Delay(1200, Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(["first"], runtime.SentPrompts);
 
         runtime.LastOutputAt = _timeProvider.GetUtcNow();
-        await Task.Delay(1200);
+        await Task.Delay(1200, Xunit.TestContext.Current.CancellationToken);
         Assert.Equal(["first"], runtime.SentPrompts);
 
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
-        await Task.Delay(1200);
+        await Task.Delay(1200, Xunit.TestContext.Current.CancellationToken);
         Assert.Equal(["first", "second"], runtime.SentPrompts);
     }
 
@@ -128,11 +128,11 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         service.EnqueuePrompt("session-1", new AppServerControlTurnRequest { Text = "status" });
 
-        await Task.Delay(1200);
+        await Task.Delay(1200, Xunit.TestContext.Current.CancellationToken);
         Assert.Empty(runtime.SentPrompts);
 
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
-        await Task.Delay(1200);
+        await Task.Delay(1200, Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(["status"], runtime.SentPrompts);
     }
@@ -149,11 +149,11 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
             new AppServerControlTurnRequest { Text = "scheduled status" },
             _timeProvider.GetUtcNow().AddSeconds(5));
 
-        await Task.Delay(1200);
+        await Task.Delay(1200, Xunit.TestContext.Current.CancellationToken);
         Assert.Empty(runtime.SentPrompts);
 
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
-        await Task.Delay(1200);
+        await Task.Delay(1200, Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(["scheduled status"], runtime.SentPrompts);
         Assert.Empty(service.GetSnapshot(["session-1"]));
@@ -202,7 +202,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
             _timeProvider.GetUtcNow().AddSeconds(1));
 
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
-        await Task.Delay(700);
+        await Task.Delay(700, Xunit.TestContext.Current.CancellationToken);
 
         Assert.Empty(runtime.SentPrompts);
         var retained = Assert.Single(service.GetSnapshot(["session-1"]));
@@ -210,7 +210,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         Assert.Equal("pendingInterval", retained.Phase);
 
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
-        await Task.Delay(700);
+        await Task.Delay(700, Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(["retry me"], runtime.SentPrompts);
         Assert.Empty(service.GetSnapshot(["session-1"]));
@@ -268,11 +268,11 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         service.EnqueuePrompt("session-1", new AppServerControlTurnRequest { Text = "queued turn" });
 
-        await Task.Delay(1200);
+        await Task.Delay(1200, Xunit.TestContext.Current.CancellationToken);
         Assert.Empty(runtime.SentTurns);
 
         runtime.TurnQueueReady = true;
-        await Task.Delay(1200);
+        await Task.Delay(1200, Xunit.TestContext.Current.CancellationToken);
 
         Assert.Single(runtime.SentTurns);
         Assert.Equal("queued turn", runtime.SentTurns[0].Text);

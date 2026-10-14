@@ -7,7 +7,7 @@ export function createMuxInputFrame(
   data: string,
   encodeSessionId: EncodeSessionId,
   textEncoder: TextEncoder,
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   if (isAsciiOnly(data)) {
     const frame = new Uint8Array(headerSize + data.length);
     frame[0] = frameType;

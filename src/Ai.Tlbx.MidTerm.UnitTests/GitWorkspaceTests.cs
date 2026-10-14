@@ -21,7 +21,7 @@ public sealed class GitWorkspaceTests : IDisposable
     private async Task Init()
     {
         await Git(Root, "init", "-q", "-b", "main"); await Identity(Root);
-        await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "base\n"); await Git(Root, "add", "."); await Git(Root, "commit", "-qm", "base");
+        await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "base\n", Xunit.TestContext.Current.CancellationToken); await Git(Root, "add", "."); await Git(Root, "commit", "-qm", "base");
     }
     private static async Task Identity(string root)
     { await Git(root, "config", "user.name", "Workspace acceptance"); await Git(root, "config", "user.email", "workspace@tlbx.invalid"); await Git(root, "config", "commit.gpgSign", "false"); await Git(root, "config", "core.autocrlf", "false"); }
@@ -34,26 +34,26 @@ public sealed class GitWorkspaceTests : IDisposable
     {
         await Init(); var create = await Request("branch-create"); create.Branch = "feature/ä-space";
         Assert.Equal("completed", (await Execute(create)).State); Assert.Equal("feature/ä-space", (await GitWorkspaceQuery.ReadAsync(Root, default)).CurrentBranch);
-        await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "feature\n"); await Git(Root, "commit", "-qam", "feature");
-        await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "private dirty\n");
+        await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "feature\n", Xunit.TestContext.Current.CancellationToken); await Git(Root, "commit", "-qam", "feature");
+        await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "private dirty\n", Xunit.TestContext.Current.CancellationToken);
         var change = await Request("branch-switch"); change.Branch = "main"; var rejected = await Execute(change);
-        Assert.Equal("error", rejected.State); Assert.Equal("private dirty\n", await File.ReadAllTextAsync(Path.Combine(Root, "file.txt")));
+        Assert.Equal("error", rejected.State); Assert.Equal("private dirty\n", await File.ReadAllTextAsync(Path.Combine(Root, "file.txt"), Xunit.TestContext.Current.CancellationToken));
         var invalid = await Request("branch-create"); invalid.Branch = "@{-1}"; Assert.Equal("invalid_branch", (await Execute(invalid)).ErrorCode);
         await Git(Root, "restore", "file.txt"); change = await Request("branch-switch"); change.Branch = "main";
-        Assert.Equal("completed", (await Execute(change)).State); Assert.Equal("base\n", await File.ReadAllTextAsync(Path.Combine(Root, "file.txt")));
+        Assert.Equal("completed", (await Execute(change)).State); Assert.Equal("base\n", await File.ReadAllTextAsync(Path.Combine(Root, "file.txt"), Xunit.TestContext.Current.CancellationToken));
         var stale = await Execute(create); Assert.Equal("completed", stale.State); Assert.Equal("main", (await GitWorkspaceQuery.ReadAsync(Root, default)).CurrentBranch);
     }
 
     [Fact]
     public async Task StashPreservesIndexUntrackedFilesAndReplayDoesNotPopAnotherStash()
     {
-        await Init(); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "staged\n"); await Git(Root, "add", "file.txt");
-        await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "unstaged\n"); await File.WriteAllTextAsync(Path.Combine(Root, "new ä.txt"), "new\n");
+        await Init(); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "staged\n", Xunit.TestContext.Current.CancellationToken); await Git(Root, "add", "file.txt");
+        await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "unstaged\n", Xunit.TestContext.Current.CancellationToken); await File.WriteAllTextAsync(Path.Combine(Root, "new ä.txt"), "new\n", Xunit.TestContext.Current.CancellationToken);
         var save = await Request("stash-create"); save.Message = "Mixed ä"; Assert.Equal("completed", (await Execute(save)).State);
         var workspace = await GitWorkspaceQuery.ReadAsync(Root, default); var stash = Assert.Single(workspace.Stashes);
         Assert.Empty((await GitCommandRunner.GetStatusAsync(Root)).Modified); Assert.False(File.Exists(Path.Combine(Root, "new ä.txt")));
         var apply = await Request("stash-apply"); apply.StashHash = stash.Hash; Assert.Equal("completed", (await Execute(apply)).State);
-        Assert.Equal("staged", await Git(Root, "show", ":file.txt")); Assert.Equal("unstaged\n", await File.ReadAllTextAsync(Path.Combine(Root, "file.txt")));
+        Assert.Equal("staged", await Git(Root, "show", ":file.txt")); Assert.Equal("unstaged\n", await File.ReadAllTextAsync(Path.Combine(Root, "file.txt"), Xunit.TestContext.Current.CancellationToken));
         Assert.True(File.Exists(Path.Combine(Root, "new ä.txt"))); Assert.Single((await GitWorkspaceQuery.ReadAsync(Root, default)).Stashes);
         var blocked = await Request("stash-pop"); blocked.StashHash = stash.Hash; Assert.Equal("dirty_working_tree", (await Execute(blocked)).ErrorCode);
         var drop = await Request("stash-drop"); drop.StashHash = stash.Hash; Assert.Equal("completed", (await Execute(drop)).State);
@@ -62,8 +62,8 @@ public sealed class GitWorkspaceTests : IDisposable
 
     private async Task Conflict()
     {
-        await Init(); await Git(Root, "switch", "-qc", "incoming"); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "incoming\n"); await Git(Root, "commit", "-qam", "incoming");
-        await Git(Root, "switch", "-q", "main"); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "ours\n"); await Git(Root, "commit", "-qam", "ours");
+        await Init(); await Git(Root, "switch", "-qc", "incoming"); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "incoming\n", Xunit.TestContext.Current.CancellationToken); await Git(Root, "commit", "-qam", "incoming");
+        await Git(Root, "switch", "-q", "main"); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "ours\n", Xunit.TestContext.Current.CancellationToken); await Git(Root, "commit", "-qam", "ours");
         var merge = await Request("merge"); merge.Branch = "refs/heads/incoming"; Assert.Equal("conflicted", (await Execute(merge)).State);
     }
 
@@ -72,9 +72,9 @@ public sealed class GitWorkspaceTests : IDisposable
     {
         await Conflict(); var view = await GitWorkspaceQuery.ReadConflictAsync(Root, "file.txt", default); Assert.True(view.HasMarkers); Assert.Equal("ours\n", view.Ours); Assert.Equal("incoming\n", view.Theirs);
         var resolve = await Request("resolve-conflict"); resolve.Paths = ["file.txt"]; resolve.ExpectedFileVersion = view.ContentVersion; resolve.Resolution = "theirs";
-        await File.AppendAllTextAsync(Path.Combine(Root, "file.txt"), "changed\n"); Assert.Equal("conflict_changed", (await Execute(resolve)).ErrorCode);
+        await File.AppendAllTextAsync(Path.Combine(Root, "file.txt"), "changed\n", Xunit.TestContext.Current.CancellationToken); Assert.Equal("conflict_changed", (await Execute(resolve)).ErrorCode);
         view = await GitWorkspaceQuery.ReadConflictAsync(Root, "file.txt", default); resolve = await Request("resolve-conflict"); resolve.Paths = ["file.txt"]; resolve.ExpectedFileVersion = view.ContentVersion; resolve.Resolution = "theirs";
-        Assert.Equal("completed", (await Execute(resolve)).State); Assert.Equal("incoming\n", await File.ReadAllTextAsync(Path.Combine(Root, "file.txt")));
+        Assert.Equal("completed", (await Execute(resolve)).State); Assert.Equal("incoming\n", await File.ReadAllTextAsync(Path.Combine(Root, "file.txt"), Xunit.TestContext.Current.CancellationToken));
         var commit = await Request("commit"); commit.Message = "Resolve merge"; Assert.Equal("completed", (await Execute(commit)).State);
         Assert.Equal(3, (await Git(Root, "rev-list", "--parents", "-n", "1", "HEAD")).Split(' ').Length); Assert.False((await GitWorkspaceQuery.ReadAsync(Root, default)).MergeInProgress);
     }
@@ -85,7 +85,7 @@ public sealed class GitWorkspaceTests : IDisposable
         await Conflict(); var view = await GitWorkspaceQuery.ReadConflictAsync(Root, "file.txt", default);
         var mark = await Request("resolve-conflict"); mark.Paths = ["file.txt"]; mark.ExpectedFileVersion = view.ContentVersion; mark.Resolution = "mark";
         Assert.Equal("conflict_markers", (await Execute(mark)).ErrorCode);
-        var abort = await Request("merge-abort"); Assert.Equal("completed", (await Execute(abort)).State); Assert.Equal("ours\n", await File.ReadAllTextAsync(Path.Combine(Root, "file.txt"))); Assert.Empty((await GitCommandRunner.GetStatusAsync(Root)).Conflicted);
+        var abort = await Request("merge-abort"); Assert.Equal("completed", (await Execute(abort)).State); Assert.Equal("ours\n", await File.ReadAllTextAsync(Path.Combine(Root, "file.txt"), Xunit.TestContext.Current.CancellationToken)); Assert.Empty((await GitCommandRunner.GetStatusAsync(Root)).Conflicted);
     }
 
     [Fact]
@@ -94,11 +94,11 @@ public sealed class GitWorkspaceTests : IDisposable
         await Init(); var bare = Path.Combine(_folder, "remote.git"); Directory.CreateDirectory(bare); await Git(bare, "init", "--bare", "-q"); await Git(Root, "remote", "add", "origin", bare);
         var push = await Request("push"); push.Remote = "origin"; push.RemoteBranch = "main"; Assert.Equal("completed", (await Execute(push)).State);
         var other = Path.Combine(_folder, "other"); await Git(_folder, "clone", "-q", "-b", "main", bare, other); await Identity(other);
-        await File.WriteAllTextAsync(Path.Combine(other, "other.txt"), "other\n"); await Git(other, "add", "."); await Git(other, "commit", "-qm", "other"); await Git(other, "push", "-q", "origin", "main");
+        await File.WriteAllTextAsync(Path.Combine(other, "other.txt"), "other\n", Xunit.TestContext.Current.CancellationToken); await Git(other, "add", "."); await Git(other, "commit", "-qm", "other"); await Git(other, "push", "-q", "origin", "main");
         var fetch = await Request("fetch"); fetch.Remote = "origin"; Assert.Equal("completed", (await Execute(fetch)).State);
         var pull = await Request("pull"); pull.Remote = "origin"; pull.RemoteBranch = "main"; Assert.Equal("completed", (await Execute(pull)).State); Assert.True(File.Exists(Path.Combine(Root, "other.txt")));
-        await File.WriteAllTextAsync(Path.Combine(Root, "local.txt"), "local\n"); await Git(Root, "add", "."); await Git(Root, "commit", "-qm", "local");
-        await File.WriteAllTextAsync(Path.Combine(other, "divergent.txt"), "remote\n"); await Git(other, "add", "."); await Git(other, "commit", "-qm", "divergent"); await Git(other, "push", "-q", "origin", "main");
+        await File.WriteAllTextAsync(Path.Combine(Root, "local.txt"), "local\n", Xunit.TestContext.Current.CancellationToken); await Git(Root, "add", "."); await Git(Root, "commit", "-qm", "local");
+        await File.WriteAllTextAsync(Path.Combine(other, "divergent.txt"), "remote\n", Xunit.TestContext.Current.CancellationToken); await Git(other, "add", "."); await Git(other, "commit", "-qm", "divergent"); await Git(other, "push", "-q", "origin", "main");
         var before = await Git(Root, "rev-parse", "HEAD"); pull = await Request("pull"); pull.Remote = "origin"; pull.RemoteBranch = "main"; Assert.Equal("error", (await Execute(pull)).State);
         Assert.Equal(before, await Git(Root, "rev-parse", "HEAD")); push = await Request("push"); push.Remote = "origin"; push.RemoteBranch = "main"; Assert.Equal("error", (await Execute(push)).State);
         Assert.Equal(await Git(other, "rev-parse", "HEAD"), await Git(bare, "rev-parse", "refs/heads/main"));
@@ -111,8 +111,8 @@ public sealed class GitWorkspaceTests : IDisposable
         await Init(); await Git(Root, "branch", "same"); var stale = await Request("branch-create"); stale.Branch = "new";
         await Git(Root, "switch", "same"); Assert.Equal("workspace_changed", (await Execute(stale)).ErrorCode);
         await Git(Root, "switch", "main");
-        await Git(Root, "switch", "-qc", "incoming"); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "incoming\n"); await Git(Root, "commit", "-qam", "incoming");
-        await Git(Root, "switch", "main"); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "ours\n"); await Git(Root, "commit", "-qam", "ours");
+        await Git(Root, "switch", "-qc", "incoming"); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "incoming\n", Xunit.TestContext.Current.CancellationToken); await Git(Root, "commit", "-qam", "incoming");
+        await Git(Root, "switch", "main"); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "ours\n", Xunit.TestContext.Current.CancellationToken); await Git(Root, "commit", "-qam", "ours");
         var merge = await Request("merge"); merge.Branch = "refs/heads/incoming"; Assert.Equal("conflicted", (await Execute(merge)).State);
         var view = await GitWorkspaceQuery.ReadConflictAsync(Root, "file.txt", default); var resolve = await Request("resolve-conflict"); resolve.Paths = ["file.txt"]; resolve.ExpectedFileVersion = view.ContentVersion; resolve.Resolution = "ours";
         Assert.Equal("completed", (await Execute(resolve)).State); Assert.Empty((await GitCommandRunner.GetStatusAsync(Root)).Staged);
@@ -122,12 +122,12 @@ public sealed class GitWorkspaceTests : IDisposable
     [Fact]
     public async Task StashPopConflictKeepsStashAndManualResolutionStagesActualEditedBytes()
     {
-        await Init(); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "stash version\n"); Assert.Equal("completed", (await Execute(await Request("stash-create"))).State);
+        await Init(); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "stash version\n", Xunit.TestContext.Current.CancellationToken); Assert.Equal("completed", (await Execute(await Request("stash-create"))).State);
         var stash = Assert.Single((await GitWorkspaceQuery.ReadAsync(Root, default)).Stashes);
-        await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "new base\n"); await Git(Root, "commit", "-qam", "new base");
+        await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "new base\n", Xunit.TestContext.Current.CancellationToken); await Git(Root, "commit", "-qam", "new base");
         var pop = await Request("stash-pop"); pop.StashHash = stash.Hash; var result = await Execute(pop); Assert.Equal("conflicted", result.State);
         Assert.Single((await GitWorkspaceQuery.ReadAsync(Root, default)).Stashes); Assert.False((await GitWorkspaceQuery.ReadAsync(Root, default)).MergeInProgress);
-        await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "manual merged ä\n"); var view = await GitWorkspaceQuery.ReadConflictAsync(Root, "file.txt", default);
+        await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "manual merged ä\n", Xunit.TestContext.Current.CancellationToken); var view = await GitWorkspaceQuery.ReadConflictAsync(Root, "file.txt", default);
         var mark = await Request("resolve-conflict"); mark.Paths = ["file.txt"]; mark.ExpectedFileVersion = view.ContentVersion; mark.Resolution = "mark"; Assert.Equal("completed", (await Execute(mark)).State);
         Assert.Empty((await GitCommandRunner.GetStatusAsync(Root)).Conflicted); Assert.Equal("manual merged ä", await Git(Root, "show", ":file.txt")); Assert.Single((await GitWorkspaceQuery.ReadAsync(Root, default)).Stashes);
     }
@@ -136,7 +136,7 @@ public sealed class GitWorkspaceTests : IDisposable
     public async Task ModifyDeleteConflictCanChooseTheDeletedSide()
     {
         await Init(); await Git(Root, "switch", "-qc", "delete"); await Git(Root, "rm", "file.txt"); await Git(Root, "commit", "-qm", "delete");
-        await Git(Root, "switch", "main"); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "ours\n"); await Git(Root, "commit", "-qam", "ours");
+        await Git(Root, "switch", "main"); await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), "ours\n", Xunit.TestContext.Current.CancellationToken); await Git(Root, "commit", "-qam", "ours");
         var merge = await Request("merge"); merge.Branch = "refs/heads/delete"; Assert.Equal("conflicted", (await Execute(merge)).State);
         var view = await GitWorkspaceQuery.ReadConflictAsync(Root, "file.txt", default); var resolve = await Request("resolve-conflict"); resolve.Paths = ["file.txt"]; resolve.ExpectedFileVersion = view.ContentVersion; resolve.Resolution = "theirs";
         Assert.Equal("completed", (await Execute(resolve)).State); Assert.False(File.Exists(Path.Combine(Root, "file.txt"))); Assert.Empty((await GitCommandRunner.GetStatusAsync(Root)).Conflicted);

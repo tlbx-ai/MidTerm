@@ -70,7 +70,7 @@ export function createBufferRequestFrame(
   quickResume: boolean,
   replayRows: number | null,
   resumeSequence: bigint | null,
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   const includeResumeSequence = resumeSequence !== null;
   const frame = new Uint8Array(
     muxHeaderSize + (includeResumeSequence ? 11 : replayRows === null ? 1 : 3),

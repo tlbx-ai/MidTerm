@@ -174,7 +174,7 @@ export function attachHubChannel(compositeId: string): void {
   hubSocket = ws;
 }
 
-function sendFrame(frame: Uint8Array): void {
+function sendFrame(frame: Uint8Array<ArrayBuffer>): void {
   if (!hubSocket || hubSocket.readyState !== WebSocket.OPEN) {
     return;
   }

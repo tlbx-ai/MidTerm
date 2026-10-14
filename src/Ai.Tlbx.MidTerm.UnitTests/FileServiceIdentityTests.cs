@@ -70,7 +70,7 @@ public sealed class FileServiceIdentityTests
                 using var afterMutation = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterMutation.User!.Value);
 
                 var selectedPath = Path.Combine(root, "selected ä.txt");
-                await File.WriteAllTextAsync(selectedPath, "Caller first ä\nCaller second 字\n");
+                await File.WriteAllTextAsync(selectedPath, "Caller first ä\nCaller second 字\n", Xunit.TestContext.Current.CancellationToken);
                 var newFile = Assert.Single((await GitNewFileReview.ReadAsync(root, "selected ä.txt", default)).Files);
                 Assert.Equal(2, newFile.Additions); Assert.False(newFile.IsBinary);
                 var selectedStatus = await GitCommandRunner.GetStatusAsync(root);
@@ -90,7 +90,7 @@ public sealed class FileServiceIdentityTests
                 selected.ExpectedIndexVersion = selectedStatus.IndexVersion; selected.ExpectedPatchVersion = snapshot.View.PatchVersion;
                 selected.SelectedLines = []; selected.SelectedHunks = [0];
                 Assert.Equal("completed", (await gitOperations.ExecuteAsync(root, selected, default)).State);
-                Assert.Equal("Caller first ä\nCaller second 字\n", await File.ReadAllTextAsync(selectedPath));
+                Assert.Equal("Caller first ä\nCaller second 字\n", await File.ReadAllTextAsync(selectedPath, Xunit.TestContext.Current.CancellationToken));
                 using var afterSelection = WindowsIdentity.GetCurrent(); Assert.Equal(sid, afterSelection.User!.Value);
                 var workspace = await GitWorkspaceQuery.ReadAsync(root, default);
                 var createBranch = new Ai.Tlbx.MidTerm.Models.Git.GitOperationRequest

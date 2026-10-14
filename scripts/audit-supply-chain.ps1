@@ -56,7 +56,7 @@ $baseline = Get-AdvisoryBaseline $repoRoot
 
 if ($Scope -in @('server','tooling','all')) {
     Write-Host "Supply-chain gate: npm advisories and registry signatures" -ForegroundColor Cyan
-    $requiredNpmVersion = "11.18.0"
+    $requiredNpmVersion = "12.2.0"
     $actualNpmVersion = (& npm --version).Trim()
     if ($LASTEXITCODE -ne 0 -or $actualNpmVersion -ne $requiredNpmVersion) {
         throw "npm $requiredNpmVersion is required for strict lifecycle-script allowlisting; found $actualNpmVersion."
