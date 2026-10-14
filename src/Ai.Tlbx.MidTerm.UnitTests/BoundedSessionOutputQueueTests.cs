@@ -80,7 +80,7 @@ public sealed class BoundedSessionOutputQueueTests
 
         var completionWait = queue.WaitToReadAsync(CancellationToken.None).AsTask();
         queue.Complete();
-        Assert.False(await completionWait.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.False(await completionWait.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken));
     }
 
     [Fact]

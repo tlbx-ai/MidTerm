@@ -108,7 +108,7 @@ public sealed class TerminalReplayExecutorTests
 
         try
         {
-            await File.WriteAllTextAsync(tempFile, "alpha\nbeta");
+            await File.WriteAllTextAsync(tempFile, "alpha\nbeta", Xunit.TestContext.Current.CancellationToken);
             await TerminalReplayExecutor.ExecuteAsync(
                 [
                     new AppServerControlTerminalReplayStep
@@ -144,7 +144,7 @@ public sealed class TerminalReplayExecutorTests
 
         try
         {
-            await File.WriteAllTextAsync(tempFile, "delta\nomega");
+            await File.WriteAllTextAsync(tempFile, "delta\nomega", Xunit.TestContext.Current.CancellationToken);
             await TerminalReplayExecutor.ExecuteAsync(
                 [
                     new AppServerControlTerminalReplayStep
@@ -232,8 +232,8 @@ public sealed class TerminalReplayExecutorTests
 
         try
         {
-            await File.WriteAllTextAsync(firstTextFile, "first\nblock");
-            await File.WriteAllTextAsync(secondTextFile, "second\nblock");
+            await File.WriteAllTextAsync(firstTextFile, "first\nblock", Xunit.TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(secondTextFile, "second\nblock", Xunit.TestContext.Current.CancellationToken);
             await TerminalReplayExecutor.ExecuteAsync(
                 [
                     new AppServerControlTerminalReplayStep
@@ -296,7 +296,7 @@ public sealed class TerminalReplayExecutorTests
 
         try
         {
-            await File.WriteAllTextAsync(tempFile, new string('x', 5_000));
+            await File.WriteAllTextAsync(tempFile, new string('x', 5_000), Xunit.TestContext.Current.CancellationToken);
             await TerminalReplayExecutor.ExecuteAsync(
                 [
                     new AppServerControlTerminalReplayStep
@@ -341,7 +341,7 @@ public sealed class TerminalReplayExecutorTests
 
         try
         {
-            await File.WriteAllTextAsync(tempFile, new string('x', 5_000));
+            await File.WriteAllTextAsync(tempFile, new string('x', 5_000), Xunit.TestContext.Current.CancellationToken);
             await TerminalReplayExecutor.ExecuteAsync(
                 [
                     new AppServerControlTerminalReplayStep

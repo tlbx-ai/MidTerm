@@ -13,7 +13,7 @@ public sealed class PrioritizedWebSocketWriterTests
         using var socket = new GateWebSocket();
         await using var writer = new PrioritizedWebSocketWriter(socket, static (_, _) => { });
         var first = writer.SendAsync(new byte[] { 0 }, MuxWritePriority.Control).AsTask();
-        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         var old = writer.SendAsync(new byte[] { 1 }, MuxWritePriority.BackgroundLive, "session-a").AsTask();
         var active = writer.SendAsync(new byte[] { 2 }, MuxWritePriority.ActiveLive, "session-a").AsTask();
         var begin = writer.SendAsync(new byte[] { 3 }, MuxWritePriority.Control, "session-a").AsTask();
@@ -31,7 +31,7 @@ public sealed class PrioritizedWebSocketWriterTests
         using var socket = new GateWebSocket();
         await using var writer = new PrioritizedWebSocketWriter(socket, static (_, _) => { });
         var sends = new List<Task<bool>> { writer.SendAsync(new byte[] { 0 }, MuxWritePriority.Control).AsTask() };
-        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         sends.Add(writer.SendAsync(new byte[] { 9 }, MuxWritePriority.BackgroundLive, "slow").AsTask());
         for (var i = 0; i < 100; i++)
             sends.Add(writer.SendAsync(new byte[] { 1 }, MuxWritePriority.ActiveLive, "active").AsTask());
@@ -47,7 +47,7 @@ public sealed class PrioritizedWebSocketWriterTests
         var writer = new PrioritizedWebSocketWriter(socket, static (_, _) => { });
         var completed = new ConcurrentBag<bool>();
         var first = writer.SendAsync(new byte[] { 0 }, MuxWritePriority.Control).AsTask();
-        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         for (var i = 0; i < 20; i++)
             Assert.True(writer.TryQueueCopy(new byte[] { 1 }, MuxWritePriority.ActiveLive, completed.Add, "session"));
         socket.ReleaseFirstSend();
@@ -67,7 +67,7 @@ public sealed class PrioritizedWebSocketWriterTests
         await using var writer = new PrioritizedWebSocketWriter(socket, static (_, _) => { });
 
         var first = writer.SendAsync(new byte[] { 1 }, MuxWritePriority.BackgroundLive).AsTask();
-        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         var background = writer.SendAsync(new byte[] { 2 }, MuxWritePriority.BackgroundLive).AsTask();
         var recovery = writer.SendAsync(new byte[] { 3 }, MuxWritePriority.Recovery).AsTask();
         var control = writer.SendAsync(new byte[] { 4 }, MuxWritePriority.Control).AsTask();
@@ -87,7 +87,7 @@ public sealed class PrioritizedWebSocketWriterTests
         {
             writer.SendAsync(new byte[] { 1 }, MuxWritePriority.BackgroundLive).AsTask()
         };
-        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
 
         for (var i = 0; i < PrioritizedWebSocketWriter.MaxQueuedFrames; i++)
         {
@@ -105,7 +105,7 @@ public sealed class PrioritizedWebSocketWriterTests
         using var socket = new GateWebSocket();
         var writer = new PrioritizedWebSocketWriter(socket, static (_, _) => { });
         var first = writer.SendAsync(new byte[] { 1 }, MuxWritePriority.BackgroundLive).AsTask();
-        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
 
         var frame = new byte[64 * 1024];
         var accepted = new List<Task<bool>>();
@@ -137,12 +137,12 @@ public sealed class PrioritizedWebSocketWriterTests
             payload,
             MuxWritePriority.ActiveLive,
             succeeded => completion.TrySetResult(succeeded)));
-        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        await socket.FirstSendStarted.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         Assert.False(completion.Task.IsCompleted);
 
         payload[0] = 99;
         socket.ReleaseFirstSend();
-        Assert.True(await completion.Task.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.True(await completion.Task.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken));
         Assert.Equal(new byte[] { 7 }, socket.CompletedFrames);
     }
 

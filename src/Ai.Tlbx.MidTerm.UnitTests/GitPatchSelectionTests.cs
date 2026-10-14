@@ -61,7 +61,7 @@ public sealed class GitPatchSelectionTests : IDisposable
         Assert.Equal("completed", (await Apply(request)).State);
         var expected = _baseline.ToList(); expected.Insert(5, "Reviewed ä字😀");
         Assert.Equal(string.Join("\r\n", expected) + "\r\n", await Git("show", ":a.txt"));
-        Assert.Equal(Encoding.UTF8.GetBytes(working), await File.ReadAllBytesAsync(Path.Combine(_root, "a.txt")));
+        Assert.Equal(Encoding.UTF8.GetBytes(working), await File.ReadAllBytesAsync(Path.Combine(_root, "a.txt"), Xunit.TestContext.Current.CancellationToken));
     }
 
     [Fact]

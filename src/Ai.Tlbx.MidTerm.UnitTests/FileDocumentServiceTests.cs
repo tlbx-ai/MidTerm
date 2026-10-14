@@ -25,14 +25,14 @@ public sealed class FileDocumentServiceTests : IDisposable
     public async Task ChangedOnDisk_IsRejectedWithoutTouchingEitherVersion()
     {
         var path = Path.Combine(_folder, "notes.md");
-        await File.WriteAllTextAsync(path, "base\n");
+        await File.WriteAllTextAsync(path, "base\n", Xunit.TestContext.Current.CancellationToken);
         var original = await _documents.ReadAsync(path, true, default);
-        await File.WriteAllTextAsync(path, "external agent\n");
+        await File.WriteAllTextAsync(path, "external agent\n", Xunit.TestContext.Current.CancellationToken);
         var error = await Assert.ThrowsAsync<FileDocumentException>(() =>
             _documents.SaveAsync(path, "my draft\n", original.Version!, default));
         Assert.Equal(409, error.StatusCode);
         Assert.Equal("changed", error.Code);
-        Assert.Equal("external agent\n", await File.ReadAllTextAsync(path));
+        Assert.Equal("external agent\n", await File.ReadAllTextAsync(path, Xunit.TestContext.Current.CancellationToken));
         Assert.Empty(Directory.EnumerateFiles(_folder, ".tlbx-*"));
     }
 
@@ -44,18 +44,18 @@ public sealed class FileDocumentServiceTests : IDisposable
         var parentAlias = Path.Combine(_folder, "parent-alias"); Directory.CreateSymbolicLink(parentAlias, physical);
         var targetAlias = Path.Combine(_folder, "target-alias"); Directory.CreateSymbolicLink(targetAlias, Path.Combine(parentAlias, "documents"));
         var actual = Path.Combine(documentFolder, "notes.txt"); var logical = Path.Combine(targetAlias, "notes.txt");
-        await File.WriteAllTextAsync(actual, "Physical baseline\n");
+        await File.WriteAllTextAsync(actual, "Physical baseline\n", Xunit.TestContext.Current.CancellationToken);
         var original = await _documents.ReadAsync(logical, true, default);
         Assert.Equal("Physical baseline\n", original.Content);
         await _documents.SaveAsync(logical, "Saved through aliases\n", original.Version!, default);
-        Assert.Equal("Saved through aliases\n", await File.ReadAllTextAsync(actual));
+        Assert.Equal("Saved through aliases\n", await File.ReadAllTextAsync(actual, Xunit.TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task ConcurrentClients_OnlyOneDistinctDraftCanCommitTheSameBase()
     {
         var path = Path.Combine(_folder, "shared.md");
-        await File.WriteAllTextAsync(path, "base");
+        await File.WriteAllTextAsync(path, "base", Xunit.TestContext.Current.CancellationToken);
         var original = await _documents.ReadAsync(path, true, default);
         async Task<bool> Save(string text)
         {
@@ -64,7 +64,7 @@ public sealed class FileDocumentServiceTests : IDisposable
         }
         var commits = await Task.WhenAll(Save("client one"), Save("client two"));
         Assert.Single(commits.Where(static committed => committed));
-        Assert.Contains(await File.ReadAllTextAsync(path), new[] { "client one", "client two" }, StringComparer.Ordinal);
+        Assert.Contains(await File.ReadAllTextAsync(path, Xunit.TestContext.Current.CancellationToken), new[] { "client one", "client two" }, StringComparer.Ordinal);
         Assert.Empty(Directory.EnumerateFiles(_folder, ".tlbx-*"));
     }
 
@@ -87,13 +87,13 @@ public sealed class FileDocumentServiceTests : IDisposable
             _ => new UTF8Encoding(false)
         };
         var path = Path.Combine(_folder, kind + ".txt");
-        await File.WriteAllTextAsync(path, "Hällo 🎸\r\nsecond\r\n", encoding);
+        await File.WriteAllTextAsync(path, "Hällo 🎸\r\nsecond\r\n", encoding, Xunit.TestContext.Current.CancellationToken);
         var original = await _documents.ReadAsync(path, true, default);
         Assert.Equal("Hällo 🎸\nsecond\n", original.Content);
         Assert.Equal("crlf", original.LineEnding);
         var saved = await _documents.SaveAsync(path, "Changed 🎸\nsecond\n", original.Version!, default);
         var wanted = encoding.GetPreamble().Concat(encoding.GetBytes("Changed 🎸\r\nsecond\r\n")).ToArray();
-        Assert.Equal(wanted, await File.ReadAllBytesAsync(path));
+        Assert.Equal(wanted, await File.ReadAllBytesAsync(path, Xunit.TestContext.Current.CancellationToken));
         var current = await _documents.ReadAsync(path, true, default);
         Assert.Equal(current.Version, saved.Version);
         Assert.Equal(original.Encoding, saved.Encoding);
@@ -103,7 +103,7 @@ public sealed class FileDocumentServiceTests : IDisposable
     public async Task DeletedDocument_IsNotSilentlyRecreated()
     {
         var path = Path.Combine(_folder, "deleted.txt");
-        await File.WriteAllTextAsync(path, "base");
+        await File.WriteAllTextAsync(path, "base", Xunit.TestContext.Current.CancellationToken);
         var original = await _documents.ReadAsync(path, true, default);
         File.Delete(path);
         await Assert.ThrowsAsync<FileNotFoundException>(() => _documents.SaveAsync(path, "draft", original.Version!, default));
@@ -115,19 +115,19 @@ public sealed class FileDocumentServiceTests : IDisposable
     {
         var first = Path.Combine(_folder, "A.txt");
         var second = Path.Combine(_folder, "B.txt");
-        await File.WriteAllTextAsync(first, "same base");
-        await File.WriteAllTextAsync(second, "same base");
+        await File.WriteAllTextAsync(first, "same base", Xunit.TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(second, "same base", Xunit.TestContext.Current.CancellationToken);
         var original = await _documents.ReadAsync(first, true, default);
         var error = await Assert.ThrowsAsync<FileDocumentException>(() => _documents.SaveAsync(second, "wrong target", original.Version!, default));
         Assert.Equal(409, error.StatusCode);
-        Assert.Equal("same base", await File.ReadAllTextAsync(second));
+        Assert.Equal("same base", await File.ReadAllTextAsync(second, Xunit.TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task ARepeatedCompletedSave_IsIdempotent()
     {
         var path = Path.Combine(_folder, "retry.txt");
-        await File.WriteAllTextAsync(path, "base");
+        await File.WriteAllTextAsync(path, "base", Xunit.TestContext.Current.CancellationToken);
         var original = await _documents.ReadAsync(path, true, default);
         var first = await _documents.SaveAsync(path, "draft", original.Version!, default);
         var modified = File.GetLastWriteTimeUtc(path);
@@ -140,7 +140,7 @@ public sealed class FileDocumentServiceTests : IDisposable
     public async Task CancellationBeforePublication_LeavesOriginalUntouched()
     {
         var path = Path.Combine(_folder, "cancelled.txt");
-        await File.WriteAllTextAsync(path, "base");
+        await File.WriteAllTextAsync(path, "base", Xunit.TestContext.Current.CancellationToken);
         var original = await _documents.ReadAsync(path, true, default);
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
@@ -153,23 +153,23 @@ public sealed class FileDocumentServiceTests : IDisposable
     public async Task MissingVersion_NeverChangesTheFile()
     {
         var path = Path.Combine(_folder, "blind.txt");
-        await File.WriteAllTextAsync(path, "base");
+        await File.WriteAllTextAsync(path, "base", Xunit.TestContext.Current.CancellationToken);
         var error = await Assert.ThrowsAsync<FileDocumentException>(() => _documents.SaveAsync(path, "draft", "", default));
         Assert.Equal(428, error.StatusCode);
-        Assert.Equal("base", await File.ReadAllTextAsync(path));
+        Assert.Equal("base", await File.ReadAllTextAsync(path, Xunit.TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task ReadOnlyFile_IsNotChangedEvenWithAValidVersion()
     {
         var path = Path.Combine(_folder, "readonly.txt");
-        await File.WriteAllTextAsync(path, "base");
+        await File.WriteAllTextAsync(path, "base", Xunit.TestContext.Current.CancellationToken);
         var original = await _documents.ReadAsync(path, true, default);
         File.SetAttributes(path, File.GetAttributes(path) | FileAttributes.ReadOnly);
         try
         {
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => _documents.SaveAsync(path, "draft", original.Version!, default));
-            Assert.Equal("base", await File.ReadAllTextAsync(path));
+            Assert.Equal("base", await File.ReadAllTextAsync(path, Xunit.TestContext.Current.CancellationToken));
             Assert.True((await _documents.ReadAsync(path, true, default)).ReadOnly);
         }
         finally { File.SetAttributes(path, FileAttributes.Normal); }
@@ -179,7 +179,7 @@ public sealed class FileDocumentServiceTests : IDisposable
     public async Task PreviewDoesNotReplaceAnIncompleteUnicodeCodePoint()
     {
         var path = Path.Combine(_folder, "unicode-boundary.txt");
-        await File.WriteAllTextAsync(path, new string('x', FileDocumentService.PreviewBytes - 2) + "🎸end");
+        await File.WriteAllTextAsync(path, new string('x', FileDocumentService.PreviewBytes - 2) + "🎸end", Xunit.TestContext.Current.CancellationToken);
         var preview = await _documents.ReadAsync(path, false, default);
         Assert.True(preview.IsTruncated);
         Assert.DoesNotContain('\uFFFD', preview.Content);
@@ -195,7 +195,7 @@ public sealed class FileDocumentServiceTests : IDisposable
         var path = Path.Combine(_folder, "paged-" + kind + ".txt");
         var encoding = kind == "utf16" ? (Encoding)new UnicodeEncoding(false, true) : new UTF8Encoding(true);
         var text = new string('a', FileDocumentService.PreviewBytes - 8) + "🎸\r\nsecond " + new string('b', FileDocumentService.PreviewBytes) + "Ω end";
-        await File.WriteAllTextAsync(path, text, encoding);
+        await File.WriteAllTextAsync(path, text, encoding, Xunit.TestContext.Current.CancellationToken);
         var combined = new StringBuilder();
         long offset = 0;
         var pages = 0;
@@ -219,7 +219,7 @@ public sealed class FileDocumentServiceTests : IDisposable
     public async Task CrLfSplitAtByteBoundaryIsKeptOnTheFollowingPage()
     {
         var path = Path.Combine(_folder, "crlf-boundary.txt");
-        await File.WriteAllTextAsync(path, new string('x', FileDocumentService.PreviewBytes - 1) + "\r\nend", new UTF8Encoding(false));
+        await File.WriteAllTextAsync(path, new string('x', FileDocumentService.PreviewBytes - 1) + "\r\nend", new UTF8Encoding(false), Xunit.TestContext.Current.CancellationToken);
         var first = await _documents.ReadAsync(path, false, default);
         Assert.Equal(FileDocumentService.PreviewBytes - 1, first.NextOffset);
         var second = await _documents.ReadAsync(path, false, default, first.NextOffset);
@@ -233,7 +233,7 @@ public sealed class FileDocumentServiceTests : IDisposable
         await using (var output = File.Create(path))
         {
             var chunk = Encoding.UTF8.GetBytes(new string('x', 1024 * 1024));
-            for (var i = 0; i < 64; i++) await output.WriteAsync(chunk);
+            for (var i = 0; i < 64; i++) await output.WriteAsync(chunk, Xunit.TestContext.Current.CancellationToken);
         }
         var before = GC.GetTotalAllocatedBytes(precise: true);
         var preview = await _documents.ReadAsync(path, false, default);
@@ -253,7 +253,7 @@ public sealed class FileDocumentServiceTests : IDisposable
     public async Task InvalidPageOffsetsDoNotReadAnotherDocument(long offset)
     {
         var path = Path.Combine(_folder, "offset.txt");
-        await File.WriteAllTextAsync(path, "short");
+        await File.WriteAllTextAsync(path, "short", Xunit.TestContext.Current.CancellationToken);
         var error = await Assert.ThrowsAsync<FileDocumentException>(() => _documents.ReadAsync(path, false, default, offset));
         Assert.Equal(400, error.StatusCode);
     }
@@ -262,7 +262,7 @@ public sealed class FileDocumentServiceTests : IDisposable
     public async Task PartialPreview_IsReadOnlyAndCarriesNoWritableVersion()
     {
         var path = Path.Combine(_folder, "large.txt");
-        await File.WriteAllTextAsync(path, new string('x', FileDocumentService.PreviewBytes) + "🎸tail");
+        await File.WriteAllTextAsync(path, new string('x', FileDocumentService.PreviewBytes) + "🎸tail", Xunit.TestContext.Current.CancellationToken);
         var preview = await _documents.ReadAsync(path, false, default);
         Assert.True(preview.ReadOnly);
         Assert.True(preview.IsTruncated);

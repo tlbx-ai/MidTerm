@@ -37,6 +37,17 @@ Use `all` by itself. Otherwise pass one category or a PowerShell array such as
 install is reused by the selected checks and audit. Hosted server dependency audits,
 package signing, SBOM/provenance and platform builds remain release gates.
 
+The frontend and marketing typechecks use TypeScript 7 through the
+`typescript-compiler` npm alias. Their `typescript` dependency supplies the
+JavaScript compiler API required by the current ESLint parser and OpenAPI
+generator; it is not the compiler used by `typecheck`. ASP.NET Core 10 requires
+OpenAPI.NET 2.x, so that generator retains the latest 2.x package until the
+stable ASP.NET integration supports OpenAPI.NET 3.
+
+Tests use xUnit v3 and Microsoft.Testing.Platform, selected in `global.json`.
+Use `dotnet test --project <path>`; targeted runs use `--filter-class` and
+`--report-trx`, rather than VSTest filters or loggers.
+
 Dependency advisories block **security regressions**, compared with the last
 published release in the same channel. `audit-supply-chain.ps1` queries current
 advisory data for the candidate and baseline locked graphs. Existing findings,

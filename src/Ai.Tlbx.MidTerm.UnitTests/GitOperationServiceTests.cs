@@ -196,7 +196,7 @@ public sealed class GitOperationServiceTests : IDisposable
         await Init(); Write("a.txt", "Staged content\n"); await Execute(Request("stage", "a.txt"));
         await Git("config", "user.name", ""); await Git("config", "user.email", ""); var identity = await Execute(await Commit("Needs identity")); Assert.Equal("identity_missing", identity.ErrorCode); Assert.Single(identity.Status!.Staged);
         await Git("config", "user.name", "Acceptance"); await Git("config", "user.email", "ops@tlbx.invalid");
-        var hooks = Path.Combine(_root, ".git", "acceptance-hooks"); Directory.CreateDirectory(hooks); var hook = Path.Combine(hooks, "pre-commit"); await File.WriteAllTextAsync(hook, "#!/bin/sh\necho 'Acceptance hook rejected commit' >&2\nexit 1\n"); if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(hook, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var hooks = Path.Combine(_root, ".git", "acceptance-hooks"); Directory.CreateDirectory(hooks); var hook = Path.Combine(hooks, "pre-commit"); await File.WriteAllTextAsync(hook, "#!/bin/sh\necho 'Acceptance hook rejected commit' >&2\nexit 1\n", Xunit.TestContext.Current.CancellationToken); if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(hook, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         await Git("config", "core.hooksPath", hooks); var failed = await Execute(await Commit("Hook rejection")); Assert.Equal("git_failed", failed.ErrorCode); Assert.Contains("Acceptance hook rejected", failed.Detail, StringComparison.Ordinal); Assert.Single(failed.Status!.Staged); Assert.False(File.Exists(Path.Combine(_root, ".git", "index.lock")));
     }
 
@@ -209,8 +209,8 @@ public sealed class GitOperationServiceTests : IDisposable
     [Fact]
     public async Task ExternalIndexLockAndInvalidPathsCannotMutateRepository()
     {
-        await Init(); Write("a.txt", "Changed\n"); var index = Path.Combine(_root, ".git", "index"); var before = await GitCommandRunner.HashIndexAsync(index); await File.WriteAllTextAsync(index + ".lock", "External lock");
-        var locked = await Execute(Request("stage", "a.txt")); Assert.Equal("git_locked", locked.ErrorCode); Assert.Equal("External lock", await File.ReadAllTextAsync(index + ".lock")); File.Delete(index + ".lock");
+        await Init(); Write("a.txt", "Changed\n"); var index = Path.Combine(_root, ".git", "index"); var before = await GitCommandRunner.HashIndexAsync(index); await File.WriteAllTextAsync(index + ".lock", "External lock", Xunit.TestContext.Current.CancellationToken);
+        var locked = await Execute(Request("stage", "a.txt")); Assert.Equal("git_locked", locked.ErrorCode); Assert.Equal("External lock", await File.ReadAllTextAsync(index + ".lock", Xunit.TestContext.Current.CancellationToken)); File.Delete(index + ".lock");
         var denied = await Execute(Request("stage", "../outside.txt")); Assert.Equal("path_outside_repository", denied.ErrorCode); Assert.Equal(before, await GitCommandRunner.HashIndexAsync(index));
     }
 
@@ -218,7 +218,7 @@ public sealed class GitOperationServiceTests : IDisposable
     {
         var hooks = Path.Combine(_root, ".git", "acceptance-hooks"); Directory.CreateDirectory(hooks);
         var hook = Path.Combine(hooks, "pre-commit");
-        await File.WriteAllTextAsync(hook, $"#!/bin/sh\nprintf 'ready' > hook-ready.marker\nsleep {seconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}\nexit 0\n");
+        await File.WriteAllTextAsync(hook, $"#!/bin/sh\nprintf 'ready' > hook-ready.marker\nsleep {seconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}\nexit 0\n", Xunit.TestContext.Current.CancellationToken);
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(hook, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         await Git("config", "core.hooksPath", hooks);
     }
@@ -256,7 +256,7 @@ public sealed class GitOperationServiceTests : IDisposable
     {
         await Init(); Write("a.txt", "Reviewed change\n"); await Execute(Request("stage", "a.txt"));
         var hooks = Path.Combine(_root, ".git", "acceptance-hooks"); Directory.CreateDirectory(hooks);
-        await File.WriteAllTextAsync(Path.Combine(hooks, "post-commit"), "#!/bin/sh\nprintf 'ready' > publication-ready.marker\nsleep 1\n");
+        await File.WriteAllTextAsync(Path.Combine(hooks, "post-commit"), "#!/bin/sh\nprintf 'ready' > publication-ready.marker\nsleep 1\n", Xunit.TestContext.Current.CancellationToken);
         await Git("config", "core.hooksPath", hooks);
         var request = await Commit("Confirmed commit despite index publication error"); var pending = Execute(request);
         for (var i = 0; i < 100 && !File.Exists(Path.Combine(_root, "publication-ready.marker")); i++) await Task.Delay(25, CancellationToken.None);
@@ -277,7 +277,7 @@ public sealed class GitOperationServiceTests : IDisposable
         await Init(); Write("a.txt", "Selected change\n");
         var other = Path.Combine(_root, "other"); Directory.CreateDirectory(other);
         var init = await GitCommandRunner.ExecuteAsync(other, ["init", "--quiet"], default); Assert.Equal(0, init.ExitCode);
-        await File.WriteAllTextAsync(Path.Combine(other, "a.txt"), "Other change\n");
+        await File.WriteAllTextAsync(Path.Combine(other, "a.txt"), "Other change\n", Xunit.TestContext.Current.CancellationToken);
         var otherIndex = Path.Combine(other, ".git", "index");
         var overrides = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -294,7 +294,7 @@ public sealed class GitOperationServiceTests : IDisposable
             var staged = await Execute(Request("stage", "a.txt")); Assert.Equal("completed", staged.State);
             var committed = await Execute(await Commit("Correct selected repository")); Assert.Equal("completed", committed.State);
             var content = await GitCommandRunner.ExecuteAsync(_root, ["show", "HEAD:a.txt"], default); Assert.Equal("Selected change\n", content.Stdout.Replace("\r\n", "\n", StringComparison.Ordinal));
-            Assert.False(File.Exists(otherIndex)); Assert.Equal("Other change\n", await File.ReadAllTextAsync(Path.Combine(other, "a.txt")));
+            Assert.False(File.Exists(otherIndex)); Assert.Equal("Other change\n", await File.ReadAllTextAsync(Path.Combine(other, "a.txt"), Xunit.TestContext.Current.CancellationToken));
         }
         finally { foreach (var pair in saved) Environment.SetEnvironmentVariable(pair.Key, pair.Value); }
     }

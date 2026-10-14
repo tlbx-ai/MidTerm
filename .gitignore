@@ -97,6 +97,10 @@ src/Ai.Tlbx.MidTerm/dist/
 # Node.js
 node_modules/
 
+# Python build cache
+__pycache__/
+*.py[cod]
+
 # Gradle local state
 .gradle/
 src/connectors/android/build/

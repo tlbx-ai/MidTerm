@@ -320,7 +320,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         else
         {
             var driver = Path.Combine(_tempDir, Guid.NewGuid().ToString("N") + ".ps1");
-            await File.WriteAllTextAsync(driver, "$ErrorActionPreference = 'Stop'\n" + command);
+            await File.WriteAllTextAsync(driver, "$ErrorActionPreference = 'Stop'\n" + command, Xunit.TestContext.Current.CancellationToken);
             start.ArgumentList.Add("-NoProfile");
             start.ArgumentList.Add("-File");
             start.ArgumentList.Add(driver);
@@ -328,8 +328,8 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         foreach (var argument in arguments)
             start.ArgumentList.Add(bash && File.Exists(argument) ? ToBashPath(argument) : argument);
         using var process = Process.Start(start)!;
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
+        var stdout = process.StandardOutput.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+        var stderr = process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {

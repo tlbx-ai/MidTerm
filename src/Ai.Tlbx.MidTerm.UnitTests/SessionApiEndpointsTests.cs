@@ -172,7 +172,7 @@ public sealed class SessionApiEndpointsTests
             {
                 fallbackCalled = true;
                 return Task.FromResult(true);
-            });
+            }, Xunit.TestContext.Current.CancellationToken);
 
         Assert.True(ok);
         Assert.True(fallbackCalled);

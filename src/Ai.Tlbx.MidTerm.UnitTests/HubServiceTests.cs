@@ -62,7 +62,7 @@ public sealed class HubServiceTests : IAsyncDisposable
         });
 
         hubService.PinFingerprint(created.Id, server.Fingerprint);
-        var session = await hubService.CreateSessionAsync(created.Id, request: null);
+        var session = await hubService.CreateSessionAsync(created.Id, request: null, ct: Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal("remote-session-1", session.Id);
         Assert.True(server.LoginAttempts >= 1);
@@ -84,7 +84,7 @@ public sealed class HubServiceTests : IAsyncDisposable
             ApiKey = "private-key", Password = TestHubServer.ValidPassword
         });
         if (wrongPin) hub.PinFingerprint(machine.Id, string.Join(':', Enumerable.Repeat("00", 32)));
-        await Assert.ThrowsAnyAsync<Exception>(() => hub.CreateSessionAsync(machine.Id, request: null));
+        await Assert.ThrowsAnyAsync<Exception>(() => hub.CreateSessionAsync(machine.Id, request: null, ct: Xunit.TestContext.Current.CancellationToken));
         Assert.Equal(0, server.LoginAttempts);
         Assert.Equal(0, server.InvalidApiKeyAttempts);
     }
@@ -101,7 +101,7 @@ public sealed class HubServiceTests : IAsyncDisposable
             Password = TestHubServer.ValidPassword
         });
         hub.PinFingerprint(machine.Id, server.Fingerprint);
-        await Assert.ThrowsAnyAsync<Exception>(() => hub.CreateSessionAsync(machine.Id, request: null));
+        await Assert.ThrowsAnyAsync<Exception>(() => hub.CreateSessionAsync(machine.Id, request: null, ct: Xunit.TestContext.Current.CancellationToken));
         Assert.Equal(1, server.LoginAttempts);
         Assert.False(server.RedirectReached);
     }

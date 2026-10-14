@@ -1,11 +1,11 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
     namespace = "ai.tlbx.app"
     compileSdk = 36
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "ai.tlbx.app"
@@ -43,14 +43,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs += listOf(
-            "-Xno-param-assertions",
-            "-Xno-call-assertions",
-            "-Xno-receiver-assertions"
-        )
-    }
 
     packaging {
         resources {
@@ -58,5 +50,15 @@ android {
             excludes += "DebugProbesKt.bin"
             excludes += "kotlin-tooling-metadata.json"
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.addAll(
+            "-Xno-param-assertions",
+            "-Xno-call-assertions",
+            "-Xno-receiver-assertions"
+        )
     }
 }

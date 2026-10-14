@@ -19,7 +19,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
         var imagePath = Path.Combine(fakeClaude.Root, "pasted-image.png");
         var imageBytes = Convert.FromBase64String(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
-        await File.WriteAllBytesAsync(imagePath, imageBytes);
+        await File.WriteAllBytesAsync(imagePath, imageBytes, Xunit.TestContext.Current.CancellationToken);
         string? lastApprovalRequestId = null;
 
         try
@@ -149,8 +149,8 @@ public sealed class MtAgentHostClaudeIntegrationTests
         finally
         {
             if (!process.HasExited) process.Kill(entireProcessTree: true);
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }
     }
 

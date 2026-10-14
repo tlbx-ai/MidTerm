@@ -93,8 +93,8 @@ public sealed class MtAgentHostRealClaudeSmokeTests
         finally
         {
             if (!process.HasExited) process.Kill(entireProcessTree: true);
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
             try { Directory.Delete(workdir, recursive: true); } catch { }
         }
     }

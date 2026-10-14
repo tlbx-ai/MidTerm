@@ -117,24 +117,25 @@ public static class EndpointSetup
             ? string.Join(" ", cliArgs.Skip(1))
             : "";
 
-        var psi = new ProcessStartInfo
-        {
-            FileName = exePath,
-            Arguments = args,
-            WorkingDirectory = Path.GetDirectoryName(exePath) ?? ".",
-            CreateNoWindow = true,
-        };
-
-        if (OperatingSystem.IsWindows())
-        {
-            psi.UseShellExecute = true;
-            psi.WindowStyle = ProcessWindowStyle.Hidden;
-        }
-        else
-        {
-            psi.UseShellExecute = false;
-            psi.RedirectStandardInput = true;
-        }
+        var psi = OperatingSystem.IsWindows()
+            ? new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = args,
+                WorkingDirectory = Path.GetDirectoryName(exePath) ?? ".",
+                CreateNoWindow = true,
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+            }
+            : new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = args,
+                WorkingDirectory = Path.GetDirectoryName(exePath) ?? ".",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardInput = true,
+            };
 
         using var proc = Process.Start(psi);
         if (proc is not null && !OperatingSystem.IsWindows())

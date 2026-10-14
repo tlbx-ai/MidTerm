@@ -42,10 +42,10 @@ public sealed class GitWatcherServiceTests
         using var watcher = new GitWatcherService();
         watcher.ConfigureSessionValidator(static _ => true);
 
-        await Task.WhenAll(Enumerable.Range(0, 100).Select(_ => Task.Run(() => watcher.Subscribe("session-1"))));
+        await Task.WhenAll(Enumerable.Range(0, 100).Select(_ => Task.Run(() => watcher.Subscribe("session-1"), Xunit.TestContext.Current.CancellationToken)));
         Assert.Equal(100, watcher.GetSessionSubscriberCountForTests("session-1"));
 
-        await Task.WhenAll(Enumerable.Range(0, 100).Select(_ => Task.Run(() => watcher.Unsubscribe("session-1"))));
+        await Task.WhenAll(Enumerable.Range(0, 100).Select(_ => Task.Run(() => watcher.Unsubscribe("session-1"), Xunit.TestContext.Current.CancellationToken)));
         Assert.Equal(0, watcher.GetSessionSubscriberCountForTests("session-1"));
     }
 
@@ -58,7 +58,7 @@ public sealed class GitWatcherServiceTests
         watcher.UnregisterSession("session-1");
         watcher.UnregisterSession("session-1");
 
-        await watcher.WaitForSessionCleanupAsync("session-1").WaitAsync(TimeSpan.FromSeconds(2));
+        await watcher.WaitForSessionCleanupAsync("session-1").WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
         Assert.Null(watcher.GetRepoRoot("session-1"));
     }
 }

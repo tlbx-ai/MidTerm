@@ -1031,8 +1031,8 @@ public sealed class SessionAppServerControlHistoryServiceTests
             Type = "session.started"
         });
 
-        using var subscription = service.SubscribeProviderEvents("s1", afterSequence: 0);
-        Assert.True(await subscription.Reader.WaitToReadAsync());
+        using var subscription = service.SubscribeProviderEvents("s1", afterSequence: 0, cancellationToken: Xunit.TestContext.Current.CancellationToken);
+        Assert.True(await subscription.Reader.WaitToReadAsync(Xunit.TestContext.Current.CancellationToken));
         Assert.True(subscription.Reader.TryRead(out var backlogEvent));
         Assert.Equal("e1", backlogEvent!.EventId);
 
@@ -1046,7 +1046,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
             Type = "session.ready"
         });
 
-        Assert.True(await subscription.Reader.WaitToReadAsync());
+        Assert.True(await subscription.Reader.WaitToReadAsync(Xunit.TestContext.Current.CancellationToken));
         Assert.True(subscription.Reader.TryRead(out var liveEvent));
         Assert.Equal("e2", liveEvent!.EventId);
         Assert.Equal(2, liveEvent.Sequence);
@@ -1057,7 +1057,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
     {
         var service = new SessionAppServerControlHistoryService();
 
-        using var subscription = service.SubscribeHistoryPatches("s-delta");
+        using var subscription = service.SubscribeHistoryPatches("s-delta", Xunit.TestContext.Current.CancellationToken);
 
         service.Append(new AppServerControlProviderEvent
         {
@@ -1075,7 +1075,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
             }
         });
 
-        Assert.True(await subscription.Reader.WaitToReadAsync());
+        Assert.True(await subscription.Reader.WaitToReadAsync(Xunit.TestContext.Current.CancellationToken));
         Assert.True(subscription.Reader.TryRead(out _));
 
         service.Append(new AppServerControlProviderEvent
@@ -1095,7 +1095,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
             }
         });
 
-        Assert.True(await subscription.Reader.WaitToReadAsync());
+        Assert.True(await subscription.Reader.WaitToReadAsync(Xunit.TestContext.Current.CancellationToken));
         Assert.True(subscription.Reader.TryRead(out var delta));
         Assert.NotNull(delta);
         Assert.Equal("s-delta", delta!.SessionId);
@@ -1894,7 +1894,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
     public async Task GetSnapshot_KeepsTelemetryNoticesOutOfConversationHistory()
     {
         var service = new SessionAppServerControlHistoryService();
-        using var subscription = service.SubscribeHistoryPatches("s-runtime-telemetry");
+        using var subscription = service.SubscribeHistoryPatches("s-runtime-telemetry", Xunit.TestContext.Current.CancellationToken);
 
         service.Append(new AppServerControlProviderEvent
         {
@@ -1917,7 +1917,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
         Assert.Single(snapshot!.Notices);
         Assert.Empty(snapshot.History);
 
-        Assert.True(await subscription.Reader.WaitToReadAsync());
+        Assert.True(await subscription.Reader.WaitToReadAsync(Xunit.TestContext.Current.CancellationToken));
         Assert.True(subscription.Reader.TryRead(out var patch));
         Assert.Empty(patch!.HistoryUpserts);
         Assert.Equal("Codex context window updated.", Assert.Single(patch.NoticeUpserts).Message);

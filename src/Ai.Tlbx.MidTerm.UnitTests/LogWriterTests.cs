@@ -43,7 +43,7 @@ public sealed class LogWriterTests : IDisposable
         {
             using var logger = CreateLogger();
             if (writeEntry) logger.Info(() => "shutdown marker");
-        }).WaitAsync(TimeSpan.FromSeconds(1));
+        }, Xunit.TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(1), Xunit.TestContext.Current.CancellationToken);
 
         if (writeEntry)
         {

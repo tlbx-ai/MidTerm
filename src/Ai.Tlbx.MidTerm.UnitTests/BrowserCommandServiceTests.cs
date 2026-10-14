@@ -509,7 +509,7 @@ public class BrowserCommandServiceTests
             previewName: "user1",
             connectedUiClientCountProvider: () => 1,
             timeout: TimeSpan.FromMilliseconds(40),
-            pollInterval: TimeSpan.FromMilliseconds(10));
+            pollInterval: TimeSpan.FromMilliseconds(10), cancellationToken: Xunit.TestContext.Current.CancellationToken);
 
         Assert.False(status.Controllable);
         Assert.Equal("waiting", status.State);
@@ -525,7 +525,7 @@ public class BrowserCommandServiceTests
         Assert.True(service.TryRegisterClient("c1", "session-a", "default", "preview-a", _ => { }));
         var notBefore = DateTimeOffset.UtcNow.AddMilliseconds(20);
         // Establish the timestamp boundary before starting the operation's timeout.
-        await Task.Delay(50);
+        await Task.Delay(50, Xunit.TestContext.Current.CancellationToken);
 
         var waitingTask = service.WaitForControllableAsync(
             "https://example.com/",
@@ -533,7 +533,7 @@ public class BrowserCommandServiceTests
             previewName: "default",
             requireClientConnectedAfterUtc: notBefore,
             timeout: TimeSpan.FromSeconds(10),
-            pollInterval: TimeSpan.FromMilliseconds(10));
+            pollInterval: TimeSpan.FromMilliseconds(10), cancellationToken: Xunit.TestContext.Current.CancellationToken);
 
         Assert.False(waitingTask.IsCompleted);
         Assert.True(service.TryRegisterClient("c2", "session-a", "default", "preview-a", _ => { }));
@@ -557,9 +557,9 @@ public class BrowserCommandServiceTests
             previewName: "default",
             requireVisibleClient: true,
             timeout: TimeSpan.FromSeconds(1),
-            pollInterval: TimeSpan.FromMilliseconds(10));
+            pollInterval: TimeSpan.FromMilliseconds(10), cancellationToken: Xunit.TestContext.Current.CancellationToken);
 
-        await Task.Delay(40);
+        await Task.Delay(40, Xunit.TestContext.Current.CancellationToken);
         Assert.True(service.TryRegisterClient(
             "hidden",
             "session-a",
@@ -568,7 +568,7 @@ public class BrowserCommandServiceTests
             _ => { },
             isVisible: false));
 
-        await Task.Delay(40);
+        await Task.Delay(40, Xunit.TestContext.Current.CancellationToken);
         Assert.False(waitingTask.IsCompleted);
 
         service.UnregisterClient("hidden");

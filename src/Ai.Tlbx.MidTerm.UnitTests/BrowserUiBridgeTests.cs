@@ -48,9 +48,9 @@ public sealed class BrowserUiBridgeTests
             "https://example.com",
             activateSession: true,
             timeout: TimeSpan.FromSeconds(2),
-            pollInterval: TimeSpan.FromMilliseconds(10));
+            pollInterval: TimeSpan.FromMilliseconds(10), cancellationToken: Xunit.TestContext.Current.CancellationToken);
 
-        await Task.Delay(50);
+        await Task.Delay(50, Xunit.TestContext.Current.CancellationToken);
         bridge.RegisterListener(
             "connection-a",
             "browser-a",
@@ -84,7 +84,7 @@ public sealed class BrowserUiBridgeTests
             (_, _, _, _, _) => { },
             (_, _, _, _, _, _) => { });
 
-        var result = await bridge.RequestDetachAsync("session-a", "default");
+        var result = await bridge.RequestDetachAsync("session-a", "default", Xunit.TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal("Popup blocked", result.Error);
@@ -117,7 +117,7 @@ public sealed class BrowserUiBridgeTests
             "default",
             "https://example.com",
             activateSession: false,
-            targetRevision: 42);
+            targetRevision: 42, cancellationToken: Xunit.TestContext.Current.CancellationToken);
 
         Assert.True(result.Success);
         Assert.Equal(42, receivedRevision);
@@ -141,7 +141,7 @@ public sealed class BrowserUiBridgeTests
                 await releaseOpen.Task;
                 order.Add("open-end");
                 return true;
-            });
+            }, Xunit.TestContext.Current.CancellationToken);
         await openEntered.Task;
 
         var close = bridge.SerializeTargetOperationAsync(
@@ -151,9 +151,9 @@ public sealed class BrowserUiBridgeTests
             {
                 order.Add("close");
                 return Task.FromResult(true);
-            });
+            }, Xunit.TestContext.Current.CancellationToken);
 
-        await Task.Delay(25);
+        await Task.Delay(25, Xunit.TestContext.Current.CancellationToken);
         Assert.Equal(["open-start"], order);
         releaseOpen.SetResult();
         await Task.WhenAll(open, close);
@@ -184,7 +184,7 @@ public sealed class BrowserUiBridgeTests
                     Success = true
                 });
             });
-        await Task.Delay(5);
+        await Task.Delay(5, Xunit.TestContext.Current.CancellationToken);
         bridge.RegisterListener(
             "hidden",
             "browser-b:tab-hidden",

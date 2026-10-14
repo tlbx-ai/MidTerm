@@ -72,7 +72,7 @@ public sealed class SessionCallerIdentityTests
             Arguments = "/c exit 0", UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true
         })!;
-        await child.WaitForExitAsync();
+        await child.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         var ran = false;
         var error = await Assert.ThrowsAsync<SessionCallerIdentityException>(() =>
             SessionCallerIdentity.RunAsync(child.Id, () => { ran = true; return Task.FromResult(true); }));

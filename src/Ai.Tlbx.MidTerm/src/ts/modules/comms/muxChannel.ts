@@ -1752,7 +1752,7 @@ export function connectMuxWebSocket(): void {
 /**
  * Send a frame to the mux WebSocket with traffic tracking.
  */
-function sendFrame(frame: Uint8Array): void {
+function sendFrame(frame: Uint8Array<ArrayBuffer>): void {
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
   addWsTxBytes(frame.byteLength);
   muxWs.send(frame);

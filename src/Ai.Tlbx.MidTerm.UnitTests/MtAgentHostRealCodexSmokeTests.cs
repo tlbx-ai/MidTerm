@@ -102,8 +102,8 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
 
             try
             {
@@ -208,10 +208,10 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 appServer.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            _ = await appServer.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-            await appServer.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            _ = await appServer.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+            await appServer.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
 
             try
             {
@@ -245,7 +245,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
             beta,5,Linus
             gamma,8,Grace
             """,
-            Encoding.UTF8);
+            Encoding.UTF8, Xunit.TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(
             Path.Combine(workdir, "report.md"),
             """
@@ -253,7 +253,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
 
             status: TODO
             """,
-            Encoding.UTF8);
+            Encoding.UTF8, Xunit.TestContext.Current.CancellationToken);
         await InitializeGitWorkspaceAsync(workdir);
 
         using var process = StartAgentHost(hostDll);
@@ -329,7 +329,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
             Assert.False(string.IsNullOrWhiteSpace(turnWindow.Streams.UnifiedDiff));
             Assert.Contains(turnWindow.History, item => item.ItemType is "command_execution" or "file_change");
 
-            var reportText = await File.ReadAllTextAsync(Path.Combine(workdir, "report.md"), Encoding.UTF8);
+            var reportText = await File.ReadAllTextAsync(Path.Combine(workdir, "report.md"), Encoding.UTF8, Xunit.TestContext.Current.CancellationToken);
             Assert.Contains("DONE", reportText, StringComparison.Ordinal);
             Assert.Contains(marker, reportText, StringComparison.Ordinal);
 
@@ -349,8 +349,8 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
 
             try
             {
@@ -381,13 +381,13 @@ public sealed class MtAgentHostRealCodexSmokeTests
             """
             selected-mode=pending
             """,
-            Encoding.UTF8);
+            Encoding.UTF8, Xunit.TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(
             Path.Combine(workdir, "instructions.txt"),
             """
             The operator must choose SAFE or FAST. Do not infer it.
             """,
-            Encoding.UTF8);
+            Encoding.UTF8, Xunit.TestContext.Current.CancellationToken);
 
         using var process = StartAgentHost(hostDll);
         var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
@@ -455,7 +455,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
             Assert.Contains("FAST", questionAssistantText, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("?", questionAssistantText, StringComparison.Ordinal);
 
-            var unchangedModeText = await File.ReadAllTextAsync(Path.Combine(workdir, "mode.txt"), Encoding.UTF8);
+            var unchangedModeText = await File.ReadAllTextAsync(Path.Combine(workdir, "mode.txt"), Encoding.UTF8, Xunit.TestContext.Current.CancellationToken);
             Assert.Contains("selected-mode=pending", unchangedModeText, StringComparison.OrdinalIgnoreCase);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
@@ -487,7 +487,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 "completed");
             Assert.Contains(completionWindow.History, item => item.ItemType is "file_change" or "command_execution");
 
-            var modeText = await File.ReadAllTextAsync(Path.Combine(workdir, "mode.txt"), Encoding.UTF8);
+            var modeText = await File.ReadAllTextAsync(Path.Combine(workdir, "mode.txt"), Encoding.UTF8, Xunit.TestContext.Current.CancellationToken);
             Assert.Contains($"selected-mode=safe {marker}", modeText, StringComparison.OrdinalIgnoreCase);
 
             var assistantText = AppServerControlHostTestClient.CollectAssistantText(completionWindow);
@@ -505,8 +505,8 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 process.Kill(entireProcessTree: true);
             }
 
-            _ = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
 
             try
             {
@@ -688,9 +688,9 @@ public sealed class MtAgentHostRealCodexSmokeTests
         };
 
         process.Start();
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+        var stderrTask = process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+        await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         var stdout = await stdoutTask;
         var stderr = await stderrTask;
 

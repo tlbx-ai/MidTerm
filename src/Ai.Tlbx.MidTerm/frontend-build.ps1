@@ -65,6 +65,7 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
 
 $requiredNodeDeps = @(
     @{ Name = "typescript"; Path = Join-Path $NodeModulesRoot "typescript/lib/tsc.js" },
+    @{ Name = "typescript-compiler"; Path = Join-Path $NodeModulesRoot "typescript-compiler/bin/tsc" },
     @{ Name = "eslint"; Path = Join-Path $NodeModulesRoot "eslint" },
     @{ Name = "esbuild"; Path = Join-Path $NodeModulesRoot "esbuild" },
     @{ Name = "prettier"; Path = Join-Path $NodeModulesRoot "prettier" },

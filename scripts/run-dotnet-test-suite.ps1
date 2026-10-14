@@ -8,6 +8,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$dotnetHostPath = (Get-Command dotnet -CommandType Application | Select-Object -First 1).Source
 
 $projects = @(
     @{
@@ -38,14 +39,16 @@ try {
         Write-Host "Running .NET tests: $($project.Name)" -ForegroundColor Cyan
         $args = @(
             "test",
+            "--project",
             $project.Path,
             "-c", $Configuration,
-            "--nologo",
-            "--verbosity", "minimal"
+            "--no-logo",
+            "-v", "minimal",
+            "--environment", "DOTNET_HOST_PATH=$dotnetHostPath"
         ) + $project.ExtraArgs
 
         if ($WarnAsError) {
-            $args += "-warnaserror"
+            $args += "-p:TreatWarningsAsErrors=true"
         }
 
         & dotnet @args
