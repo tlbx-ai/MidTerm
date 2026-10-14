@@ -238,7 +238,7 @@ internal static class AppServerControlHostTestClient
 
     private static async Task<string> ReadLineWithTimeoutAsync(StreamReader reader, TimeSpan? timeout = null)
     {
-        var readTask = reader.ReadLineAsync(Xunit.TestContext.Current.CancellationToken);
+        var readTask = reader.ReadLineAsync(Xunit.TestContext.Current.CancellationToken).AsTask();
         var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(30);
         var completed = await Task.WhenAny(readTask, Task.Delay(effectiveTimeout, Xunit.TestContext.Current.CancellationToken));
         if (!ReferenceEquals(completed, readTask))
