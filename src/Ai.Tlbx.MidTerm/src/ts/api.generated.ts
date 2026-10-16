@@ -2711,6 +2711,7 @@ export interface paths {
         query: {
           path: string;
           sessionId?: string;
+          includeDetectedRoots?: boolean;
         };
         header?: never;
         path?: never;

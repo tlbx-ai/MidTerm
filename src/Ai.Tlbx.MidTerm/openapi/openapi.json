@@ -2323,6 +2323,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "includeDetectedRoots",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
           }
         ],
         "responses": {

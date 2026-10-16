@@ -8,6 +8,7 @@
 import { createLogger } from '../logging';
 import { getActiveTab, onTabActivated, onTabDeactivated } from '../sessionTabs';
 import { addProcessStateListener } from '../process';
+import { addGitRepoCacheListener } from '../git';
 import {
   applyTreeRoot,
   applyTreeVisibility,
@@ -35,6 +36,10 @@ const navigators = new Map<string, BrowserNavigation>();
 const paneResizers = new Map<string, ReturnType<typeof resizeFilePane>>();
 
 export function initFileBrowser(): void {
+  // Cold Git status arrives independently from the directory listing.
+  addGitRepoCacheListener((sessionId) => {
+    void navigators.get(sessionId)?.refresh();
+  });
   onTabActivated('files', (sessionId, panel) => {
     ensureFileBrowserForSession(sessionId, panel);
     navigators.get(sessionId)?.setActive(sessionId === $activeSessionId.get());
