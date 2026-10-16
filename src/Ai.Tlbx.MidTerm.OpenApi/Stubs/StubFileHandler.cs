@@ -27,7 +27,7 @@ public class StubFileHandler : IFileHandler
     public IResult ListDirectory(string path, string? sessionId, bool showHidden, bool showIgnored) =>
         Results.Json(new DirectoryListResponse { Path = path });
 
-    public Task<IResult> GetNavigationAsync(string path, string? sessionId) =>
+    public Task<IResult> GetNavigationAsync(string path, string? sessionId, bool includeDetectedRoots = true) =>
         Task.FromResult<IResult>(Results.Json(new FileNavigationResponse { Path = path }));
 
     public IResult ViewFile(string path, string? sessionId) =>

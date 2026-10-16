@@ -7,8 +7,13 @@ export async function readFileNavigation(
   path: string,
   sessionId: string,
   signal: AbortSignal,
+  includeDetectedRoots = true,
 ): Promise<FileNavigation> {
-  const params = new URLSearchParams({ path, sessionId });
+  const params = new URLSearchParams({
+    path,
+    sessionId,
+    includeDetectedRoots: String(includeDetectedRoots),
+  });
   const response = await fetch(`/api/files/navigation?${params}`, { signal });
   if (!response.ok) {
     const key =
