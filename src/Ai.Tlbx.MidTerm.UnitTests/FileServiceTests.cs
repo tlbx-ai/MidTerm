@@ -1,4 +1,6 @@
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.Git;
+using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -130,5 +132,24 @@ public sealed class FileServiceTests : IDisposable
         _ = FileService.GetFileInfo(upper);
         if (!OperatingSystem.IsWindows()) { File.WriteAllText(lower, "x"); Assert.Equal(1, FileService.GetFileInfo(lower).Size); }
         else Assert.Equal(5, FileService.GetFileInfo(lower).Size);
+    }
+    [Fact]
+    public async Task InitialNavigationRetainsCwdAndDefersTerminalDetectedLocations()
+    {
+        await using var sessions = new TtyHostSessionManager();
+        using var git = new GitWatcherService();
+        var allowlist = new SessionPathAllowlistService();
+        var files = new FileService(sessions, allowlist, git);
+        var cwd = Directory.CreateDirectory(Path.Combine(_tempDir, "cwd")).FullName;
+        var detected = Directory.CreateDirectory(Path.Combine(_tempDir, "detected")).FullName;
+        allowlist.RegisterPath("session", detected);
+        allowlist.RegisterPath("session", Path.Combine(_tempDir, "missing"));
+
+        var initial = files.GetNavigationRoots("session", cwd, includeDetectedRoots: false);
+        Assert.Equal(cwd, Assert.Single(initial).Path);
+        var enriched = files.GetNavigationRoots("session", cwd);
+        Assert.Contains(enriched, root => root.Path == cwd && root.Kind == "cwd");
+        Assert.Contains(enriched, root => root.Path == detected && root.Kind == "opened");
+        Assert.Equal(2, enriched.Length);
     }
 }

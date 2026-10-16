@@ -290,7 +290,7 @@ public static class FileEndpoints
                 AppJsonContext.Default.FileCheckResponse);
         });
 
-        readers.MapGet("/navigation", async (string path, string? sessionId) =>
+        readers.MapGet("/navigation", async (string path, string? sessionId, bool includeDetectedRoots = true) =>
         {
             var (_, error) = await ResolveFileAccessAsync(path, sessionId, fileService);
             if (error is not null) return error;
@@ -300,7 +300,7 @@ public static class FileEndpoints
                 var navigation = FileNavigationService.Describe(path, candidate =>
                     string.IsNullOrEmpty(sessionId) || fileService.IsPathAccessible(sessionId, candidate, cwd));
                 navigation.WorkingDirectory = cwd;
-                if (!string.IsNullOrEmpty(sessionId)) navigation.Roots = fileService.GetNavigationRoots(sessionId, cwd);
+                if (!string.IsNullOrEmpty(sessionId)) navigation.Roots = fileService.GetNavigationRoots(sessionId, cwd, includeDetectedRoots);
                 return Results.Json(navigation, AppJsonContext.Default.FileNavigationResponse);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -451,12 +451,8 @@ public static class FileEndpoints
                     if (!string.IsNullOrEmpty(sessionId))
                     {
                         var cachedStatus = gitWatcher.GetCachedStatus(sessionId, repoRoot);
-                        if (cachedStatus is null)
-                        {
-                            await gitWatcher.RefreshStatusAsync(repoRoot);
-                            cachedStatus = gitWatcher.GetCachedStatus(sessionId, repoRoot);
-                        }
-
+                        // The Git watcher owns status refreshes. Folder names must not wait
+                        // for its refresh gate, history, stash count or diff statistics.
                         if (cachedStatus is not null)
                         {
                             gitStatusMap = GitFileStatusMapBuilder.Build(cachedStatus);

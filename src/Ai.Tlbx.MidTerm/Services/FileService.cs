@@ -74,15 +74,18 @@ public sealed class FileService
         { return false; }
     }
 
-    public FileNavigationRoot[] GetNavigationRoots(string sessionId, string? workingDirectory)
+    public FileNavigationRoot[] GetNavigationRoots(string sessionId, string? workingDirectory, bool includeDetectedRoots = true)
     {
         var candidates = new List<FileNavigationRoot>();
         if (!string.IsNullOrEmpty(workingDirectory))
             candidates.Add(new() { Path = workingDirectory, Name = FileNavigationService.LocationName(workingDirectory), Kind = "cwd" });
         candidates.AddRange(_gitWatcher.GetRepoBindings(sessionId).Select(repo => new FileNavigationRoot
         { Path = repo.RepoRoot, Name = repo.Label, Kind = "repo" }));
-        candidates.AddRange(_allowlistService.GetRegisteredPaths(sessionId).Where(Directory.Exists)
-            .Select(path => new FileNavigationRoot { Path = path, Name = FileNavigationService.LocationName(path), Kind = "opened" }));
+        // Terminal output may contain up to 1,000 paths, including offline shares.
+        // Discovering these optional locations must not delay the first folder listing.
+        if (includeDetectedRoots)
+            candidates.AddRange(_allowlistService.GetRegisteredPaths(sessionId).Where(Directory.Exists)
+                .Select(path => new FileNavigationRoot { Path = path, Name = FileNavigationService.LocationName(path), Kind = "opened" }));
         var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         return candidates.DistinctBy(root => Path.GetFullPath(root.Path), comparer)
             .Where(root => Directory.Exists(root.Path) && IsPathAccessible(sessionId, root.Path, workingDirectory) &&
