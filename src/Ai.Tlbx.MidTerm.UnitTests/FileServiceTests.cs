@@ -140,8 +140,8 @@ public sealed class FileServiceTests : IDisposable
         using var git = new GitWatcherService();
         var allowlist = new SessionPathAllowlistService();
         var files = new FileService(sessions, allowlist, git);
-        var cwd = Directory.CreateDirectory(Path.Combine(_tempDir, "cwd")).FullName;
-        var detected = Directory.CreateDirectory(Path.Combine(_tempDir, "detected")).FullName;
+        var cwd = FileDocumentService.ResolvePath(Directory.CreateDirectory(Path.Combine(_tempDir, "cwd")).FullName);
+        var detected = FileDocumentService.ResolvePath(Directory.CreateDirectory(Path.Combine(_tempDir, "detected")).FullName);
         allowlist.RegisterPath("session", detected);
         allowlist.RegisterPath("session", Path.Combine(_tempDir, "missing"));
 
