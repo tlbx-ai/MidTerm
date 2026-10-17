@@ -10,6 +10,7 @@ import { sessionTerminals, dom } from '../../state';
 import { $settingsOpen, $activeSessionId, $sessionList, $windowsBuildNumber } from '../../stores';
 import { fetchSettings, unbindSettingsAutoSave } from './persistence';
 import { initSettingsTabs } from './tabs';
+import { initAiProviderSettings } from './aiProviders';
 import { stopLatencyMeasurement } from '../diagnostics';
 import { refreshTerminalPresentation } from '../terminal/scaling';
 import { createLogger } from '../logging';
@@ -72,6 +73,7 @@ export function openSettings(): void {
   if (dom.settingsView) dom.settingsView.classList.remove('hidden');
 
   initSettingsTabs();
+  void initAiProviderSettings();
   bindTerminalLinkSecuritySetting();
   void fetchSettings();
   fetchSystemStatus();

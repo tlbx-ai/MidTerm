@@ -16,7 +16,7 @@ import {
   type UserInfo,
 } from '../../api/client';
 import { JS_BUILD_VERSION } from '../../constants';
-import { $currentSettings, $authStatus, $serverHostname, $voiceServerPassword } from '../../stores';
+import { $currentSettings, $authStatus, $serverHostname } from '../../stores';
 import { createLogger } from '../logging';
 import {
   populateSettingsForm,
@@ -27,7 +27,7 @@ import {
 } from '../settings/persistence';
 import { updateSecurityWarning, updatePasswordStatus } from '../auth/status';
 import { setDevMode, setVoiceChatEnabled, setVoiceSectionVisible } from '../sidebar/voiceSection';
-import { checkVoiceServerHealth } from '../voice';
+import { refreshVoiceAvailability } from '../voice';
 import { consumePendingChangelogFlag } from '../updating/checker';
 import { showChangelog } from '../updating/changelog';
 import { escapeHtml } from '../../utils';
@@ -95,7 +95,6 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
       passwordSet: data.auth.passwordSet,
     });
     $serverHostname.set(data.hostname);
-    $voiceServerPassword.set(data.voicePassword ?? null);
     updateSecurityWarning();
     updatePasswordStatus();
 
@@ -127,7 +126,7 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
 
     // Check voice server availability (only relevant if voice chat is enabled)
     if (data.features.voiceChat) {
-      void checkVoiceServerHealth().then((available) => {
+      void refreshVoiceAvailability().then((available) => {
         setVoiceSectionVisible(available);
       });
     }

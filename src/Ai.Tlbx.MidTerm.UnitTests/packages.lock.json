@@ -44,6 +44,27 @@
         "resolved": "1.8.0",
         "contentHash": "ZtcK7lu5LZZH5qDWfeUdBn/WXChWQjGdpB9sSFOJPyqnODGSMS1wqBoONP7GXzQRPHKoV8byWZT4EeBPI69ODQ=="
       },
+      "Ai.Tlbx.Inference": {
+        "type": "Transitive",
+        "resolved": "2.6.0",
+        "contentHash": "M1zi4zmW3arsWNOdbhTLEQtzqzmx7wgg2DiU9RWHd8PV6cbjQmvFwiAgV+SLYuGV9NOyexhc6SXUzHhtp1KRnQ==",
+        "dependencies": {
+          "Polly.Core": "8.8.0"
+        }
+      },
+      "Ai.Tlbx.VoiceAssistant": {
+        "type": "Transitive",
+        "resolved": "11.5.0",
+        "contentHash": "5ZATBztbdJHUi3zs80VmAaYcRuADldlk1EimQb3sB5OcLifwJ13SFXXMI1od/H9VwNP3sBmS3Gggzd7rBeT23A=="
+      },
+      "Ai.Tlbx.VoiceAssistant.Provider.OpenAi": {
+        "type": "Transitive",
+        "resolved": "11.5.0",
+        "contentHash": "9Cwz+BLNB6e1a80YlKz+7K51+NnRAqiWWn89b4xfIGjncFCt+roh7Lg/WzpZQs8RY5QjRvDs4NPMjOMHfu451g==",
+        "dependencies": {
+          "Ai.Tlbx.VoiceAssistant": "11.5.0"
+        }
+      },
       "Microsoft.ApplicationInsights": {
         "type": "Transitive",
         "resolved": "2.23.0",
@@ -109,6 +130,11 @@
         "type": "Transitive",
         "resolved": "1.25.260930003",
         "contentHash": "gQ/kH5cA4jVvzIEGZKxHiVCRC9aelpHW5xn45Sh+bflv2kuyXi5JFHJpAlzdouLYpeSCcjwq6y1Y/vcy5Wxwew=="
+      },
+      "Polly.Core": {
+        "type": "Transitive",
+        "resolved": "8.8.0",
+        "contentHash": "TewV9uNFsoRFggoFbTAGFwsMYPuckA+wTIpQPyhLL9BANRPQRENz2S4bwATrB3HBOakN5oKLFIllPiDnVecmJg=="
       },
       "SkiaSharp": {
         "type": "Transitive",
@@ -250,7 +276,9 @@
         "type": "Project",
         "dependencies": {
           "Acornima": "[1.8.0, )",
+          "Ai.Tlbx.Inference": "[2.6.0, )",
           "Ai.Tlbx.MidTerm.Common": "[4.0.1, )",
+          "Ai.Tlbx.VoiceAssistant.Provider.OpenAi": "[11.5.0, )",
           "Microsoft.Data.Sqlite.Core": "[10.0.13, )",
           "Microsoft.Extensions.Hosting.WindowsServices": "[10.0.13, )",
           "SQLitePCLRaw.config.e_sqlite3": "[3.0.5, )",

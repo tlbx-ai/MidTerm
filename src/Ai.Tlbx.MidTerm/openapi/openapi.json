@@ -4264,7 +4264,6 @@
           "updateResult",
           "devMode",
           "features",
-          "voicePassword",
           "gitVersion",
           "codeSigned"
         ],
@@ -4331,12 +4330,6 @@
           },
           "features": {
             "$ref": "#/components/schemas/FeatureFlags"
-          },
-          "voicePassword": {
-            "type": [
-              "null",
-              "string"
-            ]
           },
           "gitVersion": {
             "type": [

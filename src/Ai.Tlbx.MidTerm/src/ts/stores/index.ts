@@ -271,7 +271,7 @@ export const $windowsBuildNumber = atom<number | null>(null);
 export const $serverHostname = atom<string>('');
 
 /** Voice server password for authentication */
-export const $voiceServerPassword = atom<string | null>(null);
+export const $voiceAvailable = atom(false);
 
 /** Settings WebSocket connected flag */
 export const $settingsWsConnected = atom<boolean>(false);

@@ -331,35 +331,6 @@ export interface ChatMessage {
   timestamp: string;
 }
 
-/** Voice provider info from health endpoint */
-export interface VoiceProvider {
-  id: string;
-  name: string;
-  available: boolean;
-  voices: VoiceInfo[];
-}
-
-/** Voice info within a provider */
-export interface VoiceInfo {
-  id: string;
-  name: string;
-}
-
-/** Voice server defaults */
-export interface VoiceDefaults {
-  provider: string;
-  voice: string;
-  speed: number;
-}
-
-/** Extended voice health response */
-export interface VoiceHealthResponse {
-  status: string;
-  version: string;
-  providers?: VoiceProvider[];
-  defaults?: VoiceDefaults;
-}
-
 // =============================================================================
 // Voice Tool Protocol Types
 // =============================================================================
@@ -472,6 +443,7 @@ export type VoiceSettingsTab =
   | 'workflow'
   | 'terminal'
   | 'ai-agents'
+  | 'ai-voice'
   | 'security'
   | 'connected-hosts'
   | 'advanced';

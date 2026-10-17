@@ -48,10 +48,6 @@ export function setVoiceSectionVisible(visible: boolean): void {
  */
 export function setDevMode(enabled: boolean): void {
   devModeEnabled = enabled;
-  const syncBtn = document.getElementById('btn-voice-sync');
-  if (syncBtn) {
-    syncBtn.classList.toggle('hidden', !enabled);
-  }
   for (const listener of devModeListeners) {
     listener(enabled);
   }

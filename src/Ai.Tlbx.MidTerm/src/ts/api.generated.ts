@@ -4472,7 +4472,6 @@ export interface components {
       updateResult: null | components['schemas']['UpdateResult'];
       devMode: boolean;
       features: components['schemas']['FeatureFlags'];
-      voicePassword: null | string;
       gitVersion: null | string;
       codeSigned: boolean;
     };

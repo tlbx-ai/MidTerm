@@ -8,6 +8,24 @@
         "resolved": "1.8.0",
         "contentHash": "ZtcK7lu5LZZH5qDWfeUdBn/WXChWQjGdpB9sSFOJPyqnODGSMS1wqBoONP7GXzQRPHKoV8byWZT4EeBPI69ODQ=="
       },
+      "Ai.Tlbx.Inference": {
+        "type": "Direct",
+        "requested": "[2.6.0, )",
+        "resolved": "2.6.0",
+        "contentHash": "M1zi4zmW3arsWNOdbhTLEQtzqzmx7wgg2DiU9RWHd8PV6cbjQmvFwiAgV+SLYuGV9NOyexhc6SXUzHhtp1KRnQ==",
+        "dependencies": {
+          "Polly.Core": "8.8.0"
+        }
+      },
+      "Ai.Tlbx.VoiceAssistant.Provider.OpenAi": {
+        "type": "Direct",
+        "requested": "[11.5.0, )",
+        "resolved": "11.5.0",
+        "contentHash": "9Cwz+BLNB6e1a80YlKz+7K51+NnRAqiWWn89b4xfIGjncFCt+roh7Lg/WzpZQs8RY5QjRvDs4NPMjOMHfu451g==",
+        "dependencies": {
+          "Ai.Tlbx.VoiceAssistant": "11.5.0"
+        }
+      },
       "IDisposableAnalyzers": {
         "type": "Direct",
         "requested": "[4.0.8, )",
@@ -98,6 +116,11 @@
         "resolved": "10.0.13",
         "contentHash": "aUSmC6cPjFLSE0rDTsmkR3wvUOnscqewebOaaELEToh12sNmoltZqT3f0C81mJ1zhxKjWco25soHTvYwsXCsUw=="
       },
+      "Ai.Tlbx.VoiceAssistant": {
+        "type": "Transitive",
+        "resolved": "11.5.0",
+        "contentHash": "5ZATBztbdJHUi3zs80VmAaYcRuADldlk1EimQb3sB5OcLifwJ13SFXXMI1od/H9VwNP3sBmS3Gggzd7rBeT23A=="
+      },
       "Microsoft.Windows.SDK.Win32Docs": {
         "type": "Transitive",
         "resolved": "0.1.42-alpha",
@@ -115,6 +138,11 @@
         "dependencies": {
           "Microsoft.Windows.SDK.Win32Metadata": "63.0.31-preview"
         }
+      },
+      "Polly.Core": {
+        "type": "Transitive",
+        "resolved": "8.8.0",
+        "contentHash": "TewV9uNFsoRFggoFbTAGFwsMYPuckA+wTIpQPyhLL9BANRPQRENz2S4bwATrB3HBOakN5oKLFIllPiDnVecmJg=="
       },
       "SkiaSharp.NativeAssets.macOS": {
         "type": "Transitive",
