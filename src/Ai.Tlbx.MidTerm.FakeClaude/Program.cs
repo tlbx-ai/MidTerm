@@ -11,6 +11,7 @@ PendingTool? pending = null;
 var waitingForSteer = false;
 var steeringAbort = false;
 var queuedAtInterrupt = false;
+var compactFailure = false;
 
 while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
 {
@@ -39,6 +40,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
                     commands = new[]
                     {
                         new { name = "review", description = "Review changes", argumentHint = "<file>" },
+                        new { name = "compact", description = "Compact conversation", argumentHint = "" },
                         new { name = "exit", description = "Exit terminal", argumentHint = "" }
                     },
                     models = new[]
@@ -90,10 +92,29 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
         waitingForSteer = false;
         continue;
     }
+    if (prompt == "/compact")
+    {
+        await WriteJsonAsync(new { type = "system", subtype = "status", status = "compacting", session_id = sessionId }).ConfigureAwait(false);
+        if (compactFailure)
+        {
+            const string error = "Error during compaction: simulated native failure.";
+            await WriteJsonAsync(new { type = "assistant", error = "invalid_request", session_id = sessionId,
+                message = new { id = "compact-error", usage = new { input_tokens = 0, output_tokens = 0 }, content = new[] { new { type = "text", text = error } } } }).ConfigureAwait(false);
+            await WriteJsonAsync(new { type = "system", subtype = "status", status = (string?)null, compact_result = "failed", compact_error = error, session_id = sessionId }).ConfigureAwait(false);
+            await WriteJsonAsync(new { type = "result", subtype = "success", session_id = sessionId,
+                is_error = false, result = error, queued_turn_count = 0 }).ConfigureAwait(false);
+            continue;
+        }
+        await WriteJsonAsync(new { type = "system", subtype = "compact_boundary", session_id = sessionId,
+            compact_metadata = new { trigger = "manual", pre_tokens = 119, post_tokens = 11 } }).ConfigureAwait(false);
+        await WriteJsonAsync(new { type = "result", subtype = "success", session_id = sessionId,
+            is_error = false, result = "Native compaction completed.", queued_turn_count = 0 }).ConfigureAwait(false);
+        continue;
+    }
     if (prompt.Contains("After native stop", StringComparison.Ordinal))
     {
         await WriteJsonAsync(new { type = "assistant", session_id = sessionId,
-            message = new { id = "native-after-stop", content = new[] { new { type = "text", text = "After native stop." } } } }).ConfigureAwait(false);
+            message = new { id = "native-after-stop", usage = new { input_tokens = 119, output_tokens = 5 }, content = new[] { new { type = "text", text = "After native stop." } } } }).ConfigureAwait(false);
         await WriteJsonAsync(new { type = "result", subtype = "success", session_id = sessionId,
             is_error = false, result = "After native stop.", queued_turn_count = 0 }).ConfigureAwait(false);
         continue;
@@ -102,6 +123,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
     {
         waitingForSteer = true;
         queuedAtInterrupt = prompt.Contains("queued cancellation", StringComparison.Ordinal);
+        compactFailure = prompt.Contains("compact failure", StringComparison.Ordinal);
         steeringAbort = prompt.Contains("streaming abort", StringComparison.Ordinal);
         await EmitSteerMessageAsync("native-original", "Initial answer.").ConfigureAwait(false);
         continue;

@@ -891,8 +891,15 @@ public static partial class SessionApiEndpoints
                 return Results.Conflict("Agent Controller runtime is not attached.");
             }
 
-            var response = await appServerControlRuntime.CompactThreadAsync(id, ct).ConfigureAwait(false);
-            return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            try
+            {
+                var response = await appServerControlRuntime.CompactThreadAsync(id, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
         });
 
         app.MapGet("/api/sessions/{id}/buffer/text", async (string id, bool includeBase64 = false, CancellationToken ct = default) =>

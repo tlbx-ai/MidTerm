@@ -154,7 +154,6 @@ internal sealed partial class AcpAppServerControlAgentRuntime
             }
             finally
             {
-                _replayEvents = null;
                 _applyingHistoryReplay = false;
                 if (_protocolGeneration == 1) _tools.Clear();
             }
@@ -170,14 +169,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
             _loadedRequests.Clear();
             _replayEvents = events;
         }
-        try
-        {
-            foreach (var request in requests) await HandleAcpLineAsync(request, ct).ConfigureAwait(false);
-        }
-        finally
-        {
-            lock (_replayGate) _replayEvents = null;
-        }
+        foreach (var request in requests) await HandleAcpLineAsync(request, ct).ConfigureAwait(false);
     }
 
     private void AppendReplayTurnCompleted(string turnId)

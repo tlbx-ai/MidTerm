@@ -79,6 +79,29 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
 
     private void HandleClaudeSystemMessage(JsonElement root, string rawLine)
     {
+        if (_manualCompactionTurn && GetString(root, "subtype") == "status" && GetString(root, "compact_result") == "failed")
+            _compactionFailure = GetString(root, "compact_error") ?? "Claude could not compact the conversation.";
+        if (GetString(root, "subtype") == "status" && GetString(root, "status") == "compacting" && _activeTurnId is not null)
+        {
+            if (!_turnStarted)
+            {
+                _turnStarted = true;
+                _emit(CreateEvent("turn.started", _activeTurnId, null, null, "claude.agent-sdk", "status", root,
+                    e => e.TurnStarted = new AppServerControlProviderTurnStartedPayload { Model = _activeTurnModel, Effort = _activeTurnEffort }, rawLine));
+            }
+            _emit(CreateEvent("session.state.changed", _activeTurnId, null, null, "claude.agent-sdk", "status", root,
+                e => e.SessionState = new AppServerControlProviderSessionStatePayload
+                {
+                    State = "running", StateLabel = "Compacting", Reason = "Claude is compacting the conversation."
+                }, rawLine));
+            return;
+        }
+        if (GetString(root, "subtype") == "compact_boundary")
+        {
+            UpdateClaudeCompactionUsage(root, rawLine);
+            EmitRuntimeMessage("runtime.notice", "Conversation compacted.", null);
+            return;
+        }
         if (GetString(root, "subtype") == "commands_changed")
         {
             ApplyClaudeNativeCatalogue(root, rawLine);

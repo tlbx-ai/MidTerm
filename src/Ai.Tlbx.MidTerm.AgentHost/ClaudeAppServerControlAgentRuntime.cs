@@ -44,6 +44,9 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
     private bool _steeringPending;
     private TaskCompletionSource? _interruptSettled;
     private bool _interruptHasQueuedWork;
+    private bool _manualCompactionTurn;
+    private string? _compactionFailure;
+    private long? _compactionContextBefore;
     private long _sequence;
 
     public ClaudeAppServerControlAgentRuntime(Action<AppServerControlProviderEvent> emit, Func<string, bool>? hasRetainedConversation = null)
@@ -73,6 +76,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
+                "thread.compact" => await CompactViaNativeCommandAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolvePermissionRequestAsync(command, ct).ConfigureAwait(false),
                 "user-input.resolve" => await ResolveUserInputAsync(command, ct).ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"Unsupported Claude command '{command.Type}'.")
@@ -187,6 +191,11 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         }
 
         var turnId = "turn-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var commandText = (request.Text ?? string.Empty).TrimStart();
+        _manualCompactionTurn = commandText.StartsWith("/compact", StringComparison.Ordinal) &&
+            (commandText.Length == 8 || char.IsWhiteSpace(commandText[8]));
+        _compactionFailure = null;
+        _compactionContextBefore = _usage?.ContextUsedTokens;
         _activeTurnId = turnId;
         _activeTurnModel = quickSettings.Model;
         _activeTurnEffort = quickSettings.Effort;
@@ -246,6 +255,17 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                 CreateQuickSettingsUpdatedEvent(_quickSettings, "midterm.appServerControl", "turn.start", request)
             ]
         };
+    }
+
+    private Task<HostCommandOutcome> CompactViaNativeCommandAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    {
+        if (!_nativeCommands.Any(native => native.Name.TrimStart('/').Equals("compact", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Claude does not advertise a native /compact command.");
+        return StartTurnAsync(new AppServerControlHostCommandEnvelope
+        {
+            CommandId = command.CommandId, SessionId = command.SessionId, Type = "turn.start",
+            StartTurn = new AppServerControlTurnRequest { Text = "/compact" }
+        }, ct);
     }
 
     private async Task<HostCommandOutcome> SteerTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -1024,9 +1044,17 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             return;
         }
 
-        var isError = GetBoolean(root, "is_error");
-        var subtype = GetString(root, "subtype") ?? (isError ? "error" : "success");
         var resultText = GetString(root, "result");
+        var compactFailed = _manualCompactionTurn && (_compactionFailure is not null ||
+            resultText?.StartsWith("Error during compaction:", StringComparison.OrdinalIgnoreCase) == true);
+        var isError = GetBoolean(root, "is_error") || compactFailed;
+        var subtype = compactFailed ? "compaction_failed" : GetString(root, "subtype") ?? (isError ? "error" : "success");
+        if (compactFailed && _usage is not null)
+        {
+            _usage.ContextUsedTokens = _compactionContextBefore;
+            EmitClaudeUsage(root, rawLine);
+        }
+        var errorMessage = isError ? _compactionFailure ?? resultText : null;
         if (!isError &&
             !_assistantMessageEmitted &&
             !string.IsNullOrWhiteSpace(resultText))
@@ -1057,7 +1085,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                 State = isError ? "failed" : "completed",
                 StateLabel = isError ? "Failed" : "Completed",
                 StopReason = subtype,
-                ErrorMessage = isError ? resultText : null
+                ErrorMessage = errorMessage
             };
         }, rawLine));
         _emit(CreateEvent("session.state.changed", completedTurnId, null, null, "claude.agent-sdk", "result", root, appServerControlEvent =>
@@ -1765,6 +1793,9 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         _assistantMessageEmitted = false;
         _interruptRequested = false;
         _steeringPending = false;
+        _manualCompactionTurn = false;
+        _compactionFailure = null;
+        _compactionContextBefore = null;
         _blocks.Clear();
         _tools.Clear();
     }

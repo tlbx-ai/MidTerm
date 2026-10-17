@@ -29,6 +29,7 @@ const codexSteer = process.env.TLBX_ACP_UI_SCENARIO === "codex-steer";
 const claudeSteer = process.env.TLBX_ACP_UI_SCENARIO === "claude-steer";
 const nativeSteer = codexSteer || claudeSteer;
 const nativeHistory = process.env.TLBX_ACP_UI_SCENARIO === "native-history";
+const nativeVision = process.env.TLBX_ACP_UI_SCENARIO === "native-vision";
 assert.ok(
   url && cookie && sessionId,
   "Authenticated source URL and acceptance session required",
@@ -633,6 +634,47 @@ try {
     );
     result.nativeCommandsVerified = true;
   }
+  if (nativeVision) {
+    const marker = process.env.TLBX_ACP_UI_EXPECTED_MARKER || "BLUE";
+    assert.equal(
+      initial.thread.threadId,
+      process.env.TLBX_ACP_UI_EXPECTED_THREAD,
+    );
+    assert.ok(
+      initial.history.some(
+        (item) => item.kind === "assistant" && item.body === marker,
+      ),
+    );
+    const image = wrapper.locator('[data-agent-field="history"] img').last();
+    await image.waitFor({ state: "visible" });
+    await page.waitForFunction(
+      (element) =>
+        element.complete &&
+        element.naturalWidth === 320 &&
+        element.naturalHeight === 240,
+      await image.elementHandle(),
+    );
+    for (const viewport of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await image.scrollIntoViewIfNeeded();
+      const box = await image.boundingBox();
+      assert.ok(
+        box &&
+          box.width > 100 &&
+          box.height > 60 &&
+          box.x >= 0 &&
+          box.x + box.width <= viewport.width,
+      );
+      const screenshot = path.join(out, `native-vision-${viewport.width}.png`);
+      await page.screenshot({ path: screenshot });
+      result.screenshots.push(screenshot);
+      result.measurements.push({ viewport, image: box });
+    }
+    result.nativeVisionVerified = true;
+  }
   if (nativeHistory) {
     const marker = process.env.TLBX_ACP_UI_EXPECTED_MARKER;
     assert.ok(marker);
@@ -872,6 +914,7 @@ try {
     !nativeUsage &&
     !nativeSteer &&
     !nativeHistory &&
+    !nativeVision &&
     !initiallyOpen
   ) {
     assert.ok(

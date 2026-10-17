@@ -302,15 +302,16 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         HostCommandOutcome outcome,
         string provider)
     {
+        var compactAsTurn = command.Type == "thread.compact" && outcome.Result.TurnStarted is not null;
         if (!string.Equals(command.Type, "turn.start", StringComparison.Ordinal) &&
-            !string.Equals(command.Type, "turn.steer", StringComparison.Ordinal))
+            !string.Equals(command.Type, "turn.steer", StringComparison.Ordinal) && !compactAsTurn)
         {
             return outcome;
         }
 
         var request = command.StartTurn ?? (command.SteerTurn is { } steer
             ? new AppServerControlTurnRequest { Text = steer.Text, Attachments = steer.Attachments }
-            : null);
+            : compactAsTurn ? new AppServerControlTurnRequest { Text = "/compact" } : null);
         var turnStarted = outcome.Result.TurnStarted;
         var activeSteer = string.Equals(command.Type, "turn.steer", StringComparison.Ordinal) && turnStarted is null;
         var turnId = turnStarted?.TurnId ?? outcome.Result.Accepted?.TurnId;

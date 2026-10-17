@@ -111,9 +111,9 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
+                "thread.compact" => await CompactViaNativeCommandAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolvePermissionRequestAsync(command, ct).ConfigureAwait(false),
                 "user-input.resolve" => await ResolveUserInputAsync(command, ct).ConfigureAwait(false),
-                "thread.goal.set" => Accepted(command.CommandId, command.SessionId),
                 _ => throw new InvalidOperationException($"Unsupported ACP command '{command.Type}' for {_agentName}.")
             };
         }
@@ -270,8 +270,10 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         };
             AppendLoadedHistory(events);
             await AppendLoadedRequestsAsync(events, ct).ConfigureAwait(false);
-            if (_protocolGeneration == 1 || _foregroundState == "idle")
-                events.Add(CreateEvent("session.ready", null, null, null, "acp", sessionMethod, newSessionResult, appServerControlEvent =>
+            lock (_replayGate)
+            {
+                if (_protocolGeneration == 1 || _foregroundState == "idle")
+                    events.Add(CreateEvent("session.ready", null, null, null, "acp", sessionMethod, newSessionResult, appServerControlEvent =>
                         {
                             appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
                             {
@@ -280,14 +282,18 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                                 Reason = $"{_agentName} ACP runtime is ready for the next turn."
                             };
                         }));
-            events.Add(CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", sessionMethod, newSessionResult));
-            return Accepted(command.CommandId, command.SessionId, events: events);
+                events.Add(CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", sessionMethod, newSessionResult));
+                _replayEvents = null;
+                foreach (var providerEvent in events) _emit(providerEvent);
+            }
+            return Accepted(command.CommandId, command.SessionId);
         }
         catch
         {
             lock (_replayGate)
             {
                 _loadedUpdates = null;
+                _replayEvents = null;
             }
             await DisposeProcessAsync().ConfigureAwait(false);
             _providerThreadId = null;
@@ -420,6 +426,17 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 };
             })
         ];
+    }
+
+    private Task<HostCommandOutcome> CompactViaNativeCommandAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    {
+        if (!_availableCommands.Any(native => native.Name.TrimStart('/').Equals("compact", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException($"{_agentName} does not advertise a native /compact command.");
+        return StartTurnAsync(new AppServerControlHostCommandEnvelope
+        {
+            CommandId = command.CommandId, SessionId = command.SessionId, Type = "turn.start",
+            StartTurn = new AppServerControlTurnRequest { Text = "/compact" }
+        }, ct);
     }
 
     private async Task<HostCommandOutcome> SteerTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -1124,6 +1141,13 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
 
     private void CompleteTurn(string turnId, string state, string stateLabel, string? stopReason, string? errorMessage, string rawLine)
     {
+        TaskCompletionSource? completion = null;
+        if (string.Equals(_activeTurnId, turnId, StringComparison.Ordinal))
+        {
+            completion = _activeTurnCompletion;
+            _activeTurnCompletion = null;
+            ResetTurnState();
+        }
         _emit(CreateEvent("turn.completed", turnId, null, null, "acp", "session/prompt", null, appServerControlEvent =>
         {
             appServerControlEvent.TurnCompleted = new AppServerControlProviderTurnCompletedPayload
@@ -1144,10 +1168,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             };
         }, rawLine));
 
-        if (string.Equals(_activeTurnId, turnId, StringComparison.Ordinal))
-        {
-            ResetTurnState();
-        }
+        completion?.TrySetResult();
     }
 
     private async Task<JsonElement> SendRequestAsync(string method, Action<Utf8JsonWriter> writeParameters, TimeSpan timeout, CancellationToken ct)

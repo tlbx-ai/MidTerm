@@ -49,7 +49,8 @@ public sealed class MtAgentHostClaudeIntegrationTests
     [InlineData(true)]
     [InlineData(false, true)]
     [InlineData(false, true, true)]
-    public async Task MtAgentHost_KeepsClaudeSteeringAliveAcrossQueuedSdkResults(bool streamingAbort, bool interrupt = false, bool queuedAtInterrupt = false)
+    [InlineData(false, true, false, true)]
+    public async Task MtAgentHost_KeepsClaudeSteeringAliveAcrossQueuedSdkResults(bool streamingAbort, bool interrupt = false, bool queuedAtInterrupt = false, bool compactFailure = false)
     {
         using var fakeClaude = FakeClaudePathScope.Create();
         using var process = StartAgentHost(ResolveAgentHostPath());
@@ -71,7 +72,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "start-steer", SessionId = sessionId, Type = "turn.start",
-                StartTurn = new AppServerControlTurnRequest { Text = queuedAtInterrupt ? "Hold native Claude turn for queued cancellation." : streamingAbort ? "Hold native Claude turn for streaming abort." : "Hold native Claude turn for steering." }
+                StartTurn = new AppServerControlTurnRequest { Text = compactFailure ? "Hold native Claude turn for compact failure." : queuedAtInterrupt ? "Hold native Claude turn for queued cancellation." : streamingAbort ? "Hold native Claude turn for streaming abort." : "Hold native Claude turn for steering." }
             });
             var started = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "start-steer");
             var turnId = Assert.IsType<string>(started.TurnStarted?.TurnId);
@@ -102,6 +103,20 @@ public sealed class MtAgentHostClaudeIntegrationTests
                     patches, sessionId, h => h.CurrentTurn.TurnId == nextTurnId && h.CurrentTurn.State == "completed",
                     TimeSpan.FromSeconds(10), count: 96);
                 Assert.Contains(resumed.History, item => item.Kind == "assistant" && item.TurnId == nextTurnId && item.Body == "After native stop.");
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "compact-native", SessionId = sessionId, Type = "thread.compact"
+                });
+                var compact = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "compact-native");
+                Assert.Equal("accepted", compact.Status);
+                var compacted = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(process.StandardOutput, process.StandardInput,
+                    patches, sessionId, h => h.CurrentTurn.TurnId == compact.TurnStarted!.TurnId && h.CurrentTurn.State == (compactFailure ? "failed" : "completed"),
+                    TimeSpan.FromSeconds(10), count: 96);
+                Assert.Contains(compacted.History, item => item.Kind == "user" && item.Body == "/compact");
+                Assert.Contains(compacted.History, item => item.Kind == "assistant" && item.Body == (compactFailure ? "Error during compaction: simulated native failure." : "Native compaction completed."));
+                Assert.NotNull(compacted.CurrentTurn.StartedAt);
+                Assert.Equal(compactFailure ? 124 : 11, compacted.Session.Usage?.ContextUsedTokens);
+                if (compactFailure) Assert.Contains("simulated native failure", compacted.Session.LastError, StringComparison.Ordinal);
                 return;
             }
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope

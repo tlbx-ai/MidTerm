@@ -9,8 +9,20 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
     private long? _messageInputTokens;
     private long? _messageOutputTokens;
 
+    private void UpdateClaudeCompactionUsage(JsonElement root, string rawLine)
+    {
+        if (Traverse(root, "compact_metadata") is not { ValueKind: JsonValueKind.Object } metadata ||
+            ReadClaudeUsageCount(metadata, "post_tokens") is not { } used) return;
+        _usage = _usage?.Clone() ?? new AppServerControlUsageSummary();
+        _usage.ContextUsedTokens = used;
+        _messageInputTokens = used;
+        _messageOutputTokens = 0;
+        EmitClaudeUsage(root, rawLine);
+    }
+
     private void UpdateClaudeMessageUsage(JsonElement root, JsonElement? native, string rawLine)
     {
+        if (GetString(root, "error") is not null) return;
         if (native is not { ValueKind: JsonValueKind.Object } value ||
             !string.IsNullOrEmpty(GetString(root, "parent_tool_use_id"))) return;
         if (ReadClaudeUsageCount(value, "input_tokens") is { } input)

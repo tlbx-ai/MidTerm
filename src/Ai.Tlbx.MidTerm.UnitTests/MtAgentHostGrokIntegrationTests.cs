@@ -782,10 +782,29 @@ public sealed class MtAgentHostGrokIntegrationTests
                     if (v2) Assert.Equal(text, history.History.Single(item => item.Kind == "user").Body);
                     else Assert.Contains("prompt=" + text, history.Streams.AssistantText, StringComparison.Ordinal);
                     Assert.DoesNotContain("tlbx plan mode is enabled", history.Streams.AssistantText, StringComparison.Ordinal);
+                    await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                    {
+                        CommandId = "compact-command", SessionId = sessionId, Type = "thread.compact"
+                    });
+                    var compact = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "compact-command");
+                    Assert.Equal("accepted", compact.Status);
+                    var compacted = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(process.StandardOutput, process.StandardInput,
+                        patches, sessionId, h => h.CurrentTurn.TurnId == compact.TurnStarted!.TurnId && h.CurrentTurn.State == "completed",
+                        TimeSpan.FromSeconds(10), count: 96);
+                    Assert.Contains(compacted.History, item => item.Kind == "user" && item.Body == "/compact");
+                    if (!v2) Assert.Contains("prompt=/compact", compacted.Streams.AssistantText, StringComparison.Ordinal);
                 }
                 else if (text == "commands-clear") Assert.Empty(history.Session.AvailableCommands);
                 else Assert.Contains(history.Session.AvailableCommands, command => command.Name == "compact");
                 Assert.DoesNotContain(history.History, item => item.Body.Contains("commands available:", StringComparison.Ordinal));
+            }
+            foreach (var unsupported in new[] { "thread.compact", "thread.goal.set" })
+            {
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = unsupported, SessionId = sessionId, Type = unsupported
+                });
+                Assert.Equal("rejected", (await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, unsupported)).Status);
             }
         }
         finally
