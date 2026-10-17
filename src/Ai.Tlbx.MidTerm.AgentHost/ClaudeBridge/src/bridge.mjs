@@ -94,6 +94,7 @@ async function makeUserMessage(command) {
     type: "user",
     session_id: currentSessionId ?? configuration.sessionId,
     parent_tool_use_id: null,
+    ...(command.type === "turn.steer" ? { priority: "now" } : {}),
     message: { role: "user", content },
   };
 }

@@ -8,6 +8,61 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 [Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class MtAgentHostClaudeIntegrationTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MtAgentHost_KeepsClaudeSteeringAliveAcrossQueuedSdkResults(bool streamingAbort)
+    {
+        using var fakeClaude = FakeClaudePathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostPath());
+        const string sessionId = "claude-steer";
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "attach-steer", SessionId = sessionId, Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = sessionId, Provider = "claude", RuntimeKind = "claude-agent-sdk",
+                    ExecutablePath = fakeClaude.ExecutablePath, WorkingDirectory = fakeClaude.Root
+                }
+            });
+            Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "attach-steer")).Status);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "start-steer", SessionId = sessionId, Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest { Text = streamingAbort ? "Hold native Claude turn for streaming abort." : "Hold native Claude turn for steering." }
+            });
+            var started = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "start-steer");
+            var turnId = Assert.IsType<string>(started.TurnStarted?.TurnId);
+            _ = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(process.StandardOutput, process.StandardInput, patches,
+                sessionId, h => h.Streams.AssistantText == "Initial answer.", TimeSpan.FromSeconds(10), count: 96);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "steer-active", SessionId = sessionId, Type = "turn.steer",
+                SteerTurn = new AppServerControlSteerRequest { Text = "Append the steering answer.", ExpectedTurnId = turnId }
+            });
+            var steered = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "steer-active");
+            Assert.Equal("accepted", steered.Status);
+            Assert.Equal(turnId, steered.Accepted?.TurnId);
+            var completed = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(process.StandardOutput, process.StandardInput,
+                patches, sessionId, h => h.CurrentTurn.TurnId == turnId && h.CurrentTurn.State == "completed",
+                TimeSpan.FromSeconds(10), count: 96);
+            var replies = completed.History.Where(item => item.Kind == "assistant" && item.TurnId == turnId).ToArray();
+            Assert.Equal(new[] { "Initial answer.", "Steered final answer." }, replies.Select(item => item.Body), StringComparer.Ordinal);
+            Assert.Equal(new[] { "native-original", "native-steered" }, replies.Select(item => item.ItemId), StringComparer.Ordinal);
+            Assert.Equal(2, completed.History.Count(item => item.Kind == "user" && item.TurnId == turnId));
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
     [Fact]
     public async Task MtAgentHost_UsesClaudeNativeCatalogueEffortChangesAndPlanReview()
     {

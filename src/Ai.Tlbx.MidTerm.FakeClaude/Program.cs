@@ -8,6 +8,8 @@ var turn = 0;
 string? currentEffort = null;
 var currentModel = "claude-test";
 PendingTool? pending = null;
+var waitingForSteer = false;
+var steeringAbort = false;
 
 while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
 {
@@ -61,6 +63,24 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
 
     turn++;
     var prompt = ReadUserText(root);
+    if (waitingForSteer)
+    {
+        if (GetString(root, "priority") != "now") throw new InvalidOperationException("Active steering must use native priority now.");
+        await WriteJsonAsync(new { type = "assistant", session_id = sessionId, message = new { id = "native-original", content = new[] { new { type = "text", text = "Initial answer." } } } }).ConfigureAwait(false);
+        await WriteJsonAsync(new { type = "result", subtype = "success", session_id = sessionId, is_error = false, result = "Initial answer.", queued_turn_count = steeringAbort ? 0 : 1, terminal_reason = steeringAbort ? "aborted_streaming" : null }).ConfigureAwait(false);
+        await EmitSteerMessageAsync("native-steered", "Steered final answer.").ConfigureAwait(false);
+        await WriteJsonAsync(new { type = "assistant", session_id = sessionId, message = new { id = "native-steered", content = new[] { new { type = "text", text = "Steered final answer." } } } }).ConfigureAwait(false);
+        await WriteJsonAsync(new { type = "result", subtype = "success", session_id = sessionId, is_error = false, result = "Steered final answer.", queued_turn_count = 0 }).ConfigureAwait(false);
+        waitingForSteer = false;
+        continue;
+    }
+    if (prompt.Contains("Hold native Claude turn", StringComparison.Ordinal))
+    {
+        waitingForSteer = true;
+        steeringAbort = prompt.Contains("streaming abort", StringComparison.Ordinal);
+        await EmitSteerMessageAsync("native-original", "Initial answer.").ConfigureAwait(false);
+        continue;
+    }
     var plan = prompt.Contains("Plan acceptance", StringComparison.Ordinal);
     var toolName = plan ? "ExitPlanMode" : "Bash";
     object toolInput = plan ? new { plan = "# TLBX_CLAUDE_PLAN_FAKE\n\n1. Review.\n2. Wait for implementation." } : (object)new { command = "pwd" };
@@ -107,6 +127,13 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
         }
     }).ConfigureAwait(false);
     pending = new PendingTool(permissionRequestId, prompt, imageSummary, toolId, turn);
+}
+
+async Task EmitSteerMessageAsync(string id, string text)
+{
+    await WriteJsonAsync(new { type = "stream_event", session_id = sessionId, @event = new { type = "message_start", message = new { id, model = currentModel } } }).ConfigureAwait(false);
+    await WriteJsonAsync(new { type = "stream_event", session_id = sessionId, @event = new { type = "content_block_start", index = 0, content_block = new { type = "text" } } }).ConfigureAwait(false);
+    await WriteJsonAsync(new { type = "stream_event", session_id = sessionId, @event = new { type = "content_block_delta", index = 0, delta = new { type = "text_delta", text } } }).ConfigureAwait(false);
 }
 
 async Task FinishTurnAsync(string prompt, string imageSummary, string toolId, int currentTurn)

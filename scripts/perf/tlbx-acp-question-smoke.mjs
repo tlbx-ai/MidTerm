@@ -26,6 +26,8 @@ const claudeUsage = process.env.TLBX_ACP_UI_SCENARIO === "claude-usage";
 const nativeUsage =
   process.env.TLBX_ACP_UI_SCENARIO === "usage" || codexUsage || claudeUsage;
 const codexSteer = process.env.TLBX_ACP_UI_SCENARIO === "codex-steer";
+const claudeSteer = process.env.TLBX_ACP_UI_SCENARIO === "claude-steer";
+const nativeSteer = codexSteer || claudeSteer;
 assert.ok(
   url && cookie && sessionId,
   "Authenticated source URL and acceptance session required",
@@ -620,10 +622,11 @@ try {
     );
     result.nativeCommandsVerified = true;
   }
-  if (codexSteer) {
+  if (nativeSteer) {
     const marker =
-      process.env.TLBX_ACP_UI_EXPECTED_MARKER || "TLBX_CODEX_STEER_79";
-    assert.equal(initial.provider, "codex");
+      process.env.TLBX_ACP_UI_EXPECTED_MARKER ||
+      (claudeSteer ? "TLBX_CLAUDE_STEER_90" : "TLBX_CODEX_STEER_79");
+    assert.equal(initial.provider, claudeSteer ? "claude" : "codex");
     assert.equal(initial.currentTurn.state, "completed");
     if (process.env.TLBX_ACP_UI_EXPECTED_THREAD)
       assert.equal(
@@ -631,7 +634,17 @@ try {
         process.env.TLBX_ACP_UI_EXPECTED_THREAD,
         "Opening the browser retains the native thread",
       );
-    assert.equal(initial.streams.assistantText.trim(), marker);
+    if (claudeSteer) {
+      assert.ok(initial.streams.assistantText.trim().endsWith(marker));
+      const replies = initial.history.filter(
+        (item) =>
+          item.kind === "assistant" &&
+          item.turnId === initial.currentTurn.turnId,
+      );
+      assert.equal(replies.length, 2);
+      assert.notEqual(replies[0].itemId, replies[1].itemId);
+      assert.equal(replies[1].body, marker);
+    } else assert.equal(initial.streams.assistantText.trim(), marker);
     const users = initial.history.filter(
       (item) =>
         item.kind === "user" && item.turnId === initial.currentTurn.turnId,
@@ -662,7 +675,10 @@ try {
     ]) {
       await page.setViewportSize(viewport);
       await steered.scrollIntoViewIfNeeded();
-      const screenshot = path.join(out, `codex-steer-${viewport.width}.png`);
+      const screenshot = path.join(
+        out,
+        `${claudeSteer ? "claude" : "codex"}-steer-${viewport.width}.png`,
+      );
       await page.screenshot({ path: screenshot });
       result.screenshots.push(screenshot);
     }
@@ -813,7 +829,7 @@ try {
     !nativeConfig &&
     !nativeCommands &&
     !nativeUsage &&
-    !codexSteer &&
+    !nativeSteer &&
     !initiallyOpen
   ) {
     assert.ok(

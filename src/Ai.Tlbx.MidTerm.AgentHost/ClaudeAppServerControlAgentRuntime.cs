@@ -34,11 +34,13 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
     private string? _activeTurnId;
     private string? _activeTurnModel;
     private string? _activeTurnEffort;
+    private string? _currentAssistantItemId;
     private AppServerControlQuickSettingsSummary _quickSettings = new();
     private bool _assistantStreamEmitted;
     private bool _turnStarted;
     private bool _assistantMessageEmitted;
     private bool _interruptRequested;
+    private bool _steeringPending;
     private long _sequence;
 
     public ClaudeAppServerControlAgentRuntime(Action<AppServerControlProviderEvent> emit)
@@ -180,7 +182,8 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             throw new InvalidOperationException("App Server Controller turn input must include text or attachments.");
         }
 
-        _activeTurnId = "turn-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var turnId = "turn-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        _activeTurnId = turnId;
         _activeTurnModel = quickSettings.Model;
         _activeTurnEffort = quickSettings.Effort;
         _quickSettings = quickSettings;
@@ -214,14 +217,14 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                 {
                     SessionId = command.SessionId,
                     Status = "accepted",
-                    TurnId = _activeTurnId
+                    TurnId = turnId
                 },
                 TurnStarted = new AppServerControlTurnStartResponse
                 {
                     SessionId = command.SessionId,
                     Provider = Provider,
                     ThreadId = _providerThreadId ?? _sessionId ?? command.SessionId,
-                    TurnId = _activeTurnId,
+                    TurnId = turnId,
                     Status = "accepted",
                     QuickSettings = new AppServerControlQuickSettingsSummary
                     {
@@ -250,6 +253,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         }
 
         var request = command.SteerTurn ?? throw new InvalidOperationException("turn.steer payload is required.");
+        var turnId = _activeTurnId;
         if (!string.IsNullOrWhiteSpace(request.ExpectedTurnId) &&
             !string.Equals(request.ExpectedTurnId, _activeTurnId, StringComparison.Ordinal))
         {
@@ -268,6 +272,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         }
 
         await EnsureClaudeBridgeAsync(ct).ConfigureAwait(false);
+        _steeringPending = true;
         await SendTurnCommandAsync(
             "turn.steer",
             prompt,
@@ -279,7 +284,10 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             _quickSettings.PermissionMode,
             ct).ConfigureAwait(false);
 
-        return Accepted(command.CommandId, command.SessionId);
+        return Accepted(command.CommandId, command.SessionId, new AppServerControlCommandAcceptedResponse
+        {
+            SessionId = command.SessionId, Status = "accepted", TurnId = turnId
+        });
     }
 
     private async Task<HostCommandOutcome> InterruptTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -703,6 +711,9 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         switch (eventType)
         {
             case "message_start":
+                _currentAssistantItemId = GetString(root, "event", "message", "id");
+                _assistantStreamEmitted = false;
+                _blocks.Clear();
                 UpdateClaudeMessageUsage(root, Traverse(root, "event", "message", "usage"), rawLine);
                 if (!string.IsNullOrWhiteSpace(_activeTurnId))
                 {
@@ -886,6 +897,12 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
     private void HandleAssistant(JsonElement root, string rawLine)
     {
         UpdateClaudeMessageUsage(root, Traverse(root, "message", "usage"), rawLine);
+        if (GetString(root, "message", "id") is { } messageId &&
+            !string.Equals(messageId, _currentAssistantItemId, StringComparison.Ordinal))
+        {
+            _currentAssistantItemId = messageId;
+            _assistantStreamEmitted = false;
+        }
         var text = JoinClaudeAssistantText(root);
         if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(_activeTurnId))
         {
@@ -908,7 +925,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         }
 
         _assistantMessageEmitted = true;
-        var itemId = $"assistant:{_activeTurnId}";
+        var itemId = _currentAssistantItemId ?? $"assistant:{_activeTurnId}";
         _emit(CreateEvent("item.completed", _activeTurnId, itemId, null, "claude.agent-sdk", "assistant", root, appServerControlEvent =>
         {
             appServerControlEvent.Item = new AppServerControlProviderItemPayload
@@ -985,7 +1002,17 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             EmitAssistantMessage(resultText, root, rawLine);
         }
 
-        _emit(CreateEvent("turn.completed", _activeTurnId, null, null, "claude.agent-sdk", "result", root, appServerControlEvent =>
+        var terminalReason = GetString(root, "terminal_reason");
+        if (GetInt32(root, "queued_turn_count") is > 0 ||
+            (_steeringPending && !_interruptRequested && terminalReason is "aborted_streaming" or "aborted_tools"))
+        {
+            _assistantMessageEmitted = false;
+            return;
+        }
+
+        var completedTurnId = _activeTurnId;
+        ResetTurnState();
+        _emit(CreateEvent("turn.completed", completedTurnId, null, null, "claude.agent-sdk", "result", root, appServerControlEvent =>
         {
             appServerControlEvent.TurnCompleted = new AppServerControlProviderTurnCompletedPayload
             {
@@ -995,7 +1022,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                 ErrorMessage = isError ? resultText : null
             };
         }, rawLine));
-        _emit(CreateEvent("session.state.changed", _activeTurnId, null, null, "claude.agent-sdk", "result", root, appServerControlEvent =>
+        _emit(CreateEvent("session.state.changed", completedTurnId, null, null, "claude.agent-sdk", "result", root, appServerControlEvent =>
         {
             appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
             {
@@ -1007,7 +1034,6 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             };
         }, rawLine));
 
-        ResetTurnState();
     }
 
     private void EnsureProviderThreadId(JsonElement root)
@@ -1038,7 +1064,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         }
 
         _assistantStreamEmitted = true;
-        var itemId = $"assistant:{_activeTurnId}";
+        var itemId = _currentAssistantItemId ?? $"assistant:{_activeTurnId}";
         _emit(CreateEvent("content.delta", _activeTurnId, itemId, null, "claude.agent-sdk", "assistant", root, appServerControlEvent =>
         {
             appServerControlEvent.ContentDelta = new AppServerControlProviderContentDeltaPayload
@@ -1691,10 +1717,12 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         _activeTurnId = null;
         _activeTurnModel = null;
         _activeTurnEffort = null;
+        _currentAssistantItemId = null;
         _assistantStreamEmitted = false;
         _turnStarted = false;
         _assistantMessageEmitted = false;
         _interruptRequested = false;
+        _steeringPending = false;
         _blocks.Clear();
         _tools.Clear();
     }
