@@ -131,9 +131,12 @@ public sealed class OpenCodeRuntimeTests
         Assert.StartsWith(cache, restored.Path, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
         Assert.Equal("native.png", restored.DisplayName);
         Assert.Equal(Convert.FromBase64String(image), await File.ReadAllBytesAsync(restored.Path, CancellationToken.None));
+        var submittedPath = Path.Combine(cache, "submitted.png");
         try
         {
-            var prompt = Command("turn.start", turn: new() { Text = "Inspect this restored image", Attachments = [restored] });
+            File.Copy(restored.Path, submittedPath);
+            var submitted = new AppServerControlAttachmentReference { Kind = "image", Path = submittedPath, MimeType = "image/png", DisplayName = "native.png" };
+            var prompt = Command("turn.start", turn: new() { Text = "Inspect this restored image", Attachments = [submitted] });
             prompt.SessionId = attach.SessionId;
             await runtime.ExecuteAsync(prompt, CancellationToken.None);
             using var native = JsonDocument.Parse(fake.Requests.Last(r => r.Path.EndsWith("/prompt_async", StringComparison.Ordinal)).Body!);
@@ -142,10 +145,16 @@ public sealed class OpenCodeRuntimeTests
             Assert.Equal("image/png", part.GetProperty("mime").GetString());
             Assert.Equal("native.png", part.GetProperty("filename").GetString());
             Assert.Equal("data:image/png;base64," + image, part.GetProperty("url").GetString());
+            var messageId = native.RootElement.GetProperty("messageID").GetString();
+            await fake.Event("""{"type":"message.updated","properties":{"info":{"id":"$MESSAGE_ID","sessionID":"ses_test","role":"user"}}}""".Replace("$MESSAGE_ID", messageId, StringComparison.Ordinal));
+            await fake.Event("""{"type":"message.part.updated","properties":{"part":{"id":"echo-file","messageID":"$MESSAGE_ID","sessionID":"ses_test","type":"file","mime":"image/png","filename":"native.png","url":"data:image/png;base64,$IMAGE"}}}""".Replace("$MESSAGE_ID", messageId, StringComparison.Ordinal).Replace("$IMAGE", image, StringComparison.Ordinal));
+            await Until(() => events.Any(e => e.ItemId == messageId && e.Item?.Attachments.Count == 1));
+            Assert.Equal(submittedPath, events.Last(e => e.ItemId == messageId && e.Item?.Attachments.Count == 1).Item!.Attachments.Single().Path);
         }
         finally
         {
             File.Delete(restored.Path);
+            File.Delete(submittedPath);
             Directory.Delete(cache);
         }
     }
@@ -200,8 +209,10 @@ public sealed class OpenCodeRuntimeTests
         Assert.DoesNotContain(events, e => e.TurnCompleted is not null);
     }
 
-    [Fact]
-    public async Task SteeringWaitsForNativeIdleAndRejectsStaleTargets()
+    [Theory]
+    [InlineData("MessageAbortedError", null)]
+    [InlineData("APIError", "Aborted")]
+    public async Task SteeringWaitsForNativeIdleAndRejectsStaleTargets(string nativeError, string? expectedError)
     {
         using var fake = new OpenCodeTransport();
         var events = new ConcurrentQueue<AppServerControlProviderEvent>();
@@ -216,11 +227,13 @@ public sealed class OpenCodeRuntimeTests
         await Until(() => fake.Requests.Any(r => r.Path.EndsWith("/abort", StringComparison.Ordinal)));
         Assert.False(pending.IsCompleted);
         Assert.Single(fake.Requests.Where(r => r.Path.EndsWith("/prompt_async", StringComparison.Ordinal)));
+        await fake.Event("{\"type\":\"session.error\",\"properties\":{\"sessionID\":\"ses_test\",\"error\":{\"name\":\"" + nativeError + "\",\"data\":{\"message\":\"Aborted\"}}}}");
         await fake.Event("""{"type":"session.idle","properties":{"sessionID":"ses_test"}}""");
         var second = await pending.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
         Assert.False(string.Equals(first.Result.Accepted.TurnId, second.Result.Accepted!.TurnId, StringComparison.Ordinal));
         Assert.Equal(2, fake.Requests.Count(r => r.Path.EndsWith("/prompt_async", StringComparison.Ordinal)));
         Assert.Contains(events, e => e.TurnId == first.Result.Accepted.TurnId && e.TurnCompleted?.State == "interrupted");
+        Assert.Equal(expectedError, events.Single(e => e.TurnId == first.Result.Accepted.TurnId && e.TurnCompleted is not null).TurnCompleted!.ErrorMessage);
     }
 
     [Theory]

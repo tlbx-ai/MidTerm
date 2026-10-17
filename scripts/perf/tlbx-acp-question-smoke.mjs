@@ -1073,7 +1073,9 @@ try {
   }
   if (initiallyOpen) {
     const question = wrapper.locator(".agent-request-question").filter({
-      hasText: multi ? /^Which color\?$/ : /^Which acceptance color\?$/,
+      hasText:
+        process.env.TLBX_ACP_UI_EXPECTED_QUESTION ||
+        (multi ? /^Which color\?$/ : /^Which acceptance color\?$/),
     });
     await question.waitFor({ state: "visible" });
     for (const viewport of [

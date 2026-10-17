@@ -81,6 +81,7 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime
                 return CanFinishFromIdle();
             case "session.error":
                 var error = Value(properties, "error");
+                if (IsExpectedCancellation(error)) break;
                 _error = Text(Value(error, "data"), "message") ?? Text(error, "name") ?? "OpenCode reported a session error.";
                 if (_turnId is not null) _busy = true;
                 else Publish("runtime.error", e => e.RuntimeMessage = new() { Message = _error });
@@ -120,10 +121,14 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime
             var current = !replay && _turnId is not null && TurnFor(id) == _turnId;
             if (current) _assistantSeen = true;
             var error = Value(message, "error");
-            if (current && error.ValueKind == JsonValueKind.Object) _error = Text(Value(error, "data"), "message") ?? Text(error, "name");
+            if (current && error.ValueKind == JsonValueKind.Object && !IsExpectedCancellation(error))
+                _error = Text(Value(error, "data"), "message") ?? Text(error, "name");
             PublishUsage();
         }
     }
+
+    private bool IsExpectedCancellation(JsonElement error) =>
+        _interrupting && Text(error, "name") == "MessageAbortedError";
 
     private bool CanFinishFromIdle() => _turnId is not null && _requests.Count == 0 &&
         (_assistantSeen || (_busy && _userReceipt) || (_interrupting && (_userReceipt || _userMessageId is null)) || _error is not null);
@@ -184,6 +189,8 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime
     {
         var url = Text(part, "url");
         if (string.IsNullOrEmpty(url)) return null;
+        if (_submittedAttachments.TryGetValue((Text(part, "messageID") ?? string.Empty, url), out var submitted) &&
+            File.Exists(submitted.Path)) return submitted;
         var mime = Text(part, "mime") ?? "application/octet-stream";
         if (url.StartsWith("file:", StringComparison.OrdinalIgnoreCase) && Uri.TryCreate(url, UriKind.Absolute, out var file))
             return new() { Kind = mime.StartsWith("image/", StringComparison.Ordinal) ? "image" : "file", Path = file.LocalPath, MimeType = mime, DisplayName = Text(part, "filename") };

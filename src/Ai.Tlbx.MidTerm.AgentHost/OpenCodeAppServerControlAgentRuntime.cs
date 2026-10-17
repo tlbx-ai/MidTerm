@@ -20,6 +20,7 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime : IAppServerC
     private readonly Dictionary<string, JsonElement> _models = new(StringComparer.Ordinal);
     private readonly Dictionary<string, JsonElement> _messages = new(StringComparer.Ordinal);
     private readonly Dictionary<string, JsonElement> _parts = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string MessageId, string Url), AppServerControlAttachmentReference> _submittedAttachments = [];
     private readonly Dictionary<string, string> _messageTurns = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PendingOpenCodeRequest> _requests = new(StringComparer.Ordinal);
     private readonly HashSet<string> _nativeSessions = new(StringComparer.Ordinal);
@@ -220,6 +221,15 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime : IAppServerC
             turn = BeginTurn();
             _userMessageId = "msg_" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
             _messageTurns[_userMessageId] = turn;
+            for (var index = 0; index < files.Count; index++)
+            {
+                var attachment = request.Attachments[index];
+                _submittedAttachments[(_userMessageId, files[index].Url)] = new()
+                {
+                    Kind = attachment.Kind, Path = attachment.Path,
+                    MimeType = attachment.MimeType, DisplayName = attachment.DisplayName
+                };
+            }
             Publish("item.completed", e => e.Item = new()
             {
                 ItemType = "user_message",
