@@ -18,7 +18,7 @@ import {
   $currentSettings,
   $activeSessionId,
   $settingsOpen,
-  $voiceServerPassword,
+  $voiceAvailable,
 } from '../../stores';
 import { setAppServerControlGoal } from '../../api/client';
 import { t } from '../i18n';
@@ -1015,7 +1015,7 @@ export function initSmartInput(): void {
     syncSmartInputVisibility();
   });
 
-  $voiceServerPassword.subscribe(() => {
+  $voiceAvailable.subscribe(() => {
     syncVoiceInputAvailability();
   });
 

@@ -1,4 +1,4 @@
-import { $voiceServerPassword } from '../../stores';
+import { $voiceAvailable } from '../../stores';
 import type {
   AppServerControlQuickSettingsOption,
   AppServerControlQuickSettingsSummary,
@@ -16,7 +16,6 @@ import {
   getAppServerControlEffortOptions,
   getAppServerControlModelOptions,
 } from '../appServerControl/modelOptions';
-import { isDevMode } from '../sidebar/voiceSection';
 import {
   ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT,
   calculateAdaptiveFooterReservedHeight,
@@ -33,7 +32,7 @@ import {
 import { getCollapsedSmartInputTextareaHeight } from './smartInputMetrics';
 
 export function canUseSmartInputVoice(): boolean {
-  return isDevMode() && Boolean($voiceServerPassword.get());
+  return $voiceAvailable.get();
 }
 
 export function getMicButtons(footerDock: HTMLDivElement | null): HTMLButtonElement[] {

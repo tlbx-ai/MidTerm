@@ -54,7 +54,6 @@ public sealed class SettingsServiceTests : IDisposable
         settings.PasswordHash = "pw-hash";
         settings.SessionSecret = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
         settings.CertificatePassword = "cert-pass";
-        settings.VoiceServerPassword = "voice-pass";
         settings.UpdateChannel = "dev";
 
         service.Save(settings);
@@ -62,14 +61,12 @@ public sealed class SettingsServiceTests : IDisposable
         var savedJson = File.ReadAllText(Path.Combine(_tempDir, "settings.json"));
         Assert.DoesNotContain("pw-hash", savedJson, StringComparison.Ordinal);
         Assert.DoesNotContain("cert-pass", savedJson, StringComparison.Ordinal);
-        Assert.DoesNotContain("voice-pass", savedJson, StringComparison.Ordinal);
 
         var reloadedService = new SettingsService(_tempDir);
         var reloaded = reloadedService.Load();
         Assert.Equal("pw-hash", reloaded.PasswordHash);
         Assert.Equal(settings.SessionSecret, reloaded.SessionSecret);
         Assert.Equal("cert-pass", reloaded.CertificatePassword);
-        Assert.Equal("voice-pass", reloaded.VoiceServerPassword);
         Assert.Equal("dev", reloaded.UpdateChannel);
     }
 

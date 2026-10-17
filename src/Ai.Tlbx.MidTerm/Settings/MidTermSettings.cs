@@ -199,10 +199,6 @@ public sealed class MidTermSettings
     // Update channel: "stable" (default) or "dev" (prereleases)
     public string UpdateChannel { get; set; } = "stable";
 
-    // Voice server password (shared secret for MidTerm.Voice authentication)
-    [JsonIgnore]
-    public string? VoiceServerPassword { get; set; }
-
     // Hub configuration for monitoring and controlling remote MidTerm instances
     public List<HubMachineSettings> HubMachines { get; set; } = [];
 }

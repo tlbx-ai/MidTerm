@@ -2,14 +2,12 @@
  * Historyion Client
  *
  * Records audio via webAudioAccess.js, then POSTs raw PCM16
- * to the tlbx.Voice /api/transcribe REST endpoint.
+ * to the tlbx /api/ai/transcribe endpoint.
  */
 
-import { $voiceServerPassword } from '../../stores';
 import { createLogger } from '../logging';
 
 const log = createLogger('transcription');
-const VOICE_SERVER_URL = 'https://api.tlbx.ai';
 
 let audioChunks: ArrayBuffer[] = [];
 let isRecording = false;
@@ -103,15 +101,11 @@ export async function stopHistoryion(): Promise<void> {
   log.info(() => `Sending ${pcmData.byteLength} bytes for transcription`);
 
   try {
-    const password = $voiceServerPassword.get();
     const headers: Record<string, string> = {
       'Content-Type': 'application/octet-stream',
     };
-    if (password) {
-      headers['Authorization'] = `Bearer ${password}`;
-    }
 
-    const response = await fetch(`${VOICE_SERVER_URL}/api/transcribe`, {
+    const response = await fetch('/api/ai/transcribe', {
       method: 'POST',
       headers,
       body: pcmData,

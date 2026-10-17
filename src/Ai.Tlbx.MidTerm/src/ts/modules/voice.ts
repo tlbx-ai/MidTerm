@@ -1,11 +1,4 @@
-/**
- * Voice Module
- *
- * Handles WebSocket connection to tlbx.Voice server
- * and bridges audio capture/playback.
- */
-
-import { createLogger } from './logging';
+/** Browser audio and UI bridge for the tlbx-owned voice orchestrator. */
 import { setVoiceStatus, setToggleRecording } from './sidebar/voiceSection';
 import {
   addChatMessage,
@@ -15,776 +8,276 @@ import {
   finalizeToolGroup,
 } from './chat';
 import { processToolRequest } from './voiceTools';
-import { $voiceServerPassword } from '../stores';
+import { $voiceAvailable } from '../stores';
 import type { VoiceToolName } from '../types';
-import type { VoiceHealthResponse, VoiceProvider } from '../types';
-import { showAlert } from '../utils/dialog';
-
-const log = createLogger('voice');
-const VOICE_SERVER_URL = 'https://api.tlbx.ai';
 
 let ws: WebSocket | null = null;
-let isSessionActive = false;
-let voiceServerAvailable = false;
-let audioFrameCount = 0;
-let totalBytesSent = 0;
+let starting = false;
+let generation = 0;
+let transcriptRole = '';
+let transcriptText = '';
+let transcriptTimer: ReturnType<typeof setTimeout> | null = null;
+let toolQueue: Promise<void> = Promise.resolve();
+const orchestrationTools = new Set<VoiceToolName>([
+  'session_overview',
+  'session_activity',
+  'read_scrollback',
+  'select_session',
+  'create_session',
+  'send_prompt',
+  'make_input',
+  'close_session',
+]);
 
-// Voice settings state
-let voiceProviders: VoiceProvider[] = [];
-let selectedProvider = '';
-let selectedVoice = '';
-let selectedSpeed = 1.0;
-
-/**
- * Check if tlbx.Voice server is available and fetch providers
- */
-export async function checkVoiceServerHealth(): Promise<boolean> {
+export async function refreshVoiceAvailability(): Promise<boolean> {
   try {
-    const url = `${VOICE_SERVER_URL}/api/health`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-    }, 2000);
-
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      const data = (await response.json()) as VoiceHealthResponse;
-      voiceServerAvailable = data.status === 'ok';
-      log.info(() => `Voice server available: v${data.version}`);
-
-      // Store providers and defaults if available
-      if (data.providers) {
-        voiceProviders = data.providers;
-        populateVoiceDropdown();
-      }
-      if (data.defaults) {
-        selectedProvider = data.defaults.provider;
-        selectedVoice = data.defaults.voice;
-        selectedSpeed = data.defaults.speed;
-        updateSpeedDisplay();
-      }
-
-      return voiceServerAvailable;
-    }
+    const response = await fetch('/api/ai/settings');
+    if (!response.ok) throw new Error('Could not read AI settings');
+    const data = (await response.json()) as { providers: { id: string; configured: boolean }[] };
+    const available = data.providers.some((p) => p.id === 'openai' && p.configured);
+    $voiceAvailable.set(available);
+    if (!ws)
+      setVoiceStatus(available ? 'Ready · GPT-Live 1' : 'Add an OpenAI key in AI & Voice settings');
+    return available;
   } catch {
-    log.info(() => 'Voice server not available');
-  }
-  voiceServerAvailable = false;
-  return false;
-}
-
-/**
- * Populate the voice dropdown with available providers and voices
- */
-function populateVoiceDropdown(): void {
-  const voiceSelect = document.getElementById('voice-select') as HTMLSelectElement | null;
-  if (!voiceSelect) return;
-
-  voiceSelect.innerHTML = '';
-
-  for (const provider of voiceProviders) {
-    if (!provider.available || provider.voices.length === 0) continue;
-
-    const optgroup = document.createElement('optgroup');
-    optgroup.label = provider.name;
-
-    for (const voice of provider.voices) {
-      const option = document.createElement('option');
-      option.value = `${provider.id}:${voice.id}`;
-      option.textContent = voice.name;
-
-      if (provider.id === selectedProvider && voice.id === selectedVoice) {
-        option.selected = true;
-      }
-
-      optgroup.appendChild(option);
-    }
-
-    voiceSelect.appendChild(optgroup);
-  }
-
-  log.info(() => `Voice dropdown populated with ${voiceProviders.length} providers`);
-}
-
-/** Microphone device info */
-interface MicDevice {
-  id: string;
-  name: string;
-  isDefault: boolean;
-}
-
-/**
- * Populate the microphone dropdown with available devices
- */
-export async function populateMicDropdown(): Promise<void> {
-  const micSelect = document.getElementById('mic-select') as HTMLSelectElement | null;
-  if (!micSelect) return;
-
-  try {
-    if (window.getAvailableMicrophones) {
-      const mics = (await window.getAvailableMicrophones()) as MicDevice[];
-      micSelect.innerHTML = '<option value="">Default</option>';
-
-      for (const mic of mics) {
-        const option = document.createElement('option');
-        option.value = mic.id;
-        option.textContent = mic.name;
-        if (mic.isDefault) {
-          option.selected = true;
-        }
-        micSelect.appendChild(option);
-      }
-
-      log.info(() => `Microphone dropdown populated with ${mics.length} devices`);
-    }
-  } catch (error) {
-    log.error(() => `Failed to get microphones: ${String(error)}`);
-  }
-}
-
-/**
- * Update the speed display value
- */
-function updateSpeedDisplay(): void {
-  const speedValue = document.getElementById('voice-speed-value');
-  const speedSlider = document.getElementById('voice-speed') as HTMLInputElement | null;
-
-  if (speedValue) {
-    speedValue.textContent = `${selectedSpeed}x`;
-  }
-  if (speedSlider) {
-    speedSlider.value = String(selectedSpeed);
-  }
-}
-
-/**
- * Check microphone permission status without triggering a prompt.
- * Returns 'granted', 'prompt', or 'denied'.
- */
-export async function checkMicrophonePermissionStatus(): Promise<'granted' | 'prompt' | 'denied'> {
-  try {
-    const result = await navigator.permissions.query({ name: 'microphone' });
-    return result.state;
-  } catch {
-    return 'prompt';
-  }
-}
-
-/**
- * Populate the microphone dropdown passively (only if permission already granted).
- * Does not open audio devices or trigger permission prompts.
- */
-export async function populateMicDropdownPassive(): Promise<void> {
-  const micSelect = document.getElementById('mic-select') as HTMLSelectElement | null;
-  if (!micSelect) return;
-
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const audioInputs = devices.filter((d) => d.kind === 'audioinput');
-    const hasLabels = audioInputs.some((d) => d.label.length > 0);
-
-    if (!hasLabels) {
-      micSelect.innerHTML = '<option value="">Select microphone...</option>';
-      return;
-    }
-
-    micSelect.innerHTML = '<option value="">Default</option>';
-    for (const device of audioInputs) {
-      const option = document.createElement('option');
-      option.value = device.deviceId;
-      option.textContent = device.label || `Microphone ${device.deviceId.slice(0, 8)}`;
-      micSelect.appendChild(option);
-    }
-    log.info(() => `Microphone dropdown populated passively with ${audioInputs.length} devices`);
-  } catch (error) {
-    log.warn(() => `Failed to enumerate devices passively: ${String(error)}`);
-    micSelect.innerHTML = '<option value="">Select microphone...</option>';
-  }
-}
-
-/**
- * Request microphone permission and initialize audio
- */
-async function requestMicrophonePermission(): Promise<boolean> {
-  try {
-    log.info(() => 'Requesting microphone permission');
-
-    if (!window.initAudioWithUserInteraction) {
-      log.error(() => 'Audio API not available');
-      setVoiceStatus('Audio API not available');
-      return false;
-    }
-
-    const result = await window.initAudioWithUserInteraction();
-    if (!result) {
-      setVoiceStatus('Audio init failed');
-      return false;
-    }
-
-    if (window.requestMicrophonePermissionAndGetDevices) {
-      await window.requestMicrophonePermissionAndGetDevices();
-    }
-
-    // Populate microphone dropdown after permission granted
-    await populateMicDropdown();
-
-    log.info(() => 'Microphone permission granted');
-    setVoiceStatus('Ready');
-    return true;
-  } catch (error) {
-    log.error(() => `Microphone permission error: ${String(error)}`);
-    setVoiceStatus('Mic permission denied');
+    $voiceAvailable.set(false);
+    setVoiceStatus('AI settings unavailable');
     return false;
   }
 }
 
-/**
- * Start a voice session - connect to tlbx.Voice and begin recording.
- * Single entry point: requests mic permission if needed, then starts session.
- */
-export async function startVoiceSession(): Promise<void> {
-  if (isSessionActive) {
-    log.warn(() => 'Voice session already active');
-    return;
-  }
-
-  setVoiceStatus('Initializing...');
-
-  // Request permission if needed (this opens audio devices)
-  const permissionGranted = await requestMicrophonePermission();
-  if (!permissionGranted) {
-    return;
-  }
-
-  try {
-    let wsUrl = `wss://api.tlbx.ai/voice`;
-
-    // Append password if configured
-    const password = $voiceServerPassword.get();
-    if (password) {
-      wsUrl += `?password=${encodeURIComponent(password)}`;
-    }
-
-    // Reset counters
-    audioFrameCount = 0;
-    totalBytesSent = 0;
-
-    log.info(() => `[WS] Connecting to ${wsUrl}`);
-    setVoiceStatus('Connecting...');
-
-    ws = new WebSocket(wsUrl);
-
-    ws.onopen = async () => {
-      log.info(() => '[WS] Connected, sending start command');
-      setVoiceStatus('Connected');
-
-      // Show chat panel when voice session starts
-      showChatPanel();
-
-      // Send start message with settings
-      const startMsg = JSON.stringify({
-        type: 'start',
-        provider: selectedProvider,
-        voice: selectedVoice,
-        speed: selectedSpeed,
-      });
-      ws?.send(startMsg);
-      log.info(() => `[WS] Sent: ${startMsg}`);
-
-      // Start recording
-      if (window.startRecording) {
-        log.info(() => '[AUDIO] Calling startRecording(callback, 500ms, null, 24000Hz)');
-        const success = await window.startRecording(
-          (base64Audio: string) => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              // Convert base64 to ArrayBuffer and send
-              const bytes = base64ToArrayBuffer(base64Audio);
-              audioFrameCount++;
-              totalBytesSent += bytes.byteLength;
-              ws.send(bytes);
-            } else {
-              log.warn(() => `[AUDIO] Frame dropped - WS not open (readyState: ${ws?.readyState})`);
-            }
-          },
-          500,
-          null,
-          24000,
-        );
-
-        log.info(() => `[AUDIO] startRecording returned: ${success}`);
-
-        if (success) {
-          isSessionActive = true;
-          setVoiceStatus('Listening...');
-          setToggleRecording(true);
-          log.info(() => '[SESSION] Voice session active');
-        } else {
-          log.error(() => '[AUDIO] Recording failed to start');
-          setVoiceStatus('Recording failed');
-          ws?.close();
-        }
-      } else {
-        log.error(() => '[AUDIO] window.startRecording not available');
-      }
-    };
-
-    ws.onmessage = async (event: MessageEvent) => {
-      if (event.data instanceof Blob) {
-        // Audio data from server - play without logging every frame
-        const arrayBuffer = await event.data.arrayBuffer();
-        const base64 = arrayBufferToBase64(arrayBuffer);
-
-        if (window.playAudio) {
-          await window.playAudio(base64, 24000);
-        }
-      } else if (typeof event.data === 'string') {
-        // JSON message
-        try {
-          const msg = JSON.parse(event.data) as VoiceMessage;
-          handleVoiceMessage(msg);
-        } catch {
-          log.warn(() => `[WS] Invalid JSON from voice server: ${event.data}`);
-        }
-      }
-    };
-
-    ws.onclose = (event: CloseEvent) => {
-      log.info(
-        () => `[WS] Closed: code=${event.code} reason="${event.reason}" clean=${event.wasClean}`,
-      );
-      log.info(() => `[SESSION] Stats: ${audioFrameCount} frames, ${totalBytesSent} bytes sent`);
-      isSessionActive = false;
-      setVoiceStatus('Disconnected');
-      setToggleRecording(false);
-    };
-
-    ws.onerror = () => {
-      log.error(() => '[WS] WebSocket error occurred');
-      setVoiceStatus('Connection error');
-    };
-  } catch (error) {
-    log.error(() => `[SESSION] Failed to start: ${String(error)}`);
-    setVoiceStatus('Connection failed');
-  }
+export async function populateMicDropdownPassive(): Promise<void> {
+  const select = document.getElementById('mic-select') as HTMLSelectElement | null;
+  if (!select) return;
+  const selected = select.value;
+  const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+  select.replaceChildren(new Option('Default microphone', ''));
+  for (const device of devices.filter((d) => d.kind === 'audioinput' && d.label))
+    select.add(new Option(device.label, device.deviceId));
+  select.value = selected;
 }
 
-/**
- * Stop the voice session
- */
-export async function stopVoiceSession(): Promise<void> {
-  if (!isSessionActive) {
-    log.info(() => '[SESSION] Stop called but session not active');
-    return;
+function flushTranscript(): void {
+  if (transcriptTimer) clearTimeout(transcriptTimer);
+  transcriptTimer = null;
+  if (transcriptText && (transcriptRole === 'user' || transcriptRole === 'assistant')) {
+    addChatMessage({
+      role: transcriptRole,
+      content: transcriptText,
+      timestamp: new Date().toISOString(),
+    });
   }
-
-  log.info(() => '[SESSION] Stopping voice session...');
-
-  // Stop recording
-  if (window.stopRecording) {
-    log.info(() => '[AUDIO] Calling stopRecording()');
-    await window.stopRecording();
-    log.info(() => '[AUDIO] stopRecording() completed');
-  }
-
-  // Stop playback
-  if (window.stopAudioPlayback) {
-    log.info(() => '[AUDIO] Calling stopAudioPlayback()');
-    await window.stopAudioPlayback();
-  }
-
-  // Send stop message and close WebSocket
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    const stopMsg = JSON.stringify({ type: 'stop' });
-    log.info(() => `[WS] Sending: ${stopMsg}`);
-    ws.send(stopMsg);
-    log.info(() => '[WS] Closing WebSocket');
-    ws.close();
-  }
-
-  isSessionActive = false;
-  finalizeToolGroup();
-  setVoiceStatus('Ready');
-  setToggleRecording(false);
-  log.info(() => '[SESSION] Voice session stopped');
+  transcriptText = '';
+  transcriptRole = '';
 }
 
-/** Voice message from server */
-interface VoiceMessage {
+interface VoiceEvent {
   type: string;
   status?: string;
   message?: string;
   role?: 'user' | 'assistant' | 'tool';
   content?: string;
   toolName?: string;
-  timestamp?: string;
   requestId?: string;
   tool?: VoiceToolName;
   args?: Record<string, unknown>;
-  result?: unknown;
   requiresConfirmation?: boolean;
 }
 
-function addVoiceChatMessage(msg: VoiceMessage): void {
-  if (!msg.role || msg.content === undefined) {
-    return;
-  }
-
-  const chatMsg = {
-    role: msg.role,
-    content: msg.content,
-    timestamp: msg.timestamp || new Date().toISOString(),
-  };
-  if (msg.toolName) {
-    addChatMessage({ ...chatMsg, toolName: msg.toolName });
-    return;
-  }
-
-  addChatMessage(chatMsg);
+function isCurrentSocket(socket: WebSocket): boolean {
+  return socket === ws && socket.readyState === WebSocket.OPEN;
 }
 
-function clearPendingVoiceAudio(): void {
-  if (window.stopAudioPlayback) {
-    void window.stopAudioPlayback();
-  }
-}
-
-function handleVoiceToolRequestMessage(msg: VoiceMessage): void {
-  if (msg.requestId && msg.tool) {
-    void handleToolRequest(
-      msg.requestId,
-      msg.tool,
-      msg.args ?? {},
-      msg.requiresConfirmation ?? false,
+async function handleTool(event: VoiceEvent, socket: WebSocket): Promise<void> {
+  if (!event.tool || !event.requestId || socket !== ws || socket.readyState !== WebSocket.OPEN)
+    return;
+  if (!orchestrationTools.has(event.tool)) {
+    socket.send(
+      JSON.stringify({
+        type: 'tool_response',
+        requestId: event.requestId,
+        result: null,
+        error: 'Unsupported orchestration tool.',
+      }),
     );
+    return;
   }
-}
-
-function handleRealtimeTraceMessage(msg: VoiceMessage): void {
+  const args = event.args ?? {};
+  const approved =
+    !event.requiresConfirmation ||
+    (await showToolConfirmation(event.tool, args, args.justification as string | undefined));
+  // Confirmation can outlive its conversation. Never execute after that connection has ended.
+  if (!isCurrentSocket(socket)) return;
+  addChatMessage({
+    role: 'assistant',
+    content: `Calling tool: ${event.tool}\n${JSON.stringify(args, null, 2)}`,
+    timestamp: new Date().toISOString(),
+  });
+  const response = approved
+    ? await processToolRequest({
+        type: 'tool_request',
+        requestId: event.requestId,
+        tool: event.tool,
+        args,
+      })
+    : { type: 'tool_response', requestId: event.requestId, result: null, declined: true };
   addChatMessage({
     role: 'tool',
-    toolName: 'realtime_trace',
-    content:
-      typeof msg.result === 'undefined'
-        ? msg.message || 'Realtime response completed.'
-        : JSON.stringify(msg.result, null, 2),
-    timestamp: msg.timestamp || new Date().toISOString(),
+    content: JSON.stringify(response),
+    toolName: event.tool,
+    timestamp: new Date().toISOString(),
   });
+  if (isCurrentSocket(socket)) socket.send(JSON.stringify(response));
 }
 
-/**
- * Handle messages from the voice server
- */
-function handleVoiceMessage(msg: VoiceMessage): void {
-  log.info(() => `[MSG] Handling: type=${msg.type}`);
-  switch (msg.type) {
-    case 'status':
-      if (msg.status) {
-        setVoiceStatus(msg.status);
-      }
-      break;
-    case 'speaking':
-      setVoiceStatus('Speaking...');
-      break;
-    case 'listening':
-      setVoiceStatus('Listening...');
-      break;
-    case 'chat':
-      addVoiceChatMessage(msg);
-      break;
-    case 'clear_audio':
-      clearPendingVoiceAudio();
-      break;
-    case 'error':
-      log.error(() => `[MSG] Server error: ${msg.message || 'unknown'}`);
-      setVoiceStatus('Server error');
-      break;
-    case 'tool_request':
-      handleVoiceToolRequestMessage(msg);
-      break;
-    case 'realtime_trace':
-      handleRealtimeTraceMessage(msg);
-      break;
-    default:
-      log.info(() => `[MSG] Unhandled message type: ${msg.type}`);
+function renderVoiceMessage(event: VoiceEvent): void {
+  if (!event.role || !event.content) return;
+  if (event.type === 'transcript') {
+    if (transcriptRole !== event.role) flushTranscript();
+    transcriptRole = event.role;
+    transcriptText += event.content;
+    if (transcriptTimer) clearTimeout(transcriptTimer);
+    transcriptTimer = setTimeout(flushTranscript, 900);
+  } else {
+    flushTranscript();
+    addChatMessage({
+      role: event.role,
+      content: event.content,
+      ...(event.toolName ? { toolName: event.toolName } : {}),
+      timestamp: new Date().toISOString(),
+    });
   }
 }
 
-/**
- * Handle a tool request from the voice server
- */
-async function handleToolRequest(
-  requestId: string,
-  tool: VoiceToolName,
-  args: Record<string, unknown>,
-  requiresConfirmation: boolean,
-): Promise<void> {
-  log.info(
-    () => `[TOOL] Processing request: ${tool} (${requestId}), confirmation=${requiresConfirmation}`,
-  );
-
-  // If confirmation is required, show dialog first
-  if (requiresConfirmation) {
-    const justification = args.justification as string | undefined;
-    const approved = await showToolConfirmation(tool, args, justification);
-
-    if (!approved) {
-      log.info(() => `[TOOL] User declined: ${tool} (${requestId})`);
-      sendToolResponse({
-        type: 'tool_response',
-        requestId,
-        result: null,
-        declined: true,
+function onMessage(event: VoiceEvent, socket: WebSocket): void {
+  if (event.type === 'ready') void beginCapture(socket);
+  else if (event.type === 'status') setVoiceStatus(event.status ?? 'Working');
+  else if (event.type === 'transcript' || event.type === 'chat') renderVoiceMessage(event);
+  else if (event.type === 'clear_audio') void window.stopAudioPlayback?.();
+  else if (event.type === 'tool_request') {
+    toolQueue = toolQueue
+      .then(() => handleTool(event, socket))
+      .catch(() => {
+        if (socket === ws) void stopVoiceSession('Tool execution failed');
       });
+  } else if (event.type === 'error') void stopVoiceSession(event.message ?? 'Voice error');
+}
+
+async function beginCapture(socket: WebSocket): Promise<void> {
+  const microphone =
+    (document.getElementById('mic-select') as HTMLSelectElement | null)?.value || null;
+  try {
+    const success = await window.startRecording?.(
+      (audio: string) => {
+        if (socket === ws && socket.readyState === WebSocket.OPEN) {
+          if (socket.bufferedAmount > 1024 * 1024) {
+            void stopVoiceSession('Audio connection is too slow');
+            return;
+          }
+          socket.send(Uint8Array.from(atob(audio), (c) => c.charCodeAt(0)));
+        }
+      },
+      100,
+      microphone,
+      24000,
+    );
+    if (socket !== ws) {
+      await window.stopRecording?.();
       return;
     }
-  }
-
-  const response = await processToolRequest({
-    type: 'tool_request',
-    requestId,
-    tool,
-    args,
-  });
-
-  sendToolResponse(response);
-}
-
-/**
- * Send a tool response back to the voice server
- */
-function sendToolResponse(response: {
-  type: string;
-  requestId: string;
-  result: unknown;
-  error?: string;
-  declined?: boolean;
-}): void {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    log.warn(() => `[TOOL] Cannot send response - WebSocket not open`);
-    return;
-  }
-
-  const json = JSON.stringify(response);
-  ws.send(json);
-  log.info(
-    () => `[TOOL] Sent response for ${response.requestId}${response.declined ? ' (declined)' : ''}`,
-  );
-}
-
-/**
- * Convert base64 string to ArrayBuffer
- */
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-/**
- * Convert ArrayBuffer to base64 string
- */
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    const byte = bytes[i];
-    if (byte === undefined) break;
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-}
-
-/**
- * Test voice server connection and show diagnostic popup
- */
-async function testVoiceServerConnection(): Promise<void> {
-  const healthUrl = `${VOICE_SERVER_URL}/api/health`;
-
-  const results: string[] = [];
-  results.push(`Voice Server: ${VOICE_SERVER_URL}`);
-  results.push('');
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-    }, 5000);
-
-    const response = await fetch(healthUrl, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      const data = (await response.json()) as VoiceHealthResponse;
-      results.push('✓ Health endpoint: OK');
-      results.push(`  Version: ${data.version}`);
-
-      if (data.providers && Array.isArray(data.providers)) {
-        results.push('');
-        results.push('Providers:');
-        for (const p of data.providers) {
-          const status = p.available ? '✓' : '✗';
-          const voiceCount = p.voices.length;
-          results.push(`  ${status} ${p.name}: ${voiceCount} voices`);
-        }
-      }
-
-      if (data.defaults) {
-        results.push('');
-        results.push(`Defaults: ${data.defaults.provider}/${data.defaults.voice}`);
-      }
-
-      if (data.providers) {
-        voiceProviders = data.providers;
-        populateVoiceDropdown();
-      }
-    } else {
-      results.push(`✗ Health endpoint: HTTP ${response.status}`);
-    }
-  } catch (err) {
-    if (err instanceof Error) {
-      if (err.name === 'AbortError') {
-        results.push('✗ Health endpoint: Timeout (5s)');
-      } else {
-        results.push(`✗ Health endpoint: ${err.message}`);
-      }
-    } else {
-      results.push('✗ Health endpoint: Unknown error');
-    }
-    results.push('');
-    results.push('Possible issues:');
-    results.push('  - Voice server not running');
-    results.push('  - HTTPS certificate not trusted');
-    results.push('  - CORS blocked');
-    results.push('');
-    results.push(`Try visiting: ${healthUrl}`);
-  }
-
-  void showAlert(results.join('\n'), { title: 'Voice Diagnostics' });
-}
-
-/**
- * Bind voice button event handlers
- */
-export function bindVoiceEvents(): void {
-  const toggleBtn = document.getElementById('btn-voice-toggle');
-  const voiceSelect = document.getElementById('voice-select') as HTMLSelectElement | null;
-  const micSelect = document.getElementById('mic-select') as HTMLSelectElement | null;
-  const speedSlider = document.getElementById('voice-speed') as HTMLInputElement | null;
-
-  log.info(() => `[INIT] Binding voice events: toggleBtn=${!!toggleBtn}`);
-
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', () => {
-      void (async () => {
-        log.info(() => `[UI] Toggle button clicked (isSessionActive=${isSessionActive})`);
-        if (isSessionActive) {
-          await stopVoiceSession();
-        } else {
-          await startVoiceSession();
-        }
-      })();
-    });
-  }
-
-  // Sync button (dev mode only) - test voice server connection
-  const syncBtn = document.getElementById('btn-voice-sync');
-  if (syncBtn) {
-    syncBtn.addEventListener('click', () => {
-      void testVoiceServerConnection();
-    });
-  }
-
-  // Chat toggle button
-  const chatBtn = document.getElementById('btn-voice-chat');
-  if (chatBtn) {
-    chatBtn.addEventListener('click', () => {
-      toggleChatPanel();
-    });
-  }
-
-  // Voice selection change
-  if (voiceSelect) {
-    voiceSelect.addEventListener('change', () => {
-      const value = voiceSelect.value;
-      if (value.includes(':')) {
-        const parts = value.split(':');
-        selectedProvider = parts[0] ?? '';
-        selectedVoice = parts[1] ?? '';
-        log.info(() => `[UI] Voice changed: ${selectedProvider}/${selectedVoice}`);
-      }
-    });
-  }
-
-  // Microphone dropdown focus - request permission if empty
-  if (micSelect) {
-    micSelect.addEventListener('focus', () => {
-      void (async () => {
-        const hasDevices =
-          micSelect.options.length > 1 ||
-          (micSelect.options.length === 1 && micSelect.options[0]?.value !== '');
-        if (!hasDevices) {
-          log.info(() => '[UI] Mic dropdown focused with no devices, requesting permission');
-          const success = await requestMicrophonePermission();
-          if (success) {
-            await populateMicDropdown();
-          }
-        }
-      })();
-    });
-
-    // Microphone selection change (stored for next recording)
-    micSelect.addEventListener('change', () => {
-      log.info(() => `[UI] Microphone changed: ${micSelect.value || 'default'}`);
-    });
-  }
-
-  // Speed slider change
-  if (speedSlider) {
-    speedSlider.addEventListener('input', () => {
-      selectedSpeed = parseFloat(speedSlider.value);
-      const speedValue = document.getElementById('voice-speed-value');
-      if (speedValue) {
-        speedValue.textContent = `${selectedSpeed}x`;
-      }
-    });
-  }
-
-  // Set up error callback
-  if (window.setOnError) {
-    window.setOnError((error: string) => {
-      log.error(() => `[AUDIO] Error callback: ${error}`);
-      setVoiceStatus('Error');
-    });
-  }
-
-  // Set up recording state callback
-  if (window.setOnRecordingState) {
-    window.setOnRecordingState((isRecording: boolean) => {
-      log.info(() => `[AUDIO] Recording state changed: ${isRecording}`);
-    });
-  }
-}
-
-/**
- * Initialize voice controls on page load.
- * Passively checks permission status and pre-populates mic dropdown if granted.
- */
-export async function initVoiceControls(): Promise<void> {
-  const status = await checkMicrophonePermissionStatus();
-  log.info(() => `[INIT] Microphone permission status: ${status}`);
-
-  if (status === 'granted') {
+    if (!success) throw new Error('Microphone could not be started');
+    starting = false;
+    setToggleRecording(true);
+    setVoiceStatus('Listening · GPT-Live 1');
     await populateMicDropdownPassive();
-    setVoiceStatus('Ready');
-  } else if (status === 'denied') {
-    setVoiceStatus('Mic blocked');
-  } else {
-    setVoiceStatus('Click Play to start');
+  } catch {
+    await stopVoiceSession('Microphone could not be started');
   }
+}
+
+export async function startVoiceSession(): Promise<void> {
+  if (ws || starting) return;
+  starting = true;
+  const current = ++generation;
+  setVoiceStatus('Connecting…');
+  try {
+    if (!(await window.initAudioWithUserInteraction?.()))
+      throw new Error('Audio initialization failed');
+    if (current !== generation) return;
+    if (!(await refreshVoiceAvailability()))
+      throw new Error('Add an OpenAI key in AI & Voice settings');
+    if (current !== generation) return;
+    const socket = new WebSocket(
+      `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/voice`,
+    );
+    socket.binaryType = 'arraybuffer';
+    ws = socket;
+    toolQueue = Promise.resolve();
+    const timeout = setTimeout(() => {
+      if (starting && socket === ws) void stopVoiceSession('Voice connection timed out');
+    }, 30000);
+    socket.onopen = () => {
+      if (socket !== ws) return;
+      showChatPanel();
+      const voice =
+        (document.getElementById('voice-select') as HTMLSelectElement | null)?.value || 'marin';
+      socket.send(JSON.stringify({ type: 'start', voice }));
+    };
+    socket.onmessage = (message: MessageEvent<string | ArrayBuffer>) => {
+      if (socket !== ws) return;
+      if (message.data instanceof ArrayBuffer) {
+        let binary = '';
+        for (const byte of new Uint8Array(message.data)) binary += String.fromCharCode(byte);
+        void window.playAudio?.(btoa(binary), 24000);
+      } else {
+        try {
+          onMessage(JSON.parse(message.data) as VoiceEvent, socket);
+        } catch {
+          void stopVoiceSession('Invalid voice response');
+        }
+      }
+    };
+    socket.onclose = () => {
+      clearTimeout(timeout);
+      if (socket === ws) void stopVoiceSession('Disconnected');
+    };
+    socket.onerror = () => {
+      clearTimeout(timeout);
+      if (socket === ws) void stopVoiceSession('Connection failed · check AI & Voice settings');
+    };
+  } catch (error) {
+    if (current === generation)
+      await stopVoiceSession(error instanceof Error ? error.message : 'Connection failed');
+  }
+}
+
+export async function stopVoiceSession(status = 'Ready'): Promise<void> {
+  generation++;
+  starting = false;
+  const socket = ws;
+  ws = null;
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'stop' }));
+  socket?.close();
+  await window.stopRecording?.();
+  await window.stopAudioPlayback?.();
+  flushTranscript();
+  finalizeToolGroup();
+  setToggleRecording(false);
+  setVoiceStatus(status);
+}
+
+export function bindVoiceEvents(): void {
+  document.getElementById('btn-voice-toggle')?.addEventListener('click', () => {
+    if (ws || starting) void stopVoiceSession();
+    else void startVoiceSession();
+  });
+  document.getElementById('btn-voice-chat')?.addEventListener('click', toggleChatPanel);
+  window.addEventListener('pagehide', () => {
+    void stopVoiceSession();
+  });
+}
+
+export async function initVoiceControls(): Promise<void> {
+  await refreshVoiceAvailability();
+  await populateMicDropdownPassive();
 }

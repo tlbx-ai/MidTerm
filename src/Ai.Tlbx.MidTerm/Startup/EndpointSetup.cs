@@ -275,7 +275,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
 
             var features = new FeatureFlags
             {
-                VoiceChat = isDevMode
+                VoiceChat = true
             };
 
             var response = new BootstrapResponse
@@ -294,7 +294,6 @@ Start-Service -Name $serviceName -ErrorAction Stop
                 UpdateResult = updateResult,
                 DevMode = isDevMode,
                 Features = features,
-                VoicePassword = isDevMode ? settings.VoiceServerPassword : null,
                 GitVersion = _gitVersionChecked ? _cachedGitVersion : null,
                 CodeSigned = _codeSigningChecked && _codeSigned
             };
@@ -871,6 +870,12 @@ Start-Service -Name $serviceName -ErrorAction Stop
             }
 
             var path = context.Request.Path.Value ?? "";
+
+            if (path == "/ws/voice")
+            {
+                await Services.Voice.VoiceEndpoints.HandleVoiceAsync(context, settingsService);
+                return;
+            }
 
             if (path == "/ws/state")
             {
