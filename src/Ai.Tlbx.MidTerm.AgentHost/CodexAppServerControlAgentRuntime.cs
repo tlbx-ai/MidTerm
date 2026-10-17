@@ -303,7 +303,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             await ReopenThreadAsync(quickSettings.PermissionMode, ct).ConfigureAwait(false);
         }
 
-        var input = await CreateCodexTurnInputAsync(request, quickSettings.PlanMode, ct).ConfigureAwait(false);
+        var input = await CreateCodexTurnInputAsync(request, ct).ConfigureAwait(false);
         if (input.Count == 0)
         {
             throw new InvalidOperationException("App Server Controller turn input must include text or attachments.");
@@ -317,7 +317,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 input,
                 quickSettings.Model,
                 quickSettings.Effort,
-                quickSettings.FastMode),
+                quickSettings.FastMode,
+                quickSettings.PlanMode),
             ct).ConfigureAwait(false);
 
         _quickSettings = quickSettings;
@@ -404,7 +405,6 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 Text = request.Text,
                 Attachments = request.Attachments
             },
-            AppServerControlQuickSettings.PlanModeOff,
             ct).ConfigureAwait(false);
         if (input.Count == 0)
         {
@@ -466,13 +466,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
     {
         var resolution = command.ResolveRequest ?? throw new InvalidOperationException("request.resolve payload is required.");
         var requestId = resolution.RequestId;
-        if (!_pendingApprovals.TryRemove(requestId, out var pending))
+        if (!_pendingApprovals.TryGetValue(requestId, out var pending))
         {
             throw new InvalidOperationException($"Unknown pending approval request: {requestId}");
         }
 
         var decision = NormalizeApprovalDecision(resolution.Decision);
         await WriteCodexMessageAsync(BuildCodexApprovalResponse(pending, decision), ct).ConfigureAwait(false);
+        _pendingApprovals.TryRemove(requestId, out _);
 
         return Accepted(
             command.CommandId,
@@ -499,13 +500,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
     private async Task<HostCommandOutcome> ResolveUserInputAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
         var resolution = command.ResolveUserInput ?? throw new InvalidOperationException("user-input.resolve payload is required.");
-        if (!_pendingUserInputs.TryRemove(resolution.RequestId, out var pending))
+        if (!_pendingUserInputs.TryGetValue(resolution.RequestId, out var pending))
         {
             throw new InvalidOperationException($"Unknown pending user-input request: {resolution.RequestId}");
         }
 
         var answers = ToCodexQuestionAnswers(pending, resolution.Answers);
         await WriteCodexMessageAsync(BuildCodexUserInputResponse(pending.JsonRpcId, answers), ct).ConfigureAwait(false);
+        _pendingUserInputs.TryRemove(resolution.RequestId, out _);
 
         return Accepted(
             command.CommandId,
@@ -717,14 +719,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
         if (root.TryGetProperty("id", out var requestIdElement))
         {
-            HandleCodexServerRequest(method, requestIdElement.ToString(), payload);
+            HandleCodexServerRequest(method, requestIdElement, payload);
             return;
         }
 
         HandleCodexNotification(method, payload);
     }
 
-    private void HandleCodexServerRequest(string method, string jsonRpcId, JsonElement payload)
+    private void HandleCodexServerRequest(string method, JsonElement jsonRpcId, JsonElement payload)
     {
         if (method == "item/tool/requestUserInput")
         {
@@ -737,7 +739,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             _pendingUserInputs[requestId] = new PendingCodexUserInput
             {
                 RequestId = requestId,
-                JsonRpcId = jsonRpcId,
+                JsonRpcId = jsonRpcId.Clone(),
                 TurnId = turnId,
                 ItemId = itemId,
                 QuestionIds = questionIds,
@@ -759,13 +761,13 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         {
             var turnId = ResolveTurnId(payload);
             var itemId = ResolveItemId(payload);
-            var requestId = "approval-" + jsonRpcId;
+            var requestId = "approval-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
             var requestTypeLabel = HumanizeRequestType(requestType);
             var detail = BuildCodexApprovalDetail(method, payload);
             _pendingApprovals[requestId] = new PendingCodexApproval
             {
                 RequestId = requestId,
-                JsonRpcId = jsonRpcId,
+                JsonRpcId = jsonRpcId.Clone(),
                 RequestType = requestType,
                 RequestTypeLabel = requestTypeLabel,
                 TurnId = turnId,
@@ -942,7 +944,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                     appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
                     {
                         Message = "Goal cleared.",
-                        Detail = BuildCompactJsonDetail(payload)
+                        Detail = GetString(payload, "reason")
                     };
                 }));
                 break;
@@ -977,6 +979,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 var turnState = GetString(payload, "turn", "status") ?? "completed";
                 var errorMessage = GetString(payload, "turn", "error", "message");
                 var turnId = ResolveTurnId(payload);
+                DiscardCodexPendingRequests(turnId);
                 if (string.IsNullOrWhiteSpace(turnId) || string.Equals(_activeTurnId, turnId, StringComparison.Ordinal))
                 {
                     _activeTurnId = null;
@@ -1006,6 +1009,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             case "turn/aborted":
             {
                 var turnId = ResolveTurnId(payload);
+                DiscardCodexPendingRequests(turnId);
                 if (string.IsNullOrWhiteSpace(turnId) || string.Equals(_activeTurnId, turnId, StringComparison.Ordinal))
                 {
                     _activeTurnId = null;
@@ -1447,7 +1451,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                     appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
                     {
                         Message = message,
-                        Detail = BuildCompactJsonDetail(payload)
+                        Detail = GetString(payload, "detail")
                     };
                 }));
                 break;
@@ -2575,7 +2579,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         IReadOnlyList<CodexTurnInputEntry> input,
         string? model = null,
         string? effort = null,
-        string? fastMode = null)
+        string? fastMode = null,
+        string? planMode = null)
     {
         return BuildJsonString(writer =>
         {
@@ -2616,6 +2621,23 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             if (!string.IsNullOrWhiteSpace(effort))
             {
                 writer.WriteString("effort", effort);
+            }
+
+            if (!string.IsNullOrWhiteSpace(model))
+            {
+                writer.WriteStartObject("collaborationMode");
+                writer.WriteString("mode", AppServerControlQuickSettings.NormalizePlanMode(planMode) == AppServerControlQuickSettings.PlanModeOn
+                    ? "plan" : "default");
+                writer.WriteStartObject("settings");
+                writer.WriteString("model", model);
+                writer.WriteString("reasoning_effort", effort);
+                writer.WriteNull("developer_instructions");
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            }
+            else if (AppServerControlQuickSettings.NormalizePlanMode(planMode) == AppServerControlQuickSettings.PlanModeOn)
+            {
+                throw new InvalidOperationException("Select a Codex model before enabling native plan mode.");
             }
 
             if (string.Equals(
@@ -2759,14 +2781,15 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
     }
 
     private static string BuildCodexUserInputResponse(
-        string jsonRpcId,
+        JsonElement jsonRpcId,
         IReadOnlyDictionary<string, CodexQuestionAnswer> answers)
     {
         return BuildJsonString(writer =>
         {
             writer.WriteStartObject();
             writer.WriteString("jsonrpc", "2.0");
-            writer.WriteString("id", jsonRpcId);
+            writer.WritePropertyName("id");
+            jsonRpcId.WriteTo(writer);
             writer.WritePropertyName("result");
             writer.WriteStartObject();
             writer.WritePropertyName("answers");
@@ -2799,13 +2822,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             : BuildCodexReviewDecisionResponse(pending.JsonRpcId, decision);
     }
 
-    private static string BuildCodexReviewDecisionResponse(string jsonRpcId, string decision)
+    private static string BuildCodexReviewDecisionResponse(JsonElement jsonRpcId, string decision)
     {
         return BuildJsonString(writer =>
         {
             writer.WriteStartObject();
             writer.WriteString("jsonrpc", "2.0");
-            writer.WriteString("id", jsonRpcId);
+            writer.WritePropertyName("id");
+            jsonRpcId.WriteTo(writer);
             writer.WritePropertyName("result");
             writer.WriteStartObject();
             writer.WriteString("decision", decision);
@@ -2814,13 +2838,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         });
     }
 
-    private static string BuildCodexPermissionApprovalResponse(string jsonRpcId, string decision, JsonElement payload)
+    private static string BuildCodexPermissionApprovalResponse(JsonElement jsonRpcId, string decision, JsonElement payload)
     {
         return BuildJsonString(writer =>
         {
             writer.WriteStartObject();
             writer.WriteString("jsonrpc", "2.0");
-            writer.WriteString("id", jsonRpcId);
+            writer.WritePropertyName("id");
+            jsonRpcId.WriteTo(writer);
             writer.WritePropertyName("result");
             writer.WriteStartObject();
             writer.WritePropertyName("permissions");
@@ -2844,13 +2869,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         });
     }
 
-    private static string BuildCodexUnsupportedRequestResponse(string jsonRpcId, string method)
+    private static string BuildCodexUnsupportedRequestResponse(JsonElement jsonRpcId, string method)
     {
         return BuildJsonString(writer =>
         {
             writer.WriteStartObject();
             writer.WriteString("jsonrpc", "2.0");
-            writer.WriteString("id", jsonRpcId);
+            writer.WritePropertyName("id");
+            jsonRpcId.WriteTo(writer);
             writer.WritePropertyName("error");
             writer.WriteStartObject();
             writer.WriteNumber("code", -32601);
@@ -2862,7 +2888,6 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
     private static async Task<List<CodexTurnInputEntry>> CreateCodexTurnInputAsync(
         AppServerControlTurnRequest request,
-        string? planMode,
         CancellationToken ct)
     {
         var fileReferences = new List<string>();
@@ -2900,17 +2925,16 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             fileReferences.Add(attachment.Path);
         }
 
-        var input = CreateCodexTurnInput(request.Text, fileReferences, planMode);
+        var input = CreateCodexTurnInput(request.Text, fileReferences);
         input.AddRange(imageEntries);
         return input;
     }
 
     private static List<CodexTurnInputEntry> CreateCodexTurnInput(
         string? text,
-        IReadOnlyList<string> fileReferences,
-        string? planMode)
+        IReadOnlyList<string> fileReferences)
     {
-        var effectiveText = AppServerControlQuickSettings.ApplyPlanModePrompt(text, planMode);
+        var effectiveText = text ?? string.Empty;
         if (fileReferences.Count > 0)
         {
             var fileReferenceBlock = new StringBuilder();
@@ -3335,15 +3359,29 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         return parts.Count == 0 ? BuildCompactJsonDetail(payload) ?? string.Empty : string.Join("\n", parts);
     }
 
+    private void DiscardCodexPendingRequests(string? turnId)
+    {
+        foreach (var pending in _pendingApprovals.Values)
+        {
+            if (turnId is null || string.Equals(pending.TurnId, turnId, StringComparison.Ordinal))
+                _pendingApprovals.TryRemove(pending.RequestId, out _);
+        }
+        foreach (var pending in _pendingUserInputs.Values)
+        {
+            if (turnId is null || string.Equals(pending.TurnId, turnId, StringComparison.Ordinal))
+                _pendingUserInputs.TryRemove(pending.RequestId, out _);
+        }
+    }
+
     private bool TryEmitCodexServerRequestResolved(JsonElement payload, string method)
     {
-        var jsonRpcId = GetString(payload, "requestId");
-        if (string.IsNullOrWhiteSpace(jsonRpcId))
+        var jsonRpcId = Traverse(payload, "requestId");
+        if (jsonRpcId is not { ValueKind: JsonValueKind.String or JsonValueKind.Number } nativeId)
         {
             return false;
         }
 
-        var approval = _pendingApprovals.Values.FirstOrDefault(pending => string.Equals(pending.JsonRpcId, jsonRpcId, StringComparison.Ordinal));
+        var approval = _pendingApprovals.Values.FirstOrDefault(pending => JsonElement.DeepEquals(pending.JsonRpcId, nativeId));
         if (approval is not null && _pendingApprovals.TryRemove(approval.RequestId, out approval))
         {
             _emit(CreateEvent("request.resolved", approval.TurnId, approval.ItemId, approval.RequestId, "codex.app-server.notification", method, payload, appServerControlEvent =>
@@ -3357,7 +3395,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             return true;
         }
 
-        var userInput = _pendingUserInputs.Values.FirstOrDefault(pending => string.Equals(pending.JsonRpcId, jsonRpcId, StringComparison.Ordinal));
+        var userInput = _pendingUserInputs.Values.FirstOrDefault(pending => JsonElement.DeepEquals(pending.JsonRpcId, nativeId));
         if (userInput is not null && _pendingUserInputs.TryRemove(userInput.RequestId, out userInput))
         {
             _emit(CreateEvent("user-input.resolved", userInput.TurnId, userInput.ItemId, userInput.RequestId, "codex.app-server.notification", method, payload, appServerControlEvent =>
@@ -4129,7 +4167,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
     private sealed class PendingCodexUserInput
     {
         public string RequestId { get; set; } = string.Empty;
-        public string JsonRpcId { get; set; } = string.Empty;
+        public JsonElement JsonRpcId { get; set; }
         public string? TurnId { get; set; }
         public string? ItemId { get; set; }
         public List<string> QuestionIds { get; set; } = [];
@@ -4140,7 +4178,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
     private sealed class PendingCodexApproval
     {
         public string RequestId { get; set; } = string.Empty;
-        public string JsonRpcId { get; set; } = string.Empty;
+        public JsonElement JsonRpcId { get; set; }
         public string RequestType { get; set; } = string.Empty;
         public string RequestTypeLabel { get; set; } = string.Empty;
         public string? TurnId { get; set; }

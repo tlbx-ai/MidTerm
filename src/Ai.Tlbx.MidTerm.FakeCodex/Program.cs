@@ -4,9 +4,9 @@ using System.Text;
 
 var threadId = "thread-fake-1";
 var turnId = "turn-fake-1";
-var approvalRequestId = "srv-approval-1";
-var permissionRequestId = "srv-permission-1";
-var userInputRequestId = "srv-user-input-1";
+var approvalRequestId = JsonSerializer.SerializeToElement(101);
+var permissionRequestId = JsonSerializer.SerializeToElement(102);
+var userInputRequestId = JsonSerializer.SerializeToElement(103);
 var lastAssistant = string.Empty;
 var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_CAPTURE_PATH");
 var launchCapture = CreateLaunchCapture();
@@ -317,6 +317,9 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
 
                     if (requestUserInput)
                     {
+                        userInputRequestId = textValue.Contains("string RPC IDs", StringComparison.Ordinal)
+                            ? JsonSerializer.SerializeToElement("srv-user-input-1")
+                            : JsonSerializer.SerializeToElement(103);
                         await WriteJsonAsync(new
                         {
                             jsonrpc = "2.0",
@@ -411,8 +414,9 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
         if (root.TryGetProperty("id", out var idElement))
         {
             var id = idElement.ToString();
-            if (string.Equals(id, approvalRequestId, StringComparison.Ordinal))
+            if (string.Equals(id, approvalRequestId.ToString(), StringComparison.Ordinal))
             {
+                if (idElement.ValueKind != approvalRequestId.ValueKind) throw new InvalidOperationException("Approval RPC id type changed.");
                 await WriteJsonAsync(new
                 {
                     jsonrpc = "2.0",
@@ -429,8 +433,9 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 continue;
             }
 
-            if (string.Equals(id, permissionRequestId, StringComparison.Ordinal))
+            if (string.Equals(id, permissionRequestId.ToString(), StringComparison.Ordinal))
             {
+                if (idElement.ValueKind != permissionRequestId.ValueKind) throw new InvalidOperationException("Permission RPC id type changed.");
                 await WriteJsonAsync(new
                 {
                     jsonrpc = "2.0",
@@ -457,8 +462,9 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 continue;
             }
 
-            if (string.Equals(id, userInputRequestId, StringComparison.Ordinal))
+            if (string.Equals(id, userInputRequestId.ToString(), StringComparison.Ordinal))
             {
+                if (idElement.ValueKind != userInputRequestId.ValueKind) throw new InvalidOperationException("User-input RPC id type changed.");
                 var answers = root.GetProperty("result").GetProperty("answers").GetProperty("choice").GetProperty("answers")
                     .EnumerateArray()
                     .Select(static answer => answer.GetString())

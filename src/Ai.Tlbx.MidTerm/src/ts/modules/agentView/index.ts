@@ -1780,7 +1780,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
   if (scrollButton && scrollButton.dataset.appServerControlScrollBound !== 'true') {
     scrollButton.dataset.appServerControlScrollBound = 'true';
     scrollButton.addEventListener('click', () => {
-      historyRender.scrollHistoryToBottom(sessionId, 'smooth');
+      enterHistoryFollowLive(sessionId, state);
     });
   }
 }

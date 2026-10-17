@@ -1311,6 +1311,67 @@ describe('agentView dev errors', () => {
     });
   });
 
+  it('loads the newest kernel window when Back to bottom is clicked from an older retained window', async () => {
+    (document as any).createElement = vi.fn(() =>
+      createMockDomNode({
+        attributes: [],
+        querySelector: vi.fn(() => null),
+        querySelectorAll: vi.fn(() => []),
+      }),
+    );
+    openAppServerControlHistoryStream.mockImplementation((...args: any[]) => {
+      args[5]?.onOpen?.();
+      return vi.fn();
+    });
+    attachSessionAppServerControl.mockResolvedValue(undefined);
+    getAppServerControlHistoryWindow.mockResolvedValue(
+      createSnapshot({
+        latestSequence: 40,
+        historyCount: 400,
+        historyWindowStart: 160,
+        historyWindowEnd: 240,
+        hasOlderHistory: true,
+        hasNewerHistory: true,
+      }),
+    );
+    setActiveAppServerControlSession('s1');
+    const { initAgentView } = await import('./index');
+    initAgentView();
+    const activate = onTabActivated.mock.calls[0]?.[1] as (
+      id: string,
+      panel: HTMLDivElement,
+    ) => void;
+    const panel = createPanel();
+    (panel.querySelector('[data-agent-field="history"]') as any).scrollTo = vi.fn();
+    activate('s1', panel);
+    await vi.waitFor(() => expect(openAppServerControlHistoryStream).toHaveBeenCalledTimes(1));
+    getAppServerControlHistoryWindow.mockClear();
+    getAppServerControlHistoryWindow.mockResolvedValue(
+      createSnapshot({
+        latestSequence: 41,
+        historyCount: 400,
+        historyWindowStart: 320,
+        historyWindowEnd: 400,
+        hasOlderHistory: true,
+        hasNewerHistory: false,
+      }),
+    );
+    const button = panel.querySelector('[data-agent-field="scroll-to-bottom"]') as any;
+    const click = button.addEventListener.mock.calls.find(
+      ([type]: [string]) => type === 'click',
+    )?.[1];
+    expect(click).toBeTypeOf('function');
+    click();
+    await vi.waitFor(() =>
+      expect(getAppServerControlHistoryWindow).toHaveBeenCalledWith(
+        's1',
+        undefined,
+        expect.any(Number),
+        expect.any(String),
+      ),
+    );
+  });
+
   it('treats explicit upward wheel intent as a browse detach before foreground recovery reloads history', async () => {
     const disconnectStream = vi.fn();
     openAppServerControlHistoryStream.mockReturnValue(disconnectStream);

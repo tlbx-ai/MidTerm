@@ -18,6 +18,7 @@ const multi = cancel || process.env.TLBX_ACP_UI_SCENARIO === "multi";
 const resume = process.env.TLBX_ACP_UI_SCENARIO === "resume";
 const nativeV2 = process.env.TLBX_ACP_UI_SCENARIO === "v2";
 const planReview = process.env.TLBX_ACP_UI_SCENARIO === "plan";
+const nativePlan = process.env.TLBX_ACP_UI_SCENARIO === "native-plan";
 const nativeConfig = process.env.TLBX_ACP_UI_SCENARIO === "config";
 const nativeCommands = process.env.TLBX_ACP_UI_SCENARIO === "commands";
 const codexUsage = process.env.TLBX_ACP_UI_SCENARIO === "codex-usage";
@@ -190,6 +191,45 @@ try {
       result.screenshots.push(screenshot);
     }
     result.v2RenderingVerified = true;
+  }
+  if (nativePlan) {
+    assert.equal(initial.quickSettings.planMode, "on");
+    assert.equal(initial.currentTurn.state, "completed");
+    const proposal = initial.history.find(
+      (item) =>
+        item.itemType === "proposed_plan" &&
+        item.turnId === initial.currentTurn.turnId,
+    );
+    assert.ok(
+      proposal?.body.includes(process.env.TLBX_ACP_UI_EXPECTED_MARKER),
+      "The native provider supplied the requested proposal",
+    );
+    const implement = wrapper.locator(".agent-plan-implement").last();
+    await implement.waitFor({ state: "visible" });
+    assert.equal(
+      await implement.isDisabled(),
+      false,
+      "A settled proposal can be implemented explicitly",
+    );
+    for (const viewport of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await implement.scrollIntoViewIfNeeded();
+      const box = await implement.boundingBox();
+      assert.ok(
+        box &&
+          box.height >= 44 &&
+          box.x >= 0 &&
+          box.x + box.width <= viewport.width,
+      );
+      result.measurements.push({ viewport, button: box });
+      const screenshot = path.join(out, `native-plan-${viewport.width}.png`);
+      await page.screenshot({ path: screenshot });
+      result.screenshots.push(screenshot);
+    }
+    result.nativePlanReviewVerified = true;
   }
   if (planReview) {
     const sessionList = await (
@@ -704,6 +744,7 @@ try {
     !resume &&
     !nativeV2 &&
     !planReview &&
+    !nativePlan &&
     !nativeConfig &&
     !nativeCommands &&
     !nativeUsage &&
@@ -715,7 +756,9 @@ try {
         (multi
           ? JSON.parse(initial.streams.assistantText).result.outcome ===
             "accepted"
-          : initial.streams.assistantText === "TLBX_GROK_QUESTION_OK_73"),
+          : initial.streams.assistantText ===
+            (process.env.TLBX_ACP_UI_EXPECTED_MARKER ||
+              "TLBX_GROK_QUESTION_OK_73")),
       "A resumed test must already have the verified answer",
     );
   }
@@ -896,8 +939,22 @@ try {
       );
       result.nativeResponseVerified = true;
     } else {
+      await page.waitForFunction(
+        async (id) => {
+          const history = await (
+            await fetch(`/api/sessions/${id}/agent-control/history?count=96`)
+          ).json();
+          return history.currentTurn.state === "completed";
+        },
+        sessionId,
+        { polling: 100 },
+      );
+      if (await backToBottom.isVisible()) await backToBottom.click();
       await wrapper
-        .getByText("TLBX_GROK_QUESTION_OK_73", { exact: true })
+        .getByText(
+          process.env.TLBX_ACP_UI_EXPECTED_MARKER || "TLBX_GROK_QUESTION_OK_73",
+          { exact: true },
+        )
         .waitFor({ state: "visible", timeout: 60000 });
     }
     const screenshot = path.join(out, "question-answered.png");

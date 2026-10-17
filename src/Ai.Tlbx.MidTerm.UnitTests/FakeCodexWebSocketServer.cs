@@ -75,6 +75,14 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public string? LastTurnServiceTier { get; private set; }
 
+    public string? LastTurnCollaborationMode { get; private set; }
+
+    public string? LastTurnCollaborationModel { get; private set; }
+
+    public string? LastTurnCollaborationEffort { get; private set; }
+
+    public string? LastTurnText { get; private set; }
+
     public string? ThreadHistoryJson { get; set; }
 
     public string? BeforeHistoryNotificationJson { get; set; }
@@ -442,6 +450,14 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                         break;
 
                     case "turn/start" when id is not null:
+                        if (@params.TryGetProperty("collaborationMode", out var collaboration))
+                        {
+                            LastTurnCollaborationMode = GetString(collaboration, "mode");
+                            var settings = collaboration.GetProperty("settings");
+                            LastTurnCollaborationModel = GetString(settings, "model");
+                            LastTurnCollaborationEffort = GetString(settings, "reasoning_effort");
+                        }
+                        LastTurnText = ReadTurnText(@params);
                         LastTurnServiceTier =
                             @params.ValueKind == JsonValueKind.Object &&
                             @params.TryGetProperty("serviceTier", out var serviceTierElement) &&
