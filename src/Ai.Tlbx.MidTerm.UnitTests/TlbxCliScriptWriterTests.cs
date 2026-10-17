@@ -15,6 +15,28 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "tlbx-cli-tests", Guid.NewGuid().ToString("N"));
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FirstPreviewSelectionSurvivesSessionContextResolution(bool bash)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        app.MapGet("/api/sessions/process-context", () => Results.Text("abcdefgh"));
+        await app.StartAsync(CancellationToken.None);
+        var result = await RunContextShellAsync(bash,
+            bash ? "source \"$1\"; mt_preview background-test"
+                : ". $args[0]; mt_preview background-test",
+            app.Urls.Single(), "deadbeef",
+            Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        Assert.True(result.ExitCode == 0, result.Error + result.Output);
+        Assert.Equal("background-test", result.Output.Trim());
+    }
+
+    [Theory]
     [InlineData(false, "")]
     [InlineData(false, "deadbeef")]
     [InlineData(true, "")]
