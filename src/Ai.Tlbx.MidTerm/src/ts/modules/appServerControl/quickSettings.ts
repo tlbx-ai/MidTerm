@@ -10,6 +10,7 @@ import type {
 } from '../../api/types';
 import { updateSettings } from '../../api/client';
 import * as stores from '../../stores';
+import { resolveAppServerControlModelEffortCatalog } from './modelOptions';
 
 export const APP_SERVER_CONTROL_QUICK_SETTINGS_CHANGED_EVENT =
   'midterm:appServerControl-quick-settings-changed';
@@ -123,6 +124,14 @@ function cloneQuickSettingsOptions(
       description: normalizeOptionalValue(option.description),
       hidden: option.hidden === true,
       isDefault: option.isDefault === true,
+      ...(option.effortOptions !== undefined
+        ? {
+            effortOptions:
+              option.effortOptions === null
+                ? null
+                : cloneQuickSettingsOptions(option.effortOptions),
+          }
+        : {}),
     });
   }
 
@@ -304,7 +313,7 @@ function resolveSessionProvider(sessionId: string | null | undefined): string | 
   }
 
   const normalized = hinted.trim().toLowerCase();
-  return normalized !== 'claude' && /^[a-z0-9][a-z0-9._-]*$/.test(normalized) ? normalized : null;
+  return /^[a-z0-9][a-z0-9._-]*$/.test(normalized) ? normalized : null;
 }
 
 function resolveDefaultPermissionMode(provider: string | null): AppServerControlPermissionMode {
@@ -325,13 +334,27 @@ function resolveDefaultPermissionMode(provider: string | null): AppServerControl
   return DEFAULT_PERMISSION_MODE;
 }
 
+function normalizeQuickSettingsEffort(
+  settings: Partial<AppServerControlQuickSettingsSummary> | null | undefined,
+  provider: string | null,
+  model: string | null,
+): string | null {
+  const efforts = resolveAppServerControlModelEffortCatalog(model, settings?.modelOptions);
+  const requestedEffort =
+    normalizeOptionalValue(settings?.effort) ?? (provider === 'codex' ? 'medium' : null);
+  return requestedEffort && efforts && !efforts.some((option) => option.value === requestedEffort)
+    ? null
+    : requestedEffort;
+}
+
 function normalizeQuickSettings(
   settings: Partial<AppServerControlQuickSettingsSummary> | null | undefined,
   provider: string | null,
 ): AppServerControlQuickSettingsSummary {
+  const model = normalizeProviderModel(provider, settings?.model);
   return {
-    model: normalizeProviderModel(provider, settings?.model),
-    effort: normalizeOptionalValue(settings?.effort) ?? (provider === 'codex' ? 'medium' : null),
+    model,
+    effort: normalizeQuickSettingsEffort(settings, provider, model),
     planMode: normalizePlanMode(settings?.planMode ?? DEFAULT_PLAN_MODE),
     permissionMode: normalizePermissionMode(
       settings?.permissionMode ?? resolveDefaultPermissionMode(provider),
@@ -456,6 +479,7 @@ export function syncAppServerControlQuickSettingsFromSnapshot(
     });
     state.draft.modelOptions = cloneQuickSettingsOptions(state.effective.modelOptions);
     state.draft.effortOptions = cloneQuickSettingsOptions(state.effective.effortOptions);
+    state.draft = normalizeQuickSettings(state.draft, state.provider);
   }
   writeProviderStickyQuickSettings(state.provider, state.effective);
   dispatchQuickSettingsChange(sessionId, state, 'sync');

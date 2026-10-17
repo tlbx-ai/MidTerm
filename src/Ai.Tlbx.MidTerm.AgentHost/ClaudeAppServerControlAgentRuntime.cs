@@ -9,7 +9,7 @@ using Ai.Tlbx.MidTerm.Common.Protocol;
 
 namespace Ai.Tlbx.MidTerm.AgentHost;
 
-internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgentRuntime
+internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerControlAgentRuntime
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private readonly Action<AppServerControlProviderEvent> _emit;
@@ -63,7 +63,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         {
             return command.Type switch
             {
-                "runtime.attach" => Attach(command),
+                "runtime.attach" => await AttachAsync(command, ct).ConfigureAwait(false),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
@@ -78,7 +78,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         }
     }
 
-    private HostCommandOutcome Attach(AppServerControlHostCommandEnvelope command)
+    private async Task<HostCommandOutcome> AttachAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
         var attach = command.AttachRuntime ?? throw new InvalidOperationException("runtime.attach payload is required.");
         if (!string.Equals(attach.Provider, Provider, StringComparison.Ordinal))
@@ -99,16 +99,31 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             throw new InvalidOperationException("Claude CLI was not found on PATH.");
         }
 
+        if (_process is { HasExited: false })
+        {
+            if (!string.Equals(_sessionId, command.SessionId, StringComparison.Ordinal) ||
+                !string.Equals(_workingDirectory, attach.WorkingDirectory, StringComparison.Ordinal) ||
+                (!string.IsNullOrWhiteSpace(attach.ResumeThreadId) &&
+                 !string.Equals(_providerThreadId, attach.ResumeThreadId, StringComparison.Ordinal)))
+                throw new InvalidOperationException("Claude is already attached to another session, directory or native thread.");
+            return Accepted(command.CommandId, command.SessionId);
+        }
+
         _sessionId = command.SessionId;
         _workingDirectory = attach.WorkingDirectory;
         _binaryPath = binaryPath;
         _userProfileDirectory = attach.UserProfileDirectory;
         _newProviderSessionId = Guid.NewGuid().ToString();
         _quickSettings = CreateDefaultQuickSettings();
-        if (!string.IsNullOrWhiteSpace(attach.ResumeThreadId))
-        {
-            _providerThreadId = attach.ResumeThreadId;
-        }
+        _providerThreadId = AppServerControlQuickSettings.NormalizeOptionalValue(attach.ResumeThreadId);
+        _nativeModels.Clear();
+        _nativeCommands = [];
+        _terminalCommands.Clear();
+        _usage = null;
+        _messageInputTokens = null;
+        _messageOutputTokens = null;
+
+        await EnsureClaudeBridgeAsync(ct).ConfigureAwait(false);
 
         var events = new List<AppServerControlProviderEvent>
         {
@@ -159,7 +174,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
 
         var request = command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required.");
         var quickSettings = ResolveRequestedQuickSettings(request);
-        var prompt = BuildPromptInput(request, quickSettings.PlanMode, out var addDirectories);
+        var prompt = BuildPromptInput(request, out var addDirectories);
         if (string.IsNullOrWhiteSpace(prompt))
         {
             throw new InvalidOperationException("App Server Controller turn input must include text or attachments.");
@@ -213,7 +228,9 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                         Model = _quickSettings.Model,
                         Effort = _quickSettings.Effort,
                         PlanMode = _quickSettings.PlanMode,
-                        PermissionMode = _quickSettings.PermissionMode
+                        PermissionMode = _quickSettings.PermissionMode,
+                        ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions),
+                        EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions)
                     }
                 }
             },
@@ -244,7 +261,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             Text = request.Text,
             Attachments = request.Attachments
         };
-        var prompt = BuildPromptInput(turnRequest, _quickSettings.PlanMode, out var addDirectories);
+        var prompt = BuildPromptInput(turnRequest, out var addDirectories);
         if (string.IsNullOrWhiteSpace(prompt))
         {
             throw new InvalidOperationException("Claude steer input must include text or attachments.");
@@ -511,6 +528,9 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
 
         switch (type)
         {
+            case "system":
+                HandleClaudeSystemMessage(root, line);
+                break;
             case "stream_event":
                 HandleStreamEvent(root, line);
                 break;
@@ -531,8 +551,18 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         switch (type)
         {
             case "bridge.ready":
+                ApplyClaudeNativeCatalogue(root, rawLine);
                 _bridgeReady.TrySetResult();
                 break;
+            case "bridge.proposed_plan":
+            {
+                var markdown = GetString(root, "markdown");
+                if (!string.IsNullOrWhiteSpace(markdown))
+                    _emit(CreateEvent("plan.completed", _activeTurnId, GetString(root, "toolUseId"), null,
+                        "claude.agent-sdk", "canUseTool/ExitPlanMode", root,
+                        e => e.PlanCompleted = new AppServerControlProviderPlanCompletedPayload { PlanMarkdown = markdown, IsProposal = true }, rawLine));
+                break;
+            }
             case "bridge.permission_request":
             {
                 var requestId = GetString(root, "requestId");
@@ -673,6 +703,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         switch (eventType)
         {
             case "message_start":
+                UpdateClaudeMessageUsage(root, Traverse(root, "event", "message", "usage"), rawLine);
                 if (!string.IsNullOrWhiteSpace(_activeTurnId))
                 {
                     _emit(CreateEvent("session.state.changed", _activeTurnId, null, null, "claude.agent-sdk", "message_start", root, appServerControlEvent =>
@@ -698,6 +729,9 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                         }, rawLine));
                     }
                 }
+                break;
+            case "message_delta":
+                UpdateClaudeMessageUsage(root, Traverse(root, "event", "usage"), rawLine);
                 break;
             case "content_block_start":
                 HandleContentBlockStart(root, rawLine);
@@ -851,6 +885,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
 
     private void HandleAssistant(JsonElement root, string rawLine)
     {
+        UpdateClaudeMessageUsage(root, Traverse(root, "message", "usage"), rawLine);
         var text = JoinClaudeAssistantText(root);
         if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(_activeTurnId))
         {
@@ -934,6 +969,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
 
     private void HandleResult(JsonElement root, string rawLine)
     {
+        UpdateClaudeResultUsage(root, rawLine);
         if (string.IsNullOrWhiteSpace(_activeTurnId))
         {
             return;
@@ -1132,6 +1168,8 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             writer.WriteString("executablePath", _binaryPath);
             writer.WriteString("cwd", _workingDirectory);
             writer.WriteString("sessionId", _newProviderSessionId);
+            writer.WriteString("permissionMode", _quickSettings.PermissionMode);
+            if (_quickSettings.Model is not null) writer.WriteString("model", _quickSettings.Model);
             if (!string.IsNullOrWhiteSpace(_providerThreadId))
             {
                 writer.WriteString("resume", _providerThreadId);
@@ -1381,11 +1419,10 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
 
     private static string BuildPromptInput(
         AppServerControlTurnRequest request,
-        string? planMode,
         out List<string> addDirectories)
     {
         addDirectories = [];
-        var text = AppServerControlQuickSettings.ApplyPlanModePrompt(request.Text, planMode);
+        var text = request.Text ?? string.Empty;
         if (request.Attachments.Count == 0)
         {
             return text;
@@ -1461,12 +1498,15 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         var defaultPermissionMode = AppServerControlProviderRuntimeConfiguration.GetClaudeDangerouslySkipPermissionsDefault()
             ? AppServerControlQuickSettings.PermissionModeAuto
             : AppServerControlQuickSettings.PermissionModeManual;
-        return AppServerControlQuickSettings.CreateSummary(
+        var settings = AppServerControlQuickSettings.CreateSummary(
             request.Model ?? AppServerControlProviderRuntimeConfiguration.GetClaudeDefaultModel(),
             request.Effort,
             request.PlanMode,
             request.PermissionMode,
             defaultPermissionMode);
+        settings.ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions);
+        settings.EffortOptions = ReadClaudeEffortOptions(settings.Model);
+        return settings;
     }
 
     private AppServerControlProviderEvent CreateQuickSettingsUpdatedEvent(

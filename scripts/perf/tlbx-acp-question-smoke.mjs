@@ -22,7 +22,9 @@ const nativePlan = process.env.TLBX_ACP_UI_SCENARIO === "native-plan";
 const nativeConfig = process.env.TLBX_ACP_UI_SCENARIO === "config";
 const nativeCommands = process.env.TLBX_ACP_UI_SCENARIO === "commands";
 const codexUsage = process.env.TLBX_ACP_UI_SCENARIO === "codex-usage";
-const nativeUsage = process.env.TLBX_ACP_UI_SCENARIO === "usage" || codexUsage;
+const claudeUsage = process.env.TLBX_ACP_UI_SCENARIO === "claude-usage";
+const nativeUsage =
+  process.env.TLBX_ACP_UI_SCENARIO === "usage" || codexUsage || claudeUsage;
 const codexSteer = process.env.TLBX_ACP_UI_SCENARIO === "codex-steer";
 assert.ok(
   url && cookie && sessionId,
@@ -667,7 +669,23 @@ try {
     result.nativeSteeringHistoryVerified = true;
   }
   if (nativeUsage) {
-    if (codexUsage) {
+    if (claudeUsage) {
+      assert.equal(initial.session.agentName, "Claude");
+      assert.ok(
+        initial.quickSettings.modelOptions.some(
+          (option) =>
+            option.value === "haiku" && option.effortOptions.length === 0,
+        ),
+      );
+      assert.ok(initial.session.availableCommands.length > 0);
+      assert.equal(initial.session.usage.costCurrency, "USD");
+      assert.ok(initial.session.usage.costAmount > 0);
+      assert.ok(initial.session.usage.inputTokens > 0);
+      assert.equal(
+        initial.streams.assistantText.trim(),
+        "TLBX_CLAUDE_USAGE_88",
+      );
+    } else if (codexUsage) {
       assert.equal(
         initial.history.filter((item) => item.kind === "error").length,
         0,
@@ -694,23 +712,29 @@ try {
       const compact = await stats
         .locator(".agent-runtime-stats-compact")
         .innerText();
-      if (codexUsage) {
+      if (codexUsage || claudeUsage) {
         const usage = initial.session.usage;
         const percent = Math.round(
           (usage.contextUsedTokens / usage.contextWindowTokens) * 100,
         );
         assert.ok(
-          compact.includes(`${percent}% of 258k`),
+          compact.includes(`${percent}% of ${codexUsage ? "258k" : "200k"}`),
           "Current context uses the last native request, not cumulative input",
         );
         assert.ok(
           compact.includes("in ") && compact.includes("out "),
           "Reported native input/output counters render",
         );
-        assert.ok(
-          !compact.includes("USD") && !compact.includes("EUR"),
-          "Unreported cost is not estimated",
-        );
+        if (claudeUsage)
+          assert.ok(
+            compact.includes("USD"),
+            "Native SDK reported USD cost renders",
+          );
+        else
+          assert.ok(
+            !compact.includes("USD") && !compact.includes("EUR"),
+            "Unreported cost is not estimated",
+          );
       } else {
         assert.ok(
           compact.includes("128k") && compact.includes("0.0123 EUR"),
@@ -739,6 +763,47 @@ try {
       result.screenshots.push(screenshot);
     }
     result.nativeUsageVerified = true;
+    if (claudeUsage) {
+      for (const viewport of [
+        { width: 1440, height: 1000 },
+        { width: 390, height: 844 },
+      ]) {
+        await page.setViewportSize(viewport);
+        const settings = page.locator(
+          ".smart-input-appServerControl-settings:visible",
+        );
+        if ((await settings.count()) === 0)
+          await page
+            .locator(".adaptive-footer-status-summary-appServerControl")
+            .click();
+        const model = settings.locator("select").nth(0);
+        const effort = settings.locator("select").nth(1);
+        await model.selectOption("opus[1m]");
+        await page.waitForFunction(
+          (select) => !select.disabled,
+          await effort.elementHandle(),
+        );
+        await effort.selectOption("high");
+        await model.selectOption("haiku");
+        assert.equal(
+          await effort.isDisabled(),
+          true,
+          "Switching to native Haiku disables unsupported effort",
+        );
+        assert.equal(
+          await effort.inputValue(),
+          "",
+          "Unsupported effort is cleared",
+        );
+        const screenshot = path.join(
+          out,
+          `claude-settings-${viewport.width}.png`,
+        );
+        await page.screenshot({ path: screenshot });
+        result.screenshots.push(screenshot);
+      }
+      result.nativeModelEffortSwitchVerified = true;
+    }
   }
   if (
     !resume &&

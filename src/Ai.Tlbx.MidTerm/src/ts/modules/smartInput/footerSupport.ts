@@ -164,6 +164,8 @@ export function syncAppServerControlQuickSettingsControls(args: {
   setAppServerControlQuickSettingsDropdownOptions(
     appServerControlEffortSelect,
     getAppServerControlEffortOptions({
+      model: draft.model,
+      modelOptions: preferQuickSettingsOptions(draft, effective, 'modelOptions'),
       currentValues: [draft.effort, effective.effort],
       catalogOptions: preferQuickSettingsOptions(draft, effective, 'effortOptions'),
     }),

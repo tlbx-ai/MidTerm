@@ -9,6 +9,89 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MtAgentHostClaudeIntegrationTests
 {
     [Fact]
+    public async Task MtAgentHost_UsesClaudeNativeCatalogueEffortChangesAndPlanReview()
+    {
+        using var fakeClaude = FakeClaudePathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostPath());
+        const string sessionId = "claude-native-catalogue";
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            var attach = new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "attach-native-claude",
+                SessionId = sessionId,
+                Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = sessionId,
+                    Provider = "claude",
+                    RuntimeKind = "claude-agent-sdk",
+                    ExecutablePath = fakeClaude.ExecutablePath,
+                    WorkingDirectory = fakeClaude.Root
+                }
+            };
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, attach);
+            Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput, patches, attach.CommandId)).Status);
+            var initial = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, sessionId, count: 96);
+            Assert.Equal("Claude", initial.Session.AgentName);
+            Assert.Equal("claude-test", Assert.Single(initial.QuickSettings.ModelOptions).Value);
+            Assert.Equal(2, Assert.Single(initial.QuickSettings.ModelOptions).EffortOptions?.Count);
+            Assert.Contains(initial.Session.AvailableCommands, command => command.Name == "review" && command.InputHint == "<file>");
+            Assert.Contains(initial.Notices, notice => notice.Detail?.Contains("0.3.300", StringComparison.Ordinal) == true);
+            var iteration = 0;
+            foreach (var effort in new string?[] { "low", "high", null })
+            {
+                var commandId = FormattableString.Invariant($"claude-plan-{++iteration}");
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "turn.start",
+                    StartTurn = new AppServerControlTurnRequest
+                    {
+                        Text = "Plan acceptance only.", Model = "claude-test", Effort = effort,
+                        PlanMode = AppServerControlQuickSettings.PlanModeOn
+                    }
+                });
+                var started = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, commandId);
+                Assert.Equal("accepted", started.Status);
+                var completed = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                    process.StandardOutput, process.StandardInput, patches, sessionId,
+                    h => h.CurrentTurn.TurnId == started.TurnStarted?.TurnId && h.CurrentTurn.State == "completed", TimeSpan.FromSeconds(15), count: 96);
+                Assert.Equal(effort, completed.CurrentTurn.Effort);
+                Assert.Equal("claude-test", Assert.Single(completed.QuickSettings.ModelOptions).Value);
+                Assert.Equal(new[] { "low", "high" }, completed.QuickSettings.EffortOptions.Select(option => option.Value), StringComparer.Ordinal);
+                Assert.Contains(completed.History, item => item.TurnId == completed.CurrentTurn.TurnId && item.ItemType == "proposed_plan" && item.Body.Contains("TLBX_CLAUDE_PLAN_FAKE", StringComparison.Ordinal));
+                Assert.DoesNotContain(completed.Requests, request => request.State == "open");
+                Assert.DoesNotContain(completed.Session.AvailableCommands, command => command.Name == "exit");
+                var usage = Assert.IsType<AppServerControlUsageSummary>(completed.Session.Usage);
+                Assert.Equal(119, usage.ContextUsedTokens);
+                Assert.Equal(200000, usage.ContextWindowTokens);
+                Assert.Equal(15000 * iteration, usage.InputTokens);
+                Assert.Equal(100 * iteration, usage.OutputTokens);
+                Assert.Equal(5000 * iteration, usage.CachedReadTokens);
+                Assert.Null(usage.ReasoningTokens);
+                Assert.Equal(0.01m * iteration, usage.CostAmount);
+                Assert.Equal("USD", usage.CostCurrency);
+                attach.CommandId = FormattableString.Invariant($"claude-reattach-{iteration}");
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, attach);
+                Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput, patches, attach.CommandId)).Status);
+            }
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task MtAgentHost_DrivesClaudeAgentSdkAcrossApprovedMultiTurnSession()
     {
         using var fakeClaude = FakeClaudePathScope.Create();

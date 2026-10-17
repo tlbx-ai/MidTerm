@@ -27,6 +27,8 @@ public sealed class AppServerControlQuickSettingsOption
     public string? Description { get; set; }
     public bool Hidden { get; set; }
     public bool IsDefault { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<AppServerControlQuickSettingsOption>? EffortOptions { get; set; }
 }
 
 public sealed class AppServerControlQuestion
@@ -223,7 +225,8 @@ public static class AppServerControlQuickSettings
                 Label = string.IsNullOrWhiteSpace(option.Label) ? option.Value.Trim() : option.Label.Trim(),
                 Description = NormalizeOptionalValue(option.Description),
                 Hidden = option.Hidden,
-                IsDefault = option.IsDefault
+                IsDefault = option.IsDefault,
+                EffortOptions = option.EffortOptions is null ? null : CloneOptions(option.EffortOptions)
             })
             .ToList();
     }

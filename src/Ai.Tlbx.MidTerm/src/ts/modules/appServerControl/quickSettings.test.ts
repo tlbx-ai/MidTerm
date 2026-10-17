@@ -66,6 +66,36 @@ describe('appServerControl quick settings', () => {
     vi.unstubAllGlobals();
   });
 
+  it('retains native Claude settings when the session profile is Claude', () => {
+    $sessions.set({ 'grok-stale': { id: 'grok-stale', profileHint: 'claude' } } as any);
+    syncAppServerControlQuickSettingsFromSnapshot('grok-stale', 'claude', {
+      model: 'haiku',
+      effort: 'low',
+    });
+    expect(getAppServerControlQuickSettingsDraft('grok-stale').model).toBe('haiku');
+    expect(getAppServerControlQuickSettingsDraft('grok-stale').effort).toBe('low');
+  });
+
+  it('clears unsupported effort when switching native models and deep-clones their catalogues', () => {
+    $sessions.set({ 'grok-stale': { id: 'grok-stale', profileHint: 'claude' } } as any);
+    syncAppServerControlQuickSettingsFromSnapshot('grok-stale', 'claude', {
+      model: 'opus',
+      effort: 'high',
+      modelOptions: [
+        { value: 'opus', label: 'Opus', effortOptions: [{ value: 'high', label: 'High' }] },
+        { value: 'haiku', label: 'Haiku', effortOptions: [] },
+      ],
+    });
+    const draft = getAppServerControlQuickSettingsDraft('grok-stale');
+    draft.modelOptions![0]!.effortOptions![0]!.label = 'Changed copy';
+    expect(
+      getAppServerControlQuickSettingsDraft('grok-stale').modelOptions![0]!.effortOptions![0]!
+        .label,
+    ).toBe('High');
+    setAppServerControlQuickSettingsDraft('grok-stale', { model: 'haiku' });
+    expect(getAppServerControlQuickSettingsDraft('grok-stale').effort).toBeNull();
+  });
+
   it('sends changed native settings with opaque empty and boolean values and isolates returned drafts', () => {
     const id = 'grok-stale';
     syncAppServerControlQuickSettingsFromSnapshot(id, 'grok', {

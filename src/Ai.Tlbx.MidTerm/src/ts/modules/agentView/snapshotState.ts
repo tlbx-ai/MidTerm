@@ -402,6 +402,7 @@ function cloneSnapshotQuickSettingsSummary(
   quickSettings: AppServerControlHistorySnapshot['quickSettings'] | null | undefined,
 ): AppServerControlHistorySnapshot['quickSettings'] {
   return {
+    ...structuredClone(quickSettings),
     model: quickSettings?.model ?? null,
     effort: quickSettings?.effort ?? null,
     planMode: quickSettings?.planMode ?? 'off',

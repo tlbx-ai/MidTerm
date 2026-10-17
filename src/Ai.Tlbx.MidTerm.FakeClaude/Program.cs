@@ -5,6 +5,8 @@ var sessionId = ReadOption(args, "--resume")
                 ?? ReadOption(args, "--session-id")
                 ?? "claude-session-" + Guid.NewGuid().ToString("N");
 var turn = 0;
+string? currentEffort = null;
+var currentModel = "claude-test";
 PendingTool? pending = null;
 
 while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
@@ -17,6 +19,11 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
     if (string.Equals(type, "control_request", StringComparison.Ordinal))
     {
         var requestId = GetString(root, "request_id") ?? string.Empty;
+        var subtype = GetString(root, "request", "subtype");
+        if (subtype == "apply_flag_settings" && root.GetProperty("request").TryGetProperty("settings", out var settings) &&
+            settings.TryGetProperty("effortLevel", out var effort))
+            currentEffort = effort.ValueKind == JsonValueKind.String ? effort.GetString() : null;
+        if (subtype == "set_model") currentModel = GetString(root, "request", "model") ?? "claude-test";
         await WriteJsonAsync(new
         {
             type = "control_response",
@@ -24,7 +31,18 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
             {
                 subtype = "success",
                 request_id = requestId,
-                response = new { }
+                response = subtype == "initialize" ? (object)new
+                {
+                    commands = new[]
+                    {
+                        new { name = "review", description = "Review changes", argumentHint = "<file>" },
+                        new { name = "exit", description = "Exit terminal", argumentHint = "" }
+                    },
+                    models = new[]
+                    {
+                        new { value = "claude-test", displayName = "Claude Test", description = "Native test model", supportsEffort = true, supportedEffortLevels = new[] { "low", "high" } }
+                    }
+                } : new { }
             }
         }).ConfigureAwait(false);
         continue;
@@ -43,9 +61,12 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
 
     turn++;
     var prompt = ReadUserText(root);
+    var plan = prompt.Contains("Plan acceptance", StringComparison.Ordinal);
+    var toolName = plan ? "ExitPlanMode" : "Bash";
+    object toolInput = plan ? new { plan = "# TLBX_CLAUDE_PLAN_FAKE\n\n1. Review.\n2. Wait for implementation." } : (object)new { command = "pwd" };
     var imageSummary = ReadImageSummary(root);
     var toolId = $"tool-bash-{turn.ToString(CultureInfo.InvariantCulture)}";
-    await WriteJsonAsync(new { type = "system", subtype = "init", session_id = sessionId }).ConfigureAwait(false);
+    await WriteJsonAsync(new { type = "system", subtype = "init", session_id = sessionId, model = currentModel, effort = currentEffort, terminal_slash_commands = new[] { "exit" } }).ConfigureAwait(false);
     await WriteJsonAsync(new
     {
         type = "stream_event",
@@ -68,7 +89,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
     {
         type = "stream_event",
         session_id = sessionId,
-        @event = new { type = "content_block_start", index = 1, content_block = new { type = "tool_use", id = toolId, name = "Bash", input = new { command = "pwd" } } }
+        @event = new { type = "content_block_start", index = 1, content_block = new { type = "tool_use", id = toolId, name = toolName, input = toolInput } }
     }).ConfigureAwait(false);
 
     var permissionRequestId = $"permission-{turn.ToString(CultureInfo.InvariantCulture)}";
@@ -79,8 +100,8 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
         request = new
         {
             subtype = "can_use_tool",
-            tool_name = "Bash",
-            input = new { command = "pwd" },
+            tool_name = toolName,
+            input = toolInput,
             tool_use_id = toolId,
             permission_suggestions = Array.Empty<object>()
         }
@@ -108,9 +129,22 @@ async Task FinishTurnAsync(string prompt, string imageSummary, string toolId, in
     {
         type = "assistant",
         session_id = sessionId,
-        message = new { content = new object[] { new { type = "text", text } } }
+        message = new
+        {
+            usage = new { input_tokens = 12, cache_read_input_tokens = 100, cache_creation_input_tokens = 0, output_tokens = 7 },
+            content = new object[] { new { type = "text", text } }
+        }
     }).ConfigureAwait(false);
-    await WriteJsonAsync(new { type = "result", subtype = "success", session_id = sessionId, is_error = false, result = text }).ConfigureAwait(false);
+    await WriteJsonAsync(new
+    {
+        type = "result", subtype = "success", session_id = sessionId, is_error = false, result = text,
+        total_cost_usd = 0.01m * currentTurn,
+        usage = new { input_tokens = 12, output_tokens = 7 },
+        modelUsage = new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            [currentModel] = new { inputTokens = 10000 * currentTurn, outputTokens = 100 * currentTurn, cacheReadInputTokens = 5000 * currentTurn, cacheCreationInputTokens = 0, contextWindow = 200000 }
+        }
+    }).ConfigureAwait(false);
 }
 
 static async Task WriteJsonAsync<T>(T payload)

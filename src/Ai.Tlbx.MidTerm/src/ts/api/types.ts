@@ -127,6 +127,7 @@ export interface AppServerControlQuickSettingsOption {
   description?: string | null;
   hidden?: boolean;
   isDefault?: boolean;
+  effortOptions?: AppServerControlQuickSettingsOption[] | null;
 }
 
 export interface AppServerControlQuickSettingsPayload {

@@ -7,6 +7,61 @@ vi.mock('../../api/client', () => ({
 }));
 
 describe('historyWindowState', () => {
+  it('preserves and isolates native model, effort and config catalogues in live patches', async () => {
+    const { applyCanonicalAppServerControlDelta } = await import('./snapshotState');
+    const quickSettings = {
+      model: 'sonnet',
+      effort: 'high',
+      planMode: 'off',
+      permissionMode: 'manual',
+      modelOptions: [
+        { value: 'sonnet', label: 'Sonnet', effortOptions: [{ value: 'high', label: 'High' }] },
+      ],
+      effortOptions: [{ value: 'high', label: 'High' }],
+      configOptions: [{ configId: 'native', name: 'Native', type: 'boolean', currentValue: true }],
+    };
+    const state = {
+      snapshot: {
+        latestSequence: 1,
+        historyCount: 0,
+        historyWindowStart: 0,
+        historyWindowEnd: 0,
+        history: [],
+        items: [],
+        requests: [],
+        notices: [],
+        session: {},
+        thread: {},
+        currentTurn: {},
+        streams: {},
+      },
+      historyAutoScrollPinned: true,
+    } as any;
+    applyCanonicalAppServerControlDelta(state, {
+      latestSequence: 2,
+      historyCount: 0,
+      quickSettings,
+      session: {},
+      thread: {},
+      currentTurn: {},
+      streams: {},
+      historyUpserts: [],
+      historyRemovals: [],
+      itemUpserts: [],
+      itemRemovals: [],
+      requestUpserts: [],
+      requestRemovals: [],
+      noticeUpserts: [],
+    } as any);
+    expect(state.snapshot.quickSettings.modelOptions).toEqual(quickSettings.modelOptions);
+    expect(state.snapshot.quickSettings.effortOptions).toEqual(quickSettings.effortOptions);
+    expect(state.snapshot.quickSettings.configOptions).toEqual(quickSettings.configOptions);
+    quickSettings.modelOptions[0]!.effortOptions[0]!.label = 'Changed source';
+    quickSettings.configOptions[0]!.currentValue = false;
+    expect(state.snapshot.quickSettings.modelOptions[0].effortOptions[0].label).toBe('High');
+    expect(state.snapshot.quickSettings.configOptions[0].currentValue).toBe(true);
+  });
+
   afterEach(() => {
     updateAppServerControlHistoryStreamWindow.mockReset();
   });

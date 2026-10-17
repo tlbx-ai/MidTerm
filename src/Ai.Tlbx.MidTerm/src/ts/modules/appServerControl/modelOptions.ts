@@ -2,6 +2,8 @@ export interface AppServerControlModelOption {
   value: string;
   label: string;
   description?: string | null;
+  isDefault?: boolean;
+  effortOptions?: AppServerControlModelOption[] | null;
 }
 
 const CLAUDE_MODEL_PRESETS = ['sonnet', 'opus', 'claude-sonnet-4-6', 'claude-opus-4-6'] as const;
@@ -66,12 +68,16 @@ export function getAppServerControlModelOptions(args: {
 export function getAppServerControlEffortOptions(args: {
   currentValues?: readonly (string | null | undefined)[];
   catalogOptions?: readonly AppServerControlModelOption[] | null | undefined;
+  model?: string | null | undefined;
+  modelOptions?: readonly AppServerControlModelOption[] | null | undefined;
 }): AppServerControlModelOption[] {
   const options: AppServerControlModelOption[] = [{ value: '', label: 'Default' }];
-  const catalogOptions = normalizeCatalogOptions(args.catalogOptions);
+  const modelCatalog = resolveAppServerControlModelEffortCatalog(args.model, args.modelOptions);
+  const reportedCatalog = modelCatalog ?? args.catalogOptions;
+  const catalogOptions = normalizeCatalogOptions(reportedCatalog);
   if (catalogOptions.length > 0) {
     options.push(...catalogOptions);
-  } else if (args.catalogOptions === undefined || args.catalogOptions === null) {
+  } else if (reportedCatalog === undefined || reportedCatalog === null) {
     for (const preset of ['none', 'minimal', 'low', 'medium', 'high', 'xhigh']) {
       options.push({ value: preset, label: humanizeEffort(preset) });
     }
@@ -79,6 +85,7 @@ export function getAppServerControlEffortOptions(args: {
 
   for (const value of args.currentValues ?? []) {
     const normalized = normalizeOptionValue(value);
+    if (modelCatalog && !modelCatalog.some((option) => option.value === normalized)) continue;
     if (!normalized || options.some((option) => option.value === normalized)) {
       continue;
     }
@@ -87,6 +94,15 @@ export function getAppServerControlEffortOptions(args: {
   }
 
   return options;
+}
+
+export function resolveAppServerControlModelEffortCatalog(
+  model: string | null | undefined,
+  modelOptions: readonly AppServerControlModelOption[] | null | undefined,
+): readonly AppServerControlModelOption[] | null | undefined {
+  return modelOptions?.find((option) =>
+    model ? option.value === model : option.isDefault || option.value === 'default',
+  )?.effortOptions;
 }
 
 function normalizeCatalogOptions(
