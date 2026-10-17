@@ -338,10 +338,10 @@ public static class TlbxCliScriptWriter
         mt_fill()  { _MBB fill "$1" "$2"; }
         mt_session() { _MREQUIRECTX "mt_session" || return $?; _MSID; echo; }
         mt_preview() {
+          _MREQUIRECTX "mt_preview" || return $?
           if [ -n "${1:-}" ]; then
             export MT_PREVIEW_NAME="$1"
           fi
-          _MREQUIRECTX "mt_preview" || return $?
           _MPREVIEW
           echo
         }
@@ -1641,8 +1641,8 @@ public static class TlbxCliScriptWriter
         function Mt-Session { _MRequireSessionContext "mt_session"; _MSID }
         function Mt-Preview {
             param([string]$Name)
-            if ($Name) { $env:MT_PREVIEW_NAME = $Name }
             _MRequireSessionContext "mt_preview"
+            if ($Name) { $env:MT_PREVIEW_NAME = $Name }
             _MPreview
         }
         # Mt-Exec -Code JS_CODE  — or pipe: 'code' | Mt-Exec
