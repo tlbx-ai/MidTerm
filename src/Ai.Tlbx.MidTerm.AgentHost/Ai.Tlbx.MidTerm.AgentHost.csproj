@@ -67,6 +67,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.Common\Ai.Tlbx.MidTerm.Common.csproj" />
+    <InternalsVisibleTo Include="Ai.Tlbx.MidTerm.AgentHost.UnitTests" />
+    <InternalsVisibleTo Include="Ai.Tlbx.MidTerm.UnitTests" />
   </ItemGroup>
 
   <ItemGroup>

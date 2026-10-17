@@ -19,6 +19,7 @@ const interruptAppServerControlTurn = vi.fn();
 const approveAppServerControlRequest = vi.fn();
 const declineAppServerControlRequest = vi.fn();
 const resolveAppServerControlUserInput = vi.fn();
+const registerFilePaths = vi.fn().mockResolvedValue(undefined);
 const showDevErrorDialog = vi.fn();
 let activeSessionId: string | null = null;
 let currentSettings: any = { showUnknownAgentMessages: true };
@@ -219,6 +220,7 @@ vi.mock('../../api/client', () => ({
   approveAppServerControlRequest,
   declineAppServerControlRequest,
   resolveAppServerControlUserInput,
+  registerFilePaths,
 }));
 
 vi.mock('../../utils/devErrorDialog', () => ({
@@ -1309,6 +1311,67 @@ describe('agentView dev errors', () => {
         expect.any(String),
       );
     });
+  });
+
+  it('loads the newest kernel window when Back to bottom is clicked from an older retained window', async () => {
+    (document as any).createElement = vi.fn(() =>
+      createMockDomNode({
+        attributes: [],
+        querySelector: vi.fn(() => null),
+        querySelectorAll: vi.fn(() => []),
+      }),
+    );
+    openAppServerControlHistoryStream.mockImplementation((...args: any[]) => {
+      args[5]?.onOpen?.();
+      return vi.fn();
+    });
+    attachSessionAppServerControl.mockResolvedValue(undefined);
+    getAppServerControlHistoryWindow.mockResolvedValue(
+      createSnapshot({
+        latestSequence: 40,
+        historyCount: 400,
+        historyWindowStart: 160,
+        historyWindowEnd: 240,
+        hasOlderHistory: true,
+        hasNewerHistory: true,
+      }),
+    );
+    setActiveAppServerControlSession('s1');
+    const { initAgentView } = await import('./index');
+    initAgentView();
+    const activate = onTabActivated.mock.calls[0]?.[1] as (
+      id: string,
+      panel: HTMLDivElement,
+    ) => void;
+    const panel = createPanel();
+    (panel.querySelector('[data-agent-field="history"]') as any).scrollTo = vi.fn();
+    activate('s1', panel);
+    await vi.waitFor(() => expect(openAppServerControlHistoryStream).toHaveBeenCalledTimes(1));
+    getAppServerControlHistoryWindow.mockClear();
+    getAppServerControlHistoryWindow.mockResolvedValue(
+      createSnapshot({
+        latestSequence: 41,
+        historyCount: 400,
+        historyWindowStart: 320,
+        historyWindowEnd: 400,
+        hasOlderHistory: true,
+        hasNewerHistory: false,
+      }),
+    );
+    const button = panel.querySelector('[data-agent-field="scroll-to-bottom"]') as any;
+    const click = button.addEventListener.mock.calls.find(
+      ([type]: [string]) => type === 'click',
+    )?.[1];
+    expect(click).toBeTypeOf('function');
+    click();
+    await vi.waitFor(() =>
+      expect(getAppServerControlHistoryWindow).toHaveBeenCalledWith(
+        's1',
+        undefined,
+        expect.any(Number),
+        expect.any(String),
+      ),
+    );
   });
 
   it('treats explicit upward wheel intent as a browse detach before foreground recovery reloads history', async () => {
@@ -3038,6 +3101,47 @@ describe('agentView dev errors', () => {
     expect(updateBusyIndicatorElapsed).toHaveBeenCalledWith('s-busy', '5s');
     expect(renderCurrentAgentView).not.toHaveBeenCalled();
     expect(window.setTimeout).toHaveBeenCalledTimes(2);
+  });
+
+  it('registers restored attachment paths before loading their image URLs', async () => {
+    const { createAgentHistoryDom } = await import('./index');
+    let finishRegistration: (() => void) | undefined;
+    registerFilePaths.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRegistration = resolve;
+        }),
+    );
+    const historyDom = createAgentHistoryDom({
+      getState: () => undefined,
+      refreshAppServerControlSnapshot: vi.fn(),
+      renderCurrentAgentView: vi.fn(),
+      retryAppServerControlActivation: vi.fn(),
+      logWarn: vi.fn(),
+    });
+    const cachePath = 'C:\\Temp\\tlbx-opencode-images\\fixture\\image.png';
+    const article = historyDom.createHistoryEntry(
+      {
+        id: 'native-user-image',
+        order: 1,
+        kind: 'user',
+        tone: 'neutral',
+        label: 'You',
+        title: '',
+        body: 'Inspect image',
+        meta: '',
+        attachments: [{ kind: 'image', path: cachePath, mimeType: 'image/png' }],
+      },
+      's1',
+    ) as any;
+    const descendants = (node: any): any[] => [node, ...(node.children ?? []).flatMap(descendants)];
+    const image = descendants(article).find(
+      (node: any) => node.className === 'agent-history-attachment-image-el',
+    );
+    expect(registerFilePaths).toHaveBeenCalledWith('s1', [cachePath]);
+    expect(image.src).toBeUndefined();
+    finishRegistration?.();
+    await vi.waitFor(() => expect(image.src).toContain(encodeURIComponent(cachePath)));
   });
 
   it('caps visible command output tails from the AI Agents setting', async () => {

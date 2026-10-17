@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Ai.Tlbx.MidTerm.Common.Protocol;
@@ -16,6 +17,7 @@ public sealed class AppServerControlQuickSettingsPayload
     public string FastMode { get; set; } = AppServerControlQuickSettings.FastModeOff;
     public List<AppServerControlQuickSettingsOption> ModelOptions { get; set; } = [];
     public List<AppServerControlQuickSettingsOption> EffortOptions { get; set; } = [];
+    public List<JsonElement> ConfigOptions { get; set; } = [];
 }
 
 public sealed class AppServerControlQuickSettingsOption
@@ -25,6 +27,8 @@ public sealed class AppServerControlQuickSettingsOption
     public string? Description { get; set; }
     public bool Hidden { get; set; }
     public bool IsDefault { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<AppServerControlQuickSettingsOption>? EffortOptions { get; set; }
 }
 
 public sealed class AppServerControlQuestion
@@ -33,11 +37,14 @@ public sealed class AppServerControlQuestion
     public string Header { get; set; } = string.Empty;
     public string Question { get; set; } = string.Empty;
     public bool MultiSelect { get; set; }
+    public bool AllowCustomAnswer { get; set; }
+    public bool IsSecret { get; set; }
     public List<AppServerControlQuestionOption> Options { get; set; } = [];
 }
 
 public sealed class AppServerControlQuestionOption
 {
+    public string? Value { get; set; }
     public string Label { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
 }
@@ -93,11 +100,45 @@ public sealed class AppServerControlHistoryPatch
 
 public sealed class AppServerControlSessionSummary
 {
+    public string? AgentName { get; set; }
+    public AppServerControlUsageSummary? Usage { get; set; }
+    public List<AppServerControlCommand> AvailableCommands { get; set; } = [];
     public string State { get; set; } = string.Empty;
     public string StateLabel { get; set; } = string.Empty;
     public string? Reason { get; set; }
     public string? LastError { get; set; }
     public DateTimeOffset? LastEventAt { get; set; }
+}
+
+public sealed class AppServerControlUsageSummary
+{
+    public long? ContextUsedTokens { get; set; }
+    public long? ContextWindowTokens { get; set; }
+    public long? InputTokens { get; set; }
+    public long? OutputTokens { get; set; }
+    public long? CachedReadTokens { get; set; }
+    public long? CachedWriteTokens { get; set; }
+    public long? ReasoningTokens { get; set; }
+    public decimal? CostAmount { get; set; }
+    public string? CostCurrency { get; set; }
+    public double? PrimaryRateLimitUsedPercent { get; set; }
+    public double? SecondaryRateLimitUsedPercent { get; set; }
+
+    public AppServerControlUsageSummary Clone() => (AppServerControlUsageSummary)MemberwiseClone();
+}
+
+public sealed class AppServerControlCommand
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string? InputHint { get; set; }
+    public JsonElement? Input { get; set; }
+
+    public static List<AppServerControlCommand> CloneMany(IEnumerable<AppServerControlCommand>? commands) =>
+        commands?.Select(static command => new AppServerControlCommand
+        {
+            Name = command.Name, Description = command.Description, InputHint = command.InputHint, Input = command.Input?.Clone()
+        }).ToList() ?? [];
 }
 
 public sealed class AppServerControlThreadSummary
@@ -187,7 +228,8 @@ public static class AppServerControlQuickSettings
                 Label = string.IsNullOrWhiteSpace(option.Label) ? option.Value.Trim() : option.Label.Trim(),
                 Description = NormalizeOptionalValue(option.Description),
                 Hidden = option.Hidden,
-                IsDefault = option.IsDefault
+                IsDefault = option.IsDefault,
+                EffortOptions = option.EffortOptions is null ? null : CloneOptions(option.EffortOptions)
             })
             .ToList();
     }
@@ -204,9 +246,16 @@ public static class AppServerControlQuickSettings
             PermissionMode = NormalizePermissionMode(summary.PermissionMode),
             FastMode = NormalizeFastMode(summary.FastMode),
             ModelOptions = CloneOptions(summary.ModelOptions),
-            EffortOptions = CloneOptions(summary.EffortOptions)
+            EffortOptions = CloneOptions(summary.EffortOptions),
+            ConfigOptions = CloneConfigOptions(summary.ConfigOptions)
         };
     }
+
+    public static List<JsonElement> CloneConfigOptions(IEnumerable<JsonElement>? options) =>
+        options?.Select(static option => option.Clone()).ToList() ?? [];
+
+    public static Dictionary<string, JsonElement> CloneConfigValues(IReadOnlyDictionary<string, JsonElement>? values) =>
+        values?.ToDictionary(static entry => entry.Key, static entry => entry.Value.Clone(), StringComparer.Ordinal) ?? [];
 
     public static string ApplyPlanModePrompt(string? text, string? planMode)
     {
@@ -234,6 +283,7 @@ public sealed class AppServerControlQuickSettingsSummary
     public string FastMode { get; set; } = AppServerControlQuickSettings.FastModeOff;
     public List<AppServerControlQuickSettingsOption> ModelOptions { get; set; } = [];
     public List<AppServerControlQuickSettingsOption> EffortOptions { get; set; } = [];
+    public List<JsonElement> ConfigOptions { get; set; } = [];
 }
 
 public sealed class AppServerControlStreamsSummary
@@ -371,6 +421,7 @@ public sealed class AppServerControlInlineImagePreview
 public sealed class AppServerControlItemSummary
 {
     public string ItemId { get; set; } = string.Empty;
+    public List<string> AliasItemIds { get; set; } = [];
     public string? TurnId { get; set; }
     public string ItemType { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
@@ -411,6 +462,7 @@ public sealed class AppServerControlTurnRequest
     public string? PlanMode { get; set; }
     public string? PermissionMode { get; set; }
     public string? FastMode { get; set; }
+    public Dictionary<string, JsonElement> ConfigValues { get; set; } = [];
     public List<AppServerControlAttachmentReference> Attachments { get; set; } = [];
     public List<AppServerControlTerminalReplayStep> TerminalReplay { get; set; } = [];
 }
@@ -579,6 +631,8 @@ public sealed class AppServerControlAttachRuntimeRequest
     public string? ExecutablePath { get; set; }
     public string? AgentName { get; set; }
     public List<string> ExecutableArguments { get; set; } = [];
+    public Dictionary<string, string?> EnvironmentVariables { get; set; } = new(StringComparer.Ordinal);
+    public string? AuthenticationMethodId { get; set; }
     public string? UserProfileDirectory { get; set; }
     public string? ResumeThreadId { get; set; }
 }

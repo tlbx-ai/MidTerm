@@ -11,6 +11,7 @@ import {
   getAppServerControlResolvedProviderModel,
 } from '../appServerControl/quickSettings';
 import { hasInterruptibleAppServerControlTurnWork } from '../appServerControl/input';
+import { syncNativeConfigControls } from './nativeConfigControls';
 import {
   getAppServerControlEffortOptions,
   getAppServerControlModelOptions,
@@ -143,6 +144,12 @@ export function syncAppServerControlQuickSettingsControls(args: {
     dockedBar.dataset.appServerControlSession = 'true';
   }
   appServerControlQuickSettingsRow.dataset.provider = provider ?? '';
+  syncNativeConfigControls(
+    appServerControlQuickSettingsRow,
+    sessionId,
+    draft.configOptions,
+    quickSettingsLocked,
+  );
 
   setAppServerControlQuickSettingsDropdownOptions(
     appServerControlModelSelect,
@@ -157,6 +164,8 @@ export function syncAppServerControlQuickSettingsControls(args: {
   setAppServerControlQuickSettingsDropdownOptions(
     appServerControlEffortSelect,
     getAppServerControlEffortOptions({
+      model: draft.model,
+      modelOptions: preferQuickSettingsOptions(draft, effective, 'modelOptions'),
       currentValues: [draft.effort, effective.effort],
       catalogOptions: preferQuickSettingsOptions(draft, effective, 'effortOptions'),
     }),
@@ -170,10 +179,7 @@ export function syncAppServerControlQuickSettingsControls(args: {
     appServerControlModelSelect,
     quickSettingsLocked,
   );
-  setAppServerControlQuickSettingsDropdownDisabled(
-    appServerControlEffortSelect,
-    quickSettingsLocked,
-  );
+  syncEffortControlAvailability(appServerControlEffortSelect, quickSettingsLocked);
   setAppServerControlQuickSettingsDropdownDisabled(appServerControlPlanSelect, quickSettingsLocked);
   setAppServerControlQuickSettingsDropdownDisabled(
     appServerControlPermissionSelect,
@@ -193,6 +199,10 @@ export function syncAppServerControlQuickSettingsControls(args: {
     });
     appServerControlSettingsSummaryBtn.dataset.planMode = draft.planMode;
   }
+}
+
+function syncEffortControlAvailability(select: HTMLSelectElement, locked: boolean): void {
+  setAppServerControlQuickSettingsDropdownDisabled(select, locked || select.options.length <= 1);
 }
 
 function syncAppServerControlFastModeToggle(args: {

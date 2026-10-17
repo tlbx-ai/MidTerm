@@ -16,6 +16,7 @@ public sealed class AppServerControlProviderEvent
     public string Type { get; set; } = string.Empty;
     public AppServerControlProviderEventRaw? Raw { get; set; }
     public AppServerControlProviderSessionStatePayload? SessionState { get; set; }
+    public AppServerControlProviderAgentMetadataPayload? AgentMetadataUpdated { get; set; }
     public AppServerControlProviderThreadStatePayload? ThreadState { get; set; }
     public AppServerControlProviderTurnStartedPayload? TurnStarted { get; set; }
     public AppServerControlProviderTurnCompletedPayload? TurnCompleted { get; set; }
@@ -41,6 +42,13 @@ public sealed class AppServerControlProviderEventRaw
     public bool PayloadOmitted { get; set; }
 }
 
+public sealed class AppServerControlProviderAgentMetadataPayload
+{
+    public string? AgentName { get; set; }
+    public AppServerControlUsageSummary? Usage { get; set; }
+    public List<AppServerControlCommand>? AvailableCommands { get; set; }
+}
+
 public sealed class AppServerControlProviderSessionStatePayload
 {
     public string State { get; set; } = string.Empty;
@@ -57,6 +65,8 @@ public sealed class AppServerControlProviderThreadStatePayload
 
 public sealed class AppServerControlProviderTurnStartedPayload
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsReplay { get; set; }
     public string? Model { get; set; }
     public string? Effort { get; set; }
 }
@@ -73,6 +83,8 @@ public sealed class AppServerControlProviderContentDeltaPayload
 {
     public string StreamKind { get; set; } = string.Empty;
     public string Delta { get; set; } = string.Empty;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Replace { get; set; }
 }
 
 public sealed class AppServerControlProviderPlanDeltaPayload
@@ -83,6 +95,8 @@ public sealed class AppServerControlProviderPlanDeltaPayload
 public sealed class AppServerControlProviderPlanCompletedPayload
 {
     public string PlanMarkdown { get; set; } = string.Empty;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsProposal { get; set; }
 }
 
 public sealed class AppServerControlProviderDiffUpdatedPayload
@@ -92,6 +106,8 @@ public sealed class AppServerControlProviderDiffUpdatedPayload
 
 public sealed class AppServerControlProviderItemPayload
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Replace { get; set; }
     public string ItemType { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public string? Title { get; set; }

@@ -92,8 +92,10 @@ export interface SessionAppServerControlViewState {
 export interface AppServerControlRuntimeStatsSummary {
   windowUsedTokens: number | null;
   windowTokenLimit: number | null;
-  accumulatedInputTokens: number;
-  accumulatedOutputTokens: number;
+  accumulatedInputTokens: number | null;
+  accumulatedOutputTokens: number | null;
+  costAmount?: number;
+  costCurrency?: string;
   primaryRateLimitUsedPercent: number | null;
   secondaryRateLimitUsedPercent: number | null;
 }

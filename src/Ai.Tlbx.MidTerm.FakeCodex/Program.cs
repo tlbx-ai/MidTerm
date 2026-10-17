@@ -4,9 +4,10 @@ using System.Text;
 
 var threadId = "thread-fake-1";
 var turnId = "turn-fake-1";
-var approvalRequestId = "srv-approval-1";
-var permissionRequestId = "srv-permission-1";
-var userInputRequestId = "srv-user-input-1";
+var approvalRequestId = JsonSerializer.SerializeToElement(101);
+var permissionRequestId = JsonSerializer.SerializeToElement(102);
+var userInputRequestId = JsonSerializer.SerializeToElement(103);
+var userInputIsSecret = false;
 var lastAssistant = string.Empty;
 var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_CAPTURE_PATH");
 var launchCapture = CreateLaunchCapture();
@@ -173,6 +174,14 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         }
                     }).ConfigureAwait(false);
                     continue;
+                case "thread/read":
+                    await WriteJsonAsync(new
+                    {
+                        jsonrpc = "2.0",
+                        id = root.GetProperty("id").ToString(),
+                        result = new { thread = new { id = threadId, turns = Array.Empty<object>() } }
+                    }).ConfigureAwait(false);
+                    continue;
                 case "turn/start":
                 {
                     RecordMethod(launchCapture, method);
@@ -309,6 +318,10 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
 
                     if (requestUserInput)
                     {
+                        userInputIsSecret = textValue.Contains("secret user input", StringComparison.Ordinal);
+                        userInputRequestId = textValue.Contains("string RPC IDs", StringComparison.Ordinal)
+                            ? JsonSerializer.SerializeToElement("srv-user-input-1")
+                            : JsonSerializer.SerializeToElement(103);
                         await WriteJsonAsync(new
                         {
                             jsonrpc = "2.0",
@@ -325,7 +338,9 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                                         header = "Mode",
                                         question = "Pick a mode",
                                         multiSelect = false,
-                                        options = new object[]
+                                        isOther = textValue.Contains("custom user input", StringComparison.Ordinal),
+                                        isSecret = userInputIsSecret,
+                                        options = userInputIsSecret ? Array.Empty<object>() : new object[]
                                         {
                                             new { label = "Safe", description = "Safe mode" },
                                             new { label = "Fast", description = "Fast mode" }
@@ -403,8 +418,9 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
         if (root.TryGetProperty("id", out var idElement))
         {
             var id = idElement.ToString();
-            if (string.Equals(id, approvalRequestId, StringComparison.Ordinal))
+            if (string.Equals(id, approvalRequestId.ToString(), StringComparison.Ordinal))
             {
+                if (idElement.ValueKind != approvalRequestId.ValueKind) throw new InvalidOperationException("Approval RPC id type changed.");
                 await WriteJsonAsync(new
                 {
                     jsonrpc = "2.0",
@@ -421,8 +437,9 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 continue;
             }
 
-            if (string.Equals(id, permissionRequestId, StringComparison.Ordinal))
+            if (string.Equals(id, permissionRequestId.ToString(), StringComparison.Ordinal))
             {
+                if (idElement.ValueKind != permissionRequestId.ValueKind) throw new InvalidOperationException("Permission RPC id type changed.");
                 await WriteJsonAsync(new
                 {
                     jsonrpc = "2.0",
@@ -449,13 +466,18 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 continue;
             }
 
-            if (string.Equals(id, userInputRequestId, StringComparison.Ordinal))
+            if (string.Equals(id, userInputRequestId.ToString(), StringComparison.Ordinal))
             {
+                if (idElement.ValueKind != userInputRequestId.ValueKind) throw new InvalidOperationException("User-input RPC id type changed.");
                 var answers = root.GetProperty("result").GetProperty("answers").GetProperty("choice").GetProperty("answers")
                     .EnumerateArray()
                     .Select(static answer => answer.GetString())
                     .Where(static answer => !string.IsNullOrWhiteSpace(answer))
                     .ToArray();
+                await WriteJsonAsync(new
+                {
+                    jsonrpc = "2.0", method = "serverRequest/resolved", @params = new { threadId, requestId = userInputRequestId }
+                }).ConfigureAwait(false);
                 await WriteJsonAsync(new
                 {
                     jsonrpc = "2.0",
@@ -466,7 +488,9 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         {
                             id = "item-msg-1",
                             type = "assistant_message",
-                            detail = $"{lastAssistant} answer={string.Join(",", answers)}"
+                            detail = userInputIsSecret
+                                ? answers is ["FIXTURE_SECRET_96"] ? "Native secret receipt verified." : throw new InvalidOperationException("Native secret answer was changed.")
+                                : $"{lastAssistant} answer={string.Join(",", answers)}"
                         }
                     }
                 }).ConfigureAwait(false);
@@ -482,6 +506,10 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                             status = "completed"
                         }
                     }
+                }).ConfigureAwait(false);
+                await WriteJsonAsync(new
+                {
+                    jsonrpc = "2.0", method = "serverRequest/resolved", @params = new { threadId, requestId = userInputRequestId }
                 }).ConfigureAwait(false);
             }
         }

@@ -488,6 +488,7 @@ public sealed class InputHistoryService : IDisposable
             PlanMode = NormalizeOptional(turn.PlanMode, 64),
             PermissionMode = NormalizeOptional(turn.PermissionMode, 64),
             FastMode = NormalizeOptional(turn.FastMode, 64),
+            ConfigValues = AppServerControlQuickSettings.CloneConfigValues(turn.ConfigValues),
             Attachments = attachments,
             TerminalReplay = terminalReplay
         };

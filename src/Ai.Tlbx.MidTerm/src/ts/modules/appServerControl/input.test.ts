@@ -92,6 +92,8 @@ describe('appServerControl input', () => {
       effort: null,
       planMode: 'off',
       permissionMode: 'manual',
+      fastMode: 'on',
+      configValues: { agent: '', concise: true },
       attachments: [],
     });
 
@@ -101,6 +103,8 @@ describe('appServerControl input', () => {
       effort: null,
       planMode: 'off',
       permissionMode: 'manual',
+      fastMode: 'on',
+      configValues: { agent: '', concise: true },
       attachments: [],
     });
     expect(dispatchEvent.mock.calls.map((call) => call[0]?.type)).toEqual(

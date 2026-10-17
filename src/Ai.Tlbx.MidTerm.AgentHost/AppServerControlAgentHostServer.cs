@@ -297,20 +297,26 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         return _history.GetSnapshotWindow(sessionId, startIndex, count, viewportWidth);
     }
 
-    private static HostCommandOutcome MaybeAppendSubmittedUserMessage(
+    private HostCommandOutcome MaybeAppendSubmittedUserMessage(
         AppServerControlHostCommandEnvelope command,
         HostCommandOutcome outcome,
         string provider)
     {
-        if (!string.Equals(command.Type, "turn.start", StringComparison.Ordinal))
+        var compactAsTurn = command.Type == "thread.compact" && outcome.Result.TurnStarted is not null;
+        if (!string.Equals(command.Type, "turn.start", StringComparison.Ordinal) &&
+            !string.Equals(command.Type, "turn.steer", StringComparison.Ordinal) && !compactAsTurn)
         {
             return outcome;
         }
 
-        var request = command.StartTurn;
+        var request = command.StartTurn ?? (command.SteerTurn is { } steer
+            ? new AppServerControlTurnRequest { Text = steer.Text, Attachments = steer.Attachments }
+            : compactAsTurn ? new AppServerControlTurnRequest { Text = "/compact" } : null);
         var turnStarted = outcome.Result.TurnStarted;
+        var activeSteer = string.Equals(command.Type, "turn.steer", StringComparison.Ordinal) && turnStarted is null;
+        var turnId = turnStarted?.TurnId ?? outcome.Result.Accepted?.TurnId;
         if (request is null ||
-            turnStarted is null ||
+            string.IsNullOrWhiteSpace(turnId) ||
             !string.Equals(outcome.Result.Status, "accepted", StringComparison.OrdinalIgnoreCase) ||
             (string.IsNullOrWhiteSpace(request.Text) && request.Attachments.Count == 0))
         {
@@ -322,10 +328,10 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         {
             EventId = $"evt-user-{Guid.NewGuid():N}",
             SessionId = command.SessionId,
-            Provider = turnStarted.Provider,
-            ThreadId = turnStarted.ThreadId,
-            TurnId = turnStarted.TurnId,
-            ItemId = $"local-user:{turnStarted.TurnId ?? Guid.NewGuid().ToString("N")}",
+            Provider = turnStarted?.Provider ?? provider,
+            ThreadId = turnStarted?.ThreadId ?? _history.GetSnapshot(command.SessionId)?.Thread.ThreadId ?? string.Empty,
+            TurnId = turnId,
+            ItemId = activeSteer ? $"local-steer:{command.CommandId}" : $"local-user:{turnId}",
             CreatedAt = DateTimeOffset.UtcNow,
             Type = "item.completed",
             Item = new AppServerControlProviderItemPayload
@@ -385,7 +391,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 HostKind = "mtagenthost",
                 HostVersion = "dev",
                 Providers = _syntheticProvider is null
-                    ? ["codex", "claude-agent-sdk", "acp-v1"]
+                    ? ["codex", "claude-agent-sdk", "opencode-http", "acp-v1"]
                     : [_syntheticProvider],
                 Capabilities =
                 [
@@ -486,12 +492,20 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         if (string.Equals(provider, "claude", StringComparison.Ordinal) &&
             string.Equals(command.AttachRuntime?.RuntimeKind, "claude-agent-sdk", StringComparison.Ordinal))
         {
-            _runtime = new ClaudeAppServerControlAgentRuntime(EmitRuntimeEvent);
+            _runtime = new ClaudeAppServerControlAgentRuntime(EmitRuntimeEvent,
+                sessionId => _history.GetSnapshot(sessionId)?.History.Any(entry => entry.Kind is "user" or "assistant" or "tool") == true);
             return _runtime;
         }
 
         var attach = command.AttachRuntime
                      ?? throw new InvalidOperationException("runtime.attach payload is required.");
+        if (string.Equals(provider, "opencode", StringComparison.Ordinal) &&
+            string.Equals(attach.RuntimeKind, "opencode-http", StringComparison.Ordinal))
+        {
+            _runtime = new OpenCodeAppServerControlAgentRuntime(EmitRuntimeEvent);
+            return _runtime;
+        }
+
         if (string.Equals(attach.RuntimeKind, "acp-v1", StringComparison.Ordinal))
         {
             _runtime = new AcpAppServerControlAgentRuntime(
@@ -590,6 +604,12 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 Method = appServerControlEvent.Raw.Method,
                 PayloadOmitted = appServerControlEvent.Raw.PayloadOmitted
             },
+            AgentMetadataUpdated = appServerControlEvent.AgentMetadataUpdated is null ? null : new AppServerControlProviderAgentMetadataPayload
+            {
+                AgentName = appServerControlEvent.AgentMetadataUpdated.AgentName,
+                Usage = appServerControlEvent.AgentMetadataUpdated.Usage?.Clone(),
+                AvailableCommands = appServerControlEvent.AgentMetadataUpdated.AvailableCommands is null ? null : AppServerControlCommand.CloneMany(appServerControlEvent.AgentMetadataUpdated.AvailableCommands)
+            },
             SessionState = appServerControlEvent.SessionState is null ? null : new AppServerControlProviderSessionStatePayload
             {
                 State = appServerControlEvent.SessionState.State,
@@ -604,6 +624,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             },
             TurnStarted = appServerControlEvent.TurnStarted is null ? null : new AppServerControlProviderTurnStartedPayload
             {
+                IsReplay = appServerControlEvent.TurnStarted.IsReplay,
                 Model = appServerControlEvent.TurnStarted.Model,
                 Effort = appServerControlEvent.TurnStarted.Effort
             },
@@ -617,6 +638,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             ContentDelta = appServerControlEvent.ContentDelta is null ? null : new AppServerControlProviderContentDeltaPayload
             {
                 StreamKind = appServerControlEvent.ContentDelta.StreamKind,
+                Replace = appServerControlEvent.ContentDelta.Replace,
                 Delta = appServerControlEvent.ContentDelta.Delta
             },
             PlanDelta = appServerControlEvent.PlanDelta is null ? null : new AppServerControlProviderPlanDeltaPayload
@@ -625,6 +647,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             },
             PlanCompleted = appServerControlEvent.PlanCompleted is null ? null : new AppServerControlProviderPlanCompletedPayload
             {
+                IsProposal = appServerControlEvent.PlanCompleted.IsProposal,
                 PlanMarkdown = appServerControlEvent.PlanCompleted.PlanMarkdown
             },
             DiffUpdated = appServerControlEvent.DiffUpdated is null ? null : new AppServerControlProviderDiffUpdatedPayload
@@ -633,6 +656,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             },
             Item = appServerControlEvent.Item is null ? null : new AppServerControlProviderItemPayload
             {
+                Replace = appServerControlEvent.Item.Replace,
                 ItemType = appServerControlEvent.Item.ItemType,
                 Status = appServerControlEvent.Item.Status,
                 Title = appServerControlEvent.Item.Title,
@@ -648,7 +672,8 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(appServerControlEvent.QuickSettingsUpdated.PermissionMode),
                 FastMode = AppServerControlQuickSettings.NormalizeFastMode(appServerControlEvent.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.ModelOptions),
-                EffortOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.EffortOptions)
+                EffortOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.EffortOptions),
+                ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(appServerControlEvent.QuickSettingsUpdated.ConfigOptions)
             },
             RequestOpened = appServerControlEvent.RequestOpened is null ? null : new AppServerControlProviderRequestOpenedPayload
             {
@@ -708,9 +733,12 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             Header = source.Header,
             Question = source.Question,
             MultiSelect = source.MultiSelect,
+            AllowCustomAnswer = source.AllowCustomAnswer,
+            IsSecret = source.IsSecret,
             Options = source.Options.Select(static option => new AppServerControlQuestionOption
             {
                 Label = option.Label,
+                Value = option.Value,
                 Description = option.Description
             }).ToList()
         };

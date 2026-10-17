@@ -13513,6 +13513,19 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   background: var(--terminal-canvas-background-stack);
 }
 
+
+.agent-native-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; padding: 0 16px; border-bottom: 1px solid var(--border-color); color: var(--text-secondary); font-size: 12px; }
+.agent-native-controls[hidden] { display: none; }
+.agent-native-controls details { position: relative; }
+.agent-native-controls summary { display: flex; align-items: center; min-height: 44px; cursor: pointer; white-space: nowrap; }
+.agent-native-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-native-command-form { position: absolute; top: 100%; right: 0; display: grid; gap: 10px; width: min(320px, calc(100vw - 64px)); max-height: 60dvh; overflow: auto; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-input); box-shadow: var(--command-bay-shadow); z-index: 50; }
+.agent-native-command-form select, .agent-native-command-form input { min-width: 0; min-height: 44px; padding: 6px 10px; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 4px; }
+.agent-native-command-form input[hidden] { display: none; }
+.agent-native-command-form p { margin: 0; white-space: normal; }
+.agent-native-command-form button { min-height: 44px; }
+.agent-native-command-error { color: var(--status-error); }
+
 .agent-runtime-stats {
   position: absolute;
   top: 12px;
@@ -13538,6 +13551,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   pointer-events: auto;
   backdrop-filter: blur(5px);
 }
+
+.agent-native-controls:not([hidden]) + .agent-runtime-stats { position: relative; top: auto; right: auto; align-self: flex-end; flex-shrink: 0; max-width: calc(100% - 32px); margin: 4px 16px; }
+.agent-native-controls:not([hidden]) + .agent-runtime-stats .agent-runtime-stats-compact { white-space: normal; overflow-wrap: anywhere; text-align: right; }
 
 .agent-runtime-stats[hidden] {
   display: none;
@@ -14313,6 +14329,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-markdown {
   overflow: visible;
   line-height: 1.38;
+  white-space: normal;
 }
 
 .agent-history-turn-duration {
@@ -15690,6 +15707,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   cursor: wait;
 }
 
+.agent-plan-implement {
+  align-self: flex-start;
+  min-height: 44px;
+}
+
 .agent-view-btn-primary {
   border-color: color-mix(in srgb, var(--accent-blue) 28%, transparent);
   background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
@@ -15767,6 +15789,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-request-choice {
   position: relative;
   display: flex;
+  min-height: 44px;
   align-items: flex-start;
   gap: 10px;
   padding: 11px 12px;
@@ -18962,6 +18985,27 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .smart-input-appServerControl-field {
   padding: 4px 10px;
   gap: 4px;
+}
+
+.smart-input-native-config { position: relative; min-width: 0; }
+.smart-input-appServerControl-field[hidden] { display: none !important; }
+.smart-input-native-config[hidden] { display: none; }
+.smart-input-native-config summary { display: flex; align-items: center; min-height: 44px; padding: 4px 10px; cursor: pointer; }
+.smart-input-native-config-panel { position: absolute; right: 0; bottom: 100%; display: grid; gap: 12px; width: min(320px, calc(100vw - 40px)); max-height: 50dvh; overflow-y: auto; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-input); box-shadow: var(--command-bay-shadow); z-index: 50; }
+.smart-input-native-config-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; min-height: 44px; }
+.smart-input-native-config-field select { grid-column: 1 / -1; width: 100%; min-width: 0; min-height: 44px; padding: 6px 10px; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 4px; }
+.smart-input-native-config-field input { width: 24px; height: 24px; margin: 10px; }
+.smart-input-native-config-field small { grid-column: 1 / -1; color: var(--text-secondary); white-space: normal; }
+.smart-input-appServerControl-settings-sheet .smart-input-native-config { width: 100%; }
+.smart-input-appServerControl-settings-sheet .smart-input-native-config-panel { position: static; width: 100%; box-shadow: none; }
+
+@media (max-width: 768px) {
+  .adaptive-footer-dock .smart-input-appServerControl-settings.smart-input-appServerControl-settings-sheet { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; width: 100%; padding: 12px; overflow: hidden auto; max-height: 50dvh; }
+  .adaptive-footer-dock .smart-input-appServerControl-settings.smart-input-appServerControl-settings-sheet > .smart-input-appServerControl-field { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 5px; }
+  .adaptive-footer-dock .smart-input-appServerControl-settings-sheet .smart-input-appServerControl-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+  .adaptive-footer-dock .smart-input-appServerControl-settings-sheet .smart-input-appServerControl-dropdown-trigger { width: 100%; min-height: 44px; }
+  .adaptive-footer-dock .smart-input-appServerControl-settings-sheet > .smart-input-native-config { grid-column: 1 / -1; }
+  .adaptive-footer-dock .smart-input-appServerControl-settings-sheet .smart-input-native-config-panel { box-sizing: border-box; width: 100%; max-height: none; overflow: visible; }
 }
 
 .smart-input-appServerControl-field + .smart-input-appServerControl-field::before {

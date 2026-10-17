@@ -247,10 +247,14 @@ export function tokenizeCommandText(commandText: string): CommandToken[] {
   return tokens;
 }
 
+function usesMarkdownPresentation(entry: AppServerControlHistoryEntry): boolean {
+  return entry.kind === 'assistant' || entry.sourceItemType === 'proposed_plan';
+}
+
 export function resolveHistoryBodyPresentation(
   entry: AppServerControlHistoryEntry,
 ): HistoryBodyPresentation {
-  if (entry.kind === 'assistant') {
+  if (usesMarkdownPresentation(entry)) {
     return {
       mode: 'markdown',
       collapsedByDefault: false,

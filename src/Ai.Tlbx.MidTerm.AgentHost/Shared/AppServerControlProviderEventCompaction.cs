@@ -32,6 +32,12 @@ public static class AppServerControlProviderEventCompaction
             CreatedAt = source.CreatedAt,
             Type = source.Type,
             Raw = CloneRawMetadata(source.Raw),
+            AgentMetadataUpdated = source.AgentMetadataUpdated is null ? null : new AppServerControlProviderAgentMetadataPayload
+            {
+                AgentName = source.AgentMetadataUpdated.AgentName,
+                Usage = source.AgentMetadataUpdated.Usage?.Clone(),
+                AvailableCommands = source.AgentMetadataUpdated.AvailableCommands is null ? null : AppServerControlCommand.CloneMany(source.AgentMetadataUpdated.AvailableCommands)
+            },
             SessionState = source.SessionState is null ? null : new AppServerControlProviderSessionStatePayload
             {
                 State = source.SessionState.State,
@@ -46,6 +52,7 @@ public static class AppServerControlProviderEventCompaction
             },
             TurnStarted = source.TurnStarted is null ? null : new AppServerControlProviderTurnStartedPayload
             {
+                IsReplay = source.TurnStarted.IsReplay,
                 Model = source.TurnStarted.Model,
                 Effort = source.TurnStarted.Effort
             },
@@ -59,7 +66,10 @@ public static class AppServerControlProviderEventCompaction
             ContentDelta = source.ContentDelta is null ? null : new AppServerControlProviderContentDeltaPayload
             {
                 StreamKind = source.ContentDelta.StreamKind,
-                Delta = CompactContentDelta(source.ContentDelta.StreamKind, source.ContentDelta.Delta)
+                Delta = source.ContentDelta.Replace
+                    ? CompactTextMiddle(source.ContentDelta.Delta, source.ContentDelta.StreamKind == "reasoning_text" ? 8192 : 262144)
+                    : CompactContentDelta(source.ContentDelta.StreamKind, source.ContentDelta.Delta),
+                Replace = source.ContentDelta.Replace
             },
             PlanDelta = source.PlanDelta is null ? null : new AppServerControlProviderPlanDeltaPayload
             {
@@ -67,6 +77,7 @@ public static class AppServerControlProviderEventCompaction
             },
             PlanCompleted = source.PlanCompleted is null ? null : new AppServerControlProviderPlanCompletedPayload
             {
+                IsProposal = source.PlanCompleted.IsProposal,
                 PlanMarkdown = CompactTextMiddle(source.PlanCompleted.PlanMarkdown, MaxPlanMarkdownChars) ?? string.Empty
             },
             DiffUpdated = source.DiffUpdated is null ? null : new AppServerControlProviderDiffUpdatedPayload
@@ -75,6 +86,7 @@ public static class AppServerControlProviderEventCompaction
             },
             Item = source.Item is null ? null : new AppServerControlProviderItemPayload
             {
+                Replace = source.Item.Replace,
                 ItemType = source.Item.ItemType,
                 Status = source.Item.Status,
                 Title = source.Item.Title,
@@ -100,7 +112,8 @@ public static class AppServerControlProviderEventCompaction
                 PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode),
                 FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.ModelOptions),
-                EffortOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions)
+                EffortOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions),
+                ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.QuickSettingsUpdated.ConfigOptions)
             },
             RequestOpened = source.RequestOpened is null ? null : new AppServerControlProviderRequestOpenedPayload
             {
@@ -227,9 +240,12 @@ public static class AppServerControlProviderEventCompaction
             Header = source.Header,
             Question = source.Question,
             MultiSelect = source.MultiSelect,
+            AllowCustomAnswer = source.AllowCustomAnswer,
+            IsSecret = source.IsSecret,
             Options = source.Options.Select(static option => new AppServerControlQuestionOption
             {
                 Label = option.Label,
+                Value = option.Value,
                 Description = option.Description
             }).ToList()
         };

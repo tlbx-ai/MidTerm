@@ -44,7 +44,7 @@ public sealed class AgentControllerInstallationService(
                 installed,
                 definition.Profile,
                 definition.Name,
-                "ACP v1",
+                "ACP",
                 string.Join(' ', [definition.CommandName, .. definition.Arguments]),
                 supportsResume: false,
                 userProfileDirectory,

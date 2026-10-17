@@ -11,6 +11,7 @@ import type {
   AppServerControlInlineFileReference,
   AppServerControlInlineImagePreview,
   AppServerControlQuestion,
+  AppServerControlUsageSummary,
 } from '../../api/types';
 import { $currentSettings } from '../../stores';
 import {
@@ -155,7 +156,7 @@ function mapSnapshotHistoryEntry(entry: AppServerControlHistoryItem): AppServerC
     order: entry.order,
     kind,
     tone: toneFromState(entry.status),
-    label: resolveHistoryEntryLabel(kind, entry.itemType),
+    label: resolveHistoryEntryLabel(kind, entry.itemType, entry.status),
     title: entry.title ? entry.title : '',
     body: entry.body ? entry.body : '',
     commandText: entry.commandText ? entry.commandText : null,
@@ -197,6 +198,7 @@ export function buildAppServerControlHistoryEntries(
   }
 
   return historyEntries
+    .filter((entry) => !isRepeatedStructuredWarning(entry, historyEntries))
     .map(mapSnapshotHistoryEntry)
     .filter((entry) => shouldShowUnknownAgentMessages() || !isUnknownAgentFallbackEntry(entry))
     .filter((entry) => !isSuppressedAppServerControlRuntimeNoticeEntry(entry))
@@ -213,7 +215,35 @@ export function buildAppServerControlHistoryEntries(
     );
 }
 
-function resolveHistoryEntryLabel(kind: HistoryKind, itemType: string | null | undefined): string {
+function isRepeatedStructuredWarning(
+  entry: AppServerControlHistoryItem,
+  entries: readonly AppServerControlHistoryItem[],
+): boolean {
+  if (entry.kind !== 'system' || entry.status !== 'runtime.warning') return false;
+  const withoutLogPrefix = entry.body.replace(
+    /^\d{4}-\d{2}-\d{2}T\S+\s+(?:WARN|WARNING|ERROR|INFO|DEBUG|TRACE)\s+[a-zA-Z0-9_:.-]+:\s*/,
+    '',
+  );
+  const body = normalizeComparableHistoryText(withoutLogPrefix);
+  if (body.length < 16) return false;
+  return entries.some(
+    (structured) =>
+      structured.kind === 'notice' &&
+      structured.status === 'warning' &&
+      structured.turnId === entry.turnId &&
+      Math.abs(Date.parse(structured.updatedAt) - Date.parse(entry.updatedAt)) <= 5000 &&
+      normalizeComparableHistoryText(structured.body).includes(body),
+  );
+}
+
+function resolveHistoryEntryLabel(
+  kind: HistoryKind,
+  itemType: string | null | undefined,
+  status: string,
+): string {
+  if ((kind === 'notice' || kind === 'system') && ['warning', 'runtime.warning'].includes(status)) {
+    return appServerControlText('appServerControl.label.warning', 'Warning');
+  }
   switch (normalizeHistoryItemType(itemType)) {
     case 'agentstate':
       return appServerControlText('appServerControl.label.agentState', 'Agent State');
@@ -583,6 +613,8 @@ function isAppServerControlProviderLifecycleNotice(normalizedBody: string): bool
 export function buildAppServerControlRuntimeStats(
   snapshot: AppServerControlHistorySnapshot,
 ): AppServerControlRuntimeStatsSummary | null {
+  const usage = snapshot.session.usage;
+  if (usage) return buildStructuredUsageStats(usage);
   const stats: AppServerControlRuntimeStatsSummary = {
     windowUsedTokens: null,
     windowTokenLimit: null,
@@ -616,8 +648,10 @@ export function buildAppServerControlRuntimeStats(
     if (contextWindow) {
       stats.windowUsedTokens = contextWindow.usedTokens;
       stats.windowTokenLimit = contextWindow.windowTokens;
-      stats.accumulatedInputTokens += contextWindow.lastTurnInputTokens;
-      stats.accumulatedOutputTokens += contextWindow.lastTurnOutputTokens;
+      stats.accumulatedInputTokens =
+        (stats.accumulatedInputTokens ?? 0) + contextWindow.lastTurnInputTokens;
+      stats.accumulatedOutputTokens =
+        (stats.accumulatedOutputTokens ?? 0) + contextWindow.lastTurnOutputTokens;
       hasStats = true;
       continue;
     }
@@ -631,6 +665,22 @@ export function buildAppServerControlRuntimeStats(
   }
 
   return hasStats ? stats : null;
+}
+
+function buildStructuredUsageStats(
+  usage: AppServerControlUsageSummary,
+): AppServerControlRuntimeStatsSummary {
+  return {
+    windowUsedTokens: usage.contextUsedTokens ?? null,
+    windowTokenLimit: usage.contextWindowTokens ?? null,
+    accumulatedInputTokens: usage.inputTokens ?? null,
+    accumulatedOutputTokens: usage.outputTokens ?? null,
+    primaryRateLimitUsedPercent: usage.primaryRateLimitUsedPercent ?? null,
+    secondaryRateLimitUsedPercent: usage.secondaryRateLimitUsedPercent ?? null,
+    ...(usage.costAmount != null && usage.costCurrency
+      ? { costAmount: usage.costAmount, costCurrency: usage.costCurrency }
+      : {}),
+  };
 }
 
 function parseCodexContextWindowNotice(
@@ -1076,6 +1126,7 @@ function maybeRememberCompletedTurnDuration(
     !turnId ||
     !startedAt ||
     !completedAt ||
+    snapshot.currentTurn.stateLabel === 'Restored' ||
     state.completedTurnDurationEntries.has(turnId) ||
     ['running', 'in progress'].includes(currentTurnState)
   ) {

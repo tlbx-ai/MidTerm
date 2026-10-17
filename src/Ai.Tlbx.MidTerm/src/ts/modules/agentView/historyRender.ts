@@ -13,7 +13,7 @@ import {
   APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS,
   setHistoryScrollMode,
 } from './historyViewport';
-import { resolveToolCallOutputLineLimit } from './historyDom';
+import { isProposedPlanActionDisabled, resolveToolCallOutputLineLimit } from './historyDom';
 import {
   traceAppServerControlHistoryScroll,
   traceRenderedAppServerControlHistoryWindow,
@@ -1421,6 +1421,13 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       entry.turnDurationNote ? '1' : '0',
       showAssistantBadge ? '1' : '0',
       entry.sourceItemType ?? '',
+      entry.sourceItemType === 'proposed_plan' && state?.snapshot
+        ? [
+            state.snapshot.currentTurn.state,
+            state.streamConnected,
+            isProposedPlanActionDisabled(state.snapshot.sessionId, state),
+          ].join(':')
+        : '',
       entry.commandText ?? '',
       (entry.commandOutputTail ?? []).join('\n'),
       entry.kind === 'tool' ? String(resolveToolCallOutputLineLimit()) : '',
@@ -1453,8 +1460,12 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const request = state?.snapshot?.requests.find(
       (candidate) => candidate.requestId === entry.requestId,
     );
+    const interactionToken = [
+      state?.requestBusyIds.has(entry.requestId) ? 'busy' : 'idle',
+      state?.requestQuestionIndexById[entry.requestId] ?? 0,
+    ].join(':');
     if (!request) {
-      return 'missing';
+      return `embedded:${interactionToken}`;
     }
 
     return [
@@ -1464,6 +1475,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       request.detail ?? '',
       request.updatedAt,
       request.answers.map((answer) => `${answer.questionId}:${answer.answers.join(',')}`).join('|'),
+      interactionToken,
     ].join('::');
   }
 
@@ -1975,7 +1987,7 @@ function resolveArtifactCluster(
   index: number,
 ): ArtifactClusterInfo | null {
   const entry = entries[index];
-  if (!entry || !isArtifactClusterKind(entry.kind)) {
+  if (!entry || !isArtifactClusterEntry(entry)) {
     return null;
   }
 
@@ -1998,8 +2010,11 @@ function resolveArtifactCluster(
   };
 }
 
-function isArtifactClusterKind(kind: AppServerControlHistoryEntry['kind']): boolean {
-  return ['tool', 'reasoning', 'plan', 'diff'].includes(kind);
+function isArtifactClusterEntry(entry: AppServerControlHistoryEntry): boolean {
+  return (
+    entry.sourceItemType !== 'proposed_plan' &&
+    ['tool', 'reasoning', 'plan', 'diff'].includes(entry.kind)
+  );
 }
 
 function findArtifactClusterBoundary(
@@ -2014,7 +2029,7 @@ function findArtifactClusterBoundary(
       return boundary;
     }
     const nextEntry = entries[nextIndex];
-    if (!nextEntry || !isArtifactClusterKind(nextEntry.kind)) {
+    if (!nextEntry || !isArtifactClusterEntry(nextEntry)) {
       return boundary;
     }
     boundary = nextIndex;
