@@ -73,6 +73,8 @@ public sealed class AppServerControlProviderContentDeltaPayload
 {
     public string StreamKind { get; set; } = string.Empty;
     public string Delta { get; set; } = string.Empty;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Replace { get; set; }
 }
 
 public sealed class AppServerControlProviderPlanDeltaPayload
@@ -92,6 +94,8 @@ public sealed class AppServerControlProviderDiffUpdatedPayload
 
 public sealed class AppServerControlProviderItemPayload
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Replace { get; set; }
     public string ItemType { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public string? Title { get; set; }

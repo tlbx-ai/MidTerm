@@ -339,7 +339,7 @@ public sealed class MtAgentHostGrokIntegrationTests
     public async Task MtAgentHost_RejectsUnsupportedAcpProtocolVersion()
     {
         var previousVersion = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_PROTOCOL_VERSION");
-        Environment.SetEnvironmentVariable("MIDTERM_FAKE_GROK_PROTOCOL_VERSION", "2");
+        Environment.SetEnvironmentVariable("MIDTERM_FAKE_GROK_PROTOCOL_VERSION", "3");
         using var fakeGrok = FakeGrokPathScope.Create();
         using var process = StartAgentHost(ResolveAgentHostDll());
         var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
@@ -368,7 +368,7 @@ public sealed class MtAgentHostGrokIntegrationTests
                 "cmd-attach-invalid-protocol");
 
             Assert.Equal("rejected", result.Status);
-            Assert.Contains("requires ACP v1", result.Message, StringComparison.Ordinal);
+            Assert.Contains("supports ACP v1 and v2", result.Message, StringComparison.Ordinal);
         }
         finally
         {
@@ -399,11 +399,17 @@ public sealed class MtAgentHostGrokIntegrationTests
             _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
-                CommandId = "attach", SessionId = sessionId, Type = "runtime.attach",
+                CommandId = "attach",
+                SessionId = sessionId,
+                Type = "runtime.attach",
                 AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
-                    SessionId = sessionId, Provider = "grok", RuntimeKind = "acp-v1",
-                    ExecutablePath = fake.ExecutablePath, ExecutableArguments = ["agent", "stdio"], WorkingDirectory = fake.Root
+                    SessionId = sessionId,
+                    Provider = "grok",
+                    RuntimeKind = "acp-v1",
+                    ExecutablePath = fake.ExecutablePath,
+                    ExecutableArguments = ["agent", "stdio"],
+                    WorkingDirectory = fake.Root
                 }
             });
             var attached = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "attach");
@@ -413,7 +419,9 @@ public sealed class MtAgentHostGrokIntegrationTests
             {
                 await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
                 {
-                    CommandId = commandId, SessionId = sessionId, Type = "turn.start",
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "turn.start",
                     StartTurn = new AppServerControlTurnRequest { Text = prompt }
                 });
                 var started = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, commandId);
@@ -434,7 +442,9 @@ public sealed class MtAgentHostGrokIntegrationTests
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
-                CommandId = "invalid-answer", SessionId = sessionId, Type = "user-input.resolve",
+                CommandId = "invalid-answer",
+                SessionId = sessionId,
+                Type = "user-input.resolve",
                 ResolveUserInput = new AppServerControlUserInputResolutionCommand
                 {
                     RequestId = question.RequestId,
@@ -446,7 +456,9 @@ public sealed class MtAgentHostGrokIntegrationTests
 
             var resolve = new AppServerControlHostCommandEnvelope
             {
-                CommandId = "answer", SessionId = sessionId, Type = "user-input.resolve",
+                CommandId = "answer",
+                SessionId = sessionId,
+                Type = "user-input.resolve",
                 ResolveUserInput = new AppServerControlUserInputResolutionCommand
                 {
                     RequestId = question.RequestId,
@@ -495,7 +507,9 @@ public sealed class MtAgentHostGrokIntegrationTests
             Assert.NotEqual(question.RequestId, toCancel.RequestId, StringComparer.Ordinal);
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
-                CommandId = "cancel-question", SessionId = sessionId, Type = "turn.interrupt",
+                CommandId = "cancel-question",
+                SessionId = sessionId,
+                Type = "turn.interrupt",
                 InterruptTurn = new AppServerControlInterruptRequest { TurnId = toCancel.TurnId }
             });
             var cancelled = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "cancel-question");
@@ -584,11 +598,16 @@ public sealed class MtAgentHostGrokIntegrationTests
             _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
-                CommandId = "resume", SessionId = sessionId, Type = "runtime.attach",
+                CommandId = "resume",
+                SessionId = sessionId,
+                Type = "runtime.attach",
                 AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
-                    SessionId = sessionId, Provider = "custom-acp", RuntimeKind = "acp-v1",
-                    ExecutablePath = fake.ExecutablePath, WorkingDirectory = fake.Root,
+                    SessionId = sessionId,
+                    Provider = "custom-acp",
+                    RuntimeKind = "acp-v1",
+                    ExecutablePath = fake.ExecutablePath,
+                    WorkingDirectory = fake.Root,
                     ResumeThreadId = nativeThread
                 }
             });
@@ -622,7 +641,9 @@ public sealed class MtAgentHostGrokIntegrationTests
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
-                CommandId = "continue", SessionId = sessionId, Type = "turn.start",
+                CommandId = "continue",
+                SessionId = sessionId,
+                Type = "turn.start",
                 StartTurn = new AppServerControlTurnRequest { Text = "Continue the loaded conversation." }
             });
             var continued = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "continue");
@@ -640,7 +661,282 @@ public sealed class MtAgentHostGrokIntegrationTests
         }
     }
 
-    private static Process StartAgentHost(string hostDll, string? resumeCapability = null)
+    [Theory]
+    [InlineData("v2-standard", "completed")]
+    [InlineData("v2-error", "failed")]
+    [InlineData("v2-unknown", "stopped")]
+    [InlineData("v2-reject", "failed")]
+    public async Task MtAgentHost_V2UsesNativeLifecycleAndMessageReplacement(string prompt, string expectedState)
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll(), v2: true);
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        var sessionId = "v2-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AttachFakeAcpAsync(process, patches, fake, sessionId);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "v2-start",
+                SessionId = sessionId,
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest { Text = prompt, Model = "grok-4.3" }
+            });
+            var result = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "v2-start");
+            Assert.Equal("accepted", result.Status);
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
+                patch => patch.Patch.CurrentTurn.State == expectedState, maxPatches: 80, timeout: TimeSpan.FromSeconds(10));
+            var history = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, sessionId, count: 96);
+            Assert.Equal(expectedState, history.CurrentTurn.State);
+            Assert.Equal(result.TurnStarted!.TurnId, history.CurrentTurn.TurnId);
+            Assert.Equal("grok-4.3", history.QuickSettings.Model);
+            Assert.Contains(history.QuickSettings.ModelOptions, option => option.Value == "grok-4.3");
+            Assert.Single(history.History, item => item.ItemType == "user_message");
+            if (prompt != "v2-reject")
+            {
+                Assert.Equal(prompt, history.History.Single(item => item.ItemType == "user_message").Body);
+                var answers = history.History.Where(item => item.Kind == "assistant").ToArray();
+                Assert.Equal(2, answers.Length);
+                Assert.Equal("Correct answer.", answers[0].Body);
+                Assert.Equal("Second answer.", answers[1].Body);
+                Assert.Equal("Correct answer.Second answer.", history.Streams.AssistantText);
+                Assert.Equal("Final thought.", history.History.Single(item => item.Kind == "reasoning").Body);
+                Assert.DoesNotContain(history.History, item => item.Body.Contains("Obsolete", StringComparison.Ordinal));
+                var tools = history.History.Where(item => item.Kind == "tool").ToArray();
+                Assert.Equal(5, tools.Length);
+                Assert.All(tools, item => Assert.Equal("completed", item.Status));
+                Assert.Contains(tools, item => item.Body.Contains("Final tool evidence", StringComparison.Ordinal));
+                Assert.DoesNotContain(tools, item => item.Body.Contains("Must be cleared", StringComparison.Ordinal));
+                Assert.Contains(tools, item => item.Body.Contains("Grüße 👋\nFinal terminal output.", StringComparison.Ordinal));
+                Assert.Equal("Retained context.", tools.Single(item => item.ItemType == "context_compaction").ToolPresentation!.Evidence);
+                var plans = history.History.Where(item => item.Kind == "plan").ToArray();
+                Assert.Equal(2, plans.Length);
+                Assert.Contains(plans, item => item.Body.Contains("Final plan entry", StringComparison.Ordinal));
+                Assert.Contains(plans, item => item.Body.Contains("Independent plan entry", StringComparison.Ordinal));
+            }
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_V2InsertionAcknowledgementDoesNotCompleteWork()
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll(), v2: true);
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        const string sessionId = "v2-active-work";
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AttachFakeAcpAsync(process, patches, fake, sessionId);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "hold",
+                SessionId = sessionId,
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest { Text = "v2-hold until cancelled" }
+            });
+            var started = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "hold");
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
+                patch => patch.Patch.Streams.AssistantText.Contains("Still running after acknowledgement.", StringComparison.Ordinal),
+                maxPatches: 20, timeout: TimeSpan.FromSeconds(10));
+            var active = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, sessionId, count: 32);
+            Assert.Equal("running", active.CurrentTurn.State);
+            Assert.Null(active.CurrentTurn.CompletedAt);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "overlap",
+                SessionId = sessionId,
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest { Text = "Must not overlap" }
+            });
+            var overlap = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "overlap");
+            Assert.Equal("rejected", overlap.Status);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cancel",
+                SessionId = sessionId,
+                Type = "turn.interrupt",
+                InterruptTurn = new AppServerControlInterruptRequest { TurnId = started.TurnStarted!.TurnId }
+            });
+            var stopped = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "cancel");
+            Assert.Equal("accepted", stopped.Status);
+            var final = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, sessionId, count: 32);
+            Assert.Equal("interrupted", final.CurrentTurn.State);
+            Assert.Contains("Final v2 cancellation tail.", final.Streams.AssistantText, StringComparison.Ordinal);
+            Assert.Equal(started.TurnStarted.ThreadId, final.Thread.ThreadId);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public Task MtAgentHost_V2PreservesLongInsertedUserMessages()
+    {
+        return MtAgentHost_V2UsesNativeLifecycleAndMessageReplacement("v2-standard " + new string('x', 24000), "completed");
+    }
+
+    [Theory]
+    [InlineData("load", "ready")]
+    [InlineData("resume-active", "running")]
+    [InlineData("resume-waiting", "waiting")]
+    [InlineData("resume-waiting-repeat", "waiting")]
+    [InlineData("new-active", "running")]
+    [InlineData("new-background", "ready")]
+    public async Task MtAgentHost_V2PreservesInitialAndResumedForegroundState(string capability, string expectedState)
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll(), capability, v2: true);
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        var sessionId = "v2-resume-" + Guid.NewGuid().ToString("N");
+        var nativeThread = capability.StartsWith("new-", StringComparison.Ordinal) ? null : "v2-saved-thread";
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AttachFakeAcpAsync(process, patches, fake, sessionId, nativeThread, expectedState);
+            var history = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, sessionId, count: 64);
+            Assert.Equal(expectedState, history.Session.State);
+            if (nativeThread is not null)
+            {
+                Assert.Equal(nativeThread, history.Thread.ThreadId);
+                Assert.Equal("Saved v2 question.", history.History.Single(item => item.Kind == "user").Body);
+                Assert.Equal("Saved v2 answer.", history.History.Single(item => item.Kind == "assistant").Body);
+            }
+            if (expectedState == "running")
+            {
+                Assert.Equal("running", history.CurrentTurn.State);
+                Assert.Null(history.CurrentTurn.CompletedAt);
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "stop-resumed",
+                    SessionId = sessionId,
+                    Type = "turn.interrupt",
+                    InterruptTurn = new AppServerControlInterruptRequest { TurnId = history.CurrentTurn.TurnId }
+                });
+                var result = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "stop-resumed");
+                Assert.Equal("accepted", result.Status);
+            }
+            else if (expectedState == "waiting" || capability == "new-background")
+            {
+                if (capability == "new-background") Assert.Null(history.CurrentTurn.TurnId);
+                var approval = Assert.Single(history.Requests.Where(request => request.State == "open"));
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "resolve-restored", SessionId = sessionId, Type = "request.resolve",
+                    ResolveRequest = new AppServerControlRequestResolutionCommand { RequestId = approval.RequestId, Decision = "accept" }
+                });
+                var resolved = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "resolve-restored");
+                Assert.Equal("accepted", resolved.Status);
+                if (capability == "resume-waiting-repeat")
+                {
+                    var nextPatch = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
+                        patch => patch.Patch.RequestUpserts.Any(request => request.State == "open" && request.RequestId != approval.RequestId),
+                        maxPatches: 20, timeout: TimeSpan.FromSeconds(10));
+                    var next = Assert.Single(nextPatch[^1].Patch.RequestUpserts.Where(request => request.State == "open"));
+                    Assert.NotEqual(approval.RequestId, next.RequestId, StringComparer.Ordinal);
+                    await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                    {
+                        CommandId = "late-approval", SessionId = sessionId, Type = "request.resolve",
+                        ResolveRequest = new AppServerControlRequestResolutionCommand { RequestId = approval.RequestId, Decision = "accept" }
+                    });
+                    var late = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "late-approval");
+                    Assert.Equal("rejected", late.Status);
+                    await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                    {
+                        CommandId = "next-approval", SessionId = sessionId, Type = "request.resolve",
+                        ResolveRequest = new AppServerControlRequestResolutionCommand { RequestId = next.RequestId, Decision = "accept" }
+                    });
+                    var nextResolved = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "next-approval");
+                    Assert.Equal("accepted", nextResolved.Status);
+                }
+                _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
+                    patch => patch.Patch.CurrentTurn.State == "completed", maxPatches: 20, timeout: TimeSpan.FromSeconds(10));
+                var completed = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                    process.StandardOutput, process.StandardInput, patches, sessionId, count: 64);
+                Assert.Contains("allow-restored", completed.Streams.AssistantText, StringComparison.Ordinal);
+                Assert.DoesNotContain(completed.Requests, request => request.State == "open");
+            }
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_AcceptsLegacyV1ShapeReportingVersionTwo()
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll(), reportedProtocolVersion: 2);
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        const string sessionId = "legacy-version-two";
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AttachFakeAcpAsync(process, patches, fake, sessionId);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "legacy-turn",
+                SessionId = sessionId,
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest { Text = "Legacy v1 prompt lifecycle." }
+            });
+            var result = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "legacy-turn");
+            Assert.Equal("accepted", result.Status);
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
+                patch => patch.Patch.CurrentTurn.State == "completed", maxPatches: 40, timeout: TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
+    private static async Task AttachFakeAcpAsync(Process process, Queue<AppServerControlHostHistoryPatchEnvelope> patches,
+        FakeGrokPathScope fake, string sessionId, string? resumeThreadId = null, string expectedSessionState = "ready")
+    {
+        await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+        {
+            CommandId = "attach-v2",
+            SessionId = sessionId,
+            Type = "runtime.attach",
+            AttachRuntime = new AppServerControlAttachRuntimeRequest
+            {
+                SessionId = sessionId,
+                Provider = "custom-acp",
+                RuntimeKind = "acp-v1",
+                ExecutablePath = fake.ExecutablePath,
+                WorkingDirectory = fake.Root,
+                ResumeThreadId = resumeThreadId
+            }
+        });
+        var attached = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "attach-v2");
+        Assert.True(attached.Status == "accepted", attached.Message);
+        _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
+            patch => patch.Patch.Session.State == expectedSessionState, maxPatches: 20, timeout: TimeSpan.FromSeconds(10));
+    }
+
+    private static Process StartAgentHost(string hostDll, string? resumeCapability = null, bool v2 = false, int? reportedProtocolVersion = null)
     {
         var isNativeExecutable = string.Equals(Path.GetExtension(hostDll), ".exe", StringComparison.OrdinalIgnoreCase);
         var dotnetHost = ResolveDotNetHostPath();
@@ -661,6 +957,9 @@ public sealed class MtAgentHostGrokIntegrationTests
         {
             startInfo.Environment["MIDTERM_FAKE_GROK_RESUME_CAPABILITY"] = resumeCapability;
         }
+        if (v2) startInfo.Environment["MIDTERM_FAKE_GROK_V2"] = "true";
+        if (reportedProtocolVersion is { } version)
+            startInfo.Environment["MIDTERM_FAKE_GROK_PROTOCOL_VERSION"] = version.ToString(System.Globalization.CultureInfo.InvariantCulture);
         startInfo.ArgumentList.Add("--stdio");
         var process = Process.Start(startInfo)
                       ?? throw new InvalidOperationException("Failed to start mtagenthost.");

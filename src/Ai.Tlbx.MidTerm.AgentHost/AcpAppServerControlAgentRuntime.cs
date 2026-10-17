@@ -165,6 +165,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         _userProfileDirectory = attach.UserProfileDirectory;
         _providerThreadId = null;
         _quickSettings = CreateDefaultQuickSettings();
+        ResetProtocolState();
 
         try
         {
@@ -175,7 +176,15 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                     writer =>
                     {
                         writer.WriteStartObject();
-                        writer.WriteNumber("protocolVersion", 1);
+                        writer.WriteNumber("protocolVersion", 2);
+                        writer.WritePropertyName("capabilities");
+                        writer.WriteStartObject();
+                        writer.WriteEndObject();
+                        writer.WritePropertyName("info");
+                        writer.WriteStartObject();
+                        writer.WriteString("name", "tlbx");
+                        writer.WriteString("version", "dev");
+                        writer.WriteEndObject();
                         writer.WritePropertyName("clientCapabilities");
                         writer.WriteStartObject();
                         writer.WritePropertyName("session");
@@ -203,11 +212,13 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                     AttachRequestTimeout,
                     ct)
                 .ConfigureAwait(false);
-            ValidateProtocolVersion(initializeResult);
-            _supportsImagePrompts = Traverse(initializeResult, "agentCapabilities", "promptCapabilities", "image") is
-            {
-                ValueKind: JsonValueKind.True
-            };
+            _protocolGeneration = ResolveProtocolGeneration(initializeResult);
+            _supportsImagePrompts = _protocolGeneration == 2
+                ? Traverse(initializeResult, "capabilities", "session", "prompt", "image") is { ValueKind: JsonValueKind.Object }
+                : Traverse(initializeResult, "agentCapabilities", "promptCapabilities", "image") is
+                {
+                    ValueKind: JsonValueKind.True
+                };
 
             var resumeThreadId = string.IsNullOrWhiteSpace(attach.ResumeThreadId) ? null : attach.ResumeThreadId.Trim();
             var sessionMethod = ResolveSessionOpenMethod(initializeResult, resumeThreadId);
@@ -240,15 +251,17 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 })
         };
             AppendLoadedHistory(events);
-            events.Add(CreateEvent("session.ready", null, null, null, "acp", sessionMethod, newSessionResult, appServerControlEvent =>
-                    {
-                        appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
+            await AppendLoadedRequestsAsync(events, ct).ConfigureAwait(false);
+            if (_protocolGeneration == 1 || _foregroundState == "idle")
+                events.Add(CreateEvent("session.ready", null, null, null, "acp", sessionMethod, newSessionResult, appServerControlEvent =>
                         {
-                            State = "ready",
-                            StateLabel = "Ready",
-                            Reason = $"{_agentName} ACP runtime is ready for the next turn."
-                        };
-                    }));
+                            appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
+                            {
+                                State = "ready",
+                                StateLabel = "Ready",
+                                Reason = $"{_agentName} ACP runtime is ready for the next turn."
+                            };
+                        }));
             events.Add(CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", sessionMethod, newSessionResult));
             return Accepted(command.CommandId, command.SessionId, events: events);
         }
@@ -289,7 +302,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         _quickSettings = MergeRequestedQuickSettings(quickSettings);
         _activeTurnModel = _quickSettings.Model;
         _activeTurnEffort = _quickSettings.Effort;
-        _tools.Clear();
+        if (_protocolGeneration == 1) _tools.Clear();
 
         var requestId = NextRequestId();
         _pendingPromptTurns[requestId] = turnId;
@@ -643,6 +656,14 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         }
 
         var method = GetString(root, "method");
+        lock (_replayGate)
+        {
+            if (_loadedUpdates is not null && root.TryGetProperty("id", out _))
+            {
+                _loadedRequests.Add(line);
+                return;
+            }
+        }
         switch (method)
         {
             case "session/update":
@@ -691,6 +712,11 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
 
         if (_pendingPromptTurns.TryRemove(id, out var turnId))
         {
+            if (_protocolGeneration == 2)
+            {
+                HandleV2PromptResponse(turnId, root, rawLine);
+                return;
+            }
             if (root.TryGetProperty("error", out var error))
             {
                 CompleteTurn(turnId, "failed", "Failed", "error", ReadErrorMessage(error), rawLine);
@@ -734,6 +760,10 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         }
 
         var updateType = GetString(updateElement, "sessionUpdate");
+        if (_protocolGeneration == 2 && HandleV2Update(updateType, updateElement, root, rawLine, turnId))
+        {
+            return;
+        }
         switch (updateType)
         {
             case "available_commands_update":
@@ -831,13 +861,17 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         }
 
         var turnId = _activeTurnId;
-        if (string.IsNullOrWhiteSpace(turnId) || string.Equals(turnId, _cancellingTurnId, StringComparison.Ordinal))
+        var nativeSessionId = GetString(root, "params", "sessionId");
+        if (!string.Equals(nativeSessionId, _providerThreadId, StringComparison.Ordinal) ||
+            (string.IsNullOrWhiteSpace(turnId) && _protocolGeneration == 1) ||
+            (!string.IsNullOrWhiteSpace(turnId) && string.Equals(turnId, _cancellingTurnId, StringComparison.Ordinal)))
         {
             await WritePermissionResponseAsync(idElement.Clone(), null, cancelled: true, ct).ConfigureAwait(false);
             return;
         }
 
-        var requestId = idElement.ToString();
+        var requestId = "acp-approval-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        turnId ??= $"acp-background:{requestId}";
         var toolCall = Traverse(root, "params", "toolCall");
         var options = ReadPermissionOptions(root);
         var selectedOption = string.Equals(_quickSettings.PermissionMode, AppServerControlQuickSettings.PermissionModeAuto, StringComparison.Ordinal)
@@ -908,7 +942,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         }
     }
 
-    private void HandleToolCallUpdate(string turnId, JsonElement update, JsonElement root, string rawLine)
+    private void HandleToolCallUpdate(string turnId, JsonElement update, JsonElement root, string rawLine, bool appendContent = false)
     {
         var toolCallId = GetString(update, "toolCallId") ?? $"{Provider}-tool-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
         if (!_tools.TryGetValue(toolCallId, out var state))
@@ -928,7 +962,16 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             _tools[toolCallId] = state;
         }
 
-        var status = NormalizeToolStatus(GetString(update, "status"));
+        if (_protocolGeneration == 2)
+        {
+            if (update.TryGetProperty("title", out _)) state.Title = GetString(update, "title") ?? toolCallId;
+            if (update.TryGetProperty("kind", out _)) state.ItemType = NormalizeToolItemType(GetString(update, "kind"), state.Title);
+            if (!appendContent && update.TryGetProperty("content", out _)) state.Output = new();
+            turnId = state.TurnId ??= turnId;
+        }
+        var status = _protocolGeneration == 2 && !update.TryGetProperty("status", out _)
+            ? state.Status : NormalizeToolStatus(GetString(update, "status"));
+        state.Status = status;
         var updatePresentation = AppServerControlToolPresentationProjector.FromAcp(
             state.ItemType,
             status,
@@ -943,6 +986,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         {
             appServerControlEvent.Item = new AppServerControlProviderItemPayload
             {
+                Replace = _protocolGeneration == 2,
                 ItemType = state.ItemType,
                 Status = status,
                 Title = state.Title,
@@ -962,7 +1006,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 };
             }, rawLine));
         }
-        if (IsTerminalToolStatus(status))
+        if (IsTerminalToolStatus(status) && _protocolGeneration == 1)
         {
             _tools.Remove(toolCallId);
         }
@@ -1018,7 +1062,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         JsonElement root,
         string rawLine)
     {
-        if (string.IsNullOrWhiteSpace(delta))
+        if (string.IsNullOrEmpty(delta))
         {
             return;
         }
@@ -1383,6 +1427,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                     writer.WriteStartObject();
                     writer.WriteString("sessionId", _providerThreadId);
                     writer.WriteString("configId", configId);
+                    if (_protocolGeneration == 2) writer.WriteString("type", "id");
                     writer.WriteString("value", value);
                     writer.WriteEndObject();
                 },
@@ -1462,11 +1507,12 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             return;
         }
 
+        _configOptionIds.Clear();
         using var optionEnumerator = options.EnumerateArray();
         while (optionEnumerator.MoveNext())
         {
             var option = optionEnumerator.Current;
-            var id = GetString(option, "id");
+            var id = GetString(option, "id") ?? GetString(option, "configId");
             var category = GetString(option, "category");
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -1476,12 +1522,12 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             if (string.Equals(category, "model", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(id, "model", StringComparison.OrdinalIgnoreCase))
             {
-                _configOptionIds["model"] = id;
+                _configOptionIds.TryAdd("model", id);
             }
             else if (string.Equals(category, "thought_level", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(id, "effort", StringComparison.OrdinalIgnoreCase))
             {
-                _configOptionIds["effort"] = id;
+                _configOptionIds.TryAdd("effort", id);
             }
         }
     }
@@ -1543,7 +1589,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         {
             var option = optionEnumerator.Current;
             var category = GetString(option, "category");
-            var id = GetString(option, "id");
+            var id = GetString(option, "id") ?? GetString(option, "configId");
             var currentValue = GetString(option, "currentValue");
             if (string.Equals(category, "model", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(id, "model", StringComparison.OrdinalIgnoreCase))
@@ -1606,6 +1652,11 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         while (itemEnumerator.MoveNext())
         {
             var item = itemEnumerator.Current;
+            if (item.TryGetProperty("options", out var children) && children.ValueKind == JsonValueKind.Array)
+            {
+                result.AddRange(ReadConfigValueOptions(item));
+                continue;
+            }
             var value = GetString(item, "value");
             if (string.IsNullOrWhiteSpace(value))
             {
@@ -1624,15 +1675,19 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         return result;
     }
 
-    private static void ValidateProtocolVersion(JsonElement initializeResult)
+    private static int ResolveProtocolGeneration(JsonElement initializeResult)
     {
         if (!initializeResult.TryGetProperty("protocolVersion", out var protocolVersion) ||
             protocolVersion.ValueKind != JsonValueKind.Number ||
             !protocolVersion.TryGetInt32(out var value) ||
-            value != 1)
+            value is not (1 or 2))
         {
-            throw new InvalidOperationException("ACP agent returned an unsupported protocol version; tlbx requires ACP v1.");
+            throw new InvalidOperationException("ACP agent returned an unsupported protocol version; tlbx supports ACP v1 and v2.");
         }
+
+        // Some v1 agents report version 2 with the legacy response shape.
+        // The v2 info/capabilities envelope determines lifecycle semantics.
+        return value == 2 && initializeResult.TryGetProperty("info", out _) ? 2 : 1;
     }
 
     private List<AcpPromptBlock> BuildPromptBlocks(AppServerControlTurnRequest request, string? planMode)
@@ -2145,7 +2200,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                     while (itemEnumerator.MoveNext())
                     {
                         var text = ExtractText(itemEnumerator.Current);
-                        if (!string.IsNullOrWhiteSpace(text))
+                        if (!string.IsNullOrEmpty(text))
                         {
                             parts.Add(text);
                         }
@@ -2274,7 +2329,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         _cancellingTurnId = null;
         _activeTurnModel = null;
         _activeTurnEffort = null;
-        _tools.Clear();
+        if (_protocolGeneration == 1) _tools.Clear();
         completion?.TrySetResult();
     }
 
@@ -2350,9 +2405,11 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
     private sealed class AcpToolState
     {
         public string ItemId { get; init; } = string.Empty;
-        public string ItemType { get; init; } = "dynamic_tool_call";
-        public string Title { get; init; } = string.Empty;
+        public string ItemType { get; set; } = "dynamic_tool_call";
+        public string Title { get; set; } = string.Empty;
+        public string? TurnId { get; set; }
+        public string Status { get; set; } = "in_progress";
         public AppServerControlToolPresentation Presentation { get; init; } = new();
-        public BoundedToolOutputAccumulator Output { get; } = new();
+        public BoundedToolOutputAccumulator Output { get; set; } = new();
     }
 }

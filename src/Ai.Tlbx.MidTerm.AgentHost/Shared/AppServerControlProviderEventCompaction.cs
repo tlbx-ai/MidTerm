@@ -59,7 +59,10 @@ public static class AppServerControlProviderEventCompaction
             ContentDelta = source.ContentDelta is null ? null : new AppServerControlProviderContentDeltaPayload
             {
                 StreamKind = source.ContentDelta.StreamKind,
-                Delta = CompactContentDelta(source.ContentDelta.StreamKind, source.ContentDelta.Delta)
+                Delta = source.ContentDelta.Replace
+                    ? CompactTextMiddle(source.ContentDelta.Delta, source.ContentDelta.StreamKind == "reasoning_text" ? 8192 : 262144)
+                    : CompactContentDelta(source.ContentDelta.StreamKind, source.ContentDelta.Delta),
+                Replace = source.ContentDelta.Replace
             },
             PlanDelta = source.PlanDelta is null ? null : new AppServerControlProviderPlanDeltaPayload
             {
@@ -75,6 +78,7 @@ public static class AppServerControlProviderEventCompaction
             },
             Item = source.Item is null ? null : new AppServerControlProviderItemPayload
             {
+                Replace = source.Item.Replace,
                 ItemType = source.Item.ItemType,
                 Status = source.Item.Status,
                 Title = source.Item.Title,

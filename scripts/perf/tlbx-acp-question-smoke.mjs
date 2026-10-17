@@ -16,6 +16,7 @@ const answer = process.env.TLBX_ACP_UI_ANSWER === "true";
 const cancel = process.env.TLBX_ACP_UI_SCENARIO === "cancel";
 const multi = cancel || process.env.TLBX_ACP_UI_SCENARIO === "multi";
 const resume = process.env.TLBX_ACP_UI_SCENARIO === "resume";
+const nativeV2 = process.env.TLBX_ACP_UI_SCENARIO === "v2";
 assert.ok(
   url && cookie && sessionId,
   "Authenticated source URL and acceptance session required",
@@ -92,7 +93,7 @@ try {
   const initialResponse = await context.request.get(
     `${url}/api/sessions/${sessionId}/agent-control/history?count=96`,
   );
-  assert.ok(initialResponse.ok(), "Canonical question state is readable");
+  assert.ok(initialResponse.ok(), "Canonical agent state is readable");
   const initial = await initialResponse.json();
   const initiallyOpen = initial.requests.some(
     (request) => request.kind === "interview" && request.state === "open",
@@ -127,7 +128,34 @@ try {
     }
     result.nativeResumeVerified = true;
   }
-  if (!resume && !initiallyOpen) {
+  if (nativeV2) {
+    assert.equal(initial.currentTurn.state, "completed");
+    assert.equal(initiallyOpen, false);
+    for (let opened = 0; opened < 20; opened++) {
+      const closed = wrapper.locator("details:not([open]) > summary");
+      if ((await closed.count()) === 0) break;
+      await closed.first().click();
+    }
+    await wrapper
+      .getByText("Correct answer.", { exact: true })
+      .waitFor({ state: "visible" });
+    assert.equal(await wrapper.getByText(/Obsolete/).count(), 0);
+    assert.equal(await wrapper.getByText(/Must be cleared/).count(), 0);
+    for (const viewport of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await wrapper
+        .getByText("Correct answer.", { exact: true })
+        .scrollIntoViewIfNeeded();
+      const screenshot = path.join(out, `acpv2-${viewport.width}.png`);
+      await page.screenshot({ path: screenshot });
+      result.screenshots.push(screenshot);
+    }
+    result.v2RenderingVerified = true;
+  }
+  if (!resume && !nativeV2 && !initiallyOpen) {
     assert.ok(
       answer &&
         (multi

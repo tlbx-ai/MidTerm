@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 
 var sessionId = "grok-session-" + Guid.NewGuid().ToString("N");
@@ -7,14 +8,29 @@ var activeQuestionId = string.Empty;
 var cancelRequested = false;
 var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_CAPTURE_PATH");
 var resumeCapability = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_RESUME_CAPABILITY") ?? "load";
+var v2 = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_V2") == "true" || args.Contains("--fake-v2", StringComparer.Ordinal);
+var v2PromptIndex = 0;
+var v2Model = "grok-build-0.1";
+var v2ApprovalCount = 0;
 var protocolVersion = int.TryParse(
     Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_PROTOCOL_VERSION"),
     NumberStyles.Integer,
     CultureInfo.InvariantCulture,
     out var configuredProtocolVersion)
     ? configuredProtocolVersion
-    : 1;
+    : v2 ? 2 : 1;
 PersistLaunchCapture(capturePath, CreateLaunchCapture());
+
+Task WriteV2UpdateAsync(object update) => WriteNotificationAsync("session/update", new { sessionId, update });
+Task WriteV2PermissionAsync() => WriteJsonAsync(new
+{
+    jsonrpc = "2.0", id = "v2-pending-permission", method = "session/request_permission",
+    @params = new
+    {
+        sessionId, toolCall = new { toolCallId = "saved-tool", title = "Restored approval", kind = "execute", status = "pending" },
+        options = new[] { new { optionId = "allow-restored", name = "Allow once", kind = "allow_once" }, new { optionId = "deny-restored", name = "Reject once", kind = "reject_once" } }
+    }
+});
 
 while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
 {
@@ -30,6 +46,20 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
 
     if (method is null && id.ValueKind != JsonValueKind.Undefined)
     {
+        if (v2 && id.ToString() == "v2-pending-permission")
+        {
+            v2ApprovalCount++;
+            await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "running" }).ConfigureAwait(false);
+            if (resumeCapability == "resume-waiting-repeat" && v2ApprovalCount == 1)
+            {
+                await WriteV2PermissionAsync().ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "requires_action" }).ConfigureAwait(false);
+                continue;
+            }
+            await WriteV2UpdateAsync(new { sessionUpdate = "agent_message", messageId = "restored-permission-result", content = new[] { new { type = "text", text = root.GetRawText() } } }).ConfigureAwait(false);
+            await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "idle", stopReason = "end_turn" }).ConfigureAwait(false);
+            continue;
+        }
         if (id.ToString() == activeQuestionId && !string.IsNullOrWhiteSpace(activePromptId))
         {
             await WriteNotificationAsync("session/update", new
@@ -55,6 +85,16 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
     switch (method)
     {
         case "initialize":
+            if (v2)
+            {
+                await WriteResponseAsync(id, new
+                {
+                    protocolVersion,
+                    info = new { name = "Fake ACP v2", version = "2" },
+                    capabilities = new { session = new { prompt = new { image = new { } } } }
+                }).ConfigureAwait(false);
+                break;
+            }
             await WriteResponseAsync(id, new
             {
                 protocolVersion,
@@ -87,7 +127,14 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
             }).ConfigureAwait(false);
             break;
         case "session/new":
-            await WriteResponseAsync(id, new
+            if (v2 && resumeCapability == "new-active")
+                await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "running" }).ConfigureAwait(false);
+            if (v2 && resumeCapability == "new-background") await WriteV2PermissionAsync().ConfigureAwait(false);
+            await WriteResponseAsync(id, v2 ? new
+            {
+                sessionId,
+                configOptions = BuildV2ConfigOptions(v2Model)
+            } : (object)new
             {
                 sessionId,
                 models = BuildModelState()
@@ -99,6 +146,72 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
             activePromptId = id.ToString();
             var text = ReadPromptText(root);
             var imageSummary = ReadPromptImageSummary(root);
+            if (v2)
+            {
+                // A repeated idle snapshot is not completion of a queued prompt.
+                await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "idle" }).ConfigureAwait(false);
+                var suffix = (++v2PromptIndex).ToString(CultureInfo.InvariantCulture);
+                var userMessageId = "v2-user-" + suffix;
+                if (text.StartsWith("v2-reject", StringComparison.Ordinal))
+                {
+                    await WriteJsonAsync(new { jsonrpc = "2.0", id, error = new { code = -32000, message = "Native v2 rejected before insertion." } }).ConfigureAwait(false);
+                    activePromptId = string.Empty;
+                    break;
+                }
+                var split = text.Length / 2;
+                await WriteV2UpdateAsync(new { sessionUpdate = "user_message_chunk", messageId = userMessageId, content = new { type = "text", text = text[..split] } }).ConfigureAwait(false);
+                await WriteResponseAsync(id, new { messageId = userMessageId }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "user_message_chunk", messageId = userMessageId, content = new { type = "text", text = text[split..] } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "running" }).ConfigureAwait(false);
+                if (text.StartsWith("v2-hold", StringComparison.Ordinal))
+                {
+                    await WriteV2UpdateAsync(new { sessionUpdate = "agent_message_chunk", messageId = "v2-answer-" + suffix, content = new { type = "text", text = "Still running after acknowledgement." } }).ConfigureAwait(false);
+                    break;
+                }
+                var sharedId = "v2-shared-" + suffix;
+                await WriteV2UpdateAsync(new { sessionUpdate = "agent_message", messageId = sharedId, content = new[] { new { type = "text", text = "Obsolete answer" } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "agent_message_chunk", messageId = sharedId, content = new { type = "text", text = " draft" } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "agent_message", messageId = sharedId, content = new[] { new { type = "text", text = "Correct" } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "agent_message", messageId = sharedId }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "agent_message_chunk", messageId = sharedId, content = new { type = "text", text = " " } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "agent_message_chunk", messageId = sharedId, content = new { type = "text", text = "answer." } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "agent_thought", messageId = sharedId, content = new[] { new { type = "text", text = "Obsolete thought" } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "agent_thought", messageId = sharedId, content = (object?)null }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "agent_thought_chunk", messageId = sharedId, content = new { type = "text", text = "Final thought." } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "agent_message", messageId = "v2-other-" + suffix, content = new[] { new { type = "text", text = "Second answer." } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "tool_call_update", toolCallId = sharedId, title = "Initial tool", kind = "other", status = "in_progress", content = new[] { new { type = "content", content = new { type = "text", text = "Obsolete tool evidence" } } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "tool_call_content_chunk", toolCallId = sharedId, content = new { type = "content", content = new { type = "text", text = "\nAppended tool draft" } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "tool_call_update", toolCallId = sharedId, status = "completed", content = new[] { new { type = "content", content = new { type = "text", text = "Final tool evidence" } } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "tool_call_update", toolCallId = sharedId, title = "Updated tool title" }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "tool_call_update", toolCallId = "v2-clear-" + suffix, title = "Cleared tool", status = "completed", content = new[] { new { type = "content", content = new { type = "text", text = "Must be cleared" } } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "tool_call_update", toolCallId = "v2-clear-" + suffix, content = (object?)null }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "plan_update", plan = new { type = "items", planId = "plan-a-" + suffix, entries = new[] { new { content = "Obsolete plan entry", status = "pending", priority = "medium" } } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "plan_update", plan = new { type = "items", planId = "plan-a-" + suffix, entries = new[] { new { content = "Final plan entry", status = "completed", priority = "medium" } } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "plan_update", plan = new { type = "items", planId = "plan-b-" + suffix, entries = new[] { new { content = "Independent plan entry", status = "pending", priority = "low" } } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "terminal_update", terminalId = sharedId, command = "echo acceptance", output = new { data = Convert.ToBase64String(Encoding.UTF8.GetBytes("Obsolete terminal bytes")) } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "terminal_update", terminalId = sharedId, output = new { data = Convert.ToBase64String(Encoding.UTF8.GetBytes("Grüße ")) } }).ConfigureAwait(false);
+                var emojiBytes = Encoding.UTF8.GetBytes("👋");
+                await WriteV2UpdateAsync(new { sessionUpdate = "terminal_output_chunk", terminalId = sharedId, data = Convert.ToBase64String(emojiBytes[..2]) }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "terminal_output_chunk", terminalId = sharedId, data = Convert.ToBase64String(emojiBytes[2..]) }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "terminal_output_chunk", terminalId = sharedId, data = Convert.ToBase64String(Encoding.UTF8.GetBytes("\nFinal terminal output.")) }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "terminal_update", terminalId = sharedId, exitStatus = new { exitCode = 0 } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "terminal_update", terminalId = "clear-terminal-" + suffix, command = "cleared terminal", output = new { data = Convert.ToBase64String(Encoding.UTF8.GetBytes("Obsolete cleared bytes")) } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "terminal_update", terminalId = "clear-terminal-" + suffix, output = (object?)null, exitStatus = new { exitCode = 0 } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "compaction_update", compactionId = sharedId, status = "in_progress", summary = new[] { new { type = "text", text = "Obsolete compaction summary" } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "compaction_update", compactionId = sharedId, status = "in_progress", summary = (object?)null }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "compaction_summary_chunk", compactionId = sharedId, content = new { type = "text", text = "Retained " } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "compaction_summary_chunk", compactionId = sharedId, content = new { type = "text", text = "context." } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "compaction_update", compactionId = sharedId, status = "completed" }).ConfigureAwait(false);
+                if (text.StartsWith("v2-error", StringComparison.Ordinal))
+                    await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "idle", stopReason = "error", error = new { code = -32000, message = "Native v2 foreground failure." } }).ConfigureAwait(false);
+                else if (text.StartsWith("v2-unknown", StringComparison.Ordinal))
+                    await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "idle" }).ConfigureAwait(false);
+                else
+                    await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "idle", stopReason = "end_turn" }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "idle" }).ConfigureAwait(false);
+                activePromptId = string.Empty;
+                break;
+            }
             if (text.StartsWith("question-test", StringComparison.Ordinal))
             {
                 activeQuestionId = "grok-question-1";
@@ -233,6 +346,13 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
             activePromptId = string.Empty;
             break;
         case "session/cancel":
+            if (v2)
+            {
+                await WriteV2UpdateAsync(new { sessionUpdate = "agent_message_chunk", messageId = "v2-answer-" + v2PromptIndex.ToString(CultureInfo.InvariantCulture), content = new { type = "text", text = " Final v2 cancellation tail." } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "idle", stopReason = "cancelled" }).ConfigureAwait(false);
+                activePromptId = string.Empty;
+                break;
+            }
             if (!string.IsNullOrWhiteSpace(activeQuestionId))
             {
                 cancelRequested = true;
@@ -257,6 +377,17 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
             }
 
             break;
+        case "session/set_config_option":
+            if (!v2 || GetString(root, "params", "type") != "id" ||
+                GetString(root, "params", "configId") != "native-model" ||
+                GetString(root, "params", "value") is not ("grok-build-0.1" or "grok-4.3"))
+            {
+                await WriteJsonAsync(new { jsonrpc = "2.0", id, error = new { code = -32602, message = "Invalid native v2 model config request." } }).ConfigureAwait(false);
+                break;
+            }
+            v2Model = GetString(root, "params", "value")!;
+            await WriteResponseAsync(id, new { configOptions = BuildV2ConfigOptions(v2Model) }).ConfigureAwait(false);
+            break;
         case "session/load":
         case "session/resume":
             if (resumeCapability == "reject")
@@ -265,6 +396,21 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 break;
             }
             sessionId = GetString(root.GetProperty("params"), "sessionId")!;
+            if (v2)
+            {
+                if (GetString(root, "params", "replayFrom", "type") != "start")
+                {
+                    await WriteJsonAsync(new { jsonrpc = "2.0", id, error = new { code = -32602, message = "Expected native replayFrom start." } }).ConfigureAwait(false);
+                    break;
+                }
+                await WriteV2UpdateAsync(new { sessionUpdate = "user_message", messageId = "saved-user", content = new[] { new { type = "text", text = "Saved v2 question." } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "agent_message", messageId = "saved-agent", content = new[] { new { type = "text", text = "Saved v2 answer." } } }).ConfigureAwait(false);
+                await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = resumeCapability == "resume-active" ? "running" : resumeCapability.StartsWith("resume-waiting", StringComparison.Ordinal) ? "requires_action" : "idle" }).ConfigureAwait(false);
+                if (resumeCapability.StartsWith("resume-waiting", StringComparison.Ordinal))
+                    await WriteV2PermissionAsync().ConfigureAwait(false);
+                await WriteResponseAsync(id, new { }).ConfigureAwait(false);
+                break;
+            }
             if (method == "session/load")
             {
                 foreach (var (role, replayText) in new[]
@@ -278,7 +424,8 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 {
                     await WriteNotificationAsync("session/update", new
                     {
-                        sessionId, update = new { sessionUpdate = role, content = new { type = "text", text = replayText } }
+                        sessionId,
+                        update = new { sessionUpdate = role, content = new { type = "text", text = replayText } }
                     }).ConfigureAwait(false);
                 }
             }
@@ -316,6 +463,15 @@ static object BuildModelState()
         }
     };
 }
+
+static object[] BuildV2ConfigOptions(string model) =>
+[
+    new { configId = "native-model", category = "model", name = "Model", type = "select", currentValue = model,
+        options = new[] { new { groupId = "recommended", name = "Recommended", options = new[]
+        {
+            new { value = "grok-build-0.1", name = "Default model" }, new { value = "grok-4.3", name = "Other model" }
+        } } } }
+];
 
 static async Task WriteAvailableCommandsUpdateAsync(string sessionId)
 {

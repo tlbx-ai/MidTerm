@@ -10,13 +10,19 @@ internal sealed partial class AcpAppServerControlAgentRuntime
     private readonly object _replayGate = new();
     private List<(JsonElement Root, string Raw)>? _loadedUpdates;
     private List<AppServerControlProviderEvent>? _replayEvents;
+    private bool _applyingHistoryReplay;
+    private readonly List<string> _loadedRequests = [];
 
     private string ResolveSessionOpenMethod(JsonElement initializeResult, string? resumeThreadId)
     {
-        if (string.IsNullOrWhiteSpace(resumeThreadId))
+        if (_protocolGeneration == 2)
         {
-            return "session/new";
+            if (Traverse(initializeResult, "capabilities", "session") is { ValueKind: JsonValueKind.Object })
+                return string.IsNullOrWhiteSpace(resumeThreadId) ? "session/new" : "session/resume";
+            throw new InvalidOperationException($"{_agentName} does not advertise the ACP session surface.");
         }
+
+        if (string.IsNullOrWhiteSpace(resumeThreadId)) return "session/new";
 
         if (Traverse(initializeResult, "agentCapabilities", "loadSession") is { ValueKind: JsonValueKind.True })
         {
@@ -37,6 +43,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
         lock (_replayGate)
         {
             _loadedUpdates = [];
+            _loadedRequests.Clear();
         }
 
         try
@@ -47,6 +54,13 @@ internal sealed partial class AcpAppServerControlAgentRuntime
                 if (method != "session/new")
                 {
                     writer.WriteString("sessionId", resumeThreadId);
+                    if (_protocolGeneration == 2)
+                    {
+                        writer.WritePropertyName("replayFrom");
+                        writer.WriteStartObject();
+                        writer.WriteString("type", "start");
+                        writer.WriteEndObject();
+                    }
                 }
                 writer.WriteString("cwd", _workingDirectory);
                 writer.WritePropertyName("mcpServers");
@@ -73,6 +87,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
             var updates = _loadedUpdates ?? [];
             _loadedUpdates = null;
             _replayEvents = events;
+            _applyingHistoryReplay = true;
             string? replayTurnId = null;
             var userText = new StringBuilder();
             var userChunks = false;
@@ -83,10 +98,11 @@ internal sealed partial class AcpAppServerControlAgentRuntime
                 {
                     var update = Traverse(root, "params", "update");
                     var type = update is { } value ? GetString(value, "sessionUpdate") : null;
-                    if (type is "user_message_chunk" or "agent_message_chunk" or "agent_thought_chunk" or
+                    if (type is "user_message" or "agent_message" or "agent_thought" or
+                        "user_message_chunk" or "agent_message_chunk" or "agent_thought_chunk" or
                         "tool_call" or "tool_call_update" or "plan")
                     {
-                        if (replayTurnId is null || (type == "user_message_chunk" && !userChunks))
+                        if (replayTurnId is null || (type is "user_message_chunk" or "user_message" && !userChunks))
                         {
                             if (replayTurnId is not null)
                             {
@@ -101,8 +117,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime
                             }, raw));
                         }
 
-                        userChunks = type == "user_message_chunk";
-                        if (userChunks)
+                        userChunks = type is "user_message_chunk" or "user_message";
+                        if (userChunks && _protocolGeneration == 1)
                         {
                             userText.Append(ExtractContentText(update!.Value));
                             events.Add(CreateEvent("item.completed", replayTurnId, $"{replayTurnId}:user", null,
@@ -120,16 +136,47 @@ internal sealed partial class AcpAppServerControlAgentRuntime
                     ApplySessionUpdate(root, raw, replayTurnId);
                 }
 
-                if (replayTurnId is not null)
+                var resumedState = _loadedStateSnapshot is { } snapshot ? GetString(snapshot, "state") : null;
+                if (replayTurnId is not null && resumedState is not ("running" or "requires_action"))
                 {
                     AppendReplayTurnCompleted(replayTurnId);
+                }
+                if (_loadedStateSnapshot is { } stateSnapshot)
+                {
+                    if (resumedState is "running" or "requires_action" && replayTurnId is not null)
+                    {
+                        _activeTurnId = replayTurnId;
+                        _activeTurnCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                    }
+                    HandleV2State(stateSnapshot, stateSnapshot, stateSnapshot.GetRawText());
+                    _loadedStateSnapshot = null;
                 }
             }
             finally
             {
                 _replayEvents = null;
-                _tools.Clear();
+                _applyingHistoryReplay = false;
+                if (_protocolGeneration == 1) _tools.Clear();
             }
+        }
+    }
+
+    private async Task AppendLoadedRequestsAsync(List<AppServerControlProviderEvent> events, CancellationToken ct)
+    {
+        string[] requests;
+        lock (_replayGate)
+        {
+            requests = _loadedRequests.ToArray();
+            _loadedRequests.Clear();
+            _replayEvents = events;
+        }
+        try
+        {
+            foreach (var request in requests) await HandleAcpLineAsync(request, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_replayGate) _replayEvents = null;
         }
     }
 

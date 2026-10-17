@@ -1370,47 +1370,50 @@ public sealed partial class SessionAppServerControlHistoryService
             return;
         }
 
-        switch (appServerControlEvent.ContentDelta.StreamKind)
-        {
-            case "assistant_text":
-                state.Streams.AssistantText = AppendAssistantDelta(state.Streams.AssistantText, appServerControlEvent.ContentDelta.Delta);
-                break;
-            case "reasoning_text":
-                state.Streams.ReasoningText = AppendRetainedHistoryChunk(
-                    state.Streams.ReasoningText,
-                    appServerControlEvent.ContentDelta.Delta,
-                    MaxReasoningStreamChars,
-                    retainHead: false);
-                break;
-            case "reasoning_summary_text":
-                state.Streams.ReasoningSummaryText = AppendRetainedHistoryChunk(
-                    state.Streams.ReasoningSummaryText,
-                    appServerControlEvent.ContentDelta.Delta,
-                    MaxReasoningSummaryStreamChars,
-                    retainHead: false);
-                break;
-            case "plan_text":
-                state.Streams.PlanText = AppendRetainedHistoryChunk(
-                    state.Streams.PlanText,
-                    appServerControlEvent.ContentDelta.Delta,
-                    MaxPlanStreamChars,
-                    retainHead: false);
-                break;
-            case "command_output":
-                state.Streams.CommandOutput = AppendRetainedHistoryChunk(
-                    state.Streams.CommandOutput,
-                    appServerControlEvent.ContentDelta.Delta,
-                    MaxCommandOutputStreamChars,
-                    retainHead: false);
-                break;
-            case "file_change_output":
-                state.Streams.FileChangeOutput = AppendRetainedHistoryChunk(
-                    state.Streams.FileChangeOutput,
-                    appServerControlEvent.ContentDelta.Delta,
-                    MaxFileChangeOutputStreamChars,
-                    retainHead: false);
-                break;
-        }
+        if (!appServerControlEvent.ContentDelta.Replace &&
+            (appServerControlEvent.ItemId?.StartsWith("acp:", StringComparison.Ordinal) != true ||
+             string.Equals(appServerControlEvent.TurnId, state.CurrentTurn.TurnId, StringComparison.Ordinal)))
+            switch (appServerControlEvent.ContentDelta.StreamKind)
+            {
+                case "assistant_text":
+                    state.Streams.AssistantText = AppendAssistantDelta(state.Streams.AssistantText, appServerControlEvent.ContentDelta.Delta);
+                    break;
+                case "reasoning_text":
+                    state.Streams.ReasoningText = AppendRetainedHistoryChunk(
+                        state.Streams.ReasoningText,
+                        appServerControlEvent.ContentDelta.Delta,
+                        MaxReasoningStreamChars,
+                        retainHead: false);
+                    break;
+                case "reasoning_summary_text":
+                    state.Streams.ReasoningSummaryText = AppendRetainedHistoryChunk(
+                        state.Streams.ReasoningSummaryText,
+                        appServerControlEvent.ContentDelta.Delta,
+                        MaxReasoningSummaryStreamChars,
+                        retainHead: false);
+                    break;
+                case "plan_text":
+                    state.Streams.PlanText = AppendRetainedHistoryChunk(
+                        state.Streams.PlanText,
+                        appServerControlEvent.ContentDelta.Delta,
+                        MaxPlanStreamChars,
+                        retainHead: false);
+                    break;
+                case "command_output":
+                    state.Streams.CommandOutput = AppendRetainedHistoryChunk(
+                        state.Streams.CommandOutput,
+                        appServerControlEvent.ContentDelta.Delta,
+                        MaxCommandOutputStreamChars,
+                        retainHead: false);
+                    break;
+                case "file_change_output":
+                    state.Streams.FileChangeOutput = AppendRetainedHistoryChunk(
+                        state.Streams.FileChangeOutput,
+                        appServerControlEvent.ContentDelta.Delta,
+                        MaxFileChangeOutputStreamChars,
+                        retainHead: false);
+                    break;
+            }
 
         var historyKind = HistoryKindFromStream(appServerControlEvent.ContentDelta.StreamKind);
         if (historyKind is null)
@@ -1427,7 +1430,38 @@ public sealed partial class SessionAppServerControlHistoryService
         entry.ItemId = appServerControlEvent.ItemId;
         entry.ItemType = appServerControlEvent.ContentDelta.StreamKind;
         entry.Status = "streaming";
-        if (historyKind == "assistant")
+        if (appServerControlEvent.ContentDelta.Replace)
+        {
+            entry.Title = historyKind == "user" ? null : ResolveStreamTitle(historyKind, appServerControlEvent.ContentDelta.StreamKind, entry.Title);
+            entry.Body = AppendRetainedStreamText(string.Empty, appServerControlEvent.ContentDelta.Delta,
+                historyKind is "assistant" or "user" ? MaxAssistantStreamChars : MaxReasoningStreamChars,
+                retainHead: false, separateWithNewline: false);
+            entry.Streaming = historyKind != "user";
+            if (historyKind == "user")
+            {
+                entry.ItemType = "user_message";
+                entry.Status = "completed";
+                PromoteUserHistoryEntryToTurnLead(state, entry);
+            }
+            if (string.Equals(entry.TurnId, state.CurrentTurn.TurnId, StringComparison.Ordinal))
+            {
+                var text = string.Concat(state.HistoryEntries.Values
+                    .Where(item => item.Kind == historyKind && item.TurnId == entry.TurnId)
+                    .OrderBy(item => item.Order).Select(item => item.Body));
+                if (historyKind == "assistant") state.Streams.AssistantText = AppendAssistantDelta(string.Empty, text);
+                if (historyKind == "reasoning") state.Streams.ReasoningText = AppendRetainedHistoryChunk(string.Empty, text, MaxReasoningStreamChars, retainHead: false);
+            }
+        }
+        else if (historyKind == "user")
+        {
+            entry.Title = null;
+            entry.Body = AppendAssistantDelta(entry.Body, appServerControlEvent.ContentDelta.Delta);
+            entry.ItemType = "user_message";
+            entry.Status = "completed";
+            entry.Streaming = false;
+            PromoteUserHistoryEntryToTurnLead(state, entry);
+        }
+        else if (historyKind == "assistant")
         {
             entry.Title = ResolveStreamTitle(historyKind, appServerControlEvent.ContentDelta.StreamKind, entry.Title);
             entry.Body = AppendAssistantDelta(entry.Body, appServerControlEvent.ContentDelta.Delta);
@@ -1457,7 +1491,9 @@ public sealed partial class SessionAppServerControlHistoryService
         else
         {
             entry.Title = ResolveStreamTitle(historyKind, appServerControlEvent.ContentDelta.StreamKind, entry.Title);
-            entry.Body = AppendHistoryChunk(entry.Body, appServerControlEvent.ContentDelta.Delta);
+            entry.Body = appServerControlEvent.ItemId?.StartsWith("acp:", StringComparison.Ordinal) == true
+                ? AppendRetainedStreamText(entry.Body, appServerControlEvent.ContentDelta.Delta, MaxReasoningStreamChars, retainHead: false, separateWithNewline: false)
+                : AppendHistoryChunk(entry.Body, appServerControlEvent.ContentDelta.Delta);
             entry.Streaming = true;
         }
 
@@ -1604,7 +1640,7 @@ public sealed partial class SessionAppServerControlHistoryService
         item.Title = historyKind == "tool"
             ? PreferNonGenericText(item.Title, appServerControlEvent.Item.Title)
             : PreferMeaningfulText(item.Title, appServerControlEvent.Item.Title);
-        item.Detail = historyKind switch
+        item.Detail = appServerControlEvent.Item.Replace ? appServerControlEvent.Item.Detail : historyKind switch
         {
             "assistant" => MergeAssistantItemDetail(item.Detail, appServerControlEvent.Item.Detail, appServerControlEvent.Item.Status),
             "user" => PreferMeaningfulText(item.Detail, appServerControlEvent.Item.Detail),
@@ -1630,25 +1666,29 @@ public sealed partial class SessionAppServerControlHistoryService
             case "user":
                 entry.CommandText = null;
                 entry.Title = null;
-                entry.Body = PreferMeaningfulText(entry.Body, appServerControlEvent.Item.Detail) ?? string.Empty;
+                entry.Body = appServerControlEvent.Item.Replace ? appServerControlEvent.Item.Detail ?? string.Empty
+                    : PreferMeaningfulText(entry.Body, appServerControlEvent.Item.Detail) ?? string.Empty;
                 entry.Streaming = false;
                 PromoteUserHistoryEntryToTurnLead(state, entry);
                 break;
             case "assistant":
                 entry.CommandText = null;
                 entry.Title = null;
-                entry.Body = MergeAssistantItemDetail(entry.Body, appServerControlEvent.Item.Detail, item.Status);
+                entry.Body = appServerControlEvent.Item.Replace ? appServerControlEvent.Item.Detail ?? string.Empty
+                    : MergeAssistantItemDetail(entry.Body, appServerControlEvent.Item.Detail, item.Status);
                 entry.Streaming = !IsTerminalStatus(item.Status);
                 break;
             case "reasoning":
             case "plan":
                 entry.CommandText = null;
                 entry.Title = PreferMeaningfulText(entry.Title, appServerControlEvent.Item.Title);
-                entry.Body = MergeHistoryBody(entry.Body, appServerControlEvent.Item.Detail);
+                entry.Body = appServerControlEvent.Item.Replace ? appServerControlEvent.Item.Detail ?? string.Empty
+                    : MergeHistoryBody(entry.Body, appServerControlEvent.Item.Detail);
                 entry.Streaming = !IsTerminalStatus(item.Status);
                 item.Detail = entry.Body;
                 break;
             default:
+                if (appServerControlEvent.Item.Replace) state.ToolRenderStates.Remove(entry.EntryId);
                 var toolState = GetOrCreateToolRenderState(state, entry.EntryId);
                 var incomingPresentation = appServerControlEvent.Item.ToolPresentation ??
                                            AppServerControlToolPresentationProjector.FromLegacy(
@@ -1826,6 +1866,7 @@ public sealed partial class SessionAppServerControlHistoryService
             ContentDelta = source.ContentDelta is null ? null : new AppServerControlProviderContentDeltaPayload
             {
                 StreamKind = source.ContentDelta.StreamKind,
+                Replace = source.ContentDelta.Replace,
                 Delta = source.ContentDelta.Delta
             },
             PlanDelta = source.PlanDelta is null ? null : new AppServerControlProviderPlanDeltaPayload
@@ -1842,6 +1883,7 @@ public sealed partial class SessionAppServerControlHistoryService
             },
             Item = source.Item is null ? null : new AppServerControlProviderItemPayload
             {
+                Replace = source.Item.Replace,
                 ItemType = source.Item.ItemType,
                 Status = source.Item.Status,
                 Title = source.Item.Title,
@@ -2469,11 +2511,13 @@ public sealed partial class SessionAppServerControlHistoryService
         var turnId = appServerControlEvent.TurnId ?? state.CurrentTurn.TurnId;
         return historyKind switch
         {
+            "user" when !string.IsNullOrWhiteSpace(turnId) => $"user:{turnId}",
+            "user" => $"user:{appServerControlEvent.ItemId ?? appServerControlEvent.EventId}",
             "assistant" when !string.IsNullOrWhiteSpace(appServerControlEvent.ItemId) => $"assistant:{appServerControlEvent.ItemId}",
             "assistant" when !string.IsNullOrWhiteSpace(turnId) => $"assistant-stream:{turnId}",
             "assistant" => $"assistant-stream:{appServerControlEvent.EventId}",
             "tool" => ResolveToolHistoryEntryIdForStream(state.Items, appServerControlEvent, turnId, streamKind),
-            "reasoning" => $"reasoning:{streamKind}:{turnId ?? appServerControlEvent.ItemId ?? appServerControlEvent.EventId}",
+            "reasoning" => $"reasoning:{streamKind}:{appServerControlEvent.ItemId ?? turnId ?? appServerControlEvent.EventId}",
             _ => $"{historyKind}:{turnId ?? appServerControlEvent.ItemId ?? appServerControlEvent.EventId}"
         };
     }
@@ -2610,6 +2654,7 @@ public sealed partial class SessionAppServerControlHistoryService
     private static string? HistoryKindFromStream(string streamKind)
     {
         var normalized = streamKind.Trim().ToLowerInvariant();
+        if (normalized == "user_text") return "user";
         if (normalized == "assistant_text")
         {
             return "assistant";
@@ -2873,13 +2918,13 @@ public sealed partial class SessionAppServerControlHistoryService
         bool separateWithNewline)
     {
         var normalizedIncoming = NormalizeHistoryText(incoming);
-        if (string.IsNullOrWhiteSpace(normalizedIncoming))
+        if (separateWithNewline ? string.IsNullOrWhiteSpace(normalizedIncoming) : string.IsNullOrEmpty(normalizedIncoming))
         {
             return NormalizeHistoryText(existing);
         }
 
         var normalizedExisting = StripRetentionMarkers(NormalizeHistoryText(existing));
-        if (string.IsNullOrWhiteSpace(normalizedExisting))
+        if (separateWithNewline ? string.IsNullOrWhiteSpace(normalizedExisting) : string.IsNullOrEmpty(normalizedExisting))
         {
             return RetainWithinBudget(normalizedIncoming, maxChars, retainHead);
         }

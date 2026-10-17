@@ -620,6 +620,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             ContentDelta = appServerControlEvent.ContentDelta is null ? null : new AppServerControlProviderContentDeltaPayload
             {
                 StreamKind = appServerControlEvent.ContentDelta.StreamKind,
+                Replace = appServerControlEvent.ContentDelta.Replace,
                 Delta = appServerControlEvent.ContentDelta.Delta
             },
             PlanDelta = appServerControlEvent.PlanDelta is null ? null : new AppServerControlProviderPlanDeltaPayload
@@ -636,6 +637,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             },
             Item = appServerControlEvent.Item is null ? null : new AppServerControlProviderItemPayload
             {
+                Replace = appServerControlEvent.Item.Replace,
                 ItemType = appServerControlEvent.Item.ItemType,
                 Status = appServerControlEvent.Item.Status,
                 Title = appServerControlEvent.Item.Title,
