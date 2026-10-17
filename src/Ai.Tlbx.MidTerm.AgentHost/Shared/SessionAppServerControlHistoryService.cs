@@ -1997,6 +1997,7 @@ public sealed partial class SessionAppServerControlHistoryService
             Header = source.Header,
             Question = source.Question,
             MultiSelect = source.MultiSelect,
+            AllowCustomAnswer = source.AllowCustomAnswer,
             Options = source.Options.Select(option => new AppServerControlQuestionOption
             {
                 Label = option.Label,

@@ -182,6 +182,7 @@ export interface AppServerControlQuestion {
   header: string;
   question: string;
   multiSelect: boolean;
+  allowCustomAnswer?: boolean;
   options: AppServerControlQuestionOption[];
 }
 

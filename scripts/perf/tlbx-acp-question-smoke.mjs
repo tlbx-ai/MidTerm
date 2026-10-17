@@ -48,6 +48,21 @@ const result = {
   errors: [],
 };
 let chrome, browser, context, page;
+async function settleLayout() {
+  await page.evaluate(async () => {
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)),
+    );
+    const finite = document
+      .getAnimations()
+      .filter((animation) =>
+        Number.isFinite(animation.effect?.getComputedTiming().endTime),
+      );
+    await Promise.all(
+      finite.map((animation) => animation.finished.catch(() => {})),
+    );
+  });
+}
 let resolvePlanSubmission;
 const planSubmission = new Promise((resolve) => {
   resolvePlanSubmission = resolve;
@@ -154,6 +169,7 @@ try {
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
+      await settleLayout();
       const recalled = wrapper.getByText("TLBX_NATIVE_RESUME_BLUE_74", {
         exact: true,
       });
@@ -189,6 +205,7 @@ try {
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
+      await settleLayout();
       await wrapper
         .getByText("Correct answer.", { exact: true })
         .scrollIntoViewIfNeeded();
@@ -232,6 +249,7 @@ try {
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
+      await settleLayout();
       await implement.scrollIntoViewIfNeeded();
       const box = await implement.boundingBox();
       assert.ok(
@@ -284,6 +302,7 @@ try {
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
+      await settleLayout();
       await implement.scrollIntoViewIfNeeded();
       const box = await implement.boundingBox();
       assert.ok(
@@ -377,6 +396,7 @@ try {
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
+      await settleLayout();
       const native = page.locator(".smart-input-native-config");
       if (!(await native.isVisible()))
         await page
@@ -554,6 +574,7 @@ try {
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
+      await settleLayout();
       if (!(await host.locator("details").evaluate((element) => element.open)))
         await host.locator("summary").click();
       const form = host.locator("form");
@@ -659,6 +680,7 @@ try {
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
+      await settleLayout();
       await image.scrollIntoViewIfNeeded();
       const box = await image.boundingBox();
       assert.ok(
@@ -671,7 +693,41 @@ try {
       const screenshot = path.join(out, `native-vision-${viewport.width}.png`);
       await page.screenshot({ path: screenshot });
       result.screenshots.push(screenshot);
-      result.measurements.push({ viewport, image: box });
+      const textBounds = await wrapper
+        .locator(".agent-history-assistant .agent-history-body")
+        .evaluateAll((elements) =>
+          elements.map((element) => {
+            const rect = element.getBoundingClientRect();
+            const walker = document.createTreeWalker(
+              element,
+              NodeFilter.SHOW_TEXT,
+            );
+            let text;
+            while ((text = walker.nextNode()) && !text.textContent?.trim()) {}
+            const range = document.createRange();
+            if (text) {
+              range.setStart(text, 0);
+              range.setEnd(text, Math.min(1, text.textContent.length));
+            }
+            return {
+              body: { x: rect.x, width: rect.width, y: rect.y },
+              firstCharacterX: text ? range.getBoundingClientRect().x : null,
+            };
+          }),
+        );
+      for (const text of textBounds.filter(
+        (text) => text.body.y >= 0 && text.body.y < viewport.height,
+      )) {
+        assert.ok(
+          text.firstCharacterX === null || text.firstCharacterX >= 0,
+          "Visible assistant text is not clipped on the left",
+        );
+        assert.ok(
+          text.body.x + text.body.width <= viewport.width,
+          "Visible assistant text stays inside the viewport",
+        );
+      }
+      result.measurements.push({ viewport, image: box, textBounds });
     }
     result.nativeVisionVerified = true;
   }
@@ -698,6 +754,7 @@ try {
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
+      await settleLayout();
       await reply.scrollIntoViewIfNeeded();
       const screenshot = path.join(out, `native-history-${viewport.width}.png`);
       await page.screenshot({ path: screenshot });
@@ -757,6 +814,7 @@ try {
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
+      await settleLayout();
       await steered.scrollIntoViewIfNeeded();
       const screenshot = path.join(
         out,
@@ -808,6 +866,7 @@ try {
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
+      await settleLayout();
       const compact = await stats
         .locator(".agent-runtime-stats-compact")
         .innerText();
@@ -868,6 +927,7 @@ try {
         { width: 390, height: 844 },
       ]) {
         await page.setViewportSize(viewport);
+        await settleLayout();
         const settings = page.locator(
           ".smart-input-appServerControl-settings:visible",
         );
@@ -938,6 +998,7 @@ try {
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
+      await settleLayout();
       await question.scrollIntoViewIfNeeded();
       await question.waitFor({ state: "visible" });
       const form = wrapper.locator(".agent-request-form");

@@ -37,6 +37,7 @@ public sealed class AppServerControlQuestion
     public string Header { get; set; } = string.Empty;
     public string Question { get; set; } = string.Empty;
     public bool MultiSelect { get; set; }
+    public bool AllowCustomAnswer { get; set; }
     public List<AppServerControlQuestionOption> Options { get; set; } = [];
 }
 

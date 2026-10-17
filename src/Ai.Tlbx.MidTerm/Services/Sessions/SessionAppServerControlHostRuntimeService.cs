@@ -382,7 +382,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     {
                         SessionId = sessionId,
                         Provider = profile,
-                        RuntimeKind = isCodex ? CodexMode : isClaude ? ClaudeAgentSdkMode : "acp-v1",
+                        RuntimeKind = isCodex ? CodexMode : isClaude ? ClaudeAgentSdkMode : acpAgent?.RuntimeKind ?? "acp-v1",
                         WorkingDirectory = workingDirectory,
                         InstanceId = _instanceIdentity.InstanceId,
                         OwnerToken = _instanceIdentity.OwnerToken,
@@ -1642,6 +1642,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             Header = source.Header,
             Question = source.Question,
             MultiSelect = source.MultiSelect,
+            AllowCustomAnswer = source.AllowCustomAnswer,
             Options = source.Options.Select(option => new AppServerControlQuestionOption
             {
                 Label = option.Label,

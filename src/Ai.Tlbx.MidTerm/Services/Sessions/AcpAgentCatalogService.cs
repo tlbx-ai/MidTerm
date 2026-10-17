@@ -13,7 +13,7 @@ public sealed partial class AcpAgentCatalogService(SettingsService settingsServi
     private static readonly IReadOnlyList<AcpAgentDefinition> BuiltInDefinitions =
     [
         new("grok", "Grok Build", "grok", ["agent", "stdio"]),
-        new("opencode", "OpenCode", "opencode", ["acp"]),
+        new("opencode", "OpenCode", "opencode", [], RuntimeKind: "opencode-http"),
         new("antigravity", "Google Antigravity", "agy_acp_server", []),
         new("gemini", "Gemini CLI", "gemini", ["--acp"]),
         new("copilot", "GitHub Copilot CLI", "copilot", ["--acp"])
@@ -87,7 +87,8 @@ public sealed partial class AcpAgentCatalogService(SettingsService settingsServi
             executablePath,
             catalogDefinition.Arguments,
             catalogDefinition.EnvironmentVariables,
-            catalogDefinition.AuthenticationMethodId);
+            catalogDefinition.AuthenticationMethodId,
+            catalogDefinition.RuntimeKind);
         return true;
     }
 
@@ -133,7 +134,8 @@ public sealed partial class AcpAgentCatalogService(SettingsService settingsServi
                     continue;
                 }
 
-                if (entry.EnvironmentVariables is null || entry.AuthenticationMethodId?.Length > 256 ||
+                if ((entry.RuntimeKind is not (null or "acp-v1") && !(profile == "opencode" && entry.RuntimeKind == "opencode-http")) ||
+                    entry.EnvironmentVariables is null || entry.AuthenticationMethodId?.Length > 256 ||
                     entry.EnvironmentVariables.Count > 64 || entry.EnvironmentVariables.Any(pair =>
                         !EnvironmentKeyPattern().IsMatch(pair.Key) || pair.Value?.Length > 32768))
                 {
@@ -142,7 +144,8 @@ public sealed partial class AcpAgentCatalogService(SettingsService settingsServi
                 }
                 definitions.Add(new AcpAgentDefinition(profile, name, command, arguments,
                     new Dictionary<string, string?>(entry.EnvironmentVariables, StringComparer.Ordinal),
-                    string.IsNullOrWhiteSpace(entry.AuthenticationMethodId) ? null : entry.AuthenticationMethodId.Trim()));
+                    string.IsNullOrWhiteSpace(entry.AuthenticationMethodId) ? null : entry.AuthenticationMethodId.Trim(),
+                    profile == "opencode" && entry.RuntimeKind == "opencode-http" ? "opencode-http" : "acp-v1"));
             }
 
             return definitions;
@@ -175,7 +178,8 @@ public sealed record AcpAgentDefinition(
     string CommandName,
     IReadOnlyList<string> Arguments,
     IReadOnlyDictionary<string, string?>? EnvironmentVariables = null,
-    string? AuthenticationMethodId = null);
+    string? AuthenticationMethodId = null,
+    string RuntimeKind = "acp-v1");
 
 public sealed record ResolvedAcpAgentDefinition(
     string Profile,
@@ -183,7 +187,8 @@ public sealed record ResolvedAcpAgentDefinition(
     string ExecutablePath,
     IReadOnlyList<string> Arguments,
     IReadOnlyDictionary<string, string?>? EnvironmentVariables = null,
-    string? AuthenticationMethodId = null);
+    string? AuthenticationMethodId = null,
+    string RuntimeKind = "acp-v1");
 
 internal sealed class AcpAgentManifest
 {
@@ -198,6 +203,7 @@ internal sealed class AcpAgentManifestEntry
     public List<string?> Arguments { get; set; } = [];
     public Dictionary<string, string?> EnvironmentVariables { get; set; } = new(StringComparer.Ordinal);
     public string? AuthenticationMethodId { get; set; }
+    public string? RuntimeKind { get; set; }
     public bool? Enabled { get; set; }
 }
 

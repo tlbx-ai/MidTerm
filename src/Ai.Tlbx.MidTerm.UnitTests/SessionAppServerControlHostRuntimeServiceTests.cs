@@ -17,6 +17,30 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
     private static SettingsService CreateSettingsService(string directory) => new(directory);
 
     [Fact]
+    public void OpenCodeCatalog_UsesNativeHttpAndKeepsExplicitAcpManifestArguments()
+    {
+        using var fake = FakeGrokPathScope.Create();
+        var catalog = new AcpAgentCatalogService(CreateSettingsService(fake.Root));
+        Assert.True(catalog.TryGetDefinition("opencode", out var builtIn));
+        Assert.Equal("opencode-http", builtIn.RuntimeKind);
+        Assert.Empty(builtIn.Arguments);
+        File.WriteAllText(catalog.ManifestPath, $$$"""
+            {"agents":[{"profile":"opencode","name":"Custom OpenCode","command":{{{JsonSerializer.Serialize(fake.ExecutablePath)}}},"arguments":["acp"]}]}
+            """);
+        Assert.True(catalog.TryResolve("opencode", null, out var custom));
+        Assert.Equal("acp-v1", custom.RuntimeKind);
+        Assert.Equal(["acp"], custom.Arguments);
+        File.WriteAllText(catalog.ManifestPath, $$$"""
+            {"agents":[{"profile":"opencode","name":"Native OpenCode","command":{{{JsonSerializer.Serialize(fake.ExecutablePath)}}},"runtimeKind":"opencode-http","arguments":[]},
+              {"profile":"invalid-runtime","name":"Invalid","command":"unused","runtimeKind":"invented"}]}
+            """);
+        Assert.True(catalog.TryResolve("opencode", null, out var native));
+        Assert.Equal("opencode-http", native.RuntimeKind);
+        Assert.Empty(native.Arguments);
+        Assert.False(catalog.ContainsProfile("invalid-runtime"));
+    }
+
+    [Fact]
     public void AcpCatalog_ResolvesExplicitAuthenticationAndIsolatedEnvironment()
     {
         using var fake = FakeGrokPathScope.Create();

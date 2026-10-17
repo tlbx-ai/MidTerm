@@ -391,7 +391,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 HostKind = "mtagenthost",
                 HostVersion = "dev",
                 Providers = _syntheticProvider is null
-                    ? ["codex", "claude-agent-sdk", "acp-v1"]
+                    ? ["codex", "claude-agent-sdk", "opencode-http", "acp-v1"]
                     : [_syntheticProvider],
                 Capabilities =
                 [
@@ -499,6 +499,13 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
 
         var attach = command.AttachRuntime
                      ?? throw new InvalidOperationException("runtime.attach payload is required.");
+        if (string.Equals(provider, "opencode", StringComparison.Ordinal) &&
+            string.Equals(attach.RuntimeKind, "opencode-http", StringComparison.Ordinal))
+        {
+            _runtime = new OpenCodeAppServerControlAgentRuntime(EmitRuntimeEvent);
+            return _runtime;
+        }
+
         if (string.Equals(attach.RuntimeKind, "acp-v1", StringComparison.Ordinal))
         {
             _runtime = new AcpAppServerControlAgentRuntime(
@@ -726,6 +733,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             Header = source.Header,
             Question = source.Question,
             MultiSelect = source.MultiSelect,
+            AllowCustomAnswer = source.AllowCustomAnswer,
             Options = source.Options.Select(static option => new AppServerControlQuestionOption
             {
                 Label = option.Label,

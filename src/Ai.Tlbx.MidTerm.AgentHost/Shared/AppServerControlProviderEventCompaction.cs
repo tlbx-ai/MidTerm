@@ -240,6 +240,7 @@ public static class AppServerControlProviderEventCompaction
             Header = source.Header,
             Question = source.Question,
             MultiSelect = source.MultiSelect,
+            AllowCustomAnswer = source.AllowCustomAnswer,
             Options = source.Options.Select(static option => new AppServerControlQuestionOption
             {
                 Label = option.Label,

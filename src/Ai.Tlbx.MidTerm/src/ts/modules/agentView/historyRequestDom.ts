@@ -585,9 +585,14 @@ function createQuestionField(args: {
   input.placeholder = appServerControlText('appServerControl.request.typeAnswer', 'Type answer');
   input.value = draftValue[0] || '';
   input.addEventListener('input', () => {
-    updateRequestDraftAnswers(deps, sessionId, request.requestId, question.id, [
-      input.value.trim(),
-    ]);
+    updateRequestDraftAnswers(
+      deps,
+      sessionId,
+      request.requestId,
+      question.id,
+      [input.value.trim()],
+      false,
+    );
   });
   wrapper.appendChild(input);
   return wrapper;
@@ -618,6 +623,8 @@ function createQuestionChoiceList(args: {
     input.checked = selectedAnswers.includes(optionValue);
     input.addEventListener('change', () => {
       if (inputType === 'radio') {
+        const custom = options.querySelector<HTMLInputElement>('.agent-request-custom-input');
+        if (custom) custom.value = '';
         updateRequestDraftAnswers(
           deps,
           sessionId,
@@ -642,6 +649,8 @@ function createQuestionChoiceList(args: {
           `input[name="${CSS.escape(question.id)}"]:checked`,
         ),
       ).map((candidate) => candidate.value);
+      const custom = options.querySelector<HTMLInputElement>('.agent-request-custom-input');
+      if (custom?.value.trim()) nextAnswers.push(custom.value.trim());
       updateRequestDraftAnswers(deps, sessionId, request.requestId, question.id, nextAnswers);
     });
     optionLabel.appendChild(input);
@@ -670,6 +679,28 @@ function createQuestionChoiceList(args: {
     options.appendChild(optionLabel);
   }
 
+  if (question.allowCustomAnswer) {
+    const custom = document.createElement('input');
+    custom.type = 'text';
+    custom.className = 'agent-request-input agent-request-custom-input';
+    custom.placeholder = 'Other answer';
+    custom.setAttribute('aria-label', 'Other answer');
+    custom.value =
+      selectedAnswers.find(
+        (answer) => !question.options.some((option) => (option.value ?? option.label) === answer),
+      ) ?? '';
+    custom.addEventListener('input', () => {
+      const choices = Array.from(options.querySelectorAll<HTMLInputElement>('input:checked'));
+      if (!question.multiSelect && custom.value.trim()) {
+        for (const choice of choices) choice.checked = false;
+      }
+      const answers =
+        question.multiSelect || !custom.value.trim() ? choices.map((choice) => choice.value) : [];
+      if (custom.value.trim()) answers.push(custom.value.trim());
+      updateRequestDraftAnswers(deps, sessionId, request.requestId, question.id, answers, false);
+    });
+    options.appendChild(custom);
+  }
   return options;
 }
 
