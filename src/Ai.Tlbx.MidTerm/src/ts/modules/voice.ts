@@ -18,6 +18,16 @@ let transcriptRole = '';
 let transcriptText = '';
 let transcriptTimer: ReturnType<typeof setTimeout> | null = null;
 let toolQueue: Promise<void> = Promise.resolve();
+const orchestrationTools = new Set<VoiceToolName>([
+  'session_overview',
+  'session_activity',
+  'read_scrollback',
+  'select_session',
+  'create_session',
+  'send_prompt',
+  'make_input',
+  'close_session',
+]);
 
 export async function refreshVoiceAvailability(): Promise<boolean> {
   try {
@@ -81,6 +91,17 @@ function isCurrentSocket(socket: WebSocket): boolean {
 async function handleTool(event: VoiceEvent, socket: WebSocket): Promise<void> {
   if (!event.tool || !event.requestId || socket !== ws || socket.readyState !== WebSocket.OPEN)
     return;
+  if (!orchestrationTools.has(event.tool)) {
+    socket.send(
+      JSON.stringify({
+        type: 'tool_response',
+        requestId: event.requestId,
+        result: null,
+        error: 'Unsupported orchestration tool.',
+      }),
+    );
+    return;
+  }
   const args = event.args ?? {};
   const approved =
     !event.requiresConfirmation ||

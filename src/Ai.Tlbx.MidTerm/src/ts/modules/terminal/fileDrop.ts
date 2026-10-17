@@ -327,10 +327,13 @@ export async function uploadFile(
 
   try {
     const query = new URLSearchParams({ source });
-    const response = await fetch(`/api/sessions/${sessionId}/upload?${query.toString()}`, {
-      method: 'POST',
-      body: formData,
-    });
+    const response = await fetch(
+      `/api/sessions/${encodeURIComponent(sessionId)}/upload?${query.toString()}`,
+      {
+        method: 'POST',
+        body: formData,
+      },
+    );
 
     if (!response.ok) {
       if (response.status === 401) {

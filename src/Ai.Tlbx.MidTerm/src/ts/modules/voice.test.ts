@@ -57,17 +57,30 @@ beforeEach(() => {
   });
   vi.stubGlobal(
     'fetch',
-    vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: async () => ({ providers: [{ id: 'openai', configured: true }] }),
-      }),
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ providers: [{ id: 'openai', configured: true }] }),
+    }),
   );
 });
 afterEach(() => vi.unstubAllGlobals());
 
 describe('local voice orchestration lifecycle', () => {
+  it('rejects unregistered and inherited tool names before dispatch or confirmation', async () => {
+    const voice = await import('./voice');
+    await voice.startVoiceSession();
+    for (const tool of ['constructor', '__proto__', 'dev_browser_screenshot']) {
+      Socket.sockets[0]!.message({ type: 'tool_request', requestId: tool, tool, args: {} });
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    expect(mocks.process).not.toHaveBeenCalled();
+    expect(mocks.confirm).not.toHaveBeenCalled();
+    expect(Socket.sockets[0]!.send).toHaveBeenCalledWith(
+      expect.stringContaining('Unsupported orchestration tool.'),
+    );
+    await voice.stopVoiceSession();
+  });
   it('uses the authenticated same-origin socket and captures only after readiness', async () => {
     const voice = await import('./voice');
     await voice.startVoiceSession();

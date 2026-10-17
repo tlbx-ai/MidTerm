@@ -494,25 +494,26 @@ function formatInteractiveReadToolDisplay(args: Record<string, unknown>): string
   return `Interactive sequence:\n${lines.join('\n')}`;
 }
 
-const toolDisplayFormatters: Partial<
-  Record<VoiceToolName, (args: Record<string, unknown>) => string>
-> = {
-  send_prompt: formatSendPromptToolDisplay,
-  agent_turn: formatAgentTurnToolDisplay,
-  session_overview: formatSessionOverviewToolDisplay,
-  conversation_continuity: formatConversationContinuityToolDisplay,
-  campaign_status: formatCampaignStatusToolDisplay,
-  wait_for_turn_completion: formatWaitForTurnCompletionToolDisplay,
-  dev_browser_command: formatDevBrowserToolDisplay,
-  dev_browser_screenshot: formatDevBrowserScreenshotToolDisplay,
-  repo_monitor: formatRepoMonitorToolDisplay,
-  layout_control: formatLayoutControlToolDisplay,
-  make_input: formatMakeInputToolDisplay,
-  interactive_read: formatInteractiveReadToolDisplay,
-};
+const toolDisplayFormatters = new Map<string, (args: Record<string, unknown>) => string>(
+  Object.entries({
+    send_prompt: formatSendPromptToolDisplay,
+    agent_turn: formatAgentTurnToolDisplay,
+    session_overview: formatSessionOverviewToolDisplay,
+    conversation_continuity: formatConversationContinuityToolDisplay,
+    campaign_status: formatCampaignStatusToolDisplay,
+    wait_for_turn_completion: formatWaitForTurnCompletionToolDisplay,
+    dev_browser_command: formatDevBrowserToolDisplay,
+    dev_browser_screenshot: formatDevBrowserScreenshotToolDisplay,
+    repo_monitor: formatRepoMonitorToolDisplay,
+    layout_control: formatLayoutControlToolDisplay,
+    make_input: formatMakeInputToolDisplay,
+    interactive_read: formatInteractiveReadToolDisplay,
+  }),
+);
 
 function formatToolDisplay(tool: VoiceToolName, args: Record<string, unknown>): string {
-  return toolDisplayFormatters[tool]?.(args) ?? `Tool: ${tool}`;
+  const formatter = toolDisplayFormatters.get(tool);
+  return formatter ? formatter(args) : `Tool: ${tool}`;
 }
 
 /**
