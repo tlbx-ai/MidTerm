@@ -1570,7 +1570,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             PermissionMode = source.PermissionMode,
             FastMode = source.FastMode,
             ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions),
-            EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions)
+            EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions),
+            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions)
         };
     }
 

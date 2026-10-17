@@ -654,7 +654,8 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(appServerControlEvent.QuickSettingsUpdated.PermissionMode),
                 FastMode = AppServerControlQuickSettings.NormalizeFastMode(appServerControlEvent.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.ModelOptions),
-                EffortOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.EffortOptions)
+                EffortOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.EffortOptions),
+                ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(appServerControlEvent.QuickSettingsUpdated.ConfigOptions)
             },
             RequestOpened = appServerControlEvent.RequestOpened is null ? null : new AppServerControlProviderRequestOpenedPayload
             {

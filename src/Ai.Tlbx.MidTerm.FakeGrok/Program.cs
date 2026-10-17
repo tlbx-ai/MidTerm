@@ -12,6 +12,8 @@ var resumeCapability = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_RES
 var v2 = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_V2") == "true" || args.Contains("--fake-v2", StringComparer.Ordinal);
 var v2PromptIndex = 0;
 var v2Model = "grok-build-0.1";
+var v2Agent = "";
+var v2Toggle = false;
 var v2ApprovalCount = 0;
 var protocolVersion = int.TryParse(
     Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_PROTOCOL_VERSION"),
@@ -139,7 +141,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
             await WriteResponseAsync(id, v2 ? new
             {
                 sessionId,
-                configOptions = BuildV2ConfigOptions(v2Model)
+                configOptions = BuildV2ConfigOptions(v2Model, v2Agent, v2Toggle)
             } : (object)new
             {
                 sessionId,
@@ -403,15 +405,27 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
 
             break;
         case "session/set_config_option":
-            if (!v2 || GetString(root, "params", "type") != "id" ||
-                GetString(root, "params", "configId") != "native-model" ||
-                GetString(root, "params", "value") is not ("grok-build-0.1" or "grok-4.3"))
+            var configId = GetString(root, "params", "configId");
+            var configType = GetString(root, "params", "type");
+            var configValue = root.GetProperty("params").GetProperty("value");
+            var validConfig = v2 && (configId switch
             {
-                await WriteJsonAsync(new { jsonrpc = "2.0", id, error = new { code = -32602, message = "Invalid native v2 model config request." } }).ConfigureAwait(false);
+                "native-model" => configType == "id" && configValue.ValueKind == JsonValueKind.String &&
+                    configValue.GetString() is "grok-build-0.1" or "grok-4.3",
+                "native-agent" => configType == "id" && configValue.ValueKind == JsonValueKind.String &&
+                    configValue.GetString() is "" or "reviewer",
+                "native-toggle" => configType == "boolean" && configValue.ValueKind is JsonValueKind.True or JsonValueKind.False,
+                _ => false
+            });
+            if (!validConfig)
+            {
+                await WriteJsonAsync(new { jsonrpc = "2.0", id, error = new { code = -32602, message = "Invalid native v2 config request." } }).ConfigureAwait(false);
                 break;
             }
-            v2Model = GetString(root, "params", "value")!;
-            await WriteResponseAsync(id, new { configOptions = BuildV2ConfigOptions(v2Model) }).ConfigureAwait(false);
+            if (configId == "native-model") v2Model = configValue.GetString()!;
+            if (configId == "native-agent") v2Agent = configValue.GetString()!;
+            if (configId == "native-toggle") v2Toggle = configValue.GetBoolean();
+            await WriteResponseAsync(id, new { configOptions = BuildV2ConfigOptions(v2Model, v2Agent, v2Toggle) }).ConfigureAwait(false);
             break;
         case "session/load":
         case "session/resume":
@@ -489,13 +503,20 @@ static object BuildModelState()
     };
 }
 
-static object[] BuildV2ConfigOptions(string model) =>
+static object[] BuildV2ConfigOptions(string model, string agent, bool toggle) =>
 [
     new { configId = "native-model", category = "model", name = "Model", type = "select", currentValue = model,
         options = new[] { new { groupId = "recommended", name = "Recommended", options = new[]
         {
             new { value = "grok-build-0.1", name = "Default model" }, new { value = "grok-4.3", name = "Other model" }
-        } } } }
+        } } } },
+    new { configId = "secondary-model", category = "model", name = "Secondary model", type = "select", currentValue = "shadow-model",
+        options = new[] { new { value = "shadow-model", name = "Secondary choice" } } },
+    new { configId = "native-agent", category = "_agent", name = "Agent", description = "Select a native agent.", type = "select", currentValue = agent,
+        options = new[] { new { groupId = "agents", name = "Available agents", options = new[]
+        { new { value = "", name = "Default agent" }, new { value = "reviewer", name = "Reviewer" } } } } },
+    new { configId = "native-toggle", name = "Concise output", description = "Return a concise response.", type = "boolean", currentValue = toggle },
+    new { configId = "future-setting", name = "Future control", type = "_custom", currentValue = "keep-me", extraData = new { version = 3 } }
 ];
 
 static async Task WriteAvailableCommandsUpdateAsync(string sessionId)

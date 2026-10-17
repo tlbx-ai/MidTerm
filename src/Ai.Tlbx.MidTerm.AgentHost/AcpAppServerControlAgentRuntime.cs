@@ -287,7 +287,9 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
 
         var request = command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required.");
         var quickSettings = ResolveRequestedQuickSettings(request);
+        ValidateRequestedConfigValues(request.ConfigValues);
         await ApplyRequestedQuickSettingsAsync(quickSettings, ct).ConfigureAwait(false);
+        await ApplyRequestedConfigValuesAsync(request.ConfigValues, ct).ConfigureAwait(false);
         var promptBlocks = BuildPromptBlocks(
             request,
             _planModeId is null ? quickSettings.PlanMode : AppServerControlQuickSettings.PlanModeOff);
@@ -368,7 +370,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                         PlanMode = _quickSettings.PlanMode,
                         PermissionMode = _quickSettings.PermissionMode,
                         ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions),
-                        EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions)
+                        EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions),
+                        ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(_quickSettings.ConfigOptions)
                     }
                 }
             },
@@ -1378,12 +1381,13 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
     {
         return new AppServerControlQuickSettingsSummary
         {
-            Model = requested.Model ?? _quickSettings.Model,
-            Effort = requested.Effort,
+            Model = _quickSettings.Model,
+            Effort = _quickSettings.Effort,
             PlanMode = requested.PlanMode,
             PermissionMode = requested.PermissionMode,
             ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions),
-            EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions)
+            EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions),
+            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(_quickSettings.ConfigOptions)
         };
     }
 
@@ -1391,24 +1395,43 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         AppServerControlQuickSettingsSummary requested,
         CancellationToken ct)
     {
-        if (!string.Equals(requested.Model, _quickSettings.Model, StringComparison.Ordinal) &&
-            !string.IsNullOrWhiteSpace(requested.Model))
+        // Validate all requested native changes before making the first RPC.
+        // A local setting must never claim a provider accepted an unsupported value.
+        var changesModel = !string.Equals(requested.Model, _quickSettings.Model, StringComparison.Ordinal) &&
+                           !string.IsNullOrWhiteSpace(requested.Model);
+        var changesEffort = !string.Equals(requested.Effort, _quickSettings.Effort, StringComparison.Ordinal) &&
+                            !string.IsNullOrWhiteSpace(requested.Effort);
+        if (changesModel)
+        {
+            if (!_configOptionIds.ContainsKey("model") && !_supportsLegacyModels)
+                throw new InvalidOperationException($"{_agentName} does not support changing the ACP model.");
+            ValidateNativeOption("model", requested.Model!, _quickSettings.ModelOptions);
+        }
+        if (changesEffort)
+        {
+            if (!_configOptionIds.ContainsKey("effort"))
+                throw new InvalidOperationException($"{_agentName} does not expose an ACP reasoning effort setting.");
+            ValidateNativeOption("reasoning effort", requested.Effort!, _quickSettings.EffortOptions);
+        }
+
+        if (changesModel)
         {
             if (_configOptionIds.TryGetValue("model", out var configId))
             {
-                await SetConfigOptionAsync(configId, requested.Model, ct).ConfigureAwait(false);
+                await SetConfigOptionAsync(configId, requested.Model!, ct).ConfigureAwait(false);
             }
             else if (_supportsLegacyModels)
             {
-                await SetLegacyModelAsync(requested.Model, ct).ConfigureAwait(false);
+                await SetLegacyModelAsync(requested.Model!, ct).ConfigureAwait(false);
             }
         }
 
-        if (!string.Equals(requested.Effort, _quickSettings.Effort, StringComparison.Ordinal) &&
-            !string.IsNullOrWhiteSpace(requested.Effort) &&
-            _configOptionIds.TryGetValue("effort", out var effortConfigId))
+        if (changesEffort)
         {
-            await SetConfigOptionAsync(effortConfigId, requested.Effort, ct).ConfigureAwait(false);
+            if (!_configOptionIds.TryGetValue("effort", out var effortConfigId))
+                throw new InvalidOperationException($"{_agentName} no longer exposes ACP reasoning effort for the selected model.");
+            ValidateNativeOption("reasoning effort", requested.Effort!, _quickSettings.EffortOptions);
+            await SetConfigOptionAsync(effortConfigId, requested.Effort!, ct).ConfigureAwait(false);
         }
 
         var requestedModeId = string.Equals(
@@ -1424,7 +1447,16 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         }
     }
 
-    private async Task SetConfigOptionAsync(string configId, string value, CancellationToken ct)
+    private void ValidateNativeOption(string name, string value, IReadOnlyCollection<AppServerControlQuickSettingsOption> options)
+    {
+        if (options.Count > 0 && !options.Any(option => string.Equals(option.Value, value, StringComparison.Ordinal)))
+            throw new InvalidOperationException($"{_agentName} does not advertise ACP {name} '{value}'.");
+    }
+
+    private Task SetConfigOptionAsync(string configId, string value, CancellationToken ct) =>
+        SetConfigOptionAsync(configId, JsonSerializer.SerializeToElement(value, AppServerControlHostJsonContext.Default.String), ct);
+
+    private async Task SetConfigOptionAsync(string configId, JsonElement value, CancellationToken ct)
     {
         var result = await SendRequestAsync(
                 "session/set_config_option",
@@ -1433,8 +1465,9 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                     writer.WriteStartObject();
                     writer.WriteString("sessionId", _providerThreadId);
                     writer.WriteString("configId", configId);
-                    if (_protocolGeneration == 2) writer.WriteString("type", "id");
-                    writer.WriteString("value", value);
+                    if (_protocolGeneration == 2) writer.WriteString("type", value.ValueKind is JsonValueKind.True or JsonValueKind.False ? "boolean" : "id");
+                    writer.WritePropertyName("value");
+                    value.WriteTo(writer);
                     writer.WriteEndObject();
                 },
                 AttachRequestTimeout,
@@ -1445,6 +1478,11 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         {
             _quickSettings = updated;
             CaptureConfigOptions(Traverse(result, "configOptions"));
+            _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", "session/set_config_option", result, result.GetRawText()));
+        }
+        else
+        {
+            throw new InvalidOperationException($"{_agentName} returned no ACP configuration after changing '{configId}'.");
         }
     }
 
@@ -1462,6 +1500,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 AttachRequestTimeout,
                 ct)
             .ConfigureAwait(false);
+        _quickSettings.Model = modelId;
     }
 
     private async Task SetLegacyModeAsync(string modeId, CancellationToken ct)
@@ -1495,14 +1534,6 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             _quickSettings.PermissionMode,
             _quickSettings.PermissionMode);
         summary.ModelOptions = ReadModelOptions(modelState, model);
-        summary.EffortOptions =
-        [
-            new AppServerControlQuickSettingsOption { Value = "low", Label = "Low" },
-            new AppServerControlQuickSettingsOption { Value = "medium", Label = "Medium" },
-            new AppServerControlQuickSettingsOption { Value = "high", Label = "High" },
-            new AppServerControlQuickSettingsOption { Value = "xhigh", Label = "Extra high" },
-            new AppServerControlQuickSettingsOption { Value = "max", Label = "Max" }
-        ];
         return ApplyConfigOptions(summary, Traverse(sessionResult, "configOptions")) ?? summary;
     }
 
@@ -1573,7 +1604,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         }
     }
 
-    private static AppServerControlQuickSettingsSummary? ApplyConfigOptions(AppServerControlQuickSettingsSummary current, JsonElement? configOptions)
+    private AppServerControlQuickSettingsSummary? ApplyConfigOptions(AppServerControlQuickSettingsSummary current, JsonElement? configOptions)
     {
         if (configOptions is not { ValueKind: JsonValueKind.Array } options)
         {
@@ -1583,29 +1614,38 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         var next = new AppServerControlQuickSettingsSummary
         {
             Model = current.Model,
-            Effort = current.Effort,
+            Effort = null,
             PlanMode = current.PlanMode,
             PermissionMode = current.PermissionMode,
-            ModelOptions = AppServerControlQuickSettings.CloneOptions(current.ModelOptions),
-            EffortOptions = AppServerControlQuickSettings.CloneOptions(current.EffortOptions)
+            ModelOptions = _supportsLegacyModels ? AppServerControlQuickSettings.CloneOptions(current.ModelOptions) : [],
+            EffortOptions = [],
+            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(current.ConfigOptions)
         };
 
+        next.ConfigOptions.Clear();
+
+        var appliedModel = false;
+        var appliedEffort = false;
         using var optionEnumerator = options.EnumerateArray();
         while (optionEnumerator.MoveNext())
         {
             var option = optionEnumerator.Current;
+            next.ConfigOptions.Add(option.Clone());
             var category = GetString(option, "category");
             var id = GetString(option, "id") ?? GetString(option, "configId");
+            if (GetString(option, "type") != "select") continue;
             var currentValue = GetString(option, "currentValue");
-            if (string.Equals(category, "model", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(id, "model", StringComparison.OrdinalIgnoreCase))
+            if (!appliedModel && (string.Equals(category, "model", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(id, "model", StringComparison.OrdinalIgnoreCase)))
             {
+                appliedModel = true;
                 next.Model = NormalizeOptional(currentValue);
                 next.ModelOptions = ReadConfigValueOptions(option);
             }
-            else if (string.Equals(category, "thought_level", StringComparison.OrdinalIgnoreCase) ||
-                     string.Equals(id, "effort", StringComparison.OrdinalIgnoreCase))
+            else if (!appliedEffort && (string.Equals(category, "thought_level", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(id, "effort", StringComparison.OrdinalIgnoreCase)))
             {
+                appliedEffort = true;
                 next.Effort = currentValue;
                 next.EffortOptions = ReadConfigValueOptions(option);
             }
@@ -1664,7 +1704,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 continue;
             }
             var value = GetString(item, "value");
-            if (string.IsNullOrWhiteSpace(value))
+            if (value is null)
             {
                 continue;
             }

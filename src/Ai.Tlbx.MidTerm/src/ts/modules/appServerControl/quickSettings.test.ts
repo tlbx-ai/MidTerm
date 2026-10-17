@@ -12,6 +12,7 @@ import {
   getAppServerControlQuickSettingsDraft,
   removeAppServerControlQuickSettingsSessionState,
   setAppServerControlQuickSettingsDraft,
+  syncAppServerControlQuickSettingsFromSnapshot,
 } from './quickSettings';
 
 function createMemoryStorage(): Storage {
@@ -63,6 +64,80 @@ describe('appServerControl quick settings', () => {
     $sessions.set({});
     globalThis.localStorage.clear();
     vi.unstubAllGlobals();
+  });
+
+  it('sends changed native settings with opaque empty and boolean values and isolates returned drafts', () => {
+    const id = 'grok-stale';
+    syncAppServerControlQuickSettingsFromSnapshot(id, 'grok', {
+      configOptions: [
+        {
+          configId: 'agent',
+          name: 'Agent',
+          type: 'select',
+          currentValue: 'reviewer',
+          options: [
+            {
+              name: 'Agents',
+              options: [
+                { value: '', name: 'Default' },
+                { value: 'reviewer', name: 'Reviewer' },
+              ],
+            },
+          ],
+        },
+        { configId: 'concise', name: 'Concise', type: 'boolean', currentValue: false },
+      ],
+    });
+    const draft = getAppServerControlQuickSettingsDraft(id);
+    const options = draft.configOptions!;
+    options[0]!.currentValue = '';
+    options[1]!.currentValue = true;
+    expect(getAppServerControlQuickSettingsDraft(id).configOptions![0]!.currentValue).toBe(
+      'reviewer',
+    );
+    setAppServerControlQuickSettingsDraft(id, { configOptions: options });
+    expect(createAppServerControlTurnRequestWithQuickSettings(id, 'Inspect').configValues).toEqual({
+      agent: '',
+      concise: true,
+    });
+  });
+
+  it('refreshes native choices while preserving valid pending edits and discarding removed choices', () => {
+    const id = 'grok-stale';
+    const options = [
+      {
+        configId: 'agent',
+        name: 'Agent',
+        type: 'select',
+        currentValue: '',
+        options: [
+          { value: '', name: 'Default' },
+          { value: 'reviewer', name: 'Reviewer' },
+        ],
+      },
+      { configId: 'concise', name: 'Concise', type: 'boolean', currentValue: false },
+    ];
+    syncAppServerControlQuickSettingsFromSnapshot(id, 'grok', { configOptions: options });
+    setAppServerControlQuickSettingsDraft(id, {
+      configOptions: options.map((option) => ({
+        ...option,
+        currentValue: option.configId === 'agent' ? 'reviewer' : true,
+      })),
+    });
+    syncAppServerControlQuickSettingsFromSnapshot(id, 'grok', { configOptions: options });
+    expect(createAppServerControlTurnRequestWithQuickSettings(id, 'Inspect').configValues).toEqual({
+      agent: 'reviewer',
+      concise: true,
+    });
+    syncAppServerControlQuickSettingsFromSnapshot(id, 'grok', {
+      configOptions: [
+        { ...options[0]!, options: [{ value: '', name: 'Default' }] },
+        { ...options[1]!, currentValue: true },
+      ],
+    });
+    expect(
+      createAppServerControlTurnRequestWithQuickSettings(id, 'Inspect').configValues,
+    ).toBeUndefined();
   });
 
   it('persists Codex fast mode and includes it in the next turn request', () => {

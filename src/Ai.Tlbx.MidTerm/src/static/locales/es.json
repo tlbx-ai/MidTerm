@@ -1,4 +1,5 @@
 {
+  "appServerControl.config.settings": "Ajustes del agente",
   "appServerControl.plan.implement": "Implementar plan",
   "git.newFile": "Nuevo",
   "git.newFileHint": "Archivo nuevo comparado con una base vacía.",

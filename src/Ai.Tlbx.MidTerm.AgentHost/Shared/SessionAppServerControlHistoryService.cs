@@ -1209,6 +1209,7 @@ public sealed partial class SessionAppServerControlHistoryService
         state.QuickSettings.PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(quickSettings.PermissionMode);
         state.QuickSettings.ModelOptions = AppServerControlQuickSettings.CloneOptions(quickSettings.ModelOptions);
         state.QuickSettings.EffortOptions = AppServerControlQuickSettings.CloneOptions(quickSettings.EffortOptions);
+        state.QuickSettings.ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(quickSettings.ConfigOptions);
     }
 
     private static void ApplyPlanUpdate(AppServerControlConversationState state, AppServerControlProviderEvent appServerControlEvent)
@@ -1911,7 +1912,8 @@ public sealed partial class SessionAppServerControlHistoryService
                 PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode),
                 FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.ModelOptions),
-                EffortOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions)
+                EffortOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions),
+                ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.QuickSettingsUpdated.ConfigOptions)
             },
             RequestOpened = source.RequestOpened is null ? null : new AppServerControlProviderRequestOpenedPayload
             {
@@ -2067,7 +2069,8 @@ public sealed partial class SessionAppServerControlHistoryService
             PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(source.PermissionMode),
             FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.FastMode),
             ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions),
-            EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions)
+            EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions),
+            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions)
         };
     }
 
@@ -2080,6 +2083,7 @@ public sealed partial class SessionAppServerControlHistoryService
         target.FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.FastMode);
         target.ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions);
         target.EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions);
+        target.ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions);
     }
 
     private static AppServerControlStreamsSummary CloneStreamsSummary(AppServerControlStreamsSummary source)

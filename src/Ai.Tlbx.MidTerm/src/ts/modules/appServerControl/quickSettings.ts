@@ -5,6 +5,8 @@ import type {
   MidTermSettingsPublic,
   MidTermSettingsUpdate,
   AppServerControlTurnRequest,
+  AppServerControlConfigOption,
+  AppServerControlConfigValue,
 } from '../../api/types';
 import { updateSettings } from '../../api/client';
 import * as stores from '../../stores';
@@ -95,6 +97,7 @@ function cloneQuickSettings(
     fastMode: normalizeFastMode(settings.fastMode),
     modelOptions: cloneQuickSettingsOptions(settings.modelOptions),
     effortOptions: cloneQuickSettingsOptions(settings.effortOptions),
+    configOptions: structuredClone(settings.configOptions ?? []),
   };
 }
 
@@ -336,6 +339,7 @@ function normalizeQuickSettings(
     fastMode: provider === 'codex' ? normalizeFastMode(settings?.fastMode) : DEFAULT_FAST_MODE,
     modelOptions: cloneQuickSettingsOptions(settings?.modelOptions),
     effortOptions: cloneQuickSettingsOptions(settings?.effortOptions),
+    configOptions: structuredClone(settings?.configOptions ?? []),
   };
 }
 
@@ -438,9 +442,20 @@ export function syncAppServerControlQuickSettingsFromSnapshot(
     getOrCreateSessionState(sessionId),
     provider ?? resolveSessionProvider(sessionId),
   );
+  const pendingConfigValues = getNativeConfigChanges(state.draft, state.effective);
   state.effective = normalizeQuickSettings(quickSettings, state.provider);
   if (!state.draftDirty) {
     state.draft = cloneQuickSettings(state.effective);
+  } else {
+    state.draft.configOptions = (state.effective.configOptions ?? []).map((option) => {
+      const id = option.configId ?? option.id ?? '';
+      const value = pendingConfigValues[id];
+      return value !== undefined && isNativeConfigValueAvailable(option, value)
+        ? { ...structuredClone(option), currentValue: value }
+        : structuredClone(option);
+    });
+    state.draft.modelOptions = cloneQuickSettingsOptions(state.effective.modelOptions);
+    state.draft.effortOptions = cloneQuickSettingsOptions(state.effective.effortOptions);
   }
   writeProviderStickyQuickSettings(state.provider, state.effective);
   dispatchQuickSettingsChange(sessionId, state, 'sync');
@@ -478,6 +493,8 @@ export function createAppServerControlTurnRequestWithQuickSettings(
   attachments: AppServerControlAttachmentReference[] = [],
 ): AppServerControlTurnRequest {
   const quickSettings = getAppServerControlQuickSettingsDraft(sessionId);
+  const effective = getAppServerControlQuickSettingsEffective(sessionId);
+  const configValues = getNativeConfigChanges(quickSettings, effective);
   return {
     text,
     model: quickSettings.model ?? null,
@@ -485,6 +502,39 @@ export function createAppServerControlTurnRequestWithQuickSettings(
     planMode: quickSettings.planMode,
     permissionMode: quickSettings.permissionMode,
     fastMode: normalizeFastMode(quickSettings.fastMode),
+    ...(Object.keys(configValues).length ? { configValues } : {}),
     attachments,
   };
+}
+
+function getNativeConfigChanges(
+  draft: AppServerControlQuickSettingsSummary,
+  effective: AppServerControlQuickSettingsSummary,
+): Record<string, string | boolean> {
+  const changes: Record<string, string | boolean> = {};
+  for (const option of draft.configOptions ?? []) {
+    const id = option.configId ?? option.id;
+    if (!id) continue;
+    const previous = effective.configOptions?.find((entry) => (entry.configId ?? entry.id) === id);
+    if (previous && previous.currentValue !== option.currentValue)
+      changes[id] = option.currentValue;
+  }
+  return changes;
+}
+
+function isNativeConfigValueAvailable(
+  option: AppServerControlConfigOption,
+  value: string | boolean,
+): boolean {
+  return option.type === 'boolean'
+    ? typeof value === 'boolean'
+    : option.type === 'select' &&
+        typeof value === 'string' &&
+        hasConfigValue(option.options ?? [], value);
+}
+
+function hasConfigValue(options: readonly AppServerControlConfigValue[], value: string): boolean {
+  return options.some(
+    (option) => option.value === value || hasConfigValue(option.options ?? [], value),
+  );
 }

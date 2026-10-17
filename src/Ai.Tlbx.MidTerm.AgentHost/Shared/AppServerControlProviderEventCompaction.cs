@@ -105,7 +105,8 @@ public static class AppServerControlProviderEventCompaction
                 PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode),
                 FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.ModelOptions),
-                EffortOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions)
+                EffortOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions),
+                ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.QuickSettingsUpdated.ConfigOptions)
             },
             RequestOpened = source.RequestOpened is null ? null : new AppServerControlProviderRequestOpenedPayload
             {

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Ai.Tlbx.MidTerm.Common.Protocol;
@@ -16,6 +17,7 @@ public sealed class AppServerControlQuickSettingsPayload
     public string FastMode { get; set; } = AppServerControlQuickSettings.FastModeOff;
     public List<AppServerControlQuickSettingsOption> ModelOptions { get; set; } = [];
     public List<AppServerControlQuickSettingsOption> EffortOptions { get; set; } = [];
+    public List<JsonElement> ConfigOptions { get; set; } = [];
 }
 
 public sealed class AppServerControlQuickSettingsOption
@@ -204,9 +206,16 @@ public static class AppServerControlQuickSettings
             PermissionMode = NormalizePermissionMode(summary.PermissionMode),
             FastMode = NormalizeFastMode(summary.FastMode),
             ModelOptions = CloneOptions(summary.ModelOptions),
-            EffortOptions = CloneOptions(summary.EffortOptions)
+            EffortOptions = CloneOptions(summary.EffortOptions),
+            ConfigOptions = CloneConfigOptions(summary.ConfigOptions)
         };
     }
+
+    public static List<JsonElement> CloneConfigOptions(IEnumerable<JsonElement>? options) =>
+        options?.Select(static option => option.Clone()).ToList() ?? [];
+
+    public static Dictionary<string, JsonElement> CloneConfigValues(IReadOnlyDictionary<string, JsonElement>? values) =>
+        values?.ToDictionary(static entry => entry.Key, static entry => entry.Value.Clone(), StringComparer.Ordinal) ?? [];
 
     public static string ApplyPlanModePrompt(string? text, string? planMode)
     {
@@ -234,6 +243,7 @@ public sealed class AppServerControlQuickSettingsSummary
     public string FastMode { get; set; } = AppServerControlQuickSettings.FastModeOff;
     public List<AppServerControlQuickSettingsOption> ModelOptions { get; set; } = [];
     public List<AppServerControlQuickSettingsOption> EffortOptions { get; set; } = [];
+    public List<JsonElement> ConfigOptions { get; set; } = [];
 }
 
 public sealed class AppServerControlStreamsSummary
@@ -411,6 +421,7 @@ public sealed class AppServerControlTurnRequest
     public string? PlanMode { get; set; }
     public string? PermissionMode { get; set; }
     public string? FastMode { get; set; }
+    public Dictionary<string, JsonElement> ConfigValues { get; set; } = [];
     public List<AppServerControlAttachmentReference> Attachments { get; set; } = [];
     public List<AppServerControlTerminalReplayStep> TerminalReplay { get; set; } = [];
 }

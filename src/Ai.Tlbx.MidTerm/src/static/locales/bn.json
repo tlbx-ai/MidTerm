@@ -1,4 +1,5 @@
 {
+  "appServerControl.config.settings": "এজেন্ট সেটিংস",
   "appServerControl.plan.implement": "পরিকল্পনা বাস্তবায়ন করুন",
   "git.newFile": "নতুন",
   "git.newFileHint": "খালি ভিত্তির সঙ্গে তুলনা করা নতুন ফাইল।",

@@ -661,6 +661,150 @@ public sealed class MtAgentHostGrokIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task MtAgentHost_V2AppliesNativeBooleanAndOpaqueSelectValues()
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll(), v2: true);
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        const string sessionId = "v2-native-config";
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AttachFakeAcpAsync(process, patches, fake, sessionId);
+            foreach (var agent in new[] { "reviewer", "" })
+            {
+                using var agentValue = JsonDocument.Parse(agent.Length == 0 ? "\"\"" : "\"reviewer\"");
+                using var toggleValue = JsonDocument.Parse("true");
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "native-settings",
+                    SessionId = sessionId,
+                    Type = "turn.start",
+                    StartTurn = new AppServerControlTurnRequest
+                    {
+                        Text = "v2-standard",
+                        ConfigValues = new(StringComparer.Ordinal)
+                        {
+                            ["native-agent"] = agentValue.RootElement.Clone(),
+                            ["native-toggle"] = toggleValue.RootElement.Clone()
+                        }
+                    }
+                });
+                var result = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "native-settings");
+                Assert.True(result.Status == "accepted", result.Message);
+                _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
+                    patch => patch.Patch.CurrentTurn.State == "completed" && patch.Patch.CurrentTurn.TurnId == result.TurnStarted!.TurnId,
+                    maxPatches: 96, timeout: TimeSpan.FromSeconds(10));
+                var history = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                    process.StandardOutput, process.StandardInput, patches, sessionId, count: 96);
+                Assert.Equal(agent, history.QuickSettings.ConfigOptions.Single(option => option.GetProperty("configId").GetString() == "native-agent").GetProperty("currentValue").GetString());
+                Assert.True(history.QuickSettings.ConfigOptions.Single(option => option.GetProperty("configId").GetString() == "native-toggle").GetProperty("currentValue").GetBoolean());
+                var unknown = history.QuickSettings.ConfigOptions.Single(option => option.GetProperty("configId").GetString() == "future-setting");
+                Assert.Equal(3, unknown.GetProperty("extraData").GetProperty("version").GetInt32());
+                Assert.Equal("grok-build-0.1", history.QuickSettings.Model);
+            }
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Theory]
+    [InlineData("native-agent", "\"missing\"")]
+    [InlineData("native-agent", "true")]
+    [InlineData("native-agent", "123")]
+    [InlineData("native-toggle", "\"true\"")]
+    [InlineData("future-setting", "\"changed\"")]
+    [InlineData("missing-setting", "false")]
+    public async Task MtAgentHost_RejectsInvalidNativeConfigBeforeApplyingAnyChange(string id, string json)
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll(), v2: true);
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        const string sessionId = "invalid-native-config";
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AttachFakeAcpAsync(process, patches, fake, sessionId);
+            using var value = JsonDocument.Parse(json);
+            using var valid = JsonDocument.Parse("true");
+            var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["native-toggle"] = valid.RootElement.Clone() };
+            values[id] = value.RootElement.Clone();
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "invalid-config",
+                SessionId = sessionId,
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest { Text = "Never start.", ConfigValues = values }
+            });
+            var result = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "invalid-config");
+            Assert.Equal("rejected", result.Status);
+            var history = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, sessionId, count: 32);
+            Assert.Null(history.CurrentTurn.TurnId);
+            Assert.False(history.QuickSettings.ConfigOptions.Single(option => option.GetProperty("configId").GetString() == "native-toggle").GetProperty("currentValue").GetBoolean());
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, "model")]
+    [InlineData(true, "model")]
+    [InlineData(false, "effort")]
+    [InlineData(true, "effort")]
+    public async Task MtAgentHost_RejectsUnadvertisedAcpSettingsWithoutStartingWork(bool v2, string setting)
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll(), v2: v2);
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        var sessionId = "unsupported-setting-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AttachFakeAcpAsync(process, patches, fake, sessionId);
+            var before = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, sessionId, count: 32);
+            Assert.Empty(before.QuickSettings.EffortOptions);
+            Assert.Equal("grok-build-0.1", before.QuickSettings.Model);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "invalid-setting",
+                SessionId = sessionId,
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest
+                {
+                    Text = "This must never reach the provider.",
+                    Model = setting == "model" ? "unadvertised-model" : "grok-4.3",
+                    Effort = setting == "effort" ? "high" : null
+                }
+            });
+            var rejected = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "invalid-setting");
+            Assert.Equal("rejected", rejected.Status);
+            Assert.Contains(setting == "model" ? "does not advertise" : "does not expose", rejected.Message, StringComparison.Ordinal);
+            var after = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, sessionId, count: 32);
+            Assert.Null(after.CurrentTurn.TurnId);
+            Assert.Equal(before.QuickSettings.Model, after.QuickSettings.Model);
+            Assert.Null(after.QuickSettings.Effort);
+            Assert.DoesNotContain(after.History, item => item.Kind == "user");
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
     [Theory]
     [InlineData("v2-standard", "completed")]
     [InlineData("v2-error", "failed")]
@@ -684,7 +828,7 @@ public sealed class MtAgentHostGrokIntegrationTests
                 StartTurn = new AppServerControlTurnRequest { Text = prompt, Model = "grok-4.3" }
             });
             var result = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "v2-start");
-            Assert.Equal("accepted", result.Status);
+            Assert.True(result.Status == "accepted", result.Message);
             _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
                 patch => patch.Patch.CurrentTurn.State == expectedState, maxPatches: 80, timeout: TimeSpan.FromSeconds(10));
             var history = await AppServerControlHostTestClient.GetHistoryWindowAsync(

@@ -42,7 +42,7 @@ export function getAppServerControlModelOptions(args: {
     : normalizeCatalogOptions(args.catalogOptions);
   if (catalogOptions.length > 0) {
     options.push(...catalogOptions);
-  } else {
+  } else if (args.catalogOptions === undefined || args.catalogOptions === null) {
     for (const preset of getProviderModelPresets(args.provider)) {
       options.push({ value: preset, label: preset });
     }
@@ -71,7 +71,7 @@ export function getAppServerControlEffortOptions(args: {
   const catalogOptions = normalizeCatalogOptions(args.catalogOptions);
   if (catalogOptions.length > 0) {
     options.push(...catalogOptions);
-  } else {
+  } else if (args.catalogOptions === undefined || args.catalogOptions === null) {
     for (const preset of ['none', 'minimal', 'low', 'medium', 'high', 'xhigh']) {
       options.push({ value: preset, label: humanizeEffort(preset) });
     }

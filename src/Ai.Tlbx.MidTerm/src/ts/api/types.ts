@@ -137,6 +137,7 @@ export interface AppServerControlQuickSettingsPayload {
   fastMode?: string;
   modelOptions?: AppServerControlQuickSettingsOption[];
   effortOptions?: AppServerControlQuickSettingsOption[];
+  configOptions?: AppServerControlConfigOption[];
 }
 
 export interface AppServerControlQuickSettingsSummary {
@@ -147,6 +148,26 @@ export interface AppServerControlQuickSettingsSummary {
   fastMode?: string;
   modelOptions?: AppServerControlQuickSettingsOption[];
   effortOptions?: AppServerControlQuickSettingsOption[];
+  configOptions?: AppServerControlConfigOption[];
+}
+
+export interface AppServerControlConfigOption {
+  configId?: string;
+  id?: string;
+  name: string;
+  description?: string;
+  category?: string;
+  type: string;
+  currentValue: string | boolean;
+  options?: AppServerControlConfigValue[];
+}
+
+export interface AppServerControlConfigValue {
+  value?: string;
+  name: string;
+  description?: string;
+  groupId?: string;
+  options?: AppServerControlConfigValue[];
 }
 
 export interface AppServerControlQuestionOption {
@@ -333,6 +354,7 @@ export interface AppServerControlTerminalReplayStep {
 }
 
 export interface AppServerControlTurnRequest {
+  configValues?: Record<string, string | boolean>;
   text?: string | null;
   model?: string | null;
   effort?: string | null;

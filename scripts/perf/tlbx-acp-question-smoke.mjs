@@ -18,6 +18,7 @@ const multi = cancel || process.env.TLBX_ACP_UI_SCENARIO === "multi";
 const resume = process.env.TLBX_ACP_UI_SCENARIO === "resume";
 const nativeV2 = process.env.TLBX_ACP_UI_SCENARIO === "v2";
 const planReview = process.env.TLBX_ACP_UI_SCENARIO === "plan";
+const nativeConfig = process.env.TLBX_ACP_UI_SCENARIO === "config";
 assert.ok(
   url && cookie && sessionId,
   "Authenticated source URL and acceptance session required",
@@ -86,7 +87,18 @@ try {
   page = await context.newPage();
   page.setDefaultTimeout(20000);
   page.on("pageerror", (error) => result.errors.push(error.message));
-  if (planReview)
+  if (nativeConfig)
+    page.on("request", (request) => {
+      if (
+        request.method() !== "POST" ||
+        new URL(request.url()).pathname !== "/api/command-bay/queue"
+      )
+        return;
+      const body = request.postDataJSON();
+      if (body.sessionId === sessionId && body.turn)
+        resolvePlanSubmission(body.turn);
+    });
+  if (planReview || nativeConfig)
     page.on("websocket", (socket) =>
       socket.on("framesent", (frame) => {
         try {
@@ -286,7 +298,182 @@ try {
     result.planReviewVerified = true;
     result.implementationMode = implementation.planMode;
   }
-  if (!resume && !nativeV2 && !planReview && !initiallyOpen) {
+  if (nativeConfig) {
+    const sessions = await (
+      await context.request.get(`${url}/api/sessions`)
+    ).json();
+    assert.equal(
+      sessions.sessions.find((session) => session.id === sessionId)
+        ?.profileHint,
+      "acp-config-test",
+      "Config submission requires the deterministic fixture",
+    );
+    await page.waitForFunction(() => {
+      const native = document.querySelector(".smart-input-native-config");
+      return native && !native.hidden;
+    });
+    for (const viewport of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      const native = page.locator(".smart-input-native-config");
+      if (!(await native.isVisible()))
+        await page
+          .locator(".adaptive-footer-status-summary-appServerControl")
+          .click();
+      if (
+        !(await native.locator("details").evaluate((element) => element.open))
+      )
+        await native.locator("summary").click();
+      const agent = native.locator(
+        'select[data-native-config-id="native-agent"]',
+      );
+      await agent.waitFor({ state: "visible" });
+      assert.equal(await agent.inputValue(), "");
+      assert.equal(
+        await agent.locator("optgroup").count(),
+        1,
+        "Native groups retain their label",
+      );
+      assert.equal(
+        await native
+          .locator('[data-native-config-id="future-setting"]')
+          .count(),
+        0,
+        "Unknown types are not rendered as invented controls",
+      );
+      await agent.scrollIntoViewIfNeeded();
+      const box = await agent.boundingBox();
+      assert.ok(
+        box &&
+          box.x >= 0 &&
+          box.width <= viewport.width &&
+          box.height >= 44 &&
+          box.y >= 0 &&
+          box.y + box.height <= viewport.height,
+        "Native selector fits and has a 44px hit target",
+      );
+      const panelBox = await native
+        .locator(".smart-input-native-config-panel")
+        .boundingBox();
+      assert.ok(
+        panelBox &&
+          panelBox.x >= 0 &&
+          panelBox.x + panelBox.width <= viewport.width + 1 &&
+          panelBox.width >= Math.min(280, viewport.width - 64),
+        "The entire native settings panel fits at a usable width",
+      );
+      const settings = page.locator(
+        ".smart-input-appServerControl-settings:visible",
+      );
+      assert.equal(
+        await settings.locator("select").nth(0).inputValue(),
+        initial.quickSettings.model,
+      );
+      assert.equal(
+        await settings.locator("select").nth(1).isDisabled(),
+        true,
+        "Unadvertised effort control is disabled",
+      );
+      assert.equal(
+        await settings
+          .locator('[data-app-server-control-field="fast-mode"]')
+          .isVisible(),
+        false,
+        "Unsupported fast mode remains hidden",
+      );
+      if (viewport.width === 390) {
+        const fields = await settings
+          .locator(":scope > .smart-input-appServerControl-field:visible")
+          .evaluateAll((elements) =>
+            elements.map((element) => {
+              const box = element.getBoundingClientRect();
+              return {
+                x: box.x,
+                y: box.y,
+                right: box.right,
+                bottom: box.bottom,
+              };
+            }),
+          );
+        for (let i = 0; i < fields.length; i++)
+          for (let j = i + 1; j < fields.length; j++)
+            assert.ok(
+              fields[i].right <= fields[j].x + 1 ||
+                fields[j].right <= fields[i].x + 1 ||
+                fields[i].bottom <= fields[j].y + 1 ||
+                fields[j].bottom <= fields[i].y + 1,
+              "Settings fields do not overlap",
+            );
+      }
+      result.measurements.push({ viewport, agent: box });
+      const screenshot = path.join(out, `config-${viewport.width}.png`);
+      await page.screenshot({ path: screenshot });
+      result.screenshots.push(screenshot);
+    }
+    const native = page.locator(".smart-input-native-config");
+    await native
+      .locator('select[data-native-config-id="native-agent"]')
+      .selectOption("reviewer");
+    await native
+      .locator('input[data-native-config-id="native-toggle"]')
+      .scrollIntoViewIfNeeded();
+    await native
+      .locator('input[data-native-config-id="native-toggle"]')
+      .check();
+    const draft = page.locator("textarea:visible");
+    await draft.fill("v2-standard configured from browser");
+    await page.locator(".smart-input-send-btn:visible").click();
+    let timeout;
+    const submitted = await Promise.race([
+      planSubmission,
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("No config turn submitted")),
+          10000,
+        );
+      }),
+    ]).finally(() => clearTimeout(timeout));
+    assert.deepEqual(submitted.configValues, {
+      "native-agent": "reviewer",
+      "native-toggle": true,
+    });
+    let finished;
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+      finished = await (
+        await context.request.get(
+          `${url}/api/sessions/${sessionId}/agent-control/history?count=96`,
+        )
+      ).json();
+      if (
+        finished.currentTurn.turnId !== initial.currentTurn.turnId &&
+        finished.currentTurn.state === "completed"
+      )
+        break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.notEqual(finished.currentTurn.turnId, initial.currentTurn.turnId);
+    assert.equal(finished.currentTurn.state, "completed");
+    assert.equal(
+      finished.quickSettings.configOptions.find(
+        (option) => option.configId === "native-agent",
+      ).currentValue,
+      "reviewer",
+    );
+    assert.equal(
+      finished.quickSettings.configOptions.find(
+        (option) => option.configId === "native-toggle",
+      ).currentValue,
+      true,
+    );
+    const screenshot = path.join(out, "config-applied.png");
+    await page.screenshot({ path: screenshot });
+    result.screenshots.push(screenshot);
+    result.nativeConfigVerified = true;
+  }
+  if (!resume && !nativeV2 && !planReview && !nativeConfig && !initiallyOpen) {
     assert.ok(
       answer &&
         (multi
