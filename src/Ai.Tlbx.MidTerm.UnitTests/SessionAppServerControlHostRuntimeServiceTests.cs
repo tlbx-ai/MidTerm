@@ -19,7 +19,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
     [Fact]
     public void OpenCodeCatalog_UsesNativeHttpAndKeepsExplicitAcpManifestArguments()
     {
-        using var fake = FakeGrokPathScope.Create();
+        using var fake = FakeCodexPathScope.Create();
         var catalog = new AcpAgentCatalogService(CreateSettingsService(fake.Root));
         Assert.True(catalog.TryGetDefinition("opencode", out var builtIn));
         Assert.Equal("opencode-http", builtIn.RuntimeKind);
@@ -43,7 +43,7 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
     [Fact]
     public void AcpCatalog_ResolvesExplicitAuthenticationAndIsolatedEnvironment()
     {
-        using var fake = FakeGrokPathScope.Create();
+        using var fake = FakeCodexPathScope.Create();
         var settings = CreateSettingsService(fake.Root);
         var catalog = new AcpAgentCatalogService(settings);
         File.WriteAllText(catalog.ManifestPath, $$$"""
