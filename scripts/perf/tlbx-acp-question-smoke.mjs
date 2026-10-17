@@ -6,6 +6,44 @@ import { createRequire } from "node:module";
 
 // Uses an existing live acceptance session; never starts a paid provider turn.
 const require = createRequire(import.meta.url);
+
+function redactAuthenticationReport(report, cookieHeader) {
+  const separator = cookieHeader.indexOf("=");
+  const value = separator >= 0 ? cookieHeader.slice(separator + 1) : "";
+  const secrets = [cookieHeader, value, encodeURIComponent(value)].filter(Boolean);
+  return JSON.stringify(
+    report,
+    (_key, item) => {
+      if (typeof item !== "string") return item;
+      let safe = item;
+      for (const secret of secrets) safe = safe.replaceAll(secret, "[redacted]");
+      return safe.replace(
+        /((?:cookie|authorization)\s*:\s*)[^\r\n]+/gi,
+        "$1[redacted]",
+      );
+    },
+    2,
+  );
+}
+
+if (process.argv.includes("--self-test-diagnostics")) {
+  const canary = "fixture-cookie/+123=";
+  const report = redactAuthenticationReport(
+    {
+      failure: `Request failed\nCookie: session=${canary}\nAuthorization: Basic fixture-auth`,
+      errors: [`url=${encodeURIComponent(canary)}`, canary],
+      marker: "diagnostics retained",
+    },
+    `session=${canary}`,
+  );
+  assert.ok(!report.includes(canary));
+  assert.ok(!report.includes(encodeURIComponent(canary)));
+  assert.ok(!report.includes("fixture-auth"));
+  assert.equal(JSON.parse(report).marker, "diagnostics retained");
+  console.log("ACP diagnostic redaction self-test passed.");
+  process.exit(0);
+}
+
 const {
   chromium,
 } = require("../../docs/marketing/ScreenshotAutomation/node_modules/playwright");
@@ -761,6 +799,50 @@ try {
       await page.screenshot({ path: screenshot });
       result.screenshots.push(screenshot);
     }
+    if (process.env.TLBX_ACP_UI_EXPECTED_PLAN_MODE) {
+      assert.equal(
+        initial.quickSettings.planMode,
+        process.env.TLBX_ACP_UI_EXPECTED_PLAN_MODE,
+      );
+      const summary = page.locator(
+        ".adaptive-footer-status-summary-appServerControl:visible",
+      );
+      if (await summary.count())
+        assert.equal(
+          await summary.getAttribute("data-plan-mode"),
+          process.env.TLBX_ACP_UI_EXPECTED_PLAN_MODE,
+        );
+      result.nativePlanControlVerified = true;
+    }
+    if (process.env.TLBX_ACP_UI_EXPECTED_SINGLE_WARNING === "true") {
+      const viewport = wrapper.locator('[data-agent-field="history-viewport"]');
+      if (await viewport.count())
+        await viewport.evaluate((element) => {
+          element.scrollTop = 0;
+        });
+      const warnings = wrapper
+        .locator(".agent-history-entry")
+        .filter({
+          hasText:
+            /ignoring \d+ unrecognized configuration setting|fast_default_opt_out/,
+        });
+      await warnings.first().scrollIntoViewIfNeeded();
+      assert.equal(
+        await warnings.count(),
+        1,
+        "One structured warning replaces repeated stderr presentation",
+      );
+      assert.equal(
+        (await warnings.locator(".agent-history-badge").innerText())
+          .trim()
+          .toLowerCase(),
+        "warning",
+      );
+      const screenshot = path.join(out, "native-warning.png");
+      await page.screenshot({ path: screenshot });
+      result.screenshots.push(screenshot);
+      result.nativeWarningPresentationVerified = true;
+    }
     result.nativeHistoryVerified = true;
   }
   if (nativeSteer) {
@@ -1288,10 +1370,14 @@ try {
 } finally {
   fs.writeFileSync(
     path.join(out, "result.json"),
-    JSON.stringify(result, null, 2),
+    redactAuthenticationReport(result, cookie),
   );
   await context?.close();
   await browser?.close();
   if (chrome && chrome.exitCode === null) chrome.kill();
-  console.log(JSON.stringify(result));
+  console.log(
+    result.ok
+      ? "ACP browser acceptance passed; see result.json."
+      : "ACP browser acceptance failed; see result.json.",
+  );
 }

@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Navigator geometry does not depend on composer actions or browser storage.
+vi.mock('./historyDom', () => ({
+  isProposedPlanActionDisabled: () => false,
+  resolveToolCallOutputLineLimit: () => 12,
+}));
 
 import { resolveHistoryNavigatorTarget } from './historyRender';
 
