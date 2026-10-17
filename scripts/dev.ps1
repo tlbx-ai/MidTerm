@@ -325,6 +325,10 @@ function Should-RestartForPath([string]$relativePath) {
         return $false
     }
 
+    if ($relativePath -match '(^|[\\/])Ai\.Tlbx\.MidTerm\.(?:[^\\/]*Tests|Fake[^\\/]*)([\\/]|$)') {
+        return $false
+    }
+
     return $relativePath -match '\.(cs|csproj|props|targets)$'
 }
 
@@ -341,6 +345,8 @@ function Wait-ForCodeChange {
             if ($event.SourceEventArgs -is [System.IO.FileSystemEventArgs]) {
                 $relativePath = $event.SourceEventArgs.Name
                 if (Should-RestartForPath $relativePath) { $changedPath = $relativePath }
+                if ($event.SourceEventArgs -is [System.IO.RenamedEventArgs] -and
+                    (Should-RestartForPath $event.SourceEventArgs.OldName)) { $changedPath = $event.SourceEventArgs.OldName }
             } else {
                 $changedPath = 'code watcher overflow'
             }
@@ -433,7 +439,7 @@ function Stop-DevProcess($state, [string]$reason, [switch]$PreserveChildren) {
     Write-Host "  Stopping web process $($process.Id) while preserving session hosts ($reason)..." -ForegroundColor DarkGray
     try {
         $process.Kill($false)
-        $process.WaitForExit(10000)
+        $null = $process.WaitForExit(10000)
     }
     catch {
         throw "Failed to stop local source tlbx web process $($process.Id): $($_.Exception.Message)"
