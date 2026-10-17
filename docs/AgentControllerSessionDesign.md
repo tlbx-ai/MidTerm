@@ -101,7 +101,7 @@ Naming rule:
 ## Runtime Boundary
 
 - Explicit Agent Controller Sessions must ingest exactly one tlbx-owned canonical runtime stream, and that stream must come through `mtagenthost`.
-- The active `mtagenthost` Agent Controller Session host protocol is `app-server-control-host-v2`; tlbx should reject older host protocol versions instead of carrying parallel legacy protocol support.
+- The active `mtagenthost` Agent Controller Session host protocol is `app-server-control-host-v3`; tlbx should reject older host protocol versions instead of carrying parallel legacy protocol support.
 - `mtagenthost` is the only place where provider-specific transport, protocol parsing, provider-specific semantics, and event canonization belong for Agent Controller Session.
 - `mtagenthost` must reduce provider-specific structured events into one provider-neutral canonical Agent Controller Session history model that is a capability superset of the supported provider surfaces.
 - `mtagenthost` must own the canonical in-memory Agent Controller Session history for a session. `mt` should broker access to that history, not build and own a second competing canonical reducer.

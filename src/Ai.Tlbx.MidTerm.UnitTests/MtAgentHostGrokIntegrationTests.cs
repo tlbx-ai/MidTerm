@@ -567,7 +567,80 @@ public sealed class MtAgentHostGrokIntegrationTests
         throw new TimeoutException($"Timed out waiting for fake Grok launch capture at '{capturePath}'.");
     }
 
-    private static Process StartAgentHost(string hostDll)
+    [Theory]
+    [InlineData("load", true)]
+    [InlineData("resume", true)]
+    [InlineData("none", false)]
+    [InlineData("reject", false)]
+    public async Task MtAgentHost_ResumesOnlyTheRequestedNativeAcpSession(string capability, bool supported)
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll(), capability);
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        const string sessionId = "saved-acp-test";
+        const string nativeThread = "saved-native-thread-739";
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "resume", SessionId = sessionId, Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = sessionId, Provider = "custom-acp", RuntimeKind = "acp-v1",
+                    ExecutablePath = fake.ExecutablePath, WorkingDirectory = fake.Root,
+                    ResumeThreadId = nativeThread
+                }
+            });
+            var result = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "resume");
+            Assert.Equal(supported ? "accepted" : "rejected", result.Status);
+            if (!supported)
+            {
+                Assert.Contains(capability == "reject" ? "Saved session was not found" : "does not advertise", result.Message, StringComparison.Ordinal);
+                return;
+            }
+
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
+                patch => patch.Patch.Session.State == "ready", maxPatches: 30, timeout: TimeSpan.FromSeconds(10));
+            var history = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, sessionId, count: 96);
+            Assert.Equal(nativeThread, history.Thread.ThreadId);
+            if (capability == "load")
+            {
+                var userMessages = history.History.Where(item => item.ItemType == "user_message").ToArray();
+                Assert.Equal(2, userMessages.Length);
+                Assert.Equal("Remember REPLAY_739.", userMessages[0].Body);
+                Assert.Equal("What is the marker?", userMessages[1].Body);
+                Assert.Contains(history.History, item => item.Kind == "assistant" && item.Body.Contains("Remembered REPLAY_739.", StringComparison.Ordinal));
+                Assert.Contains("The marker is REPLAY_739.", history.Streams.AssistantText, StringComparison.Ordinal);
+                Assert.Equal("completed", history.CurrentTurn.State);
+            }
+            else
+            {
+                Assert.DoesNotContain(history.History, item => item.ItemType == "user_message");
+            }
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "continue", SessionId = sessionId, Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest { Text = "Continue the loaded conversation." }
+            });
+            var continued = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "continue");
+            Assert.Equal("accepted", continued.Status);
+            Assert.Equal(nativeThread, continued.TurnStarted!.ThreadId);
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
+                patch => patch.Patch.CurrentTurn.State == "completed" && patch.Patch.CurrentTurn.TurnId == continued.TurnStarted.TurnId,
+                maxPatches: 40, timeout: TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
+    private static Process StartAgentHost(string hostDll, string? resumeCapability = null)
     {
         var isNativeExecutable = string.Equals(Path.GetExtension(hostDll), ".exe", StringComparison.OrdinalIgnoreCase);
         var dotnetHost = ResolveDotNetHostPath();
@@ -583,6 +656,10 @@ public sealed class MtAgentHostGrokIntegrationTests
         if (!isNativeExecutable)
         {
             startInfo.ArgumentList.Add(hostDll);
+        }
+        if (resumeCapability is not null)
+        {
+            startInfo.Environment["MIDTERM_FAKE_GROK_RESUME_CAPABILITY"] = resumeCapability;
         }
         startInfo.ArgumentList.Add("--stdio");
         var process = Process.Start(startInfo)

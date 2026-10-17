@@ -15,6 +15,7 @@ const sessionId = process.env.TLBX_ACP_UI_SESSION_ID;
 const answer = process.env.TLBX_ACP_UI_ANSWER === "true";
 const cancel = process.env.TLBX_ACP_UI_SCENARIO === "cancel";
 const multi = cancel || process.env.TLBX_ACP_UI_SCENARIO === "multi";
+const resume = process.env.TLBX_ACP_UI_SCENARIO === "resume";
 assert.ok(
   url && cookie && sessionId,
   "Authenticated source URL and acceptance session required",
@@ -97,7 +98,36 @@ try {
     (request) => request.kind === "interview" && request.state === "open",
   );
   result.initiallyOpen = initiallyOpen;
-  if (!initiallyOpen) {
+  if (resume) {
+    assert.equal(initiallyOpen, false, "Loaded interviews are historical");
+    assert.equal(
+      initial.thread.threadId,
+      process.env.TLBX_ACP_UI_EXPECTED_THREAD,
+    );
+    assert.equal(initial.currentTurn.state, "completed");
+    for (const viewport of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      const recalled = wrapper.getByText("TLBX_NATIVE_RESUME_BLUE_74", {
+        exact: true,
+      });
+      await recalled.scrollIntoViewIfNeeded();
+      await recalled.waitFor({ state: "visible" });
+      const oldAnswer = wrapper.getByText("TLBX_GROK_QUESTION_OK_73", {
+        exact: true,
+      });
+      await oldAnswer.scrollIntoViewIfNeeded();
+      await oldAnswer.waitFor({ state: "visible" });
+      assert.equal(await page.evaluate(() => document.hidden), false);
+      const screenshot = path.join(out, `resume-${viewport.width}.png`);
+      await page.screenshot({ path: screenshot });
+      result.screenshots.push(screenshot);
+    }
+    result.nativeResumeVerified = true;
+  }
+  if (!resume && !initiallyOpen) {
     assert.ok(
       answer &&
         (multi

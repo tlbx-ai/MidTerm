@@ -6,6 +6,7 @@ var activePromptId = string.Empty;
 var activeQuestionId = string.Empty;
 var cancelRequested = false;
 var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_CAPTURE_PATH");
+var resumeCapability = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_RESUME_CAPABILITY") ?? "load";
 var protocolVersion = int.TryParse(
     Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_PROTOCOL_VERSION"),
     NumberStyles.Integer,
@@ -59,7 +60,12 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 protocolVersion,
                 agentCapabilities = new
                 {
-                    loadSession = true,
+                    loadSession = resumeCapability is "load" or "reject",
+                    sessionCapabilities = new Dictionary<string, object>(StringComparer.Ordinal)
+                    {
+                        // An empty capability object means supported, not false.
+                        [resumeCapability == "resume" ? "resume" : "unused"] = new { }
+                    },
                     promptCapabilities = new
                     {
                         image = true,
@@ -250,6 +256,34 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 activePromptId = string.Empty;
             }
 
+            break;
+        case "session/load":
+        case "session/resume":
+            if (resumeCapability == "reject")
+            {
+                await WriteJsonAsync(new { jsonrpc = "2.0", id, error = new { code = -32000, message = "Saved session was not found." } }).ConfigureAwait(false);
+                break;
+            }
+            sessionId = GetString(root.GetProperty("params"), "sessionId")!;
+            if (method == "session/load")
+            {
+                foreach (var (role, replayText) in new[]
+                {
+                    ("user_message_chunk", "Remember "), ("user_message_chunk", "REPLAY_739."),
+                    ("agent_message_chunk", "Remembered REPLAY_739."),
+                    ("user_message_chunk", "What is the marker?"),
+                    ("agent_thought_chunk", "Checking the saved conversation."),
+                    ("agent_message_chunk", "The marker is REPLAY_739.")
+                })
+                {
+                    await WriteNotificationAsync("session/update", new
+                    {
+                        sessionId, update = new { sessionUpdate = role, content = new { type = "text", text = replayText } }
+                    }).ConfigureAwait(false);
+                }
+            }
+            // ACP load/resume responses need not repeat sessionId.
+            await WriteResponseAsync(id, new { models = BuildModelState() }).ConfigureAwait(false);
             break;
         default:
             if (id.ValueKind != JsonValueKind.Undefined)

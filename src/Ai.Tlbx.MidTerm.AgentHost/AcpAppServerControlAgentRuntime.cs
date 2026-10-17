@@ -65,7 +65,19 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             : provider.Trim().ToLowerInvariant();
         _agentName = string.IsNullOrWhiteSpace(agentName) ? _provider : agentName.Trim();
         _executableArguments = executableArguments?.ToArray() ?? [];
-        _emit = emit;
+        _emit = providerEvent =>
+        {
+            lock (_replayGate)
+            {
+                if (_replayEvents is not null)
+                {
+                    _replayEvents.Add(providerEvent);
+                    return;
+                }
+            }
+
+            emit(providerEvent);
+        };
     }
 
     public string Provider => _provider;
@@ -154,71 +166,60 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         _providerThreadId = null;
         _quickSettings = CreateDefaultQuickSettings();
 
-        await StartAcpProcessAsync(ct).ConfigureAwait(false);
-
-        var initializeResult = await SendRequestAsync(
-                "initialize",
-                writer =>
-                {
-                    writer.WriteStartObject();
-                    writer.WriteNumber("protocolVersion", 1);
-                    writer.WritePropertyName("clientCapabilities");
-                    writer.WriteStartObject();
-                    writer.WritePropertyName("session");
-                    writer.WriteStartObject();
-                    writer.WritePropertyName("configOptions");
-                    writer.WriteStartObject();
-                    writer.WriteBoolean("boolean", true);
-                    writer.WriteEndObject();
-                    writer.WriteEndObject();
-                    writer.WritePropertyName("fs");
-                    writer.WriteStartObject();
-                    writer.WriteBoolean("readTextFile", false);
-                    writer.WriteBoolean("writeTextFile", false);
-                    writer.WriteEndObject();
-                    writer.WriteBoolean("terminal", false);
-                    writer.WriteEndObject();
-                    writer.WritePropertyName("clientInfo");
-                    writer.WriteStartObject();
-                    writer.WriteString("name", "tlbx");
-                    writer.WriteString("title", "tlbx");
-                    writer.WriteString("version", "dev");
-                    writer.WriteEndObject();
-                    writer.WriteEndObject();
-                },
-                AttachRequestTimeout,
-                ct)
-            .ConfigureAwait(false);
-        ValidateProtocolVersion(initializeResult);
-        _supportsImagePrompts = Traverse(initializeResult, "agentCapabilities", "promptCapabilities", "image") is
+        try
         {
-            ValueKind: JsonValueKind.True
-        };
+            await StartAcpProcessAsync(ct).ConfigureAwait(false);
 
-        var newSessionResult = await SendRequestAsync(
-                "session/new",
-                writer =>
-                {
-                    writer.WriteStartObject();
-                    writer.WriteString("cwd", _workingDirectory);
-                    writer.WritePropertyName("mcpServers");
-                    writer.WriteStartArray();
-                    writer.WriteEndArray();
-                    writer.WriteEndObject();
-                },
-                AttachRequestTimeout,
-                ct)
-            .ConfigureAwait(false);
+            var initializeResult = await SendRequestAsync(
+                    "initialize",
+                    writer =>
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteNumber("protocolVersion", 1);
+                        writer.WritePropertyName("clientCapabilities");
+                        writer.WriteStartObject();
+                        writer.WritePropertyName("session");
+                        writer.WriteStartObject();
+                        writer.WritePropertyName("configOptions");
+                        writer.WriteStartObject();
+                        writer.WriteBoolean("boolean", true);
+                        writer.WriteEndObject();
+                        writer.WriteEndObject();
+                        writer.WritePropertyName("fs");
+                        writer.WriteStartObject();
+                        writer.WriteBoolean("readTextFile", false);
+                        writer.WriteBoolean("writeTextFile", false);
+                        writer.WriteEndObject();
+                        writer.WriteBoolean("terminal", false);
+                        writer.WriteEndObject();
+                        writer.WritePropertyName("clientInfo");
+                        writer.WriteStartObject();
+                        writer.WriteString("name", "tlbx");
+                        writer.WriteString("title", "tlbx");
+                        writer.WriteString("version", "dev");
+                        writer.WriteEndObject();
+                        writer.WriteEndObject();
+                    },
+                    AttachRequestTimeout,
+                    ct)
+                .ConfigureAwait(false);
+            ValidateProtocolVersion(initializeResult);
+            _supportsImagePrompts = Traverse(initializeResult, "agentCapabilities", "promptCapabilities", "image") is
+            {
+                ValueKind: JsonValueKind.True
+            };
 
-        _providerThreadId = GetString(newSessionResult, "sessionId")
-                            ?? $"{Provider}-session-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
-        _quickSettings = CreateQuickSettingsFromState(initializeResult, newSessionResult);
+            var resumeThreadId = string.IsNullOrWhiteSpace(attach.ResumeThreadId) ? null : attach.ResumeThreadId.Trim();
+            var sessionMethod = ResolveSessionOpenMethod(initializeResult, resumeThreadId);
+            _providerThreadId = resumeThreadId;
+            var newSessionResult = await OpenSessionAsync(sessionMethod, resumeThreadId, ct).ConfigureAwait(false);
 
-        return Accepted(
-            command.CommandId,
-            command.SessionId,
-            events:
-            [
+            _providerThreadId = resumeThreadId ?? GetString(newSessionResult, "sessionId")
+                ?? throw new InvalidOperationException($"{_agentName} did not return an ACP session id.");
+            _quickSettings = CreateQuickSettingsFromState(initializeResult, newSessionResult);
+
+            var events = new List<AppServerControlProviderEvent>
+        {
                 CreateEvent("session.started", null, null, null, "mtagenthost.acp", "runtime.attach", attach, appServerControlEvent =>
                 {
                     appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
@@ -228,7 +229,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                         Reason = $"{_agentName} ACP runtime attached."
                     };
                 }),
-                CreateEvent("thread.started", null, null, null, "acp", "session/new", newSessionResult, appServerControlEvent =>
+                CreateEvent("thread.started", null, null, null, "acp", sessionMethod, newSessionResult, appServerControlEvent =>
                 {
                     appServerControlEvent.ThreadState = new AppServerControlProviderThreadStatePayload
                     {
@@ -236,18 +237,31 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                         StateLabel = "Active",
                         ProviderThreadId = _providerThreadId
                     };
-                }),
-                CreateEvent("session.ready", null, null, null, "acp", "session/new", newSessionResult, appServerControlEvent =>
-                {
-                    appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
+                })
+        };
+            AppendLoadedHistory(events);
+            events.Add(CreateEvent("session.ready", null, null, null, "acp", sessionMethod, newSessionResult, appServerControlEvent =>
                     {
-                        State = "ready",
-                        StateLabel = "Ready",
-                        Reason = $"{_agentName} ACP runtime is ready for the next turn."
-                    };
-                }),
-                CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", "session/new", newSessionResult)
-            ]);
+                        appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
+                        {
+                            State = "ready",
+                            StateLabel = "Ready",
+                            Reason = $"{_agentName} ACP runtime is ready for the next turn."
+                        };
+                    }));
+            events.Add(CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", sessionMethod, newSessionResult));
+            return Accepted(command.CommandId, command.SessionId, events: events);
+        }
+        catch
+        {
+            lock (_replayGate)
+            {
+                _loadedUpdates = null;
+            }
+            await DisposeProcessAsync().ConfigureAwait(false);
+            _providerThreadId = null;
+            throw;
+        }
     }
 
     private async Task<HostCommandOutcome> StartTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -692,6 +706,27 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
 
     private void HandleSessionUpdate(JsonElement root, string rawLine)
     {
+        var nativeSessionId = GetString(root, "params", "sessionId");
+        if (!string.IsNullOrWhiteSpace(_providerThreadId) && !string.IsNullOrWhiteSpace(nativeSessionId) &&
+            !string.Equals(nativeSessionId, _providerThreadId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        lock (_replayGate)
+        {
+            if (_loadedUpdates is not null)
+            {
+                _loadedUpdates.Add((root.Clone(), rawLine));
+                return;
+            }
+        }
+
+        ApplySessionUpdate(root, rawLine, _activeTurnId);
+    }
+
+    private void ApplySessionUpdate(JsonElement root, string rawLine, string? turnId)
+    {
         var update = Traverse(root, "params", "update");
         if (update is not { ValueKind: JsonValueKind.Object } updateElement)
         {
@@ -715,7 +750,6 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 return;
         }
 
-        var turnId = _activeTurnId;
         if (string.IsNullOrWhiteSpace(turnId))
         {
             return;

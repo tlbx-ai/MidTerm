@@ -391,7 +391,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                         AgentName = acpAgent?.Name,
                         ExecutableArguments = acpAgent?.Arguments.ToList() ?? [],
                         UserProfileDirectory = preferredProfileDirectory,
-                        ResumeThreadId = resumeThreadIdOverride ?? attachPoint?.PreferredThreadId
+                        ResumeThreadId = resumeThreadIdOverride ?? session.AppServerControlResumeThreadId ?? attachPoint?.PreferredThreadId
                     }
                 },
                 ct).ConfigureAwait(false);

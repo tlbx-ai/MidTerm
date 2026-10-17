@@ -105,6 +105,27 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
         Assert.Equal("Synthetic codex reply for: Inspect the workspace.", runtimeSnapshot.AssistantText);
     }
 
+    [Theory]
+    [InlineData(null, "saved-native-thread")]
+    [InlineData("explicit-native-thread", "explicit-native-thread")]
+    public async Task SessionAppServerControlRuntimeService_PreservesRequestedResumeIdentity(string? resumeOverride, string expectedThread)
+    {
+        await using var hostRuntime = new SessionAppServerControlHostRuntimeService(CreateSettingsService(), mode: "synthetic");
+        await using var sessionManager = new TtyHostSessionManager();
+        await using var runtime = new SessionAppServerControlRuntimeService(sessionManager, new AiCliProfileService(), hostRuntime);
+        var session = new SessionInfoDto
+        {
+            Id = "resume-identity-" + Guid.NewGuid().ToString("N"),
+            CurrentDirectory = AppContext.BaseDirectory,
+            ForegroundName = "codex",
+            AppServerControlResumeThreadId = "saved-native-thread"
+        };
+        Assert.True(await runtime.EnsureAttachedAsync(session.Id, session, resumeOverride, Xunit.TestContext.Current.CancellationToken));
+        var history = await runtime.GetHistoryWindowAsync(session.Id, count: 32, ct: Xunit.TestContext.Current.CancellationToken);
+        Assert.NotNull(history);
+        Assert.Equal(expectedThread, history.Thread.ThreadId);
+    }
+
     [Fact]
     public async Task SessionAppServerControlRuntimeService_CanDelegateToMtAgentHostCodexMode()
     {
