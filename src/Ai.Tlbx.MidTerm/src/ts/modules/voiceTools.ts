@@ -26,6 +26,7 @@ import {
   getSessionAgentFeed,
   getSessionAgentVibe,
   getHistory,
+  getAppServerControlHistoryWindow,
   sendSessionPrompt,
 } from '../api/client';
 import {
@@ -680,6 +681,8 @@ async function buildSessionOverview(
     summary.repos = compactGitRepos(getCachedGitReposForSession(session.id));
   }
 
+  if (session.appServerControlOnly) summary.surface = 'agent-controller';
+
   return summary;
 }
 
@@ -703,6 +706,9 @@ async function handleMakeInput(args: MakeInputArgs): Promise<MakeInputResult> {
   }
 
   const parsedText = parseEscapeSequences(expandNamedKeys(text));
+  if (session.appServerControlOnly) {
+    throw new Error('Agent Controller sessions accept structured prompts. Use send_prompt.');
+  }
   sendInput(sessionId, parsedText);
 
   await sleep(delayMs);
@@ -739,6 +745,9 @@ function handleReadScrollback(args: ReadScrollbackArgs): ReadScrollbackResult {
   }
 
   const termState = sessionTerminals.get(sessionId);
+  if (session.appServerControlOnly) {
+    throw new Error('Agent Controller history is provider-backed. Use session_activity.');
+  }
   if (!termState?.terminal) {
     return {
       content: `Terminal for session ${sessionId} is not rendered`,
@@ -1158,6 +1167,14 @@ async function handleSessionActivity(args: SessionActivityArgs): Promise<unknown
   const bellLimit = Math.max(0, Math.min(args.bellLimit ?? 8, 25));
   const feeds = await Promise.all(
     sessions.map(async (session) => {
+      if (session.appServerControlOnly) {
+        return {
+          sessionId: session.id,
+          title: session.name || session.terminalTitle || null,
+          surface: 'agent-controller',
+          history: await getAppServerControlHistoryWindow(session.id, undefined, 40),
+        };
+      }
       const feed = await getSessionAgentFeed(session.id, tailLines, activitySeconds, bellLimit);
       return {
         sessionId: session.id,

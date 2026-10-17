@@ -533,6 +533,7 @@ export interface SessionOverviewResult {
 /** Compact session state for orientation, switching, and multi-session control */
 export interface VoiceSessionOverview {
   id: string;
+  surface?: 'agent-controller';
   title: string;
   userTitle: string | null;
   terminalTitle: string | null;
