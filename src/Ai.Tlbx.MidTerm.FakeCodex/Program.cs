@@ -173,6 +173,14 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         }
                     }).ConfigureAwait(false);
                     continue;
+                case "thread/read":
+                    await WriteJsonAsync(new
+                    {
+                        jsonrpc = "2.0",
+                        id = root.GetProperty("id").ToString(),
+                        result = new { thread = new { id = threadId, turns = Array.Empty<object>() } }
+                    }).ConfigureAwait(false);
+                    continue;
                 case "turn/start":
                 {
                     RecordMethod(launchCapture, method);

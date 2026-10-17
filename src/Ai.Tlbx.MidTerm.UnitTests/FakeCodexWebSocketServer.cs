@@ -75,6 +75,14 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public string? LastTurnServiceTier { get; private set; }
 
+    public string? ThreadHistoryJson { get; set; }
+
+    public string? BeforeHistoryNotificationJson { get; set; }
+
+    public string? AfterHistoryNotificationJson { get; set; }
+
+    public int ThreadResumeCount { get; private set; }
+
     public static FakeCodexWebSocketServer Start(
         string loadedThreadId,
         string assistantReply,
@@ -284,6 +292,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                         break;
 
                     case "thread/resume" when id is not null:
+                        ThreadResumeCount++;
                         LastThreadResumeExcludeTurns =
                             @params.ValueKind == JsonValueKind.Object &&
                             @params.TryGetProperty("excludeTurns", out var excludeTurnsElement) &&
@@ -315,6 +324,26 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                             }, _shutdown.Token).ConfigureAwait(false);
                         }
                         await SendProtocolV2SurfaceNotificationsAsync(socket).ConfigureAwait(false);
+                        break;
+
+                    case "thread/read" when id is not null:
+                        if (BeforeHistoryNotificationJson is { } beforeHistory)
+                        {
+                            using var notification = JsonDocument.Parse(beforeHistory);
+                            await SendJsonAsync(socket, notification.RootElement, _shutdown.Token).ConfigureAwait(false);
+                        }
+
+                        using (var history = JsonDocument.Parse(ThreadHistoryJson ?? "{\"turns\":[]}"))
+                        {
+                            await SendJsonAsync(socket, new { id, result = new { thread = history.RootElement } },
+                                _shutdown.Token).ConfigureAwait(false);
+                        }
+
+                        if (AfterHistoryNotificationJson is { } afterHistory)
+                        {
+                            using var notification = JsonDocument.Parse(afterHistory);
+                            await SendJsonAsync(socket, notification.RootElement, _shutdown.Token).ConfigureAwait(false);
+                        }
                         break;
 
                     case "thread/start" when id is not null:

@@ -8,6 +8,99 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 [Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class MtAgentHostCodexIntegrationTests
 {
+    [Theory]
+    [InlineData("completed")]
+    [InlineData("inProgress")]
+    public async Task MtAgentHost_RestoresNativeCodexHistoryAndPreservesLiveOrdering(string status)
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start("thread-history", "Unused.");
+        fakeServer.ThreadHistoryJson = $$"""
+            {"id":"thread-history","turns":[{"id":"turn-history","status":"{{status}}","startedAt":1792196000,"completedAt":1792196010,"items":[
+              {"id":"user-original","type":"userMessage","content":[{"type":"text","text":"Original request."}]},
+              {"id":"user-steer","type":"userMessage","content":[{"type":"text","text":"Steering request."}]},
+              {"id":"assistant-history","type":"agentMessage","text":"Restored response."}
+            ]}]}
+            """;
+        fakeServer.BeforeHistoryNotificationJson = """
+            {"method":"item/agentMessage/delta","params":{"threadId":"thread-history","turnId":"turn-history","itemId":"assistant-history","delta":"Restored "}}
+            """;
+        fakeServer.AfterHistoryNotificationJson = """
+            {"method":"item/agentMessage/delta","params":{"threadId":"thread-history","turnId":"turn-history","itemId":"assistant-history","delta":" Live suffix."}}
+            """;
+        using var process = StartAgentHost(ResolveAgentHostDll());
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            var attach = new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "attach-history",
+                SessionId = "session-history",
+                Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = "session-history",
+                    Provider = "codex",
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    ResumeThreadId = "thread-history",
+                    AttachPoint = new SessionAgentAttachPoint
+                    {
+                        Provider = "codex",
+                        TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                        Endpoint = fakeServer.Endpoint,
+                        SharedRuntime = true
+                    }
+                }
+            };
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, attach);
+            Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput, patches, attach.CommandId)).Status);
+            var history = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, attach.SessionId,
+                h => h.Streams.AssistantText.EndsWith(" Live suffix.", StringComparison.Ordinal),
+                TimeSpan.FromSeconds(10), count: 96);
+            Assert.Equal("Restored response. Live suffix.", history.Streams.AssistantText);
+            var users = history.History.Where(h => h.Kind == "user").ToArray();
+            Assert.Equal(new[] { "Original request.", "Steering request." }, users.Select(h => h.Body), StringComparer.Ordinal);
+            Assert.Equal("turn-history", history.CurrentTurn.TurnId);
+            Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1792196000), history.CurrentTurn.StartedAt);
+            Assert.Equal(status == "inProgress" ? "running" : "ready", history.Session.State);
+
+            attach.CommandId = "reattach-history";
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, attach);
+            Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput, patches, attach.CommandId)).Status);
+            Assert.Equal(1, fakeServer.ThreadResumeCount);
+            if (status == "inProgress")
+            {
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput,
+                    new AppServerControlHostCommandEnvelope
+                    {
+                        CommandId = "steer-restored",
+                        SessionId = attach.SessionId,
+                        Type = "turn.steer",
+                        SteerTurn = new AppServerControlSteerRequest
+                        {
+                            ExpectedTurnId = "turn-history",
+                            Text = "Continue restored turn."
+                        }
+                    });
+                Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput, patches, "steer-restored")).Status);
+            }
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
     [Fact]
     public async Task MtAgentHost_CanSteerAndCompactFakeCodexThread()
     {

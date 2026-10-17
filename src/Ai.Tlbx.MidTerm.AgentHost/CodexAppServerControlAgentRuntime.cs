@@ -9,7 +9,7 @@ using Ai.Tlbx.MidTerm.Common.Protocol;
 
 namespace Ai.Tlbx.MidTerm.AgentHost;
 
-internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgentRuntime
+internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerControlAgentRuntime
 {
     private const int MaxInlineImageBytes = 10 * 1024 * 1024;
     private const int CodexStderrBlockFlushDelayMs = 175;
@@ -48,7 +48,21 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
 
     public CodexAppServerControlAgentRuntime(Action<AppServerControlProviderEvent> emit)
     {
-        _emit = emit;
+        _emit = e =>
+        {
+            lock (_attachEventLock)
+            {
+                if (_attachEvents is { } events)
+                {
+                    events.Add(e);
+                }
+                else
+                {
+                    emit(e);
+                }
+            }
+        };
+        _publish = emit;
     }
 
     public string Provider => "codex";
@@ -127,6 +141,15 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                 _ => throw new InvalidOperationException($"Unsupported Codex command '{command.Type}'.")
             };
         }
+        catch
+        {
+            if (command.Type == "runtime.attach")
+            {
+                PublishAttachedHistory([]);
+            }
+
+            throw;
+        }
         finally
         {
             _gate.Release();
@@ -187,6 +210,11 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             attachPoint is null
                 ? "Starting Codex App Server Controller runtime."
                 : "Connecting App Server Controller to the running Codex app-server.");
+        lock (_attachEventLock)
+        {
+            _attachEvents = [];
+        }
+
         _readerTask = Task.Run(() => ReadCodexLoopAsync(_shutdown.Token), CancellationToken.None);
         if (_error is not null)
         {
@@ -207,6 +235,15 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
         }
 
         _providerThreadId = providerThreadId;
+        if (resumedExistingThread)
+        {
+            await SendCodexRequestAsync("thread/read", id =>
+            {
+                _historyReadRequestId = id;
+                return BuildCodexThreadHistoryRequest(id, providerThreadId);
+            }, ct).ConfigureAwait(false);
+        }
+
         var events = new List<AppServerControlProviderEvent>
         {
             CreateEvent("session.ready", null, null, null, "codex.app-server", "thread/start", threadResult, appServerControlEvent =>
@@ -234,7 +271,8 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             CreateQuickSettingsUpdatedEvent(_quickSettings, "midterm.appServerControl", "runtime.attach", attach)
         };
 
-        return Accepted(command.CommandId, command.SessionId, events: events);
+        PublishAttachedHistory(events);
+        return Accepted(command.CommandId, command.SessionId);
     }
 
     private async Task<HostCommandOutcome> StartTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -652,6 +690,12 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                 }
                 else
                 {
+                    if (string.Equals(id, _historyReadRequestId, StringComparison.Ordinal))
+                    {
+                        RestoreCodexThreadHistory(resultElement);
+                        _historyReadRequestId = null;
+                    }
+
                     pending.TrySetResult(new JsonRpcReply
                     {
                         Payload = resultElement.Clone()
