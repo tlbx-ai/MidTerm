@@ -79,6 +79,7 @@ public static class TlbxCliScriptWriter
         # Git Bash uses emulated PIDs, so translate to the native Windows PID.
         _MRESOLVECTX() {
           local pid=$$ resolved root="${CODEX_SESSION_ID:-}" thread="${CODEX_THREAD_ID:-}" codex_home="${CODEX_HOME:-$HOME/.codex}" query="" auth=()
+          local previous_session="${MT_SESSION_ID:-}" previous_preview="${MT_PREVIEW_NAME:-}"
           [ -n "$root" ] || root="$thread"
           [ -n "$thread" ] || thread="$root"
           if [ -r "/proc/$$/winpid" ]; then
@@ -96,6 +97,9 @@ public static class TlbxCliScriptWriter
             if [[ "$resolved" =~ ^([A-Za-z0-9]{8}):([a-f0-9]{32})$ ]]; then
               export MT_SESSION_ID="${BASH_REMATCH[1]}"
               _MLEASE="${BASH_REMATCH[2]}"
+              if [ "$previous_session" = "$MT_SESSION_ID" ] && [ -n "$previous_preview" ]; then
+                export MT_PREVIEW_NAME="$previous_preview"
+              fi
               _MCTXERROR=""
             else
               _MCTXERROR="$resolved"
@@ -1233,6 +1237,8 @@ public static class TlbxCliScriptWriter
         # Resolve before any command, including when the inherited ID belongs to a live sibling.
         function script:_MResolveContext {
             param([switch]$Fresh)
+            $previousSession = $env:MT_SESSION_ID
+            $previousPreview = $env:MT_PREVIEW_NAME
             $root = if ($env:CODEX_SESSION_ID) { $env:CODEX_SESSION_ID } else { $env:CODEX_THREAD_ID }
             $thread = if ($env:CODEX_THREAD_ID) { $env:CODEX_THREAD_ID } else { $root }
             $query = ""
@@ -1252,6 +1258,9 @@ public static class TlbxCliScriptWriter
                 if ($resolvedContext -match '^([A-Za-z0-9]{8}):([a-f0-9]{32})$') {
                     $env:MT_SESSION_ID = $Matches[1]
                     $script:_MLease = $Matches[2]
+                    if ($previousSession -ceq $env:MT_SESSION_ID -and $previousPreview) {
+                        $env:MT_PREVIEW_NAME = $previousPreview
+                    }
                     $script:_MContextError = $null
                 } else {
                     $script:_MContextError = if ($resolvedContext -match 'TLBX') { $resolvedContext } else {
