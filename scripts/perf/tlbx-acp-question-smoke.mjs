@@ -20,7 +20,8 @@ const nativeV2 = process.env.TLBX_ACP_UI_SCENARIO === "v2";
 const planReview = process.env.TLBX_ACP_UI_SCENARIO === "plan";
 const nativeConfig = process.env.TLBX_ACP_UI_SCENARIO === "config";
 const nativeCommands = process.env.TLBX_ACP_UI_SCENARIO === "commands";
-const nativeUsage = process.env.TLBX_ACP_UI_SCENARIO === "usage";
+const codexUsage = process.env.TLBX_ACP_UI_SCENARIO === "codex-usage";
+const nativeUsage = process.env.TLBX_ACP_UI_SCENARIO === "usage" || codexUsage;
 const codexSteer = process.env.TLBX_ACP_UI_SCENARIO === "codex-steer";
 assert.ok(
   url && cookie && sessionId,
@@ -626,8 +627,23 @@ try {
     result.nativeSteeringHistoryVerified = true;
   }
   if (nativeUsage) {
-    assert.equal(initial.session.usage.contextUsedTokens, 2345);
-    assert.equal(initial.session.usage.costCurrency, "EUR");
+    if (codexUsage) {
+      assert.equal(
+        initial.history.filter((item) => item.kind === "error").length,
+        0,
+      );
+      assert.equal(initial.session.agentName, "Codex");
+      assert.ok(initial.session.usage.contextUsedTokens > 0);
+      assert.ok(
+        initial.session.usage.inputTokens >
+          initial.session.usage.contextUsedTokens,
+      );
+      assert.equal(initial.session.usage.costAmount, null);
+      assert.equal(initial.streams.assistantText.trim(), "TLBX_CODEX_USAGE_80");
+    } else {
+      assert.equal(initial.session.usage.contextUsedTokens, 2345);
+      assert.equal(initial.session.usage.costCurrency, "EUR");
+    }
     const stats = wrapper.locator('[data-agent-field="runtime-stats"]');
     await stats.waitFor({ state: "visible" });
     for (const viewport of [
@@ -638,14 +654,33 @@ try {
       const compact = await stats
         .locator(".agent-runtime-stats-compact")
         .innerText();
-      assert.ok(
-        compact.includes("128k") && compact.includes("0.0123 EUR"),
-        "Reported context and native currency render",
-      );
-      assert.ok(
-        !compact.includes("in 0") && !compact.includes("out 0"),
-        "Unknown input/output counters are not invented zeros",
-      );
+      if (codexUsage) {
+        const usage = initial.session.usage;
+        const percent = Math.round(
+          (usage.contextUsedTokens / usage.contextWindowTokens) * 100,
+        );
+        assert.ok(
+          compact.includes(`${percent}% of 258k`),
+          "Current context uses the last native request, not cumulative input",
+        );
+        assert.ok(
+          compact.includes("in ") && compact.includes("out "),
+          "Reported native input/output counters render",
+        );
+        assert.ok(
+          !compact.includes("USD") && !compact.includes("EUR"),
+          "Unreported cost is not estimated",
+        );
+      } else {
+        assert.ok(
+          compact.includes("128k") && compact.includes("0.0123 EUR"),
+          "Reported context and native currency render",
+        );
+        assert.ok(
+          !compact.includes("in 0") && !compact.includes("out 0"),
+          "Unknown input/output counters are not invented zeros",
+        );
+      }
       const box = await stats.boundingBox();
       const commandsBox = await wrapper
         .locator(".agent-native-controls")

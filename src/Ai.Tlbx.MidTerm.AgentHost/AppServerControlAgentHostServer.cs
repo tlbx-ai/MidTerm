@@ -615,6 +615,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             },
             TurnStarted = appServerControlEvent.TurnStarted is null ? null : new AppServerControlProviderTurnStartedPayload
             {
+                IsReplay = appServerControlEvent.TurnStarted.IsReplay,
                 Model = appServerControlEvent.TurnStarted.Model,
                 Effort = appServerControlEvent.TurnStarted.Effort
             },

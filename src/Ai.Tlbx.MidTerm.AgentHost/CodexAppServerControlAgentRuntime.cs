@@ -200,6 +200,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         _activeTurnId = null;
         _remoteEndpoint = attachPoint?.Endpoint;
         _quickSettings = CreateDefaultQuickSettings();
+        _usage = null;
         _pendingApprovals.Clear();
         _pendingUserInputs.Clear();
 
@@ -237,11 +238,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         _providerThreadId = providerThreadId;
         if (resumedExistingThread)
         {
-            await SendCodexRequestAsync("thread/read", id =>
-            {
-                _historyReadRequestId = id;
-                return BuildCodexThreadHistoryRequest(id, providerThreadId);
-            }, ct).ConfigureAwait(false);
+            await ReadCodexThreadHistoryAsync(providerThreadId, ct).ConfigureAwait(false);
         }
 
         var events = new List<AppServerControlProviderEvent>
@@ -268,7 +265,9 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                     ProviderThreadId = providerThreadId
                 };
             }),
-            CreateQuickSettingsUpdatedEvent(_quickSettings, "midterm.appServerControl", "runtime.attach", attach)
+            CreateQuickSettingsUpdatedEvent(_quickSettings, "midterm.appServerControl", "runtime.attach", attach),
+            CreateEvent("agent.metadata.updated", null, null, null, "codex.app-server", "initialize", default,
+                e => e.AgentMetadataUpdated = new AppServerControlProviderAgentMetadataPayload { AgentName = "Codex" })
         };
 
         PublishAttachedHistory(events);
@@ -692,7 +691,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 {
                     if (string.Equals(id, _historyReadRequestId, StringComparison.Ordinal))
                     {
-                        RestoreCodexThreadHistory(resultElement);
+                        HandleCodexHistoryReply(resultElement);
                         _historyReadRequestId = null;
                     }
 
@@ -904,9 +903,11 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
             case "thread/tokenUsage/updated":
             {
+                UpdateCodexTokenUsage(payload);
                 var detail = BuildCodexTokenUsageDetail(payload);
                 _emit(CreateEvent("thread.token-usage.updated", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
+                    appServerControlEvent.AgentMetadataUpdated = new AppServerControlProviderAgentMetadataPayload { Usage = _usage?.Clone() };
                     appServerControlEvent.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
                     {
                         Message = "Codex context window updated.",
@@ -1326,7 +1327,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                     {
                         appServerControlEvent.PlanCompleted = new AppServerControlProviderPlanCompletedPayload
                         {
-                            PlanMarkdown = proposedPlan
+                            PlanMarkdown = proposedPlan,
+                            IsProposal = true
                         };
                     }));
                 }
@@ -1378,7 +1380,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                         {
                             appServerControlEvent.PlanCompleted = new AppServerControlProviderPlanCompletedPayload
                             {
-                                PlanMarkdown = detail
+                                PlanMarkdown = detail,
+                                IsProposal = true
                             };
                         }));
                     }
@@ -1519,8 +1522,10 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
             case "account/rateLimits/updated":
             {
+                UpdateCodexRateLimits(payload);
                 _emit(CreateEvent("account.rate-limits.updated", null, null, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
+                    appServerControlEvent.AgentMetadataUpdated = new AppServerControlProviderAgentMetadataPayload { Usage = _usage?.Clone() };
                     appServerControlEvent.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
                     {
                         Message = "Codex rate limits updated.",
@@ -3751,10 +3756,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
     private static string BuildCodexTokenUsageDetail(JsonElement payload)
     {
         var usage = GetObject(payload, "tokenUsage") ?? payload;
-        var total = GetLong(usage, "total", "total_tokens")
-                    ?? GetLong(usage, "total", "totalTokens")
-                    ?? GetLong(usage, "last", "total_tokens")
-                    ?? GetLong(usage, "last", "totalTokens");
+        var total = GetLong(usage, "last", "totalTokens") ?? GetLong(usage, "last", "total_tokens");
         var input = GetLong(usage, "last", "input_tokens") ?? GetLong(usage, "last", "inputTokens");
         var output = GetLong(usage, "last", "output_tokens") ?? GetLong(usage, "last", "outputTokens");
         var max = GetLong(usage, "model_context_window") ?? GetLong(usage, "modelContextWindow");

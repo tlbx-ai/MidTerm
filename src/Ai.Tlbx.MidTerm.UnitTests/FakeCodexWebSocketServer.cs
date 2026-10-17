@@ -83,6 +83,12 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public int ThreadResumeCount { get; private set; }
 
+    public bool EmitUsageNotifications { get; set; }
+
+    public bool PaginatedHistory { get; set; }
+
+    public int HistoryPageCount { get; private set; }
+
     public static FakeCodexWebSocketServer Start(
         string loadedThreadId,
         string assistantReply,
@@ -327,6 +333,59 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                         break;
 
                     case "thread/read" when id is not null:
+                    case "thread/turns/list" when id is not null:
+                        if (PaginatedHistory && method == "thread/read")
+                        {
+                            if (@params.GetProperty("includeTurns").GetBoolean())
+                            {
+                                await SendJsonAsync(socket, new { id, error = new { message = "Use paginated history." } },
+                                    _shutdown.Token).ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                await SendJsonAsync(socket, new { id, result = new { thread = new { id = LoadedThreadId, historyMode = "paginated" } } },
+                                    _shutdown.Token).ConfigureAwait(false);
+                            }
+                            break;
+                        }
+
+                        if (method == "thread/turns/list")
+                        {
+                            HistoryPageCount++;
+                            if (!string.Equals(GetString(@params, "itemsView"), "full", StringComparison.Ordinal) ||
+                                !string.Equals(GetString(@params, "sortDirection"), "asc", StringComparison.Ordinal))
+                            {
+                                await SendJsonAsync(socket, new { id, error = new { message = "Full chronological items required." } },
+                                    _shutdown.Token).ConfigureAwait(false);
+                                break;
+                            }
+
+                            if (GetString(@params, "cursor") is null)
+                            {
+                                using var firstPage = JsonDocument.Parse("""
+                                    {"id":"turn-previous","status":"completed","items":[
+                                    {"id":"user-previous","type":"userMessage","content":[{"type":"text","text":"Previous request."}]},
+                                    {"id":"assistant-previous","type":"agentMessage","text":"Previous response."}]}
+                                    """);
+                                await SendJsonAsync(socket, new { id, result = new { data = new[] { firstPage.RootElement }, nextCursor = "page-two" } },
+                                    _shutdown.Token).ConfigureAwait(false);
+                                break;
+                            }
+                        }
+
+                        if (EmitUsageNotifications)
+                        {
+                            using var tokens = JsonDocument.Parse("""
+                                {"method":"thread/tokenUsage/updated","params":{"threadId":"thread-history","turnId":"turn-history","tokenUsage":{
+                                "last":{"totalTokens":1234},"total":{"totalTokens":90123,"inputTokens":89000,"outputTokens":1123,"cachedInputTokens":80000,"cacheWriteInputTokens":0,"reasoningOutputTokens":234},"modelContextWindow":128000}}}
+                                """);
+                            await SendJsonAsync(socket, tokens.RootElement, _shutdown.Token).ConfigureAwait(false);
+                            using var limits = JsonDocument.Parse("""
+                                {"method":"account/rateLimits/updated","params":{"rateLimits":{"primary":{"usedPercent":23},"secondary":null}}}
+                                """);
+                            await SendJsonAsync(socket, limits.RootElement, _shutdown.Token).ConfigureAwait(false);
+                        }
+
                         if (BeforeHistoryNotificationJson is { } beforeHistory)
                         {
                             using var notification = JsonDocument.Parse(beforeHistory);
@@ -335,8 +394,16 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
                         using (var history = JsonDocument.Parse(ThreadHistoryJson ?? "{\"turns\":[]}"))
                         {
-                            await SendJsonAsync(socket, new { id, result = new { thread = history.RootElement } },
-                                _shutdown.Token).ConfigureAwait(false);
+                            if (method == "thread/turns/list")
+                            {
+                                await SendJsonAsync(socket, new { id, result = new { data = history.RootElement.GetProperty("turns"), nextCursor = (string?)null } },
+                                    _shutdown.Token).ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                await SendJsonAsync(socket, new { id, result = new { thread = history.RootElement } },
+                                    _shutdown.Token).ConfigureAwait(false);
+                            }
                         }
 
                         if (AfterHistoryNotificationJson is { } afterHistory)

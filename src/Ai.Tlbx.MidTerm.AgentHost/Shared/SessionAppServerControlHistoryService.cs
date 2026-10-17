@@ -1168,16 +1168,17 @@ public sealed partial class SessionAppServerControlHistoryService
         state.CurrentTurn.StateLabel = "Running";
         var model = AppServerControlQuickSettings.NormalizeOptionalValue(appServerControlEvent.TurnStarted?.Model);
         var effort = AppServerControlQuickSettings.NormalizeOptionalValue(appServerControlEvent.TurnStarted?.Effort);
-        state.CurrentTurn.Model = model ?? state.QuickSettings.Model;
-        state.CurrentTurn.Effort = effort ?? state.QuickSettings.Effort;
+        var replay = appServerControlEvent.TurnStarted?.IsReplay == true;
+        state.CurrentTurn.Model = model ?? (replay ? null : state.QuickSettings.Model);
+        state.CurrentTurn.Effort = effort ?? (replay ? null : state.QuickSettings.Effort);
         state.CurrentTurn.StartedAt = appServerControlEvent.CreatedAt;
         state.CurrentTurn.CompletedAt = null;
-        if (model is not null)
+        if (model is not null && !replay)
         {
             state.QuickSettings.Model = model;
         }
 
-        if (effort is not null)
+        if (effort is not null && !replay)
         {
             state.QuickSettings.Effort = effort;
         }
@@ -1871,6 +1872,7 @@ public sealed partial class SessionAppServerControlHistoryService
             },
             TurnStarted = source.TurnStarted is null ? null : new AppServerControlProviderTurnStartedPayload
             {
+                IsReplay = source.TurnStarted.IsReplay,
                 Model = source.TurnStarted.Model,
                 Effort = source.TurnStarted.Effort
             },

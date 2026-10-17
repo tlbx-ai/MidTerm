@@ -52,6 +52,7 @@ public static class AppServerControlProviderEventCompaction
             },
             TurnStarted = source.TurnStarted is null ? null : new AppServerControlProviderTurnStartedPayload
             {
+                IsReplay = source.TurnStarted.IsReplay,
                 Model = source.TurnStarted.Model,
                 Effort = source.TurnStarted.Effort
             },

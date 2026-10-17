@@ -65,6 +65,8 @@ public sealed class AppServerControlProviderThreadStatePayload
 
 public sealed class AppServerControlProviderTurnStartedPayload
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsReplay { get; set; }
     public string? Model { get; set; }
     public string? Effort { get; set; }
 }

@@ -9,15 +9,88 @@ internal sealed partial class CodexAppServerControlAgentRuntime
     private readonly Action<AppServerControlProviderEvent> _publish;
     private List<AppServerControlProviderEvent>? _attachEvents;
     private string? _historyReadRequestId;
+    private readonly List<JsonElement> _historyTurnPages = [];
 
-    private static string BuildCodexThreadHistoryRequest(string id, string threadId) => BuildJsonString(writer =>
+    private async Task ReadCodexThreadHistoryAsync(string threadId, CancellationToken ct)
+    {
+        var metadata = await SendCodexRequestAsync("thread/read",
+            id => BuildCodexThreadHistoryRequest(id, threadId, includeTurns: false), ct).ConfigureAwait(false);
+        if (!string.Equals(GetString(metadata, "thread", "historyMode"), "paginated", StringComparison.Ordinal))
+        {
+            await SendCodexRequestAsync("thread/read", id =>
+            {
+                _historyReadRequestId = id;
+                return BuildCodexThreadHistoryRequest(id, threadId, includeTurns: true);
+            }, ct).ConfigureAwait(false);
+            return;
+        }
+
+        _historyTurnPages.Clear();
+        var cursors = new HashSet<string>(StringComparer.Ordinal);
+        string? cursor = null;
+        do
+        {
+            var page = await SendCodexRequestAsync("thread/turns/list", id =>
+            {
+                _historyReadRequestId = id;
+                return BuildJsonString(writer =>
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("id", id);
+                    writer.WriteString("method", "thread/turns/list");
+                    writer.WriteStartObject("params");
+                    writer.WriteString("threadId", threadId);
+                    writer.WriteString("sortDirection", "asc");
+                    writer.WriteString("itemsView", "full");
+                    writer.WriteNumber("limit", 100);
+                    if (cursor is not null) writer.WriteString("cursor", cursor);
+                    writer.WriteEndObject();
+                    writer.WriteEndObject();
+                });
+            }, ct).ConfigureAwait(false);
+            cursor = GetString(page, "nextCursor");
+            if (cursor is not null && !cursors.Add(cursor))
+            {
+                throw new InvalidOperationException("Codex history pagination returned a repeated cursor.");
+            }
+        }
+        while (cursor is not null);
+    }
+
+    private void HandleCodexHistoryReply(JsonElement result)
+    {
+        if (result.TryGetProperty("data", out var turns) && turns.ValueKind == JsonValueKind.Array)
+        {
+            using var enumerator = turns.EnumerateArray();
+            foreach (var turn in enumerator) _historyTurnPages.Add(turn.Clone());
+            if (GetString(result, "nextCursor") is not null) return;
+            using var snapshot = JsonDocument.Parse(BuildJsonString(writer =>
+            {
+                writer.WriteStartObject();
+                writer.WriteStartObject("thread");
+                writer.WriteStartArray("turns");
+                foreach (var turn in _historyTurnPages) turn.WriteTo(writer);
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            }));
+            RestoreCodexThreadHistory(snapshot.RootElement);
+            _historyTurnPages.Clear();
+        }
+        else
+        {
+            RestoreCodexThreadHistory(result);
+        }
+    }
+
+    private static string BuildCodexThreadHistoryRequest(string id, string threadId, bool includeTurns) => BuildJsonString(writer =>
     {
         writer.WriteStartObject();
         writer.WriteString("id", id);
         writer.WriteString("method", "thread/read");
         writer.WriteStartObject("params");
         writer.WriteString("threadId", threadId);
-        writer.WriteBoolean("includeTurns", true);
+        writer.WriteBoolean("includeTurns", includeTurns);
         writer.WriteEndObject();
         writer.WriteEndObject();
     });
@@ -58,7 +131,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime
                 _emit(CreateEvent("turn.started", turnId, null, null, "codex.app-server.history", "thread/read", turn,
                     e =>
                     {
-                        e.TurnStarted = new AppServerControlProviderTurnStartedPayload();
+                        e.TurnStarted = new AppServerControlProviderTurnStartedPayload { IsReplay = true };
                         if (GetLong(turn, "startedAt") is long startedAt && startedAt is > 0 and < 253402300800L)
                         {
                             e.CreatedAt = DateTimeOffset.FromUnixTimeSeconds(startedAt);

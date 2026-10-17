@@ -9,11 +9,15 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MtAgentHostCodexIntegrationTests
 {
     [Theory]
-    [InlineData("completed")]
-    [InlineData("inProgress")]
-    public async Task MtAgentHost_RestoresNativeCodexHistoryAndPreservesLiveOrdering(string status)
+    [InlineData("completed", false)]
+    [InlineData("inProgress", false)]
+    [InlineData("completed", true)]
+    [InlineData("inProgress", true)]
+    public async Task MtAgentHost_RestoresNativeCodexHistoryAndPreservesLiveOrdering(string status, bool paginated)
     {
         await using var fakeServer = FakeCodexWebSocketServer.Start("thread-history", "Unused.");
+        fakeServer.EmitUsageNotifications = true;
+        fakeServer.PaginatedHistory = paginated;
         fakeServer.ThreadHistoryJson = $$"""
             {"id":"thread-history","turns":[{"id":"turn-history","status":"{{status}}","startedAt":1792196000,"completedAt":1792196010,"items":[
               {"id":"user-original","type":"userMessage","content":[{"type":"text","text":"Original request."}]},
@@ -60,11 +64,30 @@ public sealed class MtAgentHostCodexIntegrationTests
                 h => h.Streams.AssistantText.EndsWith(" Live suffix.", StringComparison.Ordinal),
                 TimeSpan.FromSeconds(10), count: 96);
             Assert.Equal("Restored response. Live suffix.", history.Streams.AssistantText);
-            var users = history.History.Where(h => h.Kind == "user").ToArray();
+            var users = history.History.Where(h => h.Kind == "user" && h.TurnId == "turn-history").ToArray();
             Assert.Equal(new[] { "Original request.", "Steering request." }, users.Select(h => h.Body), StringComparer.Ordinal);
             Assert.Equal("turn-history", history.CurrentTurn.TurnId);
             Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1792196000), history.CurrentTurn.StartedAt);
+            Assert.Null(history.CurrentTurn.Model);
+            Assert.Null(history.CurrentTurn.Effort);
             Assert.Equal(status == "inProgress" ? "running" : "ready", history.Session.State);
+            Assert.Equal("Codex", history.Session.AgentName);
+            var usage = Assert.IsType<AppServerControlUsageSummary>(history.Session.Usage);
+            Assert.Equal(1234, usage.ContextUsedTokens);
+            Assert.Equal(128000, usage.ContextWindowTokens);
+            Assert.Equal(89000, usage.InputTokens);
+            Assert.Equal(1123, usage.OutputTokens);
+            Assert.Equal(80000, usage.CachedReadTokens);
+            Assert.Equal(0, usage.CachedWriteTokens);
+            Assert.Equal(234, usage.ReasoningTokens);
+            Assert.Equal(23, usage.PrimaryRateLimitUsedPercent);
+            Assert.Null(usage.SecondaryRateLimitUsedPercent);
+            Assert.Null(usage.CostAmount);
+            if (paginated)
+            {
+                Assert.Equal(2, fakeServer.HistoryPageCount);
+                Assert.Contains(history.History, h => h.Kind == "assistant" && h.Body == "Previous response.");
+            }
 
             attach.CommandId = "reattach-history";
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, attach);
