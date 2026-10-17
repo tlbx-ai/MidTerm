@@ -68,6 +68,10 @@ public sealed class MtAgentHostGrokIntegrationTests
             Assert.Equal(provider, attachWindow.Provider);
             Assert.Equal("grok-build-0.1", attachWindow.QuickSettings.Model);
             Assert.Contains(attachWindow.QuickSettings.ModelOptions, option => option.Value == "grok-4.3");
+            Assert.Equal("Fake ACP agent", attachWindow.Session.AgentName);
+            Assert.Contains(attachWindow.Session.AvailableCommands, command => command.Name == "compact");
+            Assert.Contains(attachWindow.Session.AvailableCommands, command => command.Name == "always-approve" && command.InputHint == "on|off");
+            Assert.DoesNotContain(attachWindow.History, item => item.Body.Contains("commands available:", StringComparison.Ordinal));
             var capture = await WaitForFakeGrokLaunchCaptureAsync(
                 fakeGrok.CapturePath,
                 static launch => launch.Arguments.Length > 0);
@@ -652,6 +656,77 @@ public sealed class MtAgentHostGrokIntegrationTests
             _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
                 patch => patch.Patch.CurrentTurn.State == "completed" && patch.Patch.CurrentTurn.TurnId == continued.TurnStarted.TurnId,
                 maxPatches: 40, timeout: TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_V2RetainsSetupCommandsAndOpaqueInputMetadata()
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll(), resumeCapability: "commands-initial-only", v2: true);
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        const string sessionId = "v2-initial-commands";
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AttachFakeAcpAsync(process, patches, fake, sessionId);
+            var history = await AppServerControlHostTestClient.GetHistoryWindowAsync(process.StandardOutput, process.StandardInput, patches, sessionId, count: 32);
+            var command = Assert.Single(history.Session.AvailableCommands);
+            Assert.Equal("setup-only", command.Name);
+            Assert.Equal("Command supplied by session setup", command.Description);
+            Assert.Null(command.InputHint);
+            Assert.Equal(7, command.Input!.Value.GetProperty("extra").GetInt32());
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MtAgentHost_CommandsKeepNativePrefixAndEmptyUpdatesClearTheCatalogue(bool v2)
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll(), v2: v2);
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        const string sessionId = "native-command-lifecycle";
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AttachFakeAcpAsync(process, patches, fake, sessionId);
+            foreach (var text in new[] { "/compact keep CMD_MARKER_76", "commands-malformed", "commands-clear" })
+            {
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "command-turn", SessionId = sessionId, Type = "turn.start",
+                    StartTurn = new AppServerControlTurnRequest { Text = text, PlanMode = text.StartsWith('/') ? "on" : "off" }
+                });
+                var result = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "command-turn");
+                Assert.True(result.Status == "accepted", result.Message);
+                _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
+                    patch => patch.Patch.CurrentTurn.State == "completed" && patch.Patch.CurrentTurn.TurnId == result.TurnStarted!.TurnId,
+                    maxPatches: 96, timeout: TimeSpan.FromSeconds(10));
+                var history = await AppServerControlHostTestClient.GetHistoryWindowAsync(process.StandardOutput, process.StandardInput, patches, sessionId, count: 96);
+                if (text.StartsWith('/'))
+                {
+                    if (v2) Assert.Equal(text, history.History.Single(item => item.Kind == "user").Body);
+                    else Assert.Contains("prompt=" + text, history.Streams.AssistantText, StringComparison.Ordinal);
+                    Assert.DoesNotContain("tlbx plan mode is enabled", history.Streams.AssistantText, StringComparison.Ordinal);
+                }
+                else if (text == "commands-clear") Assert.Empty(history.Session.AvailableCommands);
+                else Assert.Contains(history.Session.AvailableCommands, command => command.Name == "compact");
+                Assert.DoesNotContain(history.History, item => item.Body.Contains("commands available:", StringComparison.Ordinal));
+            }
         }
         finally
         {

@@ -32,6 +32,11 @@ public static class AppServerControlProviderEventCompaction
             CreatedAt = source.CreatedAt,
             Type = source.Type,
             Raw = CloneRawMetadata(source.Raw),
+            AgentMetadataUpdated = source.AgentMetadataUpdated is null ? null : new AppServerControlProviderAgentMetadataPayload
+            {
+                AgentName = source.AgentMetadataUpdated.AgentName,
+                AvailableCommands = source.AgentMetadataUpdated.AvailableCommands is null ? null : AppServerControlCommand.CloneMany(source.AgentMetadataUpdated.AvailableCommands)
+            },
             SessionState = source.SessionState is null ? null : new AppServerControlProviderSessionStatePayload
             {
                 State = source.SessionState.State,

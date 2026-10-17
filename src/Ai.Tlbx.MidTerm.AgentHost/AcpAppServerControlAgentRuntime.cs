@@ -50,6 +50,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
     private bool _supportsLegacyModels;
     private bool _supportsImagePrompts;
     private AppServerControlQuickSettingsSummary _quickSettings = new();
+    private List<AppServerControlCommand> _availableCommands = [];
     private int _nextRequestId;
     private long _sequence;
     private bool _disposed;
@@ -231,6 +232,15 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
 
             var events = new List<AppServerControlProviderEvent>
         {
+                CreateEvent("agent.metadata.updated", null, null, null, "acp", sessionMethod, newSessionResult, e =>
+                {
+                    _availableCommands = ReadAvailableCommands(newSessionResult);
+                    e.AgentMetadataUpdated = new AppServerControlProviderAgentMetadataPayload
+                    {
+                        AgentName = _agentName,
+                        AvailableCommands = AppServerControlCommand.CloneMany(_availableCommands)
+                    };
+                }),
                 CreateEvent("session.started", null, null, null, "mtagenthost.acp", "runtime.attach", attach, appServerControlEvent =>
                 {
                     appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
@@ -821,25 +831,34 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
 
     private void HandleAvailableCommandsUpdate(JsonElement update, JsonElement root, string rawLine)
     {
-        var commands = ReadAvailableCommandNames(update);
+        var catalogue = Traverse(update, "availableCommands");
+        var hasCatalogue = catalogue is { ValueKind: JsonValueKind.Array };
+        var commands = hasCatalogue ? ReadAvailableCommands(update) : _availableCommands;
         var tools = ReadMetaTools(update);
-        if (commands.Count == 0 && tools.Count == 0)
-        {
-            return;
-        }
+        if (!hasCatalogue && tools.Count == 0) return;
 
-        var signature = string.Join('\n', commands) + "\u001f" + string.Join('\n', tools);
+        var signature = Traverse(update, "availableCommands")?.GetRawText() + "\u001f" + string.Join('\n', tools);
         if (string.Equals(signature, _availableCommandsSignature, StringComparison.Ordinal))
         {
             return;
         }
 
         _availableCommandsSignature = signature;
+        if (hasCatalogue)
+        {
+            _availableCommands = commands;
+            _emit(CreateEvent("agent.metadata.updated", null, null, null, "acp", "available_commands_update", root,
+                e => e.AgentMetadataUpdated = new AppServerControlProviderAgentMetadataPayload
+                {
+                    AvailableCommands = AppServerControlCommand.CloneMany(commands)
+                }, rawLine));
+        }
+        var names = commands.Select(static command => command.Name).ToList();
         var message = commands.Count == 0
             ? $"{_agentName} ACP tools updated."
-            : $"{_agentName} commands available: {FormatNamePreview(commands)}.";
-        var detail = BuildAvailableCommandsDetail(commands, tools);
-        EmitRuntimeMessage("agent.state", message, detail, "acp", "available_commands_update", root, rawLine);
+            : $"{_agentName} commands available: {FormatNamePreview(names)}.";
+        var detail = BuildAvailableCommandsDetail(names, tools);
+        EmitRuntimeMessage("agent.state", message, detail, "acp", "available_commands_update", root, rawLine, timelineVisible: false);
     }
 
     private void HandleSessionNotification(JsonElement root, string rawLine, string? method)
@@ -1739,7 +1758,10 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
     private List<AcpPromptBlock> BuildPromptBlocks(AppServerControlTurnRequest request, string? planMode)
     {
         var blocks = new List<AcpPromptBlock>();
-        var prompt = AppServerControlQuickSettings.ApplyPlanModePrompt(request.Text, planMode);
+        var input = request.Text?.TrimStart() ?? string.Empty;
+        var commandName = input.StartsWith('/') ? input[1..].Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() : null;
+        var isNativeCommand = commandName is not null && _availableCommands.Any(command => command.Name == commandName);
+        var prompt = isNativeCommand ? request.Text : AppServerControlQuickSettings.ApplyPlanModePrompt(request.Text, planMode);
         if (!string.IsNullOrWhiteSpace(prompt))
         {
             blocks.Add(AcpPromptBlock.CreateText(prompt));
@@ -2115,7 +2137,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         return ExtractText(content);
     }
 
-    private static List<string> ReadAvailableCommandNames(JsonElement update)
+    private static List<AppServerControlCommand> ReadAvailableCommands(JsonElement update)
     {
         var commands = Traverse(update, "availableCommands");
         if (commands is not { ValueKind: JsonValueKind.Array } array)
@@ -2123,18 +2145,27 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             return [];
         }
 
-        var result = new List<string>();
+        var result = new List<AppServerControlCommand>();
+        var names = new HashSet<string>(StringComparer.Ordinal);
         using var commandEnumerator = array.EnumerateArray();
         while (commandEnumerator.MoveNext())
         {
-            var name = GetString(commandEnumerator.Current, "name");
-            if (!string.IsNullOrWhiteSpace(name))
+            var command = commandEnumerator.Current;
+            var name = GetString(command, "name");
+            var description = GetString(command, "description");
+            if (!string.IsNullOrWhiteSpace(name) && description is not null && names.Add(name))
             {
-                result.Add(name);
+                result.Add(new AppServerControlCommand
+                {
+                    Name = name,
+                    Description = description,
+                    Input = Traverse(command, "input")?.Clone(),
+                    InputHint = GetString(command, "input", "type") is null or "text" ? GetString(command, "input", "hint") : null
+                });
             }
         }
 
-        return result.Distinct(StringComparer.Ordinal).ToList();
+        return result;
     }
 
     private static List<string> ReadMetaTools(JsonElement update)

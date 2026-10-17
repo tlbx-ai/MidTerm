@@ -48,7 +48,8 @@ import {
   resolveHistoryWindowViewportWidth,
   resolveRepresentativeHistoryEntryHeight,
 } from './historyMeasurements';
-import { createAgentHistoryDom } from './historyDom';
+import { createAgentHistoryDom, isProposedPlanActionDisabled } from './historyDom';
+import { syncNativeCommands } from './nativeCommands';
 import { createAgentHistoryRender, resolveHistoryNavigatorTarget } from './historyRender';
 import {
   DEFAULT_APP_SERVER_CONTROL_HISTORY_VIRTUALIZER_CONFIG,
@@ -2591,6 +2592,11 @@ function renderAgentView(
     snapshot.quickSettings,
   );
   syncAgentViewPresentation(panel, snapshot.provider);
+  syncNativeCommands(
+    panel,
+    snapshot,
+    () => !isProposedPlanActionDisabled(snapshot.sessionId, viewStates.get(snapshot.sessionId)),
+  );
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
   syncAppServerControlTurnExecutionState(snapshot.sessionId, snapshot.currentTurn);
   historyRender.syncRequestInteractionState(state, snapshot.requests);

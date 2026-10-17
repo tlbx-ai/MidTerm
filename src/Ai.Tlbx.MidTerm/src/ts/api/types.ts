@@ -206,11 +206,20 @@ export interface AppServerControlHistoryPatch {
 export type AppServerControlHistoryDelta = AppServerControlHistoryPatch;
 
 export interface AppServerControlSessionSummary {
+  agentName?: string | null;
+  availableCommands?: AppServerControlCommand[];
   state: string;
   stateLabel: string;
   reason?: string | null;
   lastError?: string | null;
   lastEventAt?: string | null;
+}
+
+export interface AppServerControlCommand {
+  name: string;
+  description?: string | null;
+  inputHint?: string | null;
+  input?: unknown;
 }
 
 export interface AppServerControlThreadSummary {

@@ -13513,6 +13513,19 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   background: var(--terminal-canvas-background-stack);
 }
 
+
+.agent-native-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; padding: 0 16px; border-bottom: 1px solid var(--border-color); color: var(--text-secondary); font-size: 12px; }
+.agent-native-controls[hidden] { display: none; }
+.agent-native-controls details { position: relative; }
+.agent-native-controls summary { display: flex; align-items: center; min-height: 44px; cursor: pointer; white-space: nowrap; }
+.agent-native-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-native-command-form { position: absolute; top: 100%; right: 0; display: grid; gap: 10px; width: min(320px, calc(100vw - 64px)); max-height: 60dvh; overflow: auto; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-input); box-shadow: var(--command-bay-shadow); z-index: 50; }
+.agent-native-command-form select, .agent-native-command-form input { min-width: 0; min-height: 44px; padding: 6px 10px; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 4px; }
+.agent-native-command-form input[hidden] { display: none; }
+.agent-native-command-form p { margin: 0; white-space: normal; }
+.agent-native-command-form button { min-height: 44px; }
+.agent-native-command-error { color: var(--status-error); }
+
 .agent-runtime-stats {
   position: absolute;
   top: 12px;

@@ -141,19 +141,24 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
             await WriteResponseAsync(id, v2 ? new
             {
                 sessionId,
-                configOptions = BuildV2ConfigOptions(v2Model, v2Agent, v2Toggle)
+                configOptions = BuildV2ConfigOptions(v2Model, v2Agent, v2Toggle),
+                availableCommands = new[] { new { name = "setup-only", description = "Command supplied by session setup", input = new { type = "_future", hint = "Opaque input", extra = 7 } } }
             } : (object)new
             {
                 sessionId,
                 models = BuildModelState()
             }).ConfigureAwait(false);
             await WriteNotificationAsync("_x.ai/session/setup", new { sessionId, phase = "ready" }).ConfigureAwait(false);
-            await WriteAvailableCommandsUpdateAsync(sessionId).ConfigureAwait(false);
+            if (resumeCapability != "commands-initial-only") await WriteAvailableCommandsUpdateAsync(sessionId).ConfigureAwait(false);
             break;
         case "session/prompt":
             activePromptId = id.ToString();
             var text = ReadPromptText(root);
             var imageSummary = ReadPromptImageSummary(root);
+            if (text.StartsWith("commands-clear", StringComparison.Ordinal))
+                await WriteNotificationAsync("session/update", new { sessionId, update = new { sessionUpdate = "available_commands_update", availableCommands = Array.Empty<object>() } }).ConfigureAwait(false);
+            if (text.StartsWith("commands-malformed", StringComparison.Ordinal))
+                await WriteNotificationAsync("session/update", new { sessionId, update = new { sessionUpdate = "available_commands_update", availableCommands = "invalid" } }).ConfigureAwait(false);
             if (v2)
             {
                 // A repeated idle snapshot is not completion of a queued prompt.
@@ -261,7 +266,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         : (object)questionParameters).ConfigureAwait(false);
                 break;
             }
-            await WriteAvailableCommandsUpdateAsync(sessionId).ConfigureAwait(false);
+            if (!text.StartsWith("commands-clear", StringComparison.Ordinal)) await WriteAvailableCommandsUpdateAsync(sessionId).ConfigureAwait(false);
             await WriteNotificationAsync("session/update", new
             {
                 sessionId,

@@ -19,6 +19,7 @@ const resume = process.env.TLBX_ACP_UI_SCENARIO === "resume";
 const nativeV2 = process.env.TLBX_ACP_UI_SCENARIO === "v2";
 const planReview = process.env.TLBX_ACP_UI_SCENARIO === "plan";
 const nativeConfig = process.env.TLBX_ACP_UI_SCENARIO === "config";
+const nativeCommands = process.env.TLBX_ACP_UI_SCENARIO === "commands";
 assert.ok(
   url && cookie && sessionId,
   "Authenticated source URL and acceptance session required",
@@ -98,7 +99,7 @@ try {
       if (body.sessionId === sessionId && body.turn)
         resolvePlanSubmission(body.turn);
     });
-  if (planReview || nativeConfig)
+  if (planReview || nativeConfig || nativeCommands)
     page.on("websocket", (socket) =>
       socket.on("framesent", (frame) => {
         try {
@@ -473,7 +474,115 @@ try {
     result.screenshots.push(screenshot);
     result.nativeConfigVerified = true;
   }
-  if (!resume && !nativeV2 && !planReview && !nativeConfig && !initiallyOpen) {
+  if (nativeCommands) {
+    const sessions = await (
+      await context.request.get(`${url}/api/sessions`)
+    ).json();
+    assert.equal(
+      sessions.sessions.find((session) => session.id === sessionId)
+        ?.profileHint,
+      "acp-commands-test",
+      "Native command execution requires the deterministic fixture",
+    );
+    const host = wrapper.locator(".agent-native-controls");
+    await host.waitFor({ state: "visible" });
+    assert.equal(
+      await host.locator(".agent-native-name").innerText(),
+      "ACP command acceptance",
+    );
+    for (const viewport of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      if (!(await host.locator("details").evaluate((element) => element.open)))
+        await host.locator("summary").click();
+      const form = host.locator("form");
+      await form.locator("select").selectOption("compact");
+      assert.match(
+        await form.locator("p").first().innerText(),
+        /Compress conversation history/,
+      );
+      assert.equal(
+        await form.locator("input").getAttribute("placeholder"),
+        "optional context about what to preserve",
+      );
+      const box = await form.boundingBox();
+      assert.ok(
+        box &&
+          box.x >= 0 &&
+          box.y >= 0 &&
+          box.x + box.width <= viewport.width + 1 &&
+          box.y + box.height <= viewport.height,
+        "Native command menu fits viewport",
+      );
+      const buttonBox = await form
+        .locator('button[type="submit"]')
+        .boundingBox();
+      assert.ok(buttonBox && buttonBox.height >= 44);
+      result.measurements.push({ viewport, menu: box });
+      const screenshot = path.join(out, `commands-${viewport.width}.png`);
+      await page.screenshot({ path: screenshot });
+      result.screenshots.push(screenshot);
+    }
+    const draft = page.locator("textarea:visible");
+    await draft.fill("Unsent composer remains here");
+    const form = host.locator("form");
+    await form.locator("input").fill("keep CMD_MARKER_76");
+    await form.locator('button[type="submit"]').click();
+    let timeout;
+    const submitted = await Promise.race([
+      planSubmission,
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("No native command submitted")),
+          10000,
+        );
+      }),
+    ]).finally(() => clearTimeout(timeout));
+    assert.equal(submitted.text, "/compact keep CMD_MARKER_76");
+    assert.equal(submitted.planMode, "on");
+    let finished;
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+      finished = await (
+        await context.request.get(
+          `${url}/api/sessions/${sessionId}/agent-control/history?count=96`,
+        )
+      ).json();
+      if (
+        finished.currentTurn.turnId !== initial.currentTurn.turnId &&
+        finished.currentTurn.state === "completed"
+      )
+        break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.notEqual(finished.currentTurn.turnId, initial.currentTurn.turnId);
+    assert.equal(finished.currentTurn.state, "completed");
+    assert.match(
+      finished.streams.assistantText,
+      /prompt=\/compact keep CMD_MARKER_76/,
+    );
+    assert.ok(
+      !finished.streams.assistantText.includes("tlbx plan mode is enabled"),
+    );
+    assert.equal(await draft.inputValue(), "Unsent composer remains here");
+    assert.ok(
+      !finished.history.some((item) =>
+        item.body.includes("commands available:"),
+      ),
+      "Catalogue does not clutter chat history",
+    );
+    result.nativeCommandsVerified = true;
+  }
+  if (
+    !resume &&
+    !nativeV2 &&
+    !planReview &&
+    !nativeConfig &&
+    !nativeCommands &&
+    !initiallyOpen
+  ) {
     assert.ok(
       answer &&
         (multi

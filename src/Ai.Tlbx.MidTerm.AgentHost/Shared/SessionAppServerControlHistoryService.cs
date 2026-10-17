@@ -731,6 +731,11 @@ public sealed partial class SessionAppServerControlHistoryService
         }
 
         state.Session.LastEventAt = appServerControlEvent.CreatedAt;
+        if (appServerControlEvent.AgentMetadataUpdated is { } metadata)
+        {
+            if (metadata.AgentName is not null) state.Session.AgentName = metadata.AgentName;
+            if (metadata.AvailableCommands is not null) state.Session.AvailableCommands = AppServerControlCommand.CloneMany(metadata.AvailableCommands);
+        }
         ApplySessionState(state, appServerControlEvent);
         ApplyThreadState(state, appServerControlEvent);
 
@@ -1841,6 +1846,11 @@ public sealed partial class SessionAppServerControlHistoryService
                 Method = source.Raw.Method,
                 PayloadOmitted = source.Raw.PayloadOmitted
             },
+            AgentMetadataUpdated = source.AgentMetadataUpdated is null ? null : new AppServerControlProviderAgentMetadataPayload
+            {
+                AgentName = source.AgentMetadataUpdated.AgentName,
+                AvailableCommands = source.AgentMetadataUpdated.AvailableCommands is null ? null : AppServerControlCommand.CloneMany(source.AgentMetadataUpdated.AvailableCommands)
+            },
             SessionState = source.SessionState is null ? null : new AppServerControlProviderSessionStatePayload
             {
                 State = source.SessionState.State,
@@ -2000,6 +2010,8 @@ public sealed partial class SessionAppServerControlHistoryService
     {
         return new AppServerControlSessionSummary
         {
+            AgentName = source.AgentName,
+            AvailableCommands = AppServerControlCommand.CloneMany(source.AvailableCommands),
             State = source.State,
             StateLabel = source.StateLabel,
             Reason = source.Reason,
@@ -2010,6 +2022,8 @@ public sealed partial class SessionAppServerControlHistoryService
 
     private static void CopySessionSummary(AppServerControlSessionSummary target, AppServerControlSessionSummary source)
     {
+        target.AgentName = source.AgentName;
+        target.AvailableCommands = AppServerControlCommand.CloneMany(source.AvailableCommands);
         target.State = source.State;
         target.StateLabel = source.StateLabel;
         target.Reason = source.Reason;

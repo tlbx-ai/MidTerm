@@ -1,4 +1,7 @@
 {
+  "appServerControl.commands.title": "Comandos",
+  "appServerControl.commands.arguments": "Argumentos",
+  "appServerControl.commands.run": "Executar comando",
   "appServerControl.config.settings": "Configurações do agente",
   "appServerControl.plan.implement": "Implementar plano",
   "git.newFile": "Novo",

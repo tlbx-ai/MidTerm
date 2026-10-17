@@ -28,6 +28,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
         _configOptionIds.Clear();
         _currentModeId = _planModeId = _defaultModeId = null;
         _availableCommandsSignature = _lastSessionNotificationSignature = null;
+        _availableCommands.Clear();
     }
 
     private void HandleV2PromptResponse(string turnId, JsonElement root, string raw)

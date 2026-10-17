@@ -1,4 +1,7 @@
 {
+  "appServerControl.commands.title": "命令",
+  "appServerControl.commands.arguments": "参数",
+  "appServerControl.commands.run": "运行命令",
   "appServerControl.config.settings": "代理设置",
   "appServerControl.plan.implement": "实施计划",
   "git.newFile": "新建",

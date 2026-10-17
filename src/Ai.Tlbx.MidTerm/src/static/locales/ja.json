@@ -1,4 +1,7 @@
 {
+  "appServerControl.commands.title": "コマンド",
+  "appServerControl.commands.arguments": "引数",
+  "appServerControl.commands.run": "コマンドを実行",
   "appServerControl.config.settings": "エージェント設定",
   "appServerControl.plan.implement": "計画を実行",
   "git.newFile": "新規",

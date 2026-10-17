@@ -1,4 +1,7 @@
 {
+  "appServerControl.commands.title": "কমান্ড",
+  "appServerControl.commands.arguments": "আর্গুমেন্ট",
+  "appServerControl.commands.run": "কমান্ড চালান",
   "appServerControl.config.settings": "এজেন্ট সেটিংস",
   "appServerControl.plan.implement": "পরিকল্পনা বাস্তবায়ন করুন",
   "git.newFile": "নতুন",

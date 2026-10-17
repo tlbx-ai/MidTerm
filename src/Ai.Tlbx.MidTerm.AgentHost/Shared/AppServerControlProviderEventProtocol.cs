@@ -16,6 +16,7 @@ public sealed class AppServerControlProviderEvent
     public string Type { get; set; } = string.Empty;
     public AppServerControlProviderEventRaw? Raw { get; set; }
     public AppServerControlProviderSessionStatePayload? SessionState { get; set; }
+    public AppServerControlProviderAgentMetadataPayload? AgentMetadataUpdated { get; set; }
     public AppServerControlProviderThreadStatePayload? ThreadState { get; set; }
     public AppServerControlProviderTurnStartedPayload? TurnStarted { get; set; }
     public AppServerControlProviderTurnCompletedPayload? TurnCompleted { get; set; }
@@ -39,6 +40,12 @@ public sealed class AppServerControlProviderEventRaw
     public string Source { get; set; } = string.Empty;
     public string? Method { get; set; }
     public bool PayloadOmitted { get; set; }
+}
+
+public sealed class AppServerControlProviderAgentMetadataPayload
+{
+    public string? AgentName { get; set; }
+    public List<AppServerControlCommand>? AvailableCommands { get; set; }
 }
 
 public sealed class AppServerControlProviderSessionStatePayload

@@ -95,11 +95,27 @@ public sealed class AppServerControlHistoryPatch
 
 public sealed class AppServerControlSessionSummary
 {
+    public string? AgentName { get; set; }
+    public List<AppServerControlCommand> AvailableCommands { get; set; } = [];
     public string State { get; set; } = string.Empty;
     public string StateLabel { get; set; } = string.Empty;
     public string? Reason { get; set; }
     public string? LastError { get; set; }
     public DateTimeOffset? LastEventAt { get; set; }
+}
+
+public sealed class AppServerControlCommand
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string? InputHint { get; set; }
+    public JsonElement? Input { get; set; }
+
+    public static List<AppServerControlCommand> CloneMany(IEnumerable<AppServerControlCommand>? commands) =>
+        commands?.Select(static command => new AppServerControlCommand
+        {
+            Name = command.Name, Description = command.Description, InputHint = command.InputHint, Input = command.Input?.Clone()
+        }).ToList() ?? [];
 }
 
 public sealed class AppServerControlThreadSummary
