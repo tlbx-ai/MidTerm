@@ -180,6 +180,15 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
         case "session/cancel":
             if (!string.IsNullOrWhiteSpace(activePromptId))
             {
+                await WriteNotificationAsync("session/update", new
+                {
+                    sessionId,
+                    update = new
+                    {
+                        sessionUpdate = "agent_message_chunk",
+                        content = new { type = "text", text = "Final update before cancellation settled." }
+                    }
+                }).ConfigureAwait(false);
                 await WriteResponseAsync(JsonDocument.Parse($"\"{activePromptId}\"").RootElement.Clone(), new
                 {
                     stopReason = "cancelled"

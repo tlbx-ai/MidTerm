@@ -36,18 +36,22 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         var profile = ResolveAttachProfile(session);
         if (!IsAttachableProfile(profile))
         {
+            if (session.AppServerControlOnly)
+            {
+                await _hostRuntime.RecordAttachFailureAsync(sessionId, profile,
+                    $"Agent Controller runtime is not enabled for profile '{profile}'.", ct).ConfigureAwait(false);
+            }
             return false;
         }
 
         var cwd = session.CurrentDirectory;
         if (string.IsNullOrWhiteSpace(cwd) || !Directory.Exists(cwd))
         {
-            return false;
-        }
-
-        if (!_hostRuntime.IsEnabledFor(profile))
-        {
-            Log.Warn(() => $"App Server Controller runtime attach refused for {sessionId}: mtagenthost is disabled for profile '{profile}'.");
+            if (session.AppServerControlOnly)
+            {
+                await _hostRuntime.RecordAttachFailureAsync(sessionId, profile,
+                    "Agent Controller working directory is missing or unavailable.", ct).ConfigureAwait(false);
+            }
             return false;
         }
 
@@ -58,7 +62,7 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         catch (Exception ex)
         {
             Log.Warn(() => $"App Server Controller host attach failed for {sessionId}. {ex.Message}");
-            await _hostRuntime.DetachAsync(sessionId, ct).ConfigureAwait(false);
+            await _hostRuntime.RecordAttachFailureAsync(sessionId, profile, ex.Message, ct).ConfigureAwait(false);
             return false;
         }
     }

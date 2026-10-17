@@ -12,6 +12,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
     private const int MaxInlineImageBytes = 10 * 1024 * 1024;
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly TimeSpan AttachRequestTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan CancelTimeout = TimeSpan.FromSeconds(15);
 
     private readonly Action<AppServerControlProviderEvent> _emit;
     private readonly string _provider;
@@ -37,6 +38,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
     private string? _userProfileDirectory;
     private string? _providerThreadId;
     private string? _activeTurnId;
+    private TaskCompletionSource? _activeTurnCompletion;
     private string? _activeTurnModel;
     private string? _activeTurnEffort;
     private string? _availableCommandsSignature;
@@ -91,6 +93,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             {
                 "runtime.attach" => await AttachAsync(command, ct).ConfigureAwait(false),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
+                "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolvePermissionRequestAsync(command, ct).ConfigureAwait(false),
                 "user-input.resolve" => throw new InvalidOperationException($"{_agentName} ACP user-input resolution is not supported yet."),
@@ -121,6 +124,24 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         if (string.IsNullOrWhiteSpace(binaryPath) || !File.Exists(binaryPath))
         {
             throw new InvalidOperationException($"{_agentName} ACP executable was not found.");
+        }
+
+        if (_process is { HasExited: false } && !string.IsNullOrWhiteSpace(_providerThreadId))
+        {
+            var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (!string.Equals(command.SessionId, _sessionId, StringComparison.Ordinal) ||
+                !string.Equals(Path.GetFullPath(attach.WorkingDirectory), Path.GetFullPath(_workingDirectory!), pathComparison) ||
+                !string.Equals(Path.GetFullPath(binaryPath), Path.GetFullPath(_binaryPath!), pathComparison) ||
+                !(attach.ExecutableArguments ?? []).SequenceEqual(_executableArguments, StringComparer.Ordinal) ||
+                (!string.IsNullOrWhiteSpace(attach.ResumeThreadId) &&
+                 !string.Equals(attach.ResumeThreadId, _providerThreadId, StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException($"{_agentName} already owns a different ACP attachment; its live conversation was preserved.");
+            }
+
+            // mt reconnects to this persistent host after a web-server restart.
+            // Its ownership handshake must not create another provider conversation.
+            return Accepted(command.CommandId, command.SessionId);
         }
 
         await DisposeProcessAsync().ConfigureAwait(false);
@@ -247,14 +268,16 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             throw new InvalidOperationException("App Server Controller turn input must include text or attachments.");
         }
 
-        _activeTurnId = "turn-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var turnId = "turn-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        _activeTurnId = turnId;
+        _activeTurnCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         _quickSettings = MergeRequestedQuickSettings(quickSettings);
         _activeTurnModel = _quickSettings.Model;
         _activeTurnEffort = _quickSettings.Effort;
         _tools.Clear();
 
         var requestId = NextRequestId();
-        _pendingPromptTurns[requestId] = _activeTurnId;
+        _pendingPromptTurns[requestId] = turnId;
         foreach (var appServerControlEvent in CreateTurnStartEvents(request))
         {
             _emit(appServerControlEvent);
@@ -280,7 +303,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         {
             _pendingPromptTurns.TryRemove(requestId, out _);
             CompleteTurn(
-                _activeTurnId,
+                turnId,
                 "failed",
                 "Failed",
                 "send_failed",
@@ -301,14 +324,14 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 {
                     SessionId = command.SessionId,
                     Status = "accepted",
-                    TurnId = _activeTurnId
+                    TurnId = turnId
                 },
                 TurnStarted = new AppServerControlTurnStartResponse
                 {
                     SessionId = command.SessionId,
                     Provider = Provider,
                     ThreadId = _providerThreadId ?? _sessionId ?? command.SessionId,
-                    TurnId = _activeTurnId,
+                    TurnId = turnId,
                     Status = "accepted",
                     QuickSettings = new AppServerControlQuickSettingsSummary
                     {
@@ -350,8 +373,48 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         ];
     }
 
+    private async Task<HostCommandOutcome> SteerTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    {
+        EnsureAttached();
+        var request = command.SteerTurn ?? throw new InvalidOperationException("turn.steer payload is required.");
+        if (string.IsNullOrWhiteSpace(_activeTurnId) ||
+            !string.Equals(request.ExpectedTurnId, _activeTurnId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"{_agentName} steer target no longer matches the active turn.");
+        }
+
+        var replacement = new AppServerControlTurnRequest
+        {
+            Text = request.Text,
+            Attachments = request.Attachments
+        };
+        // Validate input before stopping useful work. ACP v1 steering is an explicit
+        // cancel-and-reprompt within the same provider conversation, not a native steer RPC.
+        if (BuildPromptBlocks(replacement, _quickSettings.PlanMode).Count == 0)
+        {
+            throw new InvalidOperationException("ACP steer input must include text or attachments.");
+        }
+
+        await InterruptTurnAsync(new AppServerControlHostCommandEnvelope
+        {
+            CommandId = command.CommandId,
+            SessionId = command.SessionId,
+            Type = "turn.interrupt",
+            InterruptTurn = new AppServerControlInterruptRequest { TurnId = request.ExpectedTurnId }
+        }, ct).ConfigureAwait(false);
+
+        return await StartTurnAsync(new AppServerControlHostCommandEnvelope
+        {
+            CommandId = command.CommandId,
+            SessionId = command.SessionId,
+            Type = "turn.start",
+            StartTurn = replacement
+        }, ct).ConfigureAwait(false);
+    }
+
     private async Task<HostCommandOutcome> InterruptTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
+        EnsureAttached();
         var turnId = string.IsNullOrWhiteSpace(command.InterruptTurn?.TurnId)
             ? _activeTurnId
             : command.InterruptTurn!.TurnId;
@@ -359,6 +422,14 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         {
             throw new InvalidOperationException($"{_agentName} does not have an active turn to interrupt.");
         }
+
+        if (!string.Equals(turnId, _activeTurnId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"{_agentName} interrupt target no longer matches the active turn.");
+        }
+
+        var completion = _activeTurnCompletion?.Task
+            ?? throw new InvalidOperationException($"{_agentName} does not have an active prompt to cancel.");
 
         await WriteJsonRpcNotificationAsync(
                 "session/cancel",
@@ -379,12 +450,18 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             }
         }
 
-        foreach (var pair in _pendingPromptTurns.Where(pair => string.Equals(pair.Value, turnId, StringComparison.Ordinal)).ToList())
+        // ACP permits final updates until the original prompt response arrives.
+        // Keep its turn identity alive and do not admit another prompt before that boundary.
+        try
         {
-            _pendingPromptTurns.TryRemove(pair.Key, out _);
+            await completion.WaitAsync(CancelTimeout, ct).ConfigureAwait(false);
+            EnsureAttached();
         }
-
-        ResetTurnState();
+        catch (TimeoutException)
+        {
+            await DisposeProcessAsync().ConfigureAwait(false);
+            throw new InvalidOperationException($"{_agentName} did not confirm ACP cancellation; its runtime was stopped to prevent overlapping prompts.");
+        }
 
         return Accepted(
             command.CommandId,
@@ -394,28 +471,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 SessionId = command.SessionId,
                 Status = "accepted",
                 TurnId = turnId
-            },
-            events:
-            [
-                CreateEvent("turn.aborted", turnId, null, null, "acp", "session/cancel", command.InterruptTurn, appServerControlEvent =>
-                {
-                    appServerControlEvent.TurnCompleted = new AppServerControlProviderTurnCompletedPayload
-                    {
-                        State = "interrupted",
-                        StateLabel = "Interrupted",
-                        StopReason = "interrupt"
-                    };
-                }),
-                CreateEvent("session.state.changed", turnId, null, null, "acp", "session/cancel", command.InterruptTurn, appServerControlEvent =>
-                {
-                    appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
-                    {
-                        State = "ready",
-                        StateLabel = "Ready",
-                        Reason = $"{_agentName} turn interrupted."
-                    };
-                })
-            ]);
+            });
     }
 
     private async Task<HostCommandOutcome> ResolvePermissionRequestAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -1156,7 +1212,12 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         {
         }
 
-        if (!_shutdown.IsCancellationRequested && !string.IsNullOrWhiteSpace(_activeTurnId) && process.ExitCode != 0)
+        if (!ReferenceEquals(_process, process))
+        {
+            return;
+        }
+
+        if (!_shutdown.IsCancellationRequested && !string.IsNullOrWhiteSpace(_activeTurnId))
         {
             var turnId = _activeTurnId;
             _emit(CreateEvent("turn.completed", turnId, null, null, "acp", "process.exit", new { process.ExitCode }, appServerControlEvent =>
@@ -1171,6 +1232,11 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             }));
             EmitRuntimeMessage("runtime.error", $"{_agentName} ACP process exited unexpectedly.", $"Exit code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
             ResetTurnState();
+        }
+
+        foreach (var pending in _pendingRequests.Values)
+        {
+            pending.TrySetException(new InvalidOperationException($"{_agentName} ACP connection closed."));
         }
     }
 
@@ -2149,10 +2215,13 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
 
     private void ResetTurnState()
     {
+        var completion = _activeTurnCompletion;
+        _activeTurnCompletion = null;
         _activeTurnId = null;
         _activeTurnModel = null;
         _activeTurnEffort = null;
         _tools.Clear();
+        completion?.TrySetResult();
     }
 
     private static string? GetString(JsonElement? element, params string[] path)

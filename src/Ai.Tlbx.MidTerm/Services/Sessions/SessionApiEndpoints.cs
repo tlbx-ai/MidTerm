@@ -791,7 +791,9 @@ public static partial class SessionApiEndpoints
                 && !await appServerControlRuntime.EnsureAttachedAsync(id, session, ct: ct).ConfigureAwait(false)
                 && !appServerControlRuntime.HasHistory(id))
             {
-                return Results.Conflict("Agent Controller runtime is not available for this session.");
+                return Results.Conflict(appServerControlRuntime.TryGetRuntimeSummary(id, out var failedRuntime)
+                    ? failedRuntime.LastError ?? "Agent Controller runtime is not available for this session."
+                    : "Agent Controller runtime is not available for this session.");
             }
 
             var history = await appServerControlRuntime.GetHistoryWindowAsync(

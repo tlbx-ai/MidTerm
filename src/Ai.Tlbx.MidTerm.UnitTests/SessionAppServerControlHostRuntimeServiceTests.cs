@@ -484,7 +484,9 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
 
         Assert.False(attached);
         Assert.False(runtime.IsAttached(session.Id));
-        Assert.False(runtime.TryGetRuntimeSummary(session.Id, out _));
+        Assert.True(runtime.TryGetRuntimeSummary(session.Id, out var failedRuntime));
+        Assert.Equal("error", failedRuntime.Status);
+        Assert.Contains("Injected mtagenthost cold-start failure.", failedRuntime.LastError, StringComparison.Ordinal);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             runtime.StartTurnAsync(

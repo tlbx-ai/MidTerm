@@ -719,14 +719,24 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
     }
 
+    public async Task RecordAttachFailureAsync(string sessionId, string profile, string error, CancellationToken ct)
+    {
+        await DetachAsync(sessionId, ct).ConfigureAwait(false);
+        _states.TryAdd(sessionId, new HostRuntimeState(sessionId)
+        {
+            Profile = profile,
+            Status = HostRuntimeStatus.Error,
+            LastError = AppServerControlHistoryTextSanitizer.Sanitize(error)
+        });
+    }
+
     public bool TryGetRuntimeSummary(string sessionId, out AppServerControlRuntimeSummary summary)
     {
         summary = default!;
         if (!_states.TryGetValue(sessionId, out var state) ||
             state.Status == HostRuntimeStatus.None ||
             state.Status == HostRuntimeStatus.Stopped ||
-            state.Input is null ||
-            state.Output is null)
+            (state.Status != HostRuntimeStatus.Error && (state.Input is null || state.Output is null)))
         {
             return false;
         }
@@ -1044,7 +1054,16 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             await state.Input!.WriteLineAsync(payload).ConfigureAwait(false);
             await state.Input.FlushAsync(ct).ConfigureAwait(false);
 
-            var result = await pending.Task.WaitAsync(CommandTimeout, ct).ConfigureAwait(false);
+            // Attach and settings may require multiple provider round trips. In particular,
+            // an ACP cancel must settle before steering can submit its replacement prompt.
+            var timeout = command.Type switch
+            {
+                "runtime.attach" or "turn.start" => TimeSpan.FromSeconds(60),
+                "turn.steer" => TimeSpan.FromSeconds(90),
+                "turn.interrupt" => TimeSpan.FromSeconds(20),
+                _ => CommandTimeout
+            };
+            var result = await pending.Task.WaitAsync(timeout, ct).ConfigureAwait(false);
             if (!string.Equals(result.Status, "accepted", StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException(result.Message ?? $"App Server Controller host rejected command '{command.Type}'.");

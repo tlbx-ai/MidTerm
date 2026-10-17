@@ -220,6 +220,16 @@ public sealed class MtAgentHostGrokIntegrationTests
             Assert.Equal("accepted", interruptTurn.Status);
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
+                CommandId = "cmd-stale-interrupt",
+                SessionId = sessionId,
+                Type = "turn.interrupt",
+                InterruptTurn = new AppServerControlInterruptRequest { TurnId = "a-previous-turn" }
+            });
+            var staleInterrupt = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-stale-interrupt");
+            Assert.Equal("rejected", staleInterrupt.Status);
+            Assert.Contains("no longer matches", staleInterrupt.Message, StringComparison.Ordinal);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
                 CommandId = "cmd-interrupt",
                 SessionId = sessionId,
                 Type = "turn.interrupt",
@@ -237,6 +247,82 @@ public sealed class MtAgentHostGrokIntegrationTests
                 TimeSpan.FromSeconds(10),
                 count: 192);
             Assert.Equal("ready", interruptedWindow.Session.State);
+            Assert.Contains(interruptedWindow.History, item =>
+                item.TurnId == interruptTurn.TurnStarted.TurnId &&
+                item.Body.Contains("Final update before cancellation settled.", StringComparison.Ordinal));
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-reattach",
+                SessionId = sessionId,
+                Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = sessionId,
+                    Provider = provider,
+                    RuntimeKind = "acp-v1",
+                    ExecutablePath = fakeGrok.ExecutablePath,
+                    ExecutableArguments = expectedArguments.ToList(),
+                    WorkingDirectory = fakeGrok.Root
+                }
+            });
+            var reattached = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-reattach");
+            Assert.Equal("accepted", reattached.Status);
+            var afterReattach = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, pendingPatches, sessionId, count: 192);
+            Assert.Equal(interruptedWindow.Thread.ThreadId, afterReattach.Thread.ThreadId);
+            Assert.Equal(interruptedWindow.HistoryCount, afterReattach.HistoryCount);
+            Assert.Equal(interruptedWindow.CurrentTurn.State, afterReattach.CurrentTurn.State);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-running-before-steer",
+                SessionId = sessionId,
+                Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest { Text = "Wait for interrupt and a replacement direction." }
+            });
+            var beforeSteer = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-running-before-steer");
+            var previousTurnId = beforeSteer.TurnStarted!.TurnId;
+            foreach (var (commandId, expectedId, text) in new[]
+            {
+                ("cmd-stale-steer", "stale-turn", "New direction"),
+                ("cmd-empty-steer", previousTurnId!, " ")
+            })
+            {
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "turn.steer",
+                    SteerTurn = new AppServerControlSteerRequest { ExpectedTurnId = expectedId, Text = text }
+                });
+                var invalidSteer = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, commandId);
+                Assert.Equal("rejected", invalidSteer.Status);
+            }
+
+            const string replacementText = "Use the revised direction now.";
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-steer",
+                SessionId = sessionId,
+                Type = "turn.steer",
+                SteerTurn = new AppServerControlSteerRequest { ExpectedTurnId = previousTurnId, Text = replacementText }
+            });
+            var steered = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-steer");
+            Assert.Equal("accepted", steered.Status);
+            Assert.NotNull(steered.Accepted?.TurnId);
+            Assert.NotEqual(previousTurnId, steered.Accepted.TurnId, StringComparer.Ordinal);
+            var steeredWindow = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, pendingPatches, sessionId,
+                window => window.CurrentTurn.TurnId == steered.Accepted.TurnId && window.CurrentTurn.State == "completed",
+                TimeSpan.FromSeconds(10), count: 192);
+            Assert.Equal(beforeSteer.TurnStarted.ThreadId, steeredWindow.Thread.ThreadId);
+            Assert.Contains(steeredWindow.History, item => item.TurnId == previousTurnId &&
+                item.Body.Contains("Final update before cancellation settled.", StringComparison.Ordinal));
+            Assert.DoesNotContain(steeredWindow.History, item => item.TurnId == steered.Accepted.TurnId &&
+                item.Body.Contains("Final update before cancellation settled.", StringComparison.Ordinal));
+            Assert.Single(steeredWindow.History.Where(item => item.Kind == "user" &&
+                item.TurnId == steered.Accepted.TurnId && item.Body == replacementText));
         }
         finally
         {
