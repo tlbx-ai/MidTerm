@@ -728,6 +728,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             Options = source.Options.Select(static option => new AppServerControlQuestionOption
             {
                 Label = option.Label,
+                Value = option.Value,
                 Description = option.Description
             }).ToList()
         };

@@ -243,6 +243,7 @@ public static class AppServerControlProviderEventCompaction
             Options = source.Options.Select(static option => new AppServerControlQuestionOption
             {
                 Label = option.Label,
+                Value = option.Value,
                 Description = option.Description
             }).ToList()
         };

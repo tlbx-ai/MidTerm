@@ -942,11 +942,12 @@ try {
   }
   if (answer && initiallyOpen) {
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await wrapper
-      .locator(
-        '.agent-request-choice:has(.agent-request-choice-input[value="Blue"])',
-      )
-      .click();
+    const blueChoice = wrapper.locator(".agent-request-choice").filter({
+      has: page
+        .locator(".agent-request-choice-title")
+        .filter({ hasText: /^Blue(?:\s|$)/ }),
+    });
+    await blueChoice.click();
     if (multi) {
       await wrapper
         .locator(".agent-request-question")
@@ -961,9 +962,7 @@ try {
         .waitFor({ state: "visible" });
     }
     assert.equal(
-      await wrapper
-        .locator('.agent-request-choice-input[value="Blue"]')
-        .isChecked(),
+      await blueChoice.locator(".agent-request-choice-input").isChecked(),
       true,
     );
     const submit = wrapper.locator('.agent-request-form button[type="submit"]');
@@ -1020,7 +1019,15 @@ try {
     const backToBottom = wrapper.locator(
       '[data-agent-field="scroll-to-bottom"]',
     );
-    if (await backToBottom.isVisible()) await backToBottom.click();
+    const followLatest = async () => {
+      if (!(await backToBottom.isVisible())) return;
+      try {
+        await backToBottom.click({ timeout: 1000 });
+      } catch (error) {
+        if (await backToBottom.isVisible()) throw error;
+      }
+    };
+    await followLatest();
     if (multi) {
       await wrapper
         .locator(".agent-request-panel-resolved")
@@ -1072,7 +1079,7 @@ try {
         sessionId,
         { polling: 100 },
       );
-      if (await backToBottom.isVisible()) await backToBottom.click();
+      await followLatest();
       await wrapper
         .getByText(
           process.env.TLBX_ACP_UI_EXPECTED_MARKER || "TLBX_GROK_QUESTION_OK_73",

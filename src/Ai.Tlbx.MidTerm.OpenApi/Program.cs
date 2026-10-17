@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Api;
 using Ai.Tlbx.MidTerm.Api.Endpoints;
 using Ai.Tlbx.MidTerm.Api.Handlers;
@@ -45,6 +46,11 @@ builder.Services.AddOpenApi(options =>
         }
 
         var clrType = context.JsonTypeInfo?.Type;
+        if (clrType == typeof(Dictionary<string, JsonElement>))
+        {
+            schema.AdditionalPropertiesAllowed = true;
+            schema.AdditionalProperties = new OpenApiSchema();
+        }
         if (clrType != null && schema.Properties?.Count > 0)
         {
             var nullabilityContext = new NullabilityInfoContext();

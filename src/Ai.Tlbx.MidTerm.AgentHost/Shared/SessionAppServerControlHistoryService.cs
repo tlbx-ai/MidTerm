@@ -2000,6 +2000,7 @@ public sealed partial class SessionAppServerControlHistoryService
             Options = source.Options.Select(option => new AppServerControlQuestionOption
             {
                 Label = option.Label,
+                Value = option.Value,
                 Description = option.Description
             }).ToList()
         };

@@ -14,6 +14,7 @@ public sealed partial class AcpAgentCatalogService(SettingsService settingsServi
     [
         new("grok", "Grok Build", "grok", ["agent", "stdio"]),
         new("opencode", "OpenCode", "opencode", ["acp"]),
+        new("antigravity", "Google Antigravity", "agy_acp_server", []),
         new("gemini", "Gemini CLI", "gemini", ["--acp"]),
         new("copilot", "GitHub Copilot CLI", "copilot", ["--acp"])
     ];
@@ -84,7 +85,9 @@ public sealed partial class AcpAgentCatalogService(SettingsService settingsServi
             catalogDefinition.Profile,
             catalogDefinition.Name,
             executablePath,
-            catalogDefinition.Arguments);
+            catalogDefinition.Arguments,
+            catalogDefinition.EnvironmentVariables,
+            catalogDefinition.AuthenticationMethodId);
         return true;
     }
 
@@ -130,7 +133,16 @@ public sealed partial class AcpAgentCatalogService(SettingsService settingsServi
                     continue;
                 }
 
-                definitions.Add(new AcpAgentDefinition(profile, name, command, arguments));
+                if (entry.EnvironmentVariables is null || entry.AuthenticationMethodId?.Length > 256 ||
+                    entry.EnvironmentVariables.Count > 64 || entry.EnvironmentVariables.Any(pair =>
+                        !EnvironmentKeyPattern().IsMatch(pair.Key) || pair.Value?.Length > 32768))
+                {
+                    Log.Warn(() => $"Ignoring invalid ACP agent environment in '{ManifestPath}'.");
+                    continue;
+                }
+                definitions.Add(new AcpAgentDefinition(profile, name, command, arguments,
+                    new Dictionary<string, string?>(entry.EnvironmentVariables, StringComparer.Ordinal),
+                    string.IsNullOrWhiteSpace(entry.AuthenticationMethodId) ? null : entry.AuthenticationMethodId.Trim()));
             }
 
             return definitions;
@@ -152,19 +164,26 @@ public sealed partial class AcpAgentCatalogService(SettingsService settingsServi
 
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]{0,63}$", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ProfilePattern();
+
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex EnvironmentKeyPattern();
 }
 
 public sealed record AcpAgentDefinition(
     string Profile,
     string Name,
     string CommandName,
-    IReadOnlyList<string> Arguments);
+    IReadOnlyList<string> Arguments,
+    IReadOnlyDictionary<string, string?>? EnvironmentVariables = null,
+    string? AuthenticationMethodId = null);
 
 public sealed record ResolvedAcpAgentDefinition(
     string Profile,
     string Name,
     string ExecutablePath,
-    IReadOnlyList<string> Arguments);
+    IReadOnlyList<string> Arguments,
+    IReadOnlyDictionary<string, string?>? EnvironmentVariables = null,
+    string? AuthenticationMethodId = null);
 
 internal sealed class AcpAgentManifest
 {
@@ -177,6 +196,8 @@ internal sealed class AcpAgentManifestEntry
     public string? Name { get; set; }
     public string? Command { get; set; }
     public List<string?> Arguments { get; set; } = [];
+    public Dictionary<string, string?> EnvironmentVariables { get; set; } = new(StringComparer.Ordinal);
+    public string? AuthenticationMethodId { get; set; }
     public bool? Enabled { get; set; }
 }
 

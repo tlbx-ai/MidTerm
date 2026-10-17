@@ -81,7 +81,7 @@ Keep several agents running and make their work easier to follow:
 - **Check the result:** open your app beside the agent, try different window sizes and inspect screenshots or browser logs.
 - **Continue elsewhere:** reconnect to the same work from another browser.
 
-Agent Controller has built-in launch options for **Codex**, **Grok Build**, **OpenCode**, **Gemini CLI** and **GitHub Copilot CLI**. Features depend on the agent and its configured provider. You can add compatible [ACP](https://agentclientprotocol.com/) agents through `acp-agents.json`. **Claude Code** runs in a normal terminal session.
+Agent Controller has built-in launch options for **Codex**, **Claude Code**, **Grok Build**, **OpenCode**, **Google Antigravity**, **Gemini CLI** and **GitHub Copilot CLI**. Features depend on the agent and its configured provider. You can add compatible [ACP](https://agentclientprotocol.com/) agents through `acp-agents.json`. **Claude Code** uses the official Claude Agent SDK.
 
 ## Access your working machines
 

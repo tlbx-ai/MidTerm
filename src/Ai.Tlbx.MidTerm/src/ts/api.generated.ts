@@ -4437,6 +4437,9 @@ export interface components {
       planMode?: null | string;
       permissionMode?: null | string;
       fastMode?: null | string;
+      configValues: {
+        [key: string]: unknown;
+      };
       attachments: components['schemas']['AppServerControlAttachmentReference'][];
       terminalReplay: components['schemas']['AppServerControlTerminalReplayStep'][];
     };

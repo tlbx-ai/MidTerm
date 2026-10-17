@@ -468,7 +468,12 @@ function createResolvedInterviewSummary(
     const answers = answer?.answers.filter((entry) => entry.trim().length > 0) ?? [];
     value.textContent =
       answers.length > 0
-        ? answers.join(', ')
+        ? answers
+            .map(
+              (answer) =>
+                question.options.find((option) => option.value === answer)?.label ?? answer,
+            )
+            .join(', ')
         : appServerControlText('appServerControl.request.answerSkipped', 'No answer submitted');
     item.appendChild(value);
 
@@ -602,14 +607,15 @@ function createQuestionChoiceList(args: {
   options.className = 'agent-request-choice-list';
 
   for (const [index, option] of question.options.entries()) {
+    const optionValue = option.value ?? option.label;
     const optionLabel = document.createElement('label');
     optionLabel.className = 'agent-request-choice';
     const input = document.createElement('input');
     input.type = inputType;
     input.name = question.id;
-    input.value = option.label;
+    input.value = optionValue;
     input.className = 'agent-request-choice-input';
-    input.checked = selectedAnswers.includes(option.label);
+    input.checked = selectedAnswers.includes(optionValue);
     input.addEventListener('change', () => {
       if (inputType === 'radio') {
         updateRequestDraftAnswers(
@@ -617,7 +623,7 @@ function createQuestionChoiceList(args: {
           sessionId,
           request.requestId,
           question.id,
-          [option.label],
+          [optionValue],
           false,
         );
         if (autoAdvance) {

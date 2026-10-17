@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Ai.Tlbx.MidTerm.AgentHost;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Xunit;
 
@@ -9,11 +10,21 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MtAgentHostGrokIntegrationTests
 {
     [Theory]
+    [InlineData("I1017 07:20:00.000 server.py:100 Ready", true)]
+    [InlineData("I1017 07:20:00.000 harness stderr: ERROR: failure", false)]
+    [InlineData("W1017 07:20:00.000 Warning", false)]
+    [InlineData("IABCD Unrecognized diagnostic", false)]
+    [InlineData("Runtime warning without native severity", false)]
+    public void AcpDiagnostics_KeepWarningsAndErrorsVisible(string line, bool informational) =>
+        Assert.Equal(informational, AcpAppServerControlAgentRuntime.IsInformationalAcpDiagnostic(line));
+
+    [Theory]
     [InlineData("grok", "agent", "stdio")]
     [InlineData("opencode", "acp")]
     [InlineData("gemini", "--acp")]
     [InlineData("copilot", "--acp")]
     [InlineData("custom-acp", "--stdio-acp")]
+    [InlineData("antigravity", "--fake-auth-required")]
     public async Task MtAgentHost_CanDriveStandardAcpAgent(string provider, params string[] expectedArguments)
     {
         using var fakeGrok = FakeGrokPathScope.Create();
@@ -44,6 +55,9 @@ public sealed class MtAgentHostGrokIntegrationTests
                     ExecutablePath = fakeGrok.ExecutablePath,
                     AgentName = "Fake ACP agent",
                     ExecutableArguments = expectedArguments.ToList(),
+                    AuthenticationMethodId = provider == "antigravity" ? "gemini-api-key" : null,
+                    EnvironmentVariables = provider == "antigravity"
+                        ? new(StringComparer.Ordinal) { ["TLBX_AUTH_SECRET"] = "test-private-key" } : new(StringComparer.Ordinal),
                     WorkingDirectory = fakeGrok.Root
                 }
             });
@@ -271,6 +285,9 @@ public sealed class MtAgentHostGrokIntegrationTests
                     RuntimeKind = "acp-v1",
                     ExecutablePath = fakeGrok.ExecutablePath,
                     ExecutableArguments = expectedArguments.ToList(),
+                    AuthenticationMethodId = provider == "antigravity" ? "gemini-api-key" : null,
+                    EnvironmentVariables = provider == "antigravity"
+                        ? new(StringComparer.Ordinal) { ["TLBX_AUTH_SECRET"] = "test-private-key" } : new(StringComparer.Ordinal),
                     WorkingDirectory = fakeGrok.Root
                 }
             });
@@ -1221,8 +1238,80 @@ public sealed class MtAgentHostGrokIntegrationTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MtAgentHost_HandlesAntigravityChoicesWithoutAutoAnswering(bool cancel)
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll());
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        const string sessionId = "antigravity-choices";
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AttachFakeAcpAsync(process, patches, fake, sessionId, provider: "antigravity");
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "choice-start", SessionId = sessionId, Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest { Text = "interaction-test", PermissionMode = AppServerControlQuickSettings.PermissionModeAuto }
+            });
+            var started = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "choice-start");
+            var history = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(process.StandardOutput, process.StandardInput,
+                patches, sessionId, h => h.Requests.Any(r => r.Kind == "interview" && r.State == "open"), TimeSpan.FromSeconds(10), count: 96);
+            var request = Assert.Single(history.Requests, r => r.State == "open");
+            Assert.Equal("interview", request.Kind);
+            var question = Assert.Single(request.Questions);
+            Assert.Equal("interaction_test", question.Id);
+            Assert.Equal(new[] { "blue-id", "red-id" }, question.Options.Select(o => o.Value), StringComparer.Ordinal);
+            Assert.Equal(new[] { "Blue", "Red" }, question.Options.Select(o => o.Label), StringComparer.Ordinal);
+            var answerCommand = new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "choice-invalid", SessionId = sessionId, Type = "user-input.resolve",
+                ResolveUserInput = new AppServerControlUserInputResolutionCommand
+                {
+                    RequestId = request.RequestId,
+                    Answers = [new AppServerControlAnsweredQuestion { QuestionId = question.Id, Answers = ["Blue"] }]
+                }
+            };
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, answerCommand);
+            Assert.Equal("rejected", (await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "choice-invalid")).Status);
+            if (cancel)
+            {
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "choice-stop", SessionId = sessionId, Type = "turn.interrupt",
+                    InterruptTurn = new AppServerControlInterruptRequest { TurnId = started.TurnStarted!.TurnId }
+                });
+                Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "choice-stop")).Status);
+            }
+            else
+            {
+                answerCommand.CommandId = "choice-valid";
+                answerCommand.ResolveUserInput.Answers[0].Answers = ["blue-id"];
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, answerCommand);
+                Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "choice-valid")).Status);
+            }
+            var finished = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(process.StandardOutput, process.StandardInput,
+                patches, sessionId, h => h.CurrentTurn.State == (cancel ? "interrupted" : "completed"), TimeSpan.FromSeconds(10), count: 96);
+            using var response = JsonDocument.Parse(finished.Streams.AssistantText);
+            var outcome = response.RootElement.GetProperty("result").GetProperty("outcome");
+            Assert.Equal(cancel ? "cancelled" : "selected", outcome.GetProperty("outcome").GetString());
+            if (!cancel) Assert.Equal("blue-id", outcome.GetProperty("optionId").GetString());
+            answerCommand.CommandId = "choice-stale";
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, answerCommand);
+            Assert.Equal("rejected", (await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "choice-stale")).Status);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
     private static async Task AttachFakeAcpAsync(Process process, Queue<AppServerControlHostHistoryPatchEnvelope> patches,
-        FakeGrokPathScope fake, string sessionId, string? resumeThreadId = null, string expectedSessionState = "ready")
+        FakeGrokPathScope fake, string sessionId, string? resumeThreadId = null, string expectedSessionState = "ready", string provider = "custom-acp")
     {
         await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
         {
@@ -1232,7 +1321,7 @@ public sealed class MtAgentHostGrokIntegrationTests
             AttachRuntime = new AppServerControlAttachRuntimeRequest
             {
                 SessionId = sessionId,
-                Provider = "custom-acp",
+                Provider = provider,
                 RuntimeKind = "acp-v1",
                 ExecutablePath = fake.ExecutablePath,
                 WorkingDirectory = fake.Root,

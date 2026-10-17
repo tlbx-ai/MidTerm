@@ -4128,6 +4128,7 @@
       },
       "AppServerControlTurnRequest": {
         "required": [
+          "configValues",
           "attachments",
           "terminalReplay"
         ],
@@ -4168,6 +4169,10 @@
               "null",
               "string"
             ]
+          },
+          "configValues": {
+            "type": "object",
+            "additionalProperties": { }
           },
           "attachments": {
             "type": "array",

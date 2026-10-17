@@ -8,6 +8,8 @@ var activeQuestionId = string.Empty;
 var cancelRequested = false;
 var delayPlanCompletion = false;
 var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_CAPTURE_PATH");
+var requiresAuthentication = args.Contains("--fake-auth-required", StringComparer.Ordinal);
+var authenticated = false;
 var resumeCapability = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_RESUME_CAPABILITY") ?? "load";
 var v2 = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_V2") == "true" || args.Contains("--fake-v2", StringComparer.Ordinal);
 var v2PromptIndex = 0;
@@ -126,7 +128,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         sse = true
                     }
                 },
-                authMethods = Array.Empty<object>(),
+                authMethods = requiresAuthentication ? new[] { new { id = "gemini-api-key", name = "Test API key" } } : Array.Empty<object>(),
                 _meta = new
                 {
                     agentVersion = "fake-grok",
@@ -134,7 +136,15 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 }
             }).ConfigureAwait(false);
             break;
+        case "authenticate":
+            if (GetString(root, "params", "methodId") != "gemini-api-key" ||
+                Environment.GetEnvironmentVariable("TLBX_AUTH_SECRET") != "test-private-key")
+                throw new InvalidOperationException("Expected configured authentication and private environment.");
+            authenticated = true;
+            await WriteResponseAsync(id, new { }).ConfigureAwait(false);
+            break;
         case "session/new":
+            if (requiresAuthentication && !authenticated) throw new InvalidOperationException("Authentication required.");
             if (v2 && resumeCapability == "new-active")
                 await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "running" }).ConfigureAwait(false);
             if (v2 && resumeCapability == "new-background") await WriteV2PermissionAsync().ConfigureAwait(false);
@@ -249,6 +259,16 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 {
                     jsonrpc = "2.0", id = activeQuestionId, method = planMethod,
                     @params = text.Contains("wrapped", StringComparison.Ordinal) ? (object)new { method = planMethod, @params = planParameters } : planParameters
+                }).ConfigureAwait(false);
+                break;
+            }
+            if (text.StartsWith("interaction-test", StringComparison.Ordinal))
+            {
+                activeQuestionId = "native-interaction-rpc";
+                await WriteRequestAsync(activeQuestionId, "session/request_permission", new
+                {
+                    sessionId, toolCall = new { toolCallId = "interaction_test", title = "Which acceptance color?", status = "pending" },
+                    options = new[] { new { optionId = "blue-id", name = "Blue", kind = "allow_once" }, new { optionId = "red-id", name = "Red", kind = "allow_once" } }
                 }).ConfigureAwait(false);
                 break;
             }

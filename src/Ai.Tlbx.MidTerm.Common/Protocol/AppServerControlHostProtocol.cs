@@ -42,6 +42,7 @@ public sealed class AppServerControlQuestion
 
 public sealed class AppServerControlQuestionOption
 {
+    public string? Value { get; set; }
     public string Label { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
 }
@@ -628,6 +629,8 @@ public sealed class AppServerControlAttachRuntimeRequest
     public string? ExecutablePath { get; set; }
     public string? AgentName { get; set; }
     public List<string> ExecutableArguments { get; set; } = [];
+    public Dictionary<string, string?> EnvironmentVariables { get; set; } = new(StringComparer.Ordinal);
+    public string? AuthenticationMethodId { get; set; }
     public string? UserProfileDirectory { get; set; }
     public string? ResumeThreadId { get; set; }
 }

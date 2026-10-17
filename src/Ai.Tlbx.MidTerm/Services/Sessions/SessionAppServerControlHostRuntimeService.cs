@@ -390,6 +390,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                         ExecutablePath = executablePath,
                         AgentName = acpAgent?.Name,
                         ExecutableArguments = acpAgent?.Arguments.ToList() ?? [],
+                        EnvironmentVariables = acpAgent?.EnvironmentVariables is { } environment
+                            ? new Dictionary<string, string?>(environment, StringComparer.Ordinal) : new(StringComparer.Ordinal),
+                        AuthenticationMethodId = acpAgent?.AuthenticationMethodId,
                         UserProfileDirectory = preferredProfileDirectory,
                         ResumeThreadId = resumeThreadIdOverride ?? session.AppServerControlResumeThreadId ?? attachPoint?.PreferredThreadId
                     }
@@ -1642,6 +1645,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             Options = source.Options.Select(option => new AppServerControlQuestionOption
             {
                 Label = option.Label,
+                Value = option.Value,
                 Description = option.Description
             }).ToList()
         };

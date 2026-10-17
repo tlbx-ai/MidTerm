@@ -36,6 +36,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
     private string? _workingDirectory;
     private string? _binaryPath;
     private string? _userProfileDirectory;
+    private Dictionary<string, string?> _environmentVariables = new(StringComparer.Ordinal);
+    private string? _authenticationMethodId;
     private string? _providerThreadId;
     private string? _activeTurnId;
     private string? _cancellingTurnId;
@@ -147,6 +149,9 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 !string.Equals(Path.GetFullPath(attach.WorkingDirectory), Path.GetFullPath(_workingDirectory!), pathComparison) ||
                 !string.Equals(Path.GetFullPath(binaryPath), Path.GetFullPath(_binaryPath!), pathComparison) ||
                 !(attach.ExecutableArguments ?? []).SequenceEqual(_executableArguments, StringComparer.Ordinal) ||
+                !string.Equals(attach.AuthenticationMethodId, _authenticationMethodId, StringComparison.Ordinal) ||
+                !attach.EnvironmentVariables.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                    .SequenceEqual(_environmentVariables.OrderBy(pair => pair.Key, StringComparer.Ordinal)) ||
                 (!string.IsNullOrWhiteSpace(attach.ResumeThreadId) &&
                  !string.Equals(attach.ResumeThreadId, _providerThreadId, StringComparison.Ordinal)))
             {
@@ -164,6 +169,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         _workingDirectory = attach.WorkingDirectory;
         _binaryPath = binaryPath;
         _userProfileDirectory = attach.UserProfileDirectory;
+        _environmentVariables = new Dictionary<string, string?>(attach.EnvironmentVariables, StringComparer.Ordinal);
+        _authenticationMethodId = attach.AuthenticationMethodId;
         _providerThreadId = null;
         _quickSettings = CreateDefaultQuickSettings();
         ResetProtocolState();
@@ -214,6 +221,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                     ct)
                 .ConfigureAwait(false);
             _protocolGeneration = ResolveProtocolGeneration(initializeResult);
+            await AuthenticateAcpAsync(initializeResult, ct).ConfigureAwait(false);
             _supportsImagePrompts = _protocolGeneration == 2
                 ? Traverse(initializeResult, "capabilities", "session", "prompt", "image") is { ValueKind: JsonValueKind.Object }
                 : Traverse(initializeResult, "agentCapabilities", "promptCapabilities", "image") is
@@ -575,6 +583,11 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         {
             AppServerControlProviderRuntimeConfiguration.ApplyUserProfileEnvironment(process.StartInfo, _userProfileDirectory);
             AppServerControlProviderRuntimeConfiguration.ApplyEnvironmentVariables(process.StartInfo, Provider);
+            foreach (var pair in _environmentVariables)
+            {
+                if (pair.Value is null) process.StartInfo.Environment.Remove(pair.Key);
+                else process.StartInfo.Environment[pair.Key] = pair.Value;
+            }
             process.StartInfo.Environment.Remove("FORCE_COLOR");
             process.StartInfo.Environment["NO_COLOR"] = "1";
             if (!process.Start())
@@ -632,6 +645,13 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         }
     }
 
+    internal static bool IsInformationalAcpDiagnostic(string line) =>
+        line.Length > 5 && line[0] == 'I' && line[5] == ' ' &&
+        int.TryParse(line.AsSpan(1, 4), NumberStyles.None, CultureInfo.InvariantCulture, out _) &&
+        !line.Contains("ERROR", StringComparison.OrdinalIgnoreCase) &&
+        !line.Contains("FATAL", StringComparison.OrdinalIgnoreCase) &&
+        !line.Contains("Traceback", StringComparison.OrdinalIgnoreCase);
+
     private async Task ReadErrorLoopAsync(CancellationToken ct)
     {
         try
@@ -646,7 +666,10 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
 
                 if (!string.IsNullOrWhiteSpace(line))
                 {
-                    EmitRuntimeMessage("runtime.warning", line.Trim(), line.Trim());
+                    var diagnostic = line.Trim();
+                    var informational = IsInformationalAcpDiagnostic(diagnostic);
+                    EmitRuntimeMessage(informational ? "runtime.notice" : "runtime.warning", diagnostic, diagnostic,
+                        timelineVisible: !informational);
                 }
             }
         }
@@ -900,6 +923,11 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         turnId ??= $"acp-background:{requestId}";
         var toolCall = Traverse(root, "params", "toolCall");
         var options = ReadPermissionOptions(root);
+        if (Provider == "antigravity" && GetString(toolCall, "toolCallId")?.StartsWith("interaction_", StringComparison.Ordinal) == true)
+        {
+            await HandleAcpChoiceQuestionAsync(root, idElement, turnId, options, rawLine, ct).ConfigureAwait(false);
+            return;
+        }
         var selectedOption = string.Equals(_quickSettings.PermissionMode, AppServerControlQuickSettings.PermissionModeAuto, StringComparison.Ordinal)
             ? SelectPermissionOption(options, "accept")
             : null;
@@ -1253,6 +1281,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         _pendingPromptTurns.Clear();
         _pendingPermissions.Clear();
         _pendingUserInputs.Clear();
+        _pendingChoiceQuestions.Clear();
 
         try
         {

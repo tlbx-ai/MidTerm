@@ -172,6 +172,7 @@ export interface AppServerControlConfigValue {
 }
 
 export interface AppServerControlQuestionOption {
+  value?: string | null;
   label: string;
   description: string;
 }

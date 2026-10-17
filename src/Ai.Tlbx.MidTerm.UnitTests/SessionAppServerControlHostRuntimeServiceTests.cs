@@ -17,6 +17,24 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
     private static SettingsService CreateSettingsService(string directory) => new(directory);
 
     [Fact]
+    public void AcpCatalog_ResolvesExplicitAuthenticationAndIsolatedEnvironment()
+    {
+        using var fake = FakeGrokPathScope.Create();
+        var settings = CreateSettingsService(fake.Root);
+        var catalog = new AcpAgentCatalogService(settings);
+        File.WriteAllText(catalog.ManifestPath, $$$"""
+            {"agents":[{"profile":"antigravity","name":"Google Antigravity","command":{{{JsonSerializer.Serialize(fake.ExecutablePath)}}},
+              "authenticationMethodId":"gemini-api-key","environmentVariables":{"GEMINI_HOME":"isolated-profile","GOOGLE_API_KEY":null}},
+              {"profile":"invalid-env","name":"Invalid","command":"unused","environmentVariables":{"BAD=KEY":"value"}}]}
+            """);
+        Assert.True(catalog.TryResolve("antigravity", null, out var resolved));
+        Assert.Equal("gemini-api-key", resolved.AuthenticationMethodId);
+        Assert.Equal("isolated-profile", resolved.EnvironmentVariables!["GEMINI_HOME"]);
+        Assert.Null(resolved.EnvironmentVariables["GOOGLE_API_KEY"]);
+        Assert.False(catalog.ContainsProfile("invalid-env"));
+    }
+
+    [Fact]
     public void ResolveConfiguredHostPath_UsesExplicitShadowBuildAndRejectsMissingPath()
     {
         var previous = Environment.GetEnvironmentVariable(
