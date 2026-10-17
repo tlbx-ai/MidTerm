@@ -114,6 +114,43 @@ public sealed class OpenCodeRuntimeTests
     }
 
     [Fact]
+    public async Task RestoredNativeImagePartsRoundTripThroughTheOwnedCacheAndPrompt()
+    {
+        const string image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        using var fake = new OpenCodeTransport
+        {
+            History = $$"""[{"info":{"id":"msg_image","sessionID":"ses_test","role":"user"},"parts":[{"id":"part_image","messageID":"msg_image","sessionID":"ses_test","type":"file","mime":"image/png","filename":"native.png","url":"data:image/png;base64,{{image}}"}]}]"""
+        };
+        var events = new ConcurrentQueue<AppServerControlProviderEvent>();
+        await using var runtime = new OpenCodeAppServerControlAgentRuntime(events.Enqueue, fake);
+        var attach = Attach(resume: true);
+        attach.SessionId = "opencode-image-" + Guid.NewGuid().ToString("N");
+        await runtime.ExecuteAsync(attach, CancellationToken.None);
+        var restored = events.Last(e => e.Item?.Attachments.Count == 1).Item!.Attachments.Single();
+        var cache = Path.Combine(Path.GetTempPath(), "tlbx-opencode-images", attach.SessionId);
+        Assert.StartsWith(cache, restored.Path, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        Assert.Equal("native.png", restored.DisplayName);
+        Assert.Equal(Convert.FromBase64String(image), await File.ReadAllBytesAsync(restored.Path, CancellationToken.None));
+        try
+        {
+            var prompt = Command("turn.start", turn: new() { Text = "Inspect this restored image", Attachments = [restored] });
+            prompt.SessionId = attach.SessionId;
+            await runtime.ExecuteAsync(prompt, CancellationToken.None);
+            using var native = JsonDocument.Parse(fake.Requests.Last(r => r.Path.EndsWith("/prompt_async", StringComparison.Ordinal)).Body!);
+            var part = native.RootElement.GetProperty("parts")[1];
+            Assert.Equal("file", part.GetProperty("type").GetString());
+            Assert.Equal("image/png", part.GetProperty("mime").GetString());
+            Assert.Equal("native.png", part.GetProperty("filename").GetString());
+            Assert.Equal("data:image/png;base64," + image, part.GetProperty("url").GetString());
+        }
+        finally
+        {
+            File.Delete(restored.Path);
+            Directory.Delete(cache);
+        }
+    }
+
+    [Fact]
     public async Task RestoresNativeHistoryAndPendingRequestsWithoutStartingAnotherConversation()
     {
         using var fake = new OpenCodeTransport
