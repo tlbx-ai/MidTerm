@@ -85,6 +85,8 @@ public sealed class AppServerControlProviderPlanDeltaPayload
 public sealed class AppServerControlProviderPlanCompletedPayload
 {
     public string PlanMarkdown { get; set; } = string.Empty;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsProposal { get; set; }
 }
 
 public sealed class AppServerControlProviderDiffUpdatedPayload

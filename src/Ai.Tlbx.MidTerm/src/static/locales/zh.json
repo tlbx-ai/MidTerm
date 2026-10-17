@@ -1,4 +1,5 @@
 {
+  "appServerControl.plan.implement": "实施计划",
   "git.newFile": "新建",
   "git.newFileHint": "与空白基准比较的新文件。",
   "git.newFileBinary": "新的二进制文件。",

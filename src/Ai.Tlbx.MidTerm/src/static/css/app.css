@@ -14313,6 +14313,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-markdown {
   overflow: visible;
   line-height: 1.38;
+  white-space: normal;
 }
 
 .agent-history-turn-duration {
@@ -15688,6 +15689,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-view-btn:disabled {
   opacity: 0.6;
   cursor: wait;
+}
+
+.agent-plan-implement {
+  align-self: flex-start;
+  min-height: 44px;
 }
 
 .agent-view-btn-primary {

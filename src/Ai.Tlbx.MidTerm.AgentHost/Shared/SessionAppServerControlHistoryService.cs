@@ -1238,6 +1238,7 @@ public sealed partial class SessionAppServerControlHistoryService
         entry.TurnId = appServerControlEvent.TurnId ?? state.CurrentTurn.TurnId;
         entry.Status = "completed";
         entry.Title = "Plan";
+        if (appServerControlEvent.PlanCompleted?.IsProposal == true) entry.ItemType = "proposed_plan";
         entry.Body = !string.IsNullOrWhiteSpace(appServerControlEvent.PlanCompleted?.PlanMarkdown)
             ? RetainWithinBudget(NormalizeHistoryText(appServerControlEvent.PlanCompleted.PlanMarkdown), MaxPlanStreamChars, retainHead: false)
             : AppendRetainedHistoryChunk(entry.Body, appServerControlEvent.PlanDelta?.Delta, MaxPlanStreamChars, retainHead: false);
@@ -1875,6 +1876,7 @@ public sealed partial class SessionAppServerControlHistoryService
             },
             PlanCompleted = source.PlanCompleted is null ? null : new AppServerControlProviderPlanCompletedPayload
             {
+                IsProposal = source.PlanCompleted.IsProposal,
                 PlanMarkdown = source.PlanCompleted.PlanMarkdown
             },
             DiffUpdated = source.DiffUpdated is null ? null : new AppServerControlProviderDiffUpdatedPayload

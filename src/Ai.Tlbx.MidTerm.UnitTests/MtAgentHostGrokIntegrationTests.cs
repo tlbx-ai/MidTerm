@@ -912,6 +912,53 @@ public sealed class MtAgentHostGrokIntegrationTests
         }
     }
 
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(false, true, true)]
+    public async Task MtAgentHost_CapturesGrokPlanWithoutApprovingImplementation(bool legacy, bool wrapped, bool fallback)
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll());
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        var sessionId = "grok-plan-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AttachFakeAcpAsync(process, patches, fake, sessionId);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "plan-start", SessionId = sessionId, Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest
+                {
+                    Text = "plan-test" + (legacy ? " legacy" : string.Empty) + (wrapped ? " wrapped" : string.Empty) + (fallback ? " fallback" : string.Empty)
+                }
+            });
+            var result = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "plan-start");
+            Assert.Equal("accepted", result.Status);
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
+                patch => patch.Patch.CurrentTurn.State == "completed", maxPatches: 30, timeout: TimeSpan.FromSeconds(10));
+            var history = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, sessionId, count: 64);
+            var plan = Assert.Single(history.History.Where(item => item.ItemType == "proposed_plan"));
+            Assert.Equal(fallback ? "- [pending] Saved fallback plan" : "# Acceptance plan\n\n1. Inspect the contract.\n2. Verify the marker.", plan.Body);
+            Assert.Equal(plan.Body, history.Streams.PlanText);
+            Assert.DoesNotContain(history.Requests, request => request.State == "open");
+            using var response = JsonDocument.Parse(history.Streams.AssistantText);
+            Assert.Equal("grok-plan-1", response.RootElement.GetProperty("id").GetString());
+            Assert.Equal("abandoned", response.RootElement.GetProperty("result").GetProperty("outcome").GetString());
+            Assert.Contains("without implementing", response.RootElement.GetProperty("result").GetProperty("feedback").GetString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
     private static async Task AttachFakeAcpAsync(Process process, Queue<AppServerControlHostHistoryPatchEnvelope> patches,
         FakeGrokPathScope fake, string sessionId, string? resumeThreadId = null, string expectedSessionState = "ready")
     {

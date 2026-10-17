@@ -17,6 +17,11 @@ import {
 } from './activationHelpers';
 import { createRequestActionBlock as createRequestActionBlockInternal } from './historyRequestDom';
 import {
+  hasInterruptibleAppServerControlTurnWork,
+  submitAppServerControlTurn,
+} from '../appServerControl/input';
+import { createAppServerControlTurnRequestWithQuickSettings } from '../appServerControl/quickSettings';
+import {
   buildRenderedDiffLines,
   hasInlineCommandPresentation,
   resolveHistoryBodyPresentation,
@@ -120,6 +125,22 @@ type AgentHistoryDomDeps = {
   retryAppServerControlActivation: (sessionId: string) => Promise<void>;
   logWarn: (message: () => string) => void;
 };
+
+export function isProposedPlanActionDisabled(
+  sessionId: string,
+  state: SessionAppServerControlViewState | undefined,
+): boolean {
+  return (
+    !state?.snapshot ||
+    !state.streamConnected ||
+    hasInterruptibleAppServerControlTurnWork(sessionId) ||
+    ['running', 'in_progress', 'submitted', 'starting'].includes(
+      state.snapshot.currentTurn.state,
+    ) ||
+    state.snapshot.requests.some((request) => request.state === 'open') ||
+    ['error', 'starting', 'exited'].includes(state.snapshot.session.state)
+  );
+}
 
 function buildEmbeddedInterviewRequest(
   entry: AppServerControlHistoryEntry,
@@ -428,6 +449,36 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     article.appendChild(createHistoryHeader(entry, sessionId, options.showAssistantBadge === true));
     appendHistoryTitle(article, entry, sessionId);
     appendHistoryBody(article, entry, sessionId);
+    if (entry.sourceItemType === 'proposed_plan') {
+      const actions = document.createElement('div');
+      actions.className = 'agent-history-actions';
+      const implement = document.createElement('button');
+      implement.type = 'button';
+      implement.className = 'agent-view-btn agent-view-btn-primary agent-plan-implement';
+      implement.textContent = appServerControlText(
+        'appServerControl.plan.implement',
+        'Implement plan',
+      );
+      implement.disabled = isProposedPlanActionDisabled(sessionId, deps.getState(sessionId));
+      implement.addEventListener('click', () => {
+        if (isProposedPlanActionDisabled(sessionId, deps.getState(sessionId))) return;
+        implement.disabled = true;
+        const request = createAppServerControlTurnRequestWithQuickSettings(
+          sessionId,
+          `Implement the following proposed plan:\n\n${entry.body}`,
+        );
+        request.planMode = 'off';
+        void submitAppServerControlTurn(sessionId, request)
+          .catch((error: unknown) => {
+            deps.logWarn(() => `Plan implementation request failed: ${String(error)}`);
+          })
+          .finally(() => {
+            deps.renderCurrentAgentView(sessionId);
+          });
+      });
+      actions.appendChild(implement);
+      article.appendChild(actions);
+    }
 
     const attachmentBlock = createHistoryAttachmentBlock(sessionId, entry.attachments);
     if (attachmentBlock) {

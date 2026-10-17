@@ -70,6 +70,7 @@ public static class AppServerControlProviderEventCompaction
             },
             PlanCompleted = source.PlanCompleted is null ? null : new AppServerControlProviderPlanCompletedPayload
             {
+                IsProposal = source.PlanCompleted.IsProposal,
                 PlanMarkdown = CompactTextMiddle(source.PlanCompleted.PlanMarkdown, MaxPlanMarkdownChars) ?? string.Empty
             },
             DiffUpdated = source.DiffUpdated is null ? null : new AppServerControlProviderDiffUpdatedPayload

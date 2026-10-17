@@ -629,6 +629,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             },
             PlanCompleted = appServerControlEvent.PlanCompleted is null ? null : new AppServerControlProviderPlanCompletedPayload
             {
+                IsProposal = appServerControlEvent.PlanCompleted.IsProposal,
                 PlanMarkdown = appServerControlEvent.PlanCompleted.PlanMarkdown
             },
             DiffUpdated = appServerControlEvent.DiffUpdated is null ? null : new AppServerControlProviderDiffUpdatedPayload

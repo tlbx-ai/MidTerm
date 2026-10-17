@@ -1,4 +1,5 @@
 {
+  "appServerControl.plan.implement": "योजना लागू करें",
   "git.newFile": "नया",
   "git.newFileHint": "खाली आधार से तुलना की गई नई फ़ाइल।",
   "git.newFileBinary": "नई बाइनरी फ़ाइल।",

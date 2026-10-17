@@ -1,4 +1,5 @@
 {
+  "appServerControl.plan.implement": "Implementar plano",
   "git.newFile": "Novo",
   "git.newFileHint": "Arquivo novo comparado com uma base vazia.",
   "git.newFileBinary": "Arquivo binário novo.",

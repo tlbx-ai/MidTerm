@@ -6,6 +6,7 @@ var sessionId = "grok-session-" + Guid.NewGuid().ToString("N");
 var activePromptId = string.Empty;
 var activeQuestionId = string.Empty;
 var cancelRequested = false;
+var delayPlanCompletion = false;
 var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_CAPTURE_PATH");
 var resumeCapability = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_RESUME_CAPABILITY") ?? "load";
 var v2 = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_V2") == "true" || args.Contains("--fake-v2", StringComparer.Ordinal);
@@ -62,6 +63,11 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
         }
         if (id.ToString() == activeQuestionId && !string.IsNullOrWhiteSpace(activePromptId))
         {
+            if (delayPlanCompletion)
+            {
+                delayPlanCompletion = false;
+                await Task.Delay(TimeSpan.FromSeconds(12)).ConfigureAwait(false);
+            }
             await WriteNotificationAsync("session/update", new
             {
                 sessionId,
@@ -210,6 +216,25 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                     await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "idle", stopReason = "end_turn" }).ConfigureAwait(false);
                 await WriteV2UpdateAsync(new { sessionUpdate = "state_update", state = "idle" }).ConfigureAwait(false);
                 activePromptId = string.Empty;
+                break;
+            }
+            if (text.Contains("plan-test", StringComparison.Ordinal))
+            {
+                delayPlanCompletion = text.Contains("hold", StringComparison.Ordinal);
+                activeQuestionId = "grok-plan-1";
+                var planMethod = text.Contains("legacy", StringComparison.Ordinal) ? "x.ai/exit_plan_mode" : "_x.ai/exit_plan_mode";
+                if (text.Contains("fallback", StringComparison.Ordinal))
+                    await WriteNotificationAsync("session/update", new { sessionId, update = new { sessionUpdate = "plan", entries = new[] { new { content = "Saved fallback plan", status = "pending" } } } }).ConfigureAwait(false);
+                var planParameters = new
+                {
+                    sessionId, toolCallId = "plan-tool-1",
+                    planContent = text.Contains("fallback", StringComparison.Ordinal) ? null : "  # Acceptance plan\n\n1. Inspect the contract.\n2. Verify the marker.  "
+                };
+                await WriteJsonAsync(new
+                {
+                    jsonrpc = "2.0", id = activeQuestionId, method = planMethod,
+                    @params = text.Contains("wrapped", StringComparison.Ordinal) ? (object)new { method = planMethod, @params = planParameters } : planParameters
+                }).ConfigureAwait(false);
                 break;
             }
             if (text.StartsWith("question-test", StringComparison.Ordinal))

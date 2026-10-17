@@ -17,6 +17,7 @@ const cancel = process.env.TLBX_ACP_UI_SCENARIO === "cancel";
 const multi = cancel || process.env.TLBX_ACP_UI_SCENARIO === "multi";
 const resume = process.env.TLBX_ACP_UI_SCENARIO === "resume";
 const nativeV2 = process.env.TLBX_ACP_UI_SCENARIO === "v2";
+const planReview = process.env.TLBX_ACP_UI_SCENARIO === "plan";
 assert.ok(
   url && cookie && sessionId,
   "Authenticated source URL and acceptance session required",
@@ -35,6 +36,10 @@ const result = {
   errors: [],
 };
 let chrome, browser, context, page;
+let resolvePlanSubmission;
+const planSubmission = new Promise((resolve) => {
+  resolvePlanSubmission = resolve;
+});
 try {
   chrome = spawn(
     "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -81,6 +86,21 @@ try {
   page = await context.newPage();
   page.setDefaultTimeout(20000);
   page.on("pageerror", (error) => result.errors.push(error.message));
+  if (planReview)
+    page.on("websocket", (socket) =>
+      socket.on("framesent", (frame) => {
+        try {
+          const message = JSON.parse(String(frame.payload));
+          if (
+            message.action === "turn.submit" &&
+            message.sessionId === sessionId
+          )
+            resolvePlanSubmission(message.turn);
+        } catch {
+          /* Other application sockets may carry binary frames. */
+        }
+      }),
+    );
   await page.goto(url);
   // Hover actions cover the center of long truncated titles; the row's left
   // selection area remains the normal pointer target beside those controls.
@@ -155,7 +175,118 @@ try {
     }
     result.v2RenderingVerified = true;
   }
-  if (!resume && !nativeV2 && !initiallyOpen) {
+  if (planReview) {
+    const sessionList = await (
+      await context.request.get(`${url}/api/sessions`)
+    ).json();
+    const sessionInfo = sessionList.sessions.find(
+      (session) => session.id === sessionId,
+    );
+    assert.equal(
+      sessionInfo.profileHint,
+      "acp-plan-test",
+      "Implementation clicks require the deterministic test provider",
+    );
+    const proposal = initial.history.find(
+      (item) =>
+        item.itemType === "proposed_plan" &&
+        item.turnId === initial.currentTurn.turnId,
+    );
+    assert.ok(proposal, "Native proposed plan is retained");
+    const implement = wrapper.locator(".agent-plan-implement").last();
+    await implement.waitFor({ state: "visible" });
+    assert.equal(
+      await implement.isDisabled(),
+      true,
+      "Implementation waits for settled native work",
+    );
+    assert.equal(
+      await implement
+        .locator("xpath=ancestor::article")
+        .getAttribute("data-artifact-position"),
+      null,
+      "Proposal is outside work-log clusters",
+    );
+    for (const viewport of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await implement.scrollIntoViewIfNeeded();
+      const box = await implement.boundingBox();
+      assert.ok(
+        box &&
+          box.height >= 44 &&
+          box.x >= 0 &&
+          box.x + box.width <= viewport.width,
+      );
+      result.measurements.push({
+        viewport,
+        button: box,
+        disabled: await implement.isDisabled(),
+      });
+      const screenshot = path.join(out, `plan-${viewport.width}.png`);
+      await page.screenshot({ path: screenshot });
+      result.screenshots.push(screenshot);
+    }
+    await page.waitForFunction(
+      () => {
+        const button = [
+          ...document.querySelectorAll(".agent-plan-implement"),
+        ].at(-1);
+        return button && !button.disabled;
+      },
+      null,
+      { timeout: 30000 },
+    );
+    const draft = page.locator("textarea:visible");
+    assert.equal(await draft.count(), 1, "One active composer is available");
+    await draft.fill("Keep this unsent draft");
+    await implement.click();
+    let submissionTimeout;
+    const implementation = await Promise.race([
+      planSubmission,
+      new Promise((_, reject) => {
+        submissionTimeout = setTimeout(
+          () => reject(new Error("No plan implementation frame was sent")),
+          10000,
+        );
+      }),
+    ]).finally(() => clearTimeout(submissionTimeout));
+    assert.equal(implementation.planMode, "off");
+    assert.ok(implementation.text.endsWith(proposal.body));
+    assert.equal(await draft.inputValue(), "Keep this unsent draft");
+    let finished;
+    const completionDeadline = Date.now() + 30000;
+    while (Date.now() < completionDeadline) {
+      finished = await (
+        await context.request.get(
+          `${url}/api/sessions/${sessionId}/agent-control/history?count=96`,
+        )
+      ).json();
+      if (
+        finished.currentTurn.turnId !== initial.currentTurn.turnId &&
+        finished.currentTurn.state === "completed"
+      )
+        break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(finished.currentTurn.state, "completed");
+    assert.notEqual(finished.currentTurn.turnId, initial.currentTurn.turnId);
+    assert.equal(finished.quickSettings.planMode, "off");
+    assert.ok(
+      finished.history.some(
+        (item) => item.kind === "user" && item.body.endsWith(proposal.body),
+      ),
+    );
+    assert.equal(await draft.inputValue(), "Keep this unsent draft");
+    const implementedScreenshot = path.join(out, "plan-implemented.png");
+    await page.screenshot({ path: implementedScreenshot });
+    result.screenshots.push(implementedScreenshot);
+    result.planReviewVerified = true;
+    result.implementationMode = implementation.planMode;
+  }
+  if (!resume && !nativeV2 && !planReview && !initiallyOpen) {
     assert.ok(
       answer &&
         (multi
@@ -404,6 +535,16 @@ try {
   result.ok = true;
 } catch (error) {
   result.failure = error.stack || String(error);
+  if (planReview && page)
+    result.planState = await page
+      .locator(".agent-plan-implement")
+      .evaluateAll((buttons) =>
+        buttons.map((button) => ({
+          disabled: button.disabled,
+          ...button.dataset,
+        })),
+      )
+      .catch(() => []);
   if (page)
     await page
       .screenshot({ path: path.join(out, "failure.png") })

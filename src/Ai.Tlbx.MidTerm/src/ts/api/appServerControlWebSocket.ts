@@ -703,10 +703,10 @@ export function openAppServerControlHistorySocket(
   subscription.listeners.add(callbacks);
   subscriptions.set(sessionId, subscription);
 
-  const shouldSendSubscribeImmediately = ws?.readyState === WebSocket.OPEN;
+  const connectedSocket = ws?.readyState === WebSocket.OPEN ? ws : null;
   void ensureConnected()
     .then(() => {
-      if (!shouldSendSubscribeImmediately) {
+      if (!connectedSocket || ws !== connectedSocket) {
         return;
       }
 
@@ -721,6 +721,7 @@ export function openAppServerControlHistorySocket(
         afterSequence: current.afterSequence,
         historyWindow: current.historyWindow,
       });
+      callbacks.onOpen?.();
     })
     .catch(() => {
       callbacks.onError?.(new Event('error'));

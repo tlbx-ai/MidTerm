@@ -682,6 +682,10 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             case "_x.ai/ask_user_question":
                 await HandleGrokUserInputRequestAsync(root, line, ct).ConfigureAwait(false);
                 break;
+            case "x.ai/exit_plan_mode":
+            case "_x.ai/exit_plan_mode":
+                await HandleGrokExitPlanModeAsync(root, line, ct).ConfigureAwait(false);
+                break;
             default:
                 if (root.TryGetProperty("id", out var requestId))
                 {
@@ -1084,6 +1088,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         {
             return;
         }
+
+        _lastPlanMarkdown = plan;
 
         _emit(CreateEvent("plan.completed", turnId, null, null, "acp", "plan", root, appServerControlEvent =>
         {

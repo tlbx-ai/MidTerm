@@ -23,6 +23,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
         _nativeTerminals.Clear();
         _nativeCompactions.Clear();
         _loadedStateSnapshot = null;
+        _lastPlanMarkdown = null;
         _tools.Clear();
         _configOptionIds.Clear();
         _currentModeId = _planModeId = _defaultModeId = null;

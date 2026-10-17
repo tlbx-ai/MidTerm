@@ -1,4 +1,5 @@
 {
+  "appServerControl.plan.implement": "計画を実行",
   "git.newFile": "新規",
   "git.newFileHint": "空の基準と比較した新しいファイル。",
   "git.newFileBinary": "新しいバイナリファイル。",
