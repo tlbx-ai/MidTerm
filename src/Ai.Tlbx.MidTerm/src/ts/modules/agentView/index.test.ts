@@ -19,6 +19,7 @@ const interruptAppServerControlTurn = vi.fn();
 const approveAppServerControlRequest = vi.fn();
 const declineAppServerControlRequest = vi.fn();
 const resolveAppServerControlUserInput = vi.fn();
+const registerFilePaths = vi.fn().mockResolvedValue(undefined);
 const showDevErrorDialog = vi.fn();
 let activeSessionId: string | null = null;
 let currentSettings: any = { showUnknownAgentMessages: true };
@@ -219,6 +220,7 @@ vi.mock('../../api/client', () => ({
   approveAppServerControlRequest,
   declineAppServerControlRequest,
   resolveAppServerControlUserInput,
+  registerFilePaths,
 }));
 
 vi.mock('../../utils/devErrorDialog', () => ({
@@ -3099,6 +3101,47 @@ describe('agentView dev errors', () => {
     expect(updateBusyIndicatorElapsed).toHaveBeenCalledWith('s-busy', '5s');
     expect(renderCurrentAgentView).not.toHaveBeenCalled();
     expect(window.setTimeout).toHaveBeenCalledTimes(2);
+  });
+
+  it('registers restored attachment paths before loading their image URLs', async () => {
+    const { createAgentHistoryDom } = await import('./index');
+    let finishRegistration: (() => void) | undefined;
+    registerFilePaths.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRegistration = resolve;
+        }),
+    );
+    const historyDom = createAgentHistoryDom({
+      getState: () => undefined,
+      refreshAppServerControlSnapshot: vi.fn(),
+      renderCurrentAgentView: vi.fn(),
+      retryAppServerControlActivation: vi.fn(),
+      logWarn: vi.fn(),
+    });
+    const cachePath = 'C:\\Temp\\tlbx-opencode-images\\fixture\\image.png';
+    const article = historyDom.createHistoryEntry(
+      {
+        id: 'native-user-image',
+        order: 1,
+        kind: 'user',
+        tone: 'neutral',
+        label: 'You',
+        title: '',
+        body: 'Inspect image',
+        meta: '',
+        attachments: [{ kind: 'image', path: cachePath, mimeType: 'image/png' }],
+      },
+      's1',
+    ) as any;
+    const descendants = (node: any): any[] => [node, ...(node.children ?? []).flatMap(descendants)];
+    const image = descendants(article).find(
+      (node: any) => node.className === 'agent-history-attachment-image-el',
+    );
+    expect(registerFilePaths).toHaveBeenCalledWith('s1', [cachePath]);
+    expect(image.src).toBeUndefined();
+    finishRegistration?.();
+    await vi.waitFor(() => expect(image.src).toContain(encodeURIComponent(cachePath)));
   });
 
   it('caps visible command output tails from the AI Agents setting', async () => {

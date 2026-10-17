@@ -7,7 +7,7 @@ import {
   enrichInteractiveTextContent,
   wireAssistantInteractiveContent,
 } from './assistantEnrichment';
-import type { AppServerControlHistoryRequestSummary } from '../../api/client';
+import { registerFilePaths, type AppServerControlHistoryRequestSummary } from '../../api/client';
 import type { AppServerControlAttachmentReference } from '../../api/types';
 import {
   buildAppServerControlAttachmentUrl,
@@ -1115,10 +1115,20 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
     const container = document.createElement('div');
     container.className = 'agent-history-attachments';
+    // Restored native images can live in a provider-owned cache outside cwd.
+    // Register these exact paths before loading; the file endpoint continues
+    // to enforce session access even if this request fails.
+    const accessReady = registerFilePaths(
+      sessionId,
+      attachments.map((attachment) => attachment.path),
+    ).catch(() => undefined);
 
     for (const attachment of attachments) {
       const link = document.createElement('a');
-      link.href = buildAppServerControlAttachmentUrl(sessionId, attachment);
+      const previewUrl = buildAppServerControlAttachmentUrl(sessionId, attachment);
+      void accessReady.then(() => {
+        link.href = previewUrl;
+      });
       link.target = '_blank';
       link.rel = 'noreferrer';
 
@@ -1128,7 +1138,9 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         frame.className = 'agent-history-attachment-image-frame';
         const image = document.createElement('img');
         image.className = 'agent-history-attachment-image-el';
-        image.src = link.href;
+        void accessReady.then(() => {
+          image.src = previewUrl;
+        });
         image.loading = 'lazy';
         image.alt = resolveAttachmentLabel(attachment);
         frame.appendChild(image);
