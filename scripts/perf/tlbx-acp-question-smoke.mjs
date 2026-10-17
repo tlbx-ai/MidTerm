@@ -20,6 +20,7 @@ const nativeV2 = process.env.TLBX_ACP_UI_SCENARIO === "v2";
 const planReview = process.env.TLBX_ACP_UI_SCENARIO === "plan";
 const nativeConfig = process.env.TLBX_ACP_UI_SCENARIO === "config";
 const nativeCommands = process.env.TLBX_ACP_UI_SCENARIO === "commands";
+const nativeUsage = process.env.TLBX_ACP_UI_SCENARIO === "usage";
 assert.ok(
   url && cookie && sessionId,
   "Authenticated source URL and acceptance session required",
@@ -575,12 +576,53 @@ try {
     );
     result.nativeCommandsVerified = true;
   }
+  if (nativeUsage) {
+    assert.equal(initial.session.usage.contextUsedTokens, 2345);
+    assert.equal(initial.session.usage.costCurrency, "EUR");
+    const stats = wrapper.locator('[data-agent-field="runtime-stats"]');
+    await stats.waitFor({ state: "visible" });
+    for (const viewport of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      const compact = await stats
+        .locator(".agent-runtime-stats-compact")
+        .innerText();
+      assert.ok(
+        compact.includes("128k") && compact.includes("0.0123 EUR"),
+        "Reported context and native currency render",
+      );
+      assert.ok(
+        !compact.includes("in 0") && !compact.includes("out 0"),
+        "Unknown input/output counters are not invented zeros",
+      );
+      const box = await stats.boundingBox();
+      const commandsBox = await wrapper
+        .locator(".agent-native-controls")
+        .boundingBox();
+      assert.ok(
+        box &&
+          commandsBox &&
+          box.x >= 0 &&
+          box.x + box.width <= viewport.width + 1 &&
+          box.y >= commandsBox.y + commandsBox.height - 1,
+        "Usage fits without covering native command controls",
+      );
+      result.measurements.push({ viewport, stats: box });
+      const screenshot = path.join(out, `usage-${viewport.width}.png`);
+      await page.screenshot({ path: screenshot });
+      result.screenshots.push(screenshot);
+    }
+    result.nativeUsageVerified = true;
+  }
   if (
     !resume &&
     !nativeV2 &&
     !planReview &&
     !nativeConfig &&
     !nativeCommands &&
+    !nativeUsage &&
     !initiallyOpen
   ) {
     assert.ok(

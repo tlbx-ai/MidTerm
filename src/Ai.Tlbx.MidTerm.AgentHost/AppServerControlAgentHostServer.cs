@@ -596,6 +596,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             AgentMetadataUpdated = appServerControlEvent.AgentMetadataUpdated is null ? null : new AppServerControlProviderAgentMetadataPayload
             {
                 AgentName = appServerControlEvent.AgentMetadataUpdated.AgentName,
+                Usage = appServerControlEvent.AgentMetadataUpdated.Usage?.Clone(),
                 AvailableCommands = appServerControlEvent.AgentMetadataUpdated.AvailableCommands is null ? null : AppServerControlCommand.CloneMany(appServerControlEvent.AgentMetadataUpdated.AvailableCommands)
             },
             SessionState = appServerControlEvent.SessionState is null ? null : new AppServerControlProviderSessionStatePayload

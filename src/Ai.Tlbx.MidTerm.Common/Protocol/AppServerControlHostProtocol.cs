@@ -96,12 +96,30 @@ public sealed class AppServerControlHistoryPatch
 public sealed class AppServerControlSessionSummary
 {
     public string? AgentName { get; set; }
+    public AppServerControlUsageSummary? Usage { get; set; }
     public List<AppServerControlCommand> AvailableCommands { get; set; } = [];
     public string State { get; set; } = string.Empty;
     public string StateLabel { get; set; } = string.Empty;
     public string? Reason { get; set; }
     public string? LastError { get; set; }
     public DateTimeOffset? LastEventAt { get; set; }
+}
+
+public sealed class AppServerControlUsageSummary
+{
+    public long? ContextUsedTokens { get; set; }
+    public long? ContextWindowTokens { get; set; }
+    public long? InputTokens { get; set; }
+    public long? OutputTokens { get; set; }
+    public long? CachedReadTokens { get; set; }
+    public long? CachedWriteTokens { get; set; }
+    public long? ReasoningTokens { get; set; }
+    public decimal? CostAmount { get; set; }
+    public string? CostCurrency { get; set; }
+    public double? PrimaryRateLimitUsedPercent { get; set; }
+    public double? SecondaryRateLimitUsedPercent { get; set; }
+
+    public AppServerControlUsageSummary Clone() => (AppServerControlUsageSummary)MemberwiseClone();
 }
 
 public sealed class AppServerControlCommand

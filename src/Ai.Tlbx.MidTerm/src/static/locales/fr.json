@@ -1,4 +1,5 @@
 {
+  "appServerControl.usage.cost": "Coût de la session",
   "appServerControl.commands.title": "Commandes",
   "appServerControl.commands.arguments": "Arguments",
   "appServerControl.commands.run": "Exécuter la commande",

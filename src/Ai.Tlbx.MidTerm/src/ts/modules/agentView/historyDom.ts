@@ -385,16 +385,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       return;
     }
 
-    const compact = [
-      formatTokenWindowCompact(stats),
-      `in ${formatTokenCount(stats.accumulatedInputTokens)}`,
-      `out ${formatTokenCount(stats.accumulatedOutputTokens)}`,
-    ].join('  ');
-    const detailParts = [
-      formatTokenWindowDetail(stats),
-      `Session in ${formatTokenCount(stats.accumulatedInputTokens)}`,
-      `Session out ${formatTokenCount(stats.accumulatedOutputTokens)}`,
-    ];
+    const compact = buildRuntimeStatLabels(stats, false).join('  ');
+    const detailParts = buildRuntimeStatLabels(stats, true);
     if (
       stats.primaryRateLimitUsedPercent !== null ||
       stats.secondaryRateLimitUsedPercent !== null
@@ -1173,6 +1165,32 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       surface,
       state,
     });
+  }
+
+  function buildRuntimeStatLabels(
+    stats: AppServerControlRuntimeStatsSummary,
+    detail: boolean,
+  ): string[] {
+    const labels: string[] = [];
+    if (stats.windowTokenLimit !== null)
+      labels.push(detail ? formatTokenWindowDetail(stats) : formatTokenWindowCompact(stats));
+    if (stats.accumulatedInputTokens !== null)
+      labels.push(
+        `${detail ? 'Session in' : 'in'} ${formatTokenCount(stats.accumulatedInputTokens)}`,
+      );
+    if (stats.accumulatedOutputTokens !== null)
+      labels.push(
+        `${detail ? 'Session out' : 'out'} ${formatTokenCount(stats.accumulatedOutputTokens)}`,
+      );
+    if (stats.costAmount !== undefined && stats.costCurrency) {
+      const amount = new Intl.NumberFormat(undefined, { maximumSignificantDigits: 6 }).format(
+        stats.costAmount,
+      );
+      labels.push(
+        `${appServerControlText('appServerControl.usage.cost', 'Session cost')} ${amount} ${stats.costCurrency}`,
+      );
+    }
+    return labels;
   }
 
   function formatTokenCount(value: number): string {

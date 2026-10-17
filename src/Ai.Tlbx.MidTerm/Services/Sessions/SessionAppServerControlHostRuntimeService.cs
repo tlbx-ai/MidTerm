@@ -1529,6 +1529,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         return new AppServerControlSessionSummary
         {
             AgentName = source.AgentName,
+            Usage = source.Usage?.Clone(),
             AvailableCommands = AppServerControlCommand.CloneMany(source.AvailableCommands),
             State = source.State,
             StateLabel = source.StateLabel,

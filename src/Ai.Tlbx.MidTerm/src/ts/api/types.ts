@@ -208,6 +208,7 @@ export type AppServerControlHistoryDelta = AppServerControlHistoryPatch;
 export interface AppServerControlSessionSummary {
   agentName?: string | null;
   availableCommands?: AppServerControlCommand[];
+  usage?: AppServerControlUsageSummary | null;
   state: string;
   stateLabel: string;
   reason?: string | null;
@@ -220,6 +221,20 @@ export interface AppServerControlCommand {
   description?: string | null;
   inputHint?: string | null;
   input?: unknown;
+}
+
+export interface AppServerControlUsageSummary {
+  contextUsedTokens?: number | null;
+  contextWindowTokens?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cachedReadTokens?: number | null;
+  cachedWriteTokens?: number | null;
+  reasoningTokens?: number | null;
+  costAmount?: number | null;
+  costCurrency?: string | null;
+  primaryRateLimitUsedPercent?: number | null;
+  secondaryRateLimitUsedPercent?: number | null;
 }
 
 export interface AppServerControlThreadSummary {

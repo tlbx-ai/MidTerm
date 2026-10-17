@@ -155,6 +155,14 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
             activePromptId = id.ToString();
             var text = ReadPromptText(root);
             var imageSummary = ReadPromptImageSummary(root);
+            if (text.StartsWith("usage-check", StringComparison.Ordinal))
+            {
+                await WriteNotificationAsync("session/update", new { sessionId, update = new { sessionUpdate = "usage_update", used = 1234, size = 128000, cost = new { amount = 0.0123, currency = "EUR" } } }).ConfigureAwait(false);
+                await WriteNotificationAsync("session/update", new { sessionId, update = new { sessionUpdate = "usage_update", used = (int?)null, size = "invalid", cost = true } }).ConfigureAwait(false);
+                await WriteNotificationAsync("session/update", new { sessionId, update = new { sessionUpdate = "usage_update", used = 2345, size = 128000 } }).ConfigureAwait(false);
+                await WriteNotificationAsync("session/update", new { sessionId, update = new { sessionUpdate = "usage_update", used = -1, size = 128000 } }).ConfigureAwait(false);
+                await WriteNotificationAsync("session/update", new { sessionId, update = new { sessionUpdate = "usage_update", used = 2345, size = 128000, cost = new { amount = "invalid", currency = "USD" } } }).ConfigureAwait(false);
+            }
             if (text.StartsWith("commands-clear", StringComparison.Ordinal))
                 await WriteNotificationAsync("session/update", new { sessionId, update = new { sessionUpdate = "available_commands_update", availableCommands = Array.Empty<object>() } }).ConfigureAwait(false);
             if (text.StartsWith("commands-malformed", StringComparison.Ordinal))
@@ -267,7 +275,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 break;
             }
             if (!text.StartsWith("commands-clear", StringComparison.Ordinal)) await WriteAvailableCommandsUpdateAsync(sessionId).ConfigureAwait(false);
-            await WriteNotificationAsync("session/update", new
+            if (!text.StartsWith("usage-check", StringComparison.Ordinal)) await WriteNotificationAsync("session/update", new
             {
                 sessionId,
                 update = new

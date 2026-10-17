@@ -1,4 +1,5 @@
 {
+  "appServerControl.usage.cost": "सत्र की लागत",
   "appServerControl.commands.title": "कमांड",
   "appServerControl.commands.arguments": "आर्गुमेंट",
   "appServerControl.commands.run": "कमांड चलाएँ",

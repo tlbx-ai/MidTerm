@@ -1,4 +1,5 @@
 {
+  "appServerControl.usage.cost": "セッション費用",
   "appServerControl.commands.title": "コマンド",
   "appServerControl.commands.arguments": "引数",
   "appServerControl.commands.run": "コマンドを実行",

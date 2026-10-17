@@ -734,6 +734,7 @@ public sealed partial class SessionAppServerControlHistoryService
         if (appServerControlEvent.AgentMetadataUpdated is { } metadata)
         {
             if (metadata.AgentName is not null) state.Session.AgentName = metadata.AgentName;
+            if (metadata.Usage is not null) state.Session.Usage = metadata.Usage.Clone();
             if (metadata.AvailableCommands is not null) state.Session.AvailableCommands = AppServerControlCommand.CloneMany(metadata.AvailableCommands);
         }
         ApplySessionState(state, appServerControlEvent);
@@ -1849,6 +1850,7 @@ public sealed partial class SessionAppServerControlHistoryService
             AgentMetadataUpdated = source.AgentMetadataUpdated is null ? null : new AppServerControlProviderAgentMetadataPayload
             {
                 AgentName = source.AgentMetadataUpdated.AgentName,
+                Usage = source.AgentMetadataUpdated.Usage?.Clone(),
                 AvailableCommands = source.AgentMetadataUpdated.AvailableCommands is null ? null : AppServerControlCommand.CloneMany(source.AgentMetadataUpdated.AvailableCommands)
             },
             SessionState = source.SessionState is null ? null : new AppServerControlProviderSessionStatePayload
@@ -2011,6 +2013,7 @@ public sealed partial class SessionAppServerControlHistoryService
         return new AppServerControlSessionSummary
         {
             AgentName = source.AgentName,
+            Usage = source.Usage?.Clone(),
             AvailableCommands = AppServerControlCommand.CloneMany(source.AvailableCommands),
             State = source.State,
             StateLabel = source.StateLabel,
@@ -2023,6 +2026,7 @@ public sealed partial class SessionAppServerControlHistoryService
     private static void CopySessionSummary(AppServerControlSessionSummary target, AppServerControlSessionSummary source)
     {
         target.AgentName = source.AgentName;
+        target.Usage = source.Usage?.Clone();
         target.AvailableCommands = AppServerControlCommand.CloneMany(source.AvailableCommands);
         target.State = source.State;
         target.StateLabel = source.StateLabel;

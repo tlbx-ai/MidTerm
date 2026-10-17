@@ -45,6 +45,7 @@ public sealed class AppServerControlProviderEventRaw
 public sealed class AppServerControlProviderAgentMetadataPayload
 {
     public string? AgentName { get; set; }
+    public AppServerControlUsageSummary? Usage { get; set; }
     public List<AppServerControlCommand>? AvailableCommands { get; set; }
 }
 

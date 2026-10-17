@@ -1,4 +1,5 @@
 {
+  "appServerControl.usage.cost": "会话费用",
   "appServerControl.commands.title": "命令",
   "appServerControl.commands.arguments": "参数",
   "appServerControl.commands.run": "运行命令",

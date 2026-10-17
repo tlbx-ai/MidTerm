@@ -11,6 +11,7 @@ import type {
   AppServerControlInlineFileReference,
   AppServerControlInlineImagePreview,
   AppServerControlQuestion,
+  AppServerControlUsageSummary,
 } from '../../api/types';
 import { $currentSettings } from '../../stores';
 import {
@@ -583,6 +584,8 @@ function isAppServerControlProviderLifecycleNotice(normalizedBody: string): bool
 export function buildAppServerControlRuntimeStats(
   snapshot: AppServerControlHistorySnapshot,
 ): AppServerControlRuntimeStatsSummary | null {
+  const usage = snapshot.session.usage;
+  if (usage) return buildStructuredUsageStats(usage);
   const stats: AppServerControlRuntimeStatsSummary = {
     windowUsedTokens: null,
     windowTokenLimit: null,
@@ -616,8 +619,10 @@ export function buildAppServerControlRuntimeStats(
     if (contextWindow) {
       stats.windowUsedTokens = contextWindow.usedTokens;
       stats.windowTokenLimit = contextWindow.windowTokens;
-      stats.accumulatedInputTokens += contextWindow.lastTurnInputTokens;
-      stats.accumulatedOutputTokens += contextWindow.lastTurnOutputTokens;
+      stats.accumulatedInputTokens =
+        (stats.accumulatedInputTokens ?? 0) + contextWindow.lastTurnInputTokens;
+      stats.accumulatedOutputTokens =
+        (stats.accumulatedOutputTokens ?? 0) + contextWindow.lastTurnOutputTokens;
       hasStats = true;
       continue;
     }
@@ -631,6 +636,22 @@ export function buildAppServerControlRuntimeStats(
   }
 
   return hasStats ? stats : null;
+}
+
+function buildStructuredUsageStats(
+  usage: AppServerControlUsageSummary,
+): AppServerControlRuntimeStatsSummary {
+  return {
+    windowUsedTokens: usage.contextUsedTokens ?? null,
+    windowTokenLimit: usage.contextWindowTokens ?? null,
+    accumulatedInputTokens: usage.inputTokens ?? null,
+    accumulatedOutputTokens: usage.outputTokens ?? null,
+    primaryRateLimitUsedPercent: usage.primaryRateLimitUsedPercent ?? null,
+    secondaryRateLimitUsedPercent: usage.secondaryRateLimitUsedPercent ?? null,
+    ...(usage.costAmount != null && usage.costCurrency
+      ? { costAmount: usage.costAmount, costCurrency: usage.costCurrency }
+      : {}),
+  };
 }
 
 function parseCodexContextWindowNotice(

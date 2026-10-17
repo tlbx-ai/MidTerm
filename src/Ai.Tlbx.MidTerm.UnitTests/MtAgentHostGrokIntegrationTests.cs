@@ -116,6 +116,11 @@ public sealed class MtAgentHostGrokIntegrationTests
                 sessionId,
                 count: 96);
             Assert.Contains("Fake Grok reply.", turnWindow.Streams.AssistantText, StringComparison.Ordinal);
+            Assert.Equal(1234, turnWindow.Session.Usage!.ContextUsedTokens);
+            Assert.Equal(128000, turnWindow.Session.Usage.ContextWindowTokens);
+            Assert.Equal(0.0123m, turnWindow.Session.Usage.CostAmount);
+            Assert.Equal("USD", turnWindow.Session.Usage.CostCurrency);
+            Assert.Null(turnWindow.Session.Usage.InputTokens);
             Assert.Contains($"[image image/png {imageBytes.Length} bytes]", turnWindow.Streams.AssistantText, StringComparison.Ordinal);
             Assert.Contains("Fake Grok is thinking.", turnWindow.Streams.ReasoningText, StringComparison.Ordinal);
             Assert.Contains(turnWindow.Items, item => item.ItemType == "dynamic_tool_call" && item.Status == "completed");
@@ -656,6 +661,44 @@ public sealed class MtAgentHostGrokIntegrationTests
             _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
                 patch => patch.Patch.CurrentTurn.State == "completed" && patch.Patch.CurrentTurn.TurnId == continued.TurnStarted.TurnId,
                 maxPatches: 40, timeout: TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MtAgentHost_PreservesStructuredUsageAndIgnoresMalformedNativeCounts(bool v2)
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll(), v2: v2);
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        const string sessionId = "structured-native-usage";
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AttachFakeAcpAsync(process, patches, fake, sessionId);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "usage-turn", SessionId = sessionId, Type = "turn.start",
+                StartTurn = new AppServerControlTurnRequest { Text = "usage-check" }
+            });
+            var result = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "usage-turn");
+            Assert.True(result.Status == "accepted", result.Message);
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(process.StandardOutput, patches,
+                patch => patch.Patch.CurrentTurn.State == "completed", maxPatches: 96, timeout: TimeSpan.FromSeconds(10));
+            var history = await AppServerControlHostTestClient.GetHistoryWindowAsync(process.StandardOutput, process.StandardInput, patches, sessionId, count: 96);
+            Assert.Equal(2345, history.Session.Usage!.ContextUsedTokens);
+            Assert.Equal(128000, history.Session.Usage.ContextWindowTokens);
+            Assert.Equal(0.0123m, history.Session.Usage.CostAmount);
+            Assert.Equal("EUR", history.Session.Usage.CostCurrency);
+            Assert.Null(history.Session.Usage.InputTokens);
+            Assert.DoesNotContain(history.History, item => item.Body.Contains("invalid ACP usage", StringComparison.Ordinal));
         }
         finally
         {
