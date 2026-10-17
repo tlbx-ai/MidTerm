@@ -1329,8 +1329,44 @@ public sealed class MtAgentHostGrokIntegrationTests
         }
     }
 
+    [Theory]
+    [InlineData("Explain acceptance", "on", "/plan Explain acceptance")]
+    [InlineData("/plan Explain acceptance", "on", "/plan Explain acceptance")]
+    [InlineData("Explain acceptance", "off", "Explain acceptance")]
+    public async Task MtAgentHost_UsesAntigravityNativePlanCommand(string text, string mode, string expected)
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll());
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        const string sessionId = "antigravity-native-plan";
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AttachFakeAcpAsync(process, patches, fake, sessionId, provider: "antigravity", executableArguments: ["--fake-antigravity-plan"]);
+            _ = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(process.StandardOutput, process.StandardInput,
+                patches, sessionId, h => h.Session.AvailableCommands.Any(command => command.Name == "plan"), TimeSpan.FromSeconds(10), count: 96);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new()
+            {
+                CommandId = "native-plan", SessionId = sessionId, Type = "turn.start",
+                StartTurn = new() { Text = text, PlanMode = mode }
+            });
+            var started = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "native-plan");
+            Assert.Equal("accepted", started.Status);
+            var completed = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(process.StandardOutput, process.StandardInput,
+                patches, sessionId, h => h.CurrentTurn.TurnId == started.TurnStarted!.TurnId && h.CurrentTurn.State == "completed", TimeSpan.FromSeconds(10), count: 96);
+            Assert.Equal("Fake Grok reply. prompt=" + expected, completed.Streams.AssistantText);
+            Assert.Equal(mode, completed.QuickSettings.PlanMode);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
     private static async Task AttachFakeAcpAsync(Process process, Queue<AppServerControlHostHistoryPatchEnvelope> patches,
-        FakeGrokPathScope fake, string sessionId, string? resumeThreadId = null, string expectedSessionState = "ready", string provider = "custom-acp")
+        FakeGrokPathScope fake, string sessionId, string? resumeThreadId = null, string expectedSessionState = "ready", string provider = "custom-acp", IReadOnlyList<string>? executableArguments = null)
     {
         await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
         {
@@ -1343,6 +1379,7 @@ public sealed class MtAgentHostGrokIntegrationTests
                 Provider = provider,
                 RuntimeKind = "acp-v1",
                 ExecutablePath = fake.ExecutablePath,
+                ExecutableArguments = executableArguments?.ToList() ?? [],
                 WorkingDirectory = fake.Root,
                 ResumeThreadId = resumeThreadId
             }

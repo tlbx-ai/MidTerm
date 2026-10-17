@@ -1783,7 +1783,10 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         var input = request.Text?.TrimStart() ?? string.Empty;
         var commandName = input.StartsWith('/') ? input[1..].Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() : null;
         var isNativeCommand = commandName is not null && _availableCommands.Any(command => command.Name == commandName);
-        var prompt = isNativeCommand ? request.Text : AppServerControlQuickSettings.ApplyPlanModePrompt(request.Text, planMode);
+        var useNativePlanCommand = Provider == "antigravity" && planMode == AppServerControlQuickSettings.PlanModeOn &&
+            _availableCommands.Any(command => command.Name == "plan");
+        var prompt = isNativeCommand ? request.Text : useNativePlanCommand ? "/plan " + request.Text :
+            AppServerControlQuickSettings.ApplyPlanModePrompt(request.Text, planMode);
         if (!string.IsNullOrWhiteSpace(prompt))
         {
             blocks.Add(AcpPromptBlock.CreateText(prompt));

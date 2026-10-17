@@ -9,6 +9,7 @@ var cancelRequested = false;
 var delayPlanCompletion = false;
 var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_CAPTURE_PATH");
 var requiresAuthentication = args.Contains("--fake-auth-required", StringComparer.Ordinal);
+var nativePlanCommand = args.Contains("--fake-antigravity-plan", StringComparer.Ordinal);
 var authenticated = false;
 var resumeCapability = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_RESUME_CAPABILITY") ?? "load";
 var v2 = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_V2") == "true" || args.Contains("--fake-v2", StringComparer.Ordinal);
@@ -159,7 +160,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 models = BuildModelState()
             }).ConfigureAwait(false);
             await WriteNotificationAsync("_x.ai/session/setup", new { sessionId, phase = "ready" }).ConfigureAwait(false);
-            if (resumeCapability != "commands-initial-only") await WriteAvailableCommandsUpdateAsync(sessionId).ConfigureAwait(false);
+            if (resumeCapability != "commands-initial-only") await WriteAvailableCommandsUpdateAsync(sessionId, nativePlanCommand).ConfigureAwait(false);
             break;
         case "session/prompt":
             activePromptId = id.ToString();
@@ -294,7 +295,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         : (object)questionParameters).ConfigureAwait(false);
                 break;
             }
-            if (!text.StartsWith("commands-clear", StringComparison.Ordinal)) await WriteAvailableCommandsUpdateAsync(sessionId).ConfigureAwait(false);
+            if (!text.StartsWith("commands-clear", StringComparison.Ordinal)) await WriteAvailableCommandsUpdateAsync(sessionId, nativePlanCommand).ConfigureAwait(false);
             if (!text.StartsWith("usage-check", StringComparison.Ordinal)) await WriteNotificationAsync("session/update", new
             {
                 sessionId,
@@ -552,7 +553,7 @@ static object[] BuildV2ConfigOptions(string model, string agent, bool toggle) =>
     new { configId = "future-setting", name = "Future control", type = "_custom", currentValue = "keep-me", extraData = new { version = 3 } }
 ];
 
-static async Task WriteAvailableCommandsUpdateAsync(string sessionId)
+static async Task WriteAvailableCommandsUpdateAsync(string sessionId, bool nativePlan = false)
 {
     await WriteNotificationAsync("session/update", new
     {
@@ -564,7 +565,7 @@ static async Task WriteAvailableCommandsUpdateAsync(string sessionId)
             {
                 new
                 {
-                    name = "compact",
+                    name = nativePlan ? "plan" : "compact",
                     description = "Compress conversation history to save context window",
                     input = new { hint = "optional context about what to preserve" }
                 },
