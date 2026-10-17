@@ -527,7 +527,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                         Answers = answers.Select(pair => new AppServerControlAnsweredQuestion
                         {
                             QuestionId = pair.Key,
-                            Answers = [.. pair.Value.Answers]
+                            Answers = pending.Questions.Any(question => question.Id == pair.Key && question.IsSecret) ? ["[redacted]"] : [.. pair.Value.Answers]
                         }).ToList()
                     };
                 })
@@ -743,6 +743,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 TurnId = turnId,
                 ItemId = itemId,
                 QuestionIds = questionIds,
+                Questions = questions,
                 Summary = summary,
                 CreatedAt = DateTimeOffset.UtcNow
             };
@@ -3105,6 +3106,10 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 throw new InvalidOperationException($"Missing answer for App Server Controller question '{questionId}'.");
             }
 
+            var question = pending.Questions.FirstOrDefault(item => item.Id == questionId);
+            if (question is not null && ((!question.MultiSelect && answer.Answers.Count != 1) ||
+                (question.Options.Count > 0 && !question.AllowCustomAnswer && answer.Answers.Any(value => !question.Options.Any(option => option.Label == value)))))
+                throw new InvalidOperationException($"Answer does not match native Codex question '{questionId}'.");
             resolvedAnswers[questionId] = answer;
         }
 
@@ -4016,7 +4021,9 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 Id = GetString(question, "id") ?? string.Empty,
                 Header = GetString(question, "header") ?? string.Empty,
                 Question = GetString(question, "question") ?? string.Empty,
-                MultiSelect = GetBoolean(question, "multiSelect")
+                MultiSelect = GetBoolean(question, "multiSelect"),
+                AllowCustomAnswer = GetBoolean(question, "isOther"),
+                IsSecret = GetBoolean(question, "isSecret")
             };
 
             if (question.TryGetProperty("options", out var options) && options.ValueKind == JsonValueKind.Array)
@@ -4171,6 +4178,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         public string? TurnId { get; set; }
         public string? ItemId { get; set; }
         public List<string> QuestionIds { get; set; } = [];
+        public List<AppServerControlQuestion> Questions { get; set; } = [];
         public string Summary { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; }
     }

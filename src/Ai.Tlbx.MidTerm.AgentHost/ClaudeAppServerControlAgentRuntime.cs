@@ -735,7 +735,8 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                 Id = GetString(value, "id") ?? string.Empty,
                 Header = GetString(value, "header") ?? string.Empty,
                 Question = GetString(value, "question") ?? string.Empty,
-                MultiSelect = GetBoolean(value, "multiSelect")
+                MultiSelect = GetBoolean(value, "multiSelect"),
+                AllowCustomAnswer = true
             };
             var rawOptions = Traverse(value, "options");
             if (rawOptions is { ValueKind: JsonValueKind.Array } options)

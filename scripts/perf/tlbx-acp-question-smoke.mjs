@@ -14,6 +14,7 @@ const cookie = process.env.TLBX_COOKIE_HEADER;
 const sessionId = process.env.TLBX_ACP_UI_SESSION_ID;
 const answer = process.env.TLBX_ACP_UI_ANSWER === "true";
 const cancel = process.env.TLBX_ACP_UI_SCENARIO === "cancel";
+const customAnswer = process.env.TLBX_ACP_UI_SCENARIO === "custom";
 const multi = cancel || process.env.TLBX_ACP_UI_SCENARIO === "multi";
 const resume = process.env.TLBX_ACP_UI_SCENARIO === "resume";
 const nativeV2 = process.env.TLBX_ACP_UI_SCENARIO === "v2";
@@ -1046,12 +1047,31 @@ try {
   }
   if (answer && initiallyOpen) {
     await page.setViewportSize({ width: 1440, height: 1000 });
+    await settleLayout();
     const blueChoice = wrapper.locator(".agent-request-choice").filter({
       has: page
         .locator(".agent-request-choice-title")
         .filter({ hasText: /^Blue(?:\s|$)/ }),
     });
-    await blueChoice.click();
+    if (customAnswer) {
+      const custom = wrapper.locator(".agent-request-custom-input");
+      await custom.focus();
+      await custom.pressSequentially("Violet");
+      assert.equal(
+        await custom.inputValue(),
+        "Violet",
+        "Custom typing retains every character",
+      );
+      assert.equal(
+        await custom.evaluate((element) => document.activeElement === element),
+        true,
+        "Custom typing retains focus",
+      );
+      const screenshot = path.join(out, "custom-answer-typed.png");
+      await page.screenshot({ path: screenshot });
+      result.screenshots.push(screenshot);
+      result.customTypingVerified = true;
+    } else await blueChoice.click();
     if (multi) {
       await wrapper
         .locator(".agent-request-question")
@@ -1065,10 +1085,11 @@ try {
         .filter({ hasText: /^Which color\?$/ })
         .waitFor({ state: "visible" });
     }
-    assert.equal(
-      await blueChoice.locator(".agent-request-choice-input").isChecked(),
-      true,
-    );
+    if (!customAnswer)
+      assert.equal(
+        await blueChoice.locator(".agent-request-choice-input").isChecked(),
+        true,
+      );
     const submit = wrapper.locator('.agent-request-form button[type="submit"]');
     const waitEnabled = () =>
       page.waitForFunction((id) => {

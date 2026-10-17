@@ -183,6 +183,7 @@ export interface AppServerControlQuestion {
   question: string;
   multiSelect: boolean;
   allowCustomAnswer?: boolean;
+  isSecret?: boolean;
   options: AppServerControlQuestionOption[];
 }
 

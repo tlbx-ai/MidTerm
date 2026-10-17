@@ -411,7 +411,9 @@ public sealed class MtAgentHostCodexIntegrationTests
     [InlineData(false, false)]
     [InlineData(true, false)]
     [InlineData(true, true)]
-    public async Task MtAgentHost_CanDriveFakeCodexUserInputFlow(bool numericIds, bool cancel)
+    [InlineData(true, false, true)]
+    [InlineData(true, false, false, true)]
+    public async Task MtAgentHost_CanDriveFakeCodexUserInputFlow(bool numericIds, bool cancel, bool custom = false, bool secret = false)
     {
         using var fakeCodex = FakeCodexPathScope.Create();
         var hostDll = ResolveAgentHostDll();
@@ -450,7 +452,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 Type = "turn.start",
                 StartTurn = new AppServerControlTurnRequest
                 {
-                    Text = "Inspect the repo and ask user for the mode." + (numericIds ? string.Empty : " Use string RPC IDs."),
+                    Text = "Inspect the repo and ask user for the mode." + (numericIds ? string.Empty : " Use string RPC IDs.") +
+                        (custom ? " custom user input" : secret ? " secret user input" : string.Empty),
                     Attachments = []
                 }
             });
@@ -471,6 +474,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 count: 96);
             var userInputRequest = Assert.Single(questionWindow.Requests, request => request.Kind == "interview" && request.State == "open");
             Assert.Equal("choice", Assert.Single(userInputRequest.Questions).Id);
+            Assert.Equal(custom, userInputRequest.Questions[0].AllowCustomAnswer);
+            Assert.Equal(secret, userInputRequest.Questions[0].IsSecret);
             if (cancel)
             {
                 await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
@@ -492,7 +497,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                     ResolveUserInput = new AppServerControlUserInputResolutionCommand
                     {
                         RequestId = userInputRequest.RequestId,
-                        Answers = [new AppServerControlAnsweredQuestion { QuestionId = "choice", Answers = ["Safe"] }]
+                        Answers = [new AppServerControlAnsweredQuestion { QuestionId = "choice", Answers = [secret ? "FIXTURE_SECRET_96" : custom ? "Careful" : "Safe"] }]
                     }
                 });
                 Assert.Equal("rejected", (await AppServerControlHostTestClient.ReadResultAsync(
@@ -536,7 +541,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                         new AppServerControlAnsweredQuestion
                         {
                             QuestionId = "choice",
-                            Answers = ["Safe"]
+                            Answers = [secret ? "FIXTURE_SECRET_96" : custom ? "Careful" : "Safe"]
                         }
                     ]
                 }
@@ -552,6 +557,13 @@ public sealed class MtAgentHostCodexIntegrationTests
                 "session-user-input",
                 "completed");
             Assert.Contains(resolveWindow.Requests, request => request.RequestId == userInputRequest.RequestId && request.State == "resolved");
+            var retainedAnswer = resolveWindow.Requests.Single(request => request.RequestId == userInputRequest.RequestId).Answers.Single().Answers.Single();
+            Assert.Equal(secret ? "[redacted]" : custom ? "Careful" : "Safe", retainedAnswer);
+            if (secret)
+            {
+                Assert.Contains(resolveWindow.History, item => item.Body.Contains("Native secret receipt verified.", StringComparison.Ordinal));
+                Assert.DoesNotContain(resolveWindow.History, item => item.Body.Contains("FIXTURE_SECRET_96", StringComparison.Ordinal) || item.Answers.Any(answer => answer.Answers.Contains("FIXTURE_SECRET_96", StringComparer.Ordinal)));
+            }
             Assert.Contains(resolveWindow.History, item => item.RequestId == userInputRequest.RequestId && item.ItemType == "interview");
         }
         finally

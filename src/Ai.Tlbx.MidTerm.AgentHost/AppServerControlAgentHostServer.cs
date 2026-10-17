@@ -734,6 +734,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             Question = source.Question,
             MultiSelect = source.MultiSelect,
             AllowCustomAnswer = source.AllowCustomAnswer,
+            IsSecret = source.IsSecret,
             Options = source.Options.Select(static option => new AppServerControlQuestionOption
             {
                 Label = option.Label,

@@ -391,6 +391,17 @@ function summarizeRequestInterruption(
   if (request.kind === 'interview') {
     const activeQuestion = request.questions[0];
     if (request.questions.length === 1 && activeQuestion?.options.length) {
+      if (activeQuestion.allowCustomAnswer) {
+        return activeQuestion.multiSelect
+          ? appServerControlText(
+              'appServerControl.request.selectManyOrCustom',
+              'Select options or enter your own answer.',
+            )
+          : appServerControlText(
+              'appServerControl.request.selectOneOrCustom',
+              'Select an option or enter your own answer.',
+            );
+      }
       return activeQuestion.multiSelect
         ? appServerControlFormat(
             'appServerControl.request.selectManyToContinue',
@@ -468,12 +479,14 @@ function createResolvedInterviewSummary(
     const answers = answer?.answers.filter((entry) => entry.trim().length > 0) ?? [];
     value.textContent =
       answers.length > 0
-        ? answers
-            .map(
-              (answer) =>
-                question.options.find((option) => option.value === answer)?.label ?? answer,
-            )
-            .join(', ')
+        ? question.isSecret
+          ? '••••••••'
+          : answers
+              .map(
+                (answer) =>
+                  question.options.find((option) => option.value === answer)?.label ?? answer,
+              )
+              .join(', ')
         : appServerControlText('appServerControl.request.answerSkipped', 'No answer submitted');
     item.appendChild(value);
 
@@ -554,6 +567,7 @@ function createQuestionField(args: {
         autoAdvance: false,
         deps,
         inputType: 'checkbox',
+        appServerControlText,
         question,
         request,
         selectedAnswers: draftValue,
@@ -569,6 +583,7 @@ function createQuestionField(args: {
         autoAdvance: index < totalQuestions - 1,
         deps,
         inputType: 'radio',
+        appServerControlText,
         question,
         request,
         selectedAnswers: draftValue,
@@ -579,7 +594,11 @@ function createQuestionField(args: {
   }
 
   const input = document.createElement('input');
-  input.type = 'text';
+  input.type = question.isSecret ? 'password' : 'text';
+  if (question.isSecret) {
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+  }
   input.name = question.id;
   input.className = 'agent-request-input';
   input.placeholder = appServerControlText('appServerControl.request.typeAnswer', 'Type answer');
@@ -590,7 +609,7 @@ function createQuestionField(args: {
       sessionId,
       request.requestId,
       question.id,
-      [input.value.trim()],
+      [question.isSecret ? input.value : input.value.trim()],
       false,
     );
   });
@@ -602,12 +621,22 @@ function createQuestionChoiceList(args: {
   autoAdvance: boolean;
   deps: AgentHistoryRequestDomDeps;
   inputType: 'checkbox' | 'radio';
+  appServerControlText: AppServerControlText;
   question: AppServerControlHistoryRequestSummary['questions'][number];
   request: AppServerControlHistoryRequestSummary;
   selectedAnswers: readonly string[];
   sessionId: string;
 }): HTMLElement {
-  const { autoAdvance, deps, inputType, question, request, selectedAnswers, sessionId } = args;
+  const {
+    autoAdvance,
+    deps,
+    inputType,
+    question,
+    request,
+    selectedAnswers,
+    sessionId,
+    appServerControlText,
+  } = args;
   const options = document.createElement('div');
   options.className = 'agent-request-choice-list';
 
@@ -650,7 +679,8 @@ function createQuestionChoiceList(args: {
         ),
       ).map((candidate) => candidate.value);
       const custom = options.querySelector<HTMLInputElement>('.agent-request-custom-input');
-      if (custom?.value.trim()) nextAnswers.push(custom.value.trim());
+      if (custom?.value.trim())
+        nextAnswers.push(question.isSecret ? custom.value : custom.value.trim());
       updateRequestDraftAnswers(deps, sessionId, request.requestId, question.id, nextAnswers);
     });
     optionLabel.appendChild(input);
@@ -681,10 +711,16 @@ function createQuestionChoiceList(args: {
 
   if (question.allowCustomAnswer) {
     const custom = document.createElement('input');
-    custom.type = 'text';
+    custom.type = question.isSecret ? 'password' : 'text';
+    custom.name = question.id + ':custom';
+    if (question.isSecret) {
+      custom.autocomplete = 'off';
+      custom.spellcheck = false;
+    }
     custom.className = 'agent-request-input agent-request-custom-input';
-    custom.placeholder = 'Other answer';
-    custom.setAttribute('aria-label', 'Other answer');
+    const otherLabel = appServerControlText('appServerControl.request.otherAnswer', 'Other answer');
+    custom.placeholder = otherLabel;
+    custom.setAttribute('aria-label', `${question.header || question.question}: ${otherLabel}`);
     custom.value =
       selectedAnswers.find(
         (answer) => !question.options.some((option) => (option.value ?? option.label) === answer),
@@ -696,7 +732,7 @@ function createQuestionChoiceList(args: {
       }
       const answers =
         question.multiSelect || !custom.value.trim() ? choices.map((choice) => choice.value) : [];
-      if (custom.value.trim()) answers.push(custom.value.trim());
+      if (custom.value.trim()) answers.push(question.isSecret ? custom.value : custom.value.trim());
       updateRequestDraftAnswers(deps, sessionId, request.requestId, question.id, answers, false);
     });
     options.appendChild(custom);

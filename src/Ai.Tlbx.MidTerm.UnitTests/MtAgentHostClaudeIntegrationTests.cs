@@ -202,13 +202,14 @@ public sealed class MtAgentHostClaudeIntegrationTests
                     var request = Assert.Single(pending.Requests, request => request.Kind == "interview" && request.State == "open");
                     var question = Assert.Single(request.Questions);
                     Assert.True(question.MultiSelect);
+                    Assert.True(question.AllowCustomAnswer);
                     await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
                     {
                         CommandId = "answer-claude-question", SessionId = sessionId, Type = "user-input.resolve",
                         ResolveUserInput = new AppServerControlUserInputResolutionCommand
                         {
                             RequestId = request.RequestId,
-                            Answers = [new AppServerControlAnsweredQuestion { QuestionId = question.Id, Answers = ["Blue", "Red"] }]
+                            Answers = [new AppServerControlAnsweredQuestion { QuestionId = question.Id, Answers = ["Blue", "Violet"] }]
                         }
                     });
                     Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "answer-claude-question")).Status);
@@ -219,7 +220,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 Assert.Equal(effort, completed.CurrentTurn.Effort);
                 Assert.Equal("claude-test", Assert.Single(completed.QuickSettings.ModelOptions).Value);
                 Assert.Equal(new[] { "low", "high" }, completed.QuickSettings.EffortOptions.Select(option => option.Value), StringComparer.Ordinal);
-                if (iteration == 3) Assert.Contains("answer=Blue, Red", AppServerControlHostTestClient.CollectAssistantText(completed), StringComparison.Ordinal);
+                if (iteration == 3) Assert.Contains("answer=Blue, Violet", AppServerControlHostTestClient.CollectAssistantText(completed), StringComparison.Ordinal);
                 else Assert.Contains(completed.History, item => item.TurnId == completed.CurrentTurn.TurnId && item.ItemType == "proposed_plan" && item.Body.Contains("TLBX_CLAUDE_PLAN_FAKE", StringComparison.Ordinal));
                 Assert.DoesNotContain(completed.Requests, request => request.State == "open");
                 if (iteration != 3) Assert.Contains(completed.Items, item => item.Title == "Plan review" && item.Status == "completed");

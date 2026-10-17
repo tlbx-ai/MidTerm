@@ -62,7 +62,7 @@ class Element {
   }
 }
 
-function form(multiSelect: boolean, custom: boolean, options = true) {
+function form(multiSelect: boolean, custom: boolean, options = true, isSecret = false) {
   const state: any = {
     requestDraftAnswersById: {},
     requestQuestionIndexById: {},
@@ -80,6 +80,7 @@ function form(multiSelect: boolean, custom: boolean, options = true) {
         question: 'Choose a color',
         multiSelect,
         allowCustomAnswer: custom,
+        isSecret,
         options: options
           ? [
               { label: 'Blue', value: 'native-blue', description: 'Ocean' },
@@ -119,6 +120,16 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('native question custom answers', () => {
+  it('uses masked fields for native secret questions', () => {
+    const plain = form(false, false, false, true);
+    const input = plain.root.querySelector('.agent-request-input')!;
+    expect(input.type).toBe('password');
+    input.value = ' token with spaces ';
+    input.fire('input');
+    expect(plain.answers()).toEqual([' token with spaces ']);
+    const custom = form(false, true, true, true);
+    expect(custom.root.querySelector('.agent-request-custom-input')!.type).toBe('password');
+  });
   it('keeps the focused text input and enables submission while typing a free answer', () => {
     const { root, answers, render } = form(false, true, false);
     const input = root.querySelector('.agent-request-input')!;

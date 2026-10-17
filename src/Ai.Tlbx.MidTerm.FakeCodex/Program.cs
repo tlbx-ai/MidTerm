@@ -7,6 +7,7 @@ var turnId = "turn-fake-1";
 var approvalRequestId = JsonSerializer.SerializeToElement(101);
 var permissionRequestId = JsonSerializer.SerializeToElement(102);
 var userInputRequestId = JsonSerializer.SerializeToElement(103);
+var userInputIsSecret = false;
 var lastAssistant = string.Empty;
 var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_CAPTURE_PATH");
 var launchCapture = CreateLaunchCapture();
@@ -317,6 +318,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
 
                     if (requestUserInput)
                     {
+                        userInputIsSecret = textValue.Contains("secret user input", StringComparison.Ordinal);
                         userInputRequestId = textValue.Contains("string RPC IDs", StringComparison.Ordinal)
                             ? JsonSerializer.SerializeToElement("srv-user-input-1")
                             : JsonSerializer.SerializeToElement(103);
@@ -336,7 +338,9 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                                         header = "Mode",
                                         question = "Pick a mode",
                                         multiSelect = false,
-                                        options = new object[]
+                                        isOther = textValue.Contains("custom user input", StringComparison.Ordinal),
+                                        isSecret = userInputIsSecret,
+                                        options = userInputIsSecret ? Array.Empty<object>() : new object[]
                                         {
                                             new { label = "Safe", description = "Safe mode" },
                                             new { label = "Fast", description = "Fast mode" }
@@ -480,7 +484,9 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         {
                             id = "item-msg-1",
                             type = "assistant_message",
-                            detail = $"{lastAssistant} answer={string.Join(",", answers)}"
+                            detail = userInputIsSecret
+                                ? answers is ["FIXTURE_SECRET_96"] ? "Native secret receipt verified." : throw new InvalidOperationException("Native secret answer was changed.")
+                                : $"{lastAssistant} answer={string.Join(",", answers)}"
                         }
                     }
                 }).ConfigureAwait(false);
