@@ -3,6 +3,8 @@ using System.Text.Json;
 
 var sessionId = "grok-session-" + Guid.NewGuid().ToString("N");
 var activePromptId = string.Empty;
+var activeQuestionId = string.Empty;
+var cancelRequested = false;
 var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_CAPTURE_PATH");
 var protocolVersion = int.TryParse(
     Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_PROTOCOL_VERSION"),
@@ -24,6 +26,30 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
     var root = document.RootElement;
     var method = GetString(root, "method");
     var id = root.TryGetProperty("id", out var idElement) ? idElement.Clone() : default;
+
+    if (method is null && id.ValueKind != JsonValueKind.Undefined)
+    {
+        if (id.ToString() == activeQuestionId && !string.IsNullOrWhiteSpace(activePromptId))
+        {
+            await WriteNotificationAsync("session/update", new
+            {
+                sessionId,
+                update = new
+                {
+                    sessionUpdate = "agent_message_chunk",
+                    content = new { type = "text", text = root.GetRawText() }
+                }
+            }).ConfigureAwait(false);
+            await WriteResponseAsync(JsonSerializer.SerializeToElement(activePromptId), new
+            {
+                stopReason = cancelRequested ? "cancelled" : "end_turn"
+            }).ConfigureAwait(false);
+            activePromptId = string.Empty;
+            activeQuestionId = string.Empty;
+            cancelRequested = false;
+        }
+        continue;
+    }
 
     switch (method)
     {
@@ -60,12 +86,35 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 sessionId,
                 models = BuildModelState()
             }).ConfigureAwait(false);
+            await WriteNotificationAsync("_x.ai/session/setup", new { sessionId, phase = "ready" }).ConfigureAwait(false);
             await WriteAvailableCommandsUpdateAsync(sessionId).ConfigureAwait(false);
             break;
         case "session/prompt":
             activePromptId = id.ToString();
             var text = ReadPromptText(root);
             var imageSummary = ReadPromptImageSummary(root);
+            if (text.StartsWith("question-test", StringComparison.Ordinal))
+            {
+                activeQuestionId = "grok-question-1";
+                var questionMethod = text.Contains("legacy", StringComparison.Ordinal) ? "x.ai/ask_user_question" : "_x.ai/ask_user_question";
+                var questionParameters = new
+                {
+                    sessionId,
+                    toolCallId = "question-tool-1",
+                    questions = new object[]
+                    {
+                        new { id = "color", question = "Which color?", options = new[] { new { label = "Blue", description = "Blue color", preview = "#0000ff" }, new { label = "Red", description = "Red color", preview = "#ff0000" } } },
+                        new { question = "Which checks?", multiSelect = true, options = new[] { new { label = "Tests", preview = "not-for-multi" }, new { label = "Docs", preview = "not-for-multi" } } },
+                        new { id = "notes", question = "Anything else?", options = Array.Empty<object>() }
+                    },
+                    mode = "default"
+                };
+                await WriteRequestAsync(activeQuestionId, questionMethod,
+                    text.Contains("wrapped", StringComparison.Ordinal)
+                        ? new { method = questionMethod, @params = questionParameters }
+                        : (object)questionParameters).ConfigureAwait(false);
+                break;
+            }
             await WriteAvailableCommandsUpdateAsync(sessionId).ConfigureAwait(false);
             await WriteNotificationAsync("session/update", new
             {
@@ -178,6 +227,11 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
             activePromptId = string.Empty;
             break;
         case "session/cancel":
+            if (!string.IsNullOrWhiteSpace(activeQuestionId))
+            {
+                cancelRequested = true;
+                break;
+            }
             if (!string.IsNullOrWhiteSpace(activePromptId))
             {
                 await WriteNotificationAsync("session/update", new

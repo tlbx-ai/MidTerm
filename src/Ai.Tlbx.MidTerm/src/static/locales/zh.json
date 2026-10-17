@@ -798,6 +798,7 @@
   "appServerControl.title.fileChangeOutput": "文件变更输出",
   "appServerControl.title.workingDiff": "当前 Diff",
   "appServerControl.title.plan": "计划",
+  "appServerControl.request.cancelled": "已取消",
   "appServerControl.request.back": "返回",
   "appServerControl.request.continue": "继续",
   "appServerControl.request.sending": "发送中...",

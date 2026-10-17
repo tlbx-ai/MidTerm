@@ -165,6 +165,18 @@ function createUserInputRequestForm(args: {
       draftAnswers,
     ),
   );
+  // Draft edits keep the focused input node alive. The virtualized row does
+  // not need a structural rerender just to enable its existing submit button.
+  const syncSubmit = (): void => {
+    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (submit) {
+      submit.disabled =
+        state.requestBusyIds.has(request.requestId) ||
+        !hasDraftAnswerForQuestion(ensureRequestDraftAnswers(state, request), activeQuestion);
+    }
+  };
+  form.addEventListener('input', syncSubmit);
+  form.addEventListener('change', syncSubmit);
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     if (activeQuestionIndex < request.questions.length - 1) {
@@ -301,7 +313,9 @@ function createRequestPanelHeader(
           },
         ))
       : summarizeRequestInterruption(request, appServerControlText, appServerControlFormat);
-  header.appendChild(summary);
+  if (!isCancelledRequest(request)) {
+    header.appendChild(summary);
+  }
 
   if (approvalDetail?.technicalDetail) {
     const disclosure = document.createElement('details');
@@ -315,7 +329,11 @@ function createRequestPanelHeader(
     detail.textContent = approvalDetail.technicalDetail;
     disclosure.append(label, detail);
     header.appendChild(disclosure);
-  } else if (request.kind === 'interview' && request.detail?.trim()) {
+  } else if (
+    request.kind === 'interview' &&
+    request.questions.length === 0 &&
+    request.detail?.trim()
+  ) {
     const detail = document.createElement('p');
     detail.className = 'agent-request-detail';
     detail.textContent = request.detail;
@@ -329,6 +347,9 @@ function summarizeRequestEyebrow(
   request: AppServerControlHistoryRequestSummary,
   appServerControlText: AppServerControlText,
 ): string {
+  if (isCancelledRequest(request)) {
+    return appServerControlText('appServerControl.request.cancelled', 'Cancelled');
+  }
   if (request.kind === 'interview') {
     return request.state === 'open'
       ? appServerControlText('appServerControl.request.pendingUserInput', 'Input required')
@@ -338,6 +359,10 @@ function summarizeRequestEyebrow(
   return request.state === 'open'
     ? appServerControlText('appServerControl.request.approvalRequired', 'Approval required')
     : appServerControlText('appServerControl.request.completedApproval', 'Approval resolved');
+}
+
+function isCancelledRequest(request: AppServerControlHistoryRequestSummary): boolean {
+  return request.state === 'cancelled' || request.decision === 'cancel';
 }
 
 function summarizeRequestInterruption(

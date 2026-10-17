@@ -167,6 +167,7 @@
   "appServerControl.title.fileChangeOutput": "File change output",
   "appServerControl.title.workingDiff": "Working diff",
   "appServerControl.title.plan": "Plan",
+  "appServerControl.request.cancelled": "Cancelled",
   "appServerControl.request.back": "Back",
   "appServerControl.request.continue": "Continue",
   "appServerControl.request.sending": "Sending...",

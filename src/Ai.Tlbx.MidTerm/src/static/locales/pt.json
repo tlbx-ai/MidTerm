@@ -798,6 +798,7 @@
   "appServerControl.title.fileChangeOutput": "Saída da alteração de arquivo",
   "appServerControl.title.workingDiff": "Diff atual",
   "appServerControl.title.plan": "Plano",
+  "appServerControl.request.cancelled": "Cancelado",
   "appServerControl.request.back": "Voltar",
   "appServerControl.request.continue": "Continuar",
   "appServerControl.request.sending": "Enviando...",

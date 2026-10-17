@@ -798,6 +798,7 @@
   "appServerControl.title.fileChangeOutput": "Вывод изменения файла",
   "appServerControl.title.workingDiff": "Текущий diff",
   "appServerControl.title.plan": "План",
+  "appServerControl.request.cancelled": "Отменено",
   "appServerControl.request.back": "Назад",
   "appServerControl.request.continue": "Продолжить",
   "appServerControl.request.sending": "Отправка...",

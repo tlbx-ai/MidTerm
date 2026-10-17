@@ -798,6 +798,7 @@
   "appServerControl.title.fileChangeOutput": "Sortie de modification de fichier",
   "appServerControl.title.workingDiff": "Diff en cours",
   "appServerControl.title.plan": "Plan",
+  "appServerControl.request.cancelled": "Annulé",
   "appServerControl.request.back": "Retour",
   "appServerControl.request.continue": "Continuer",
   "appServerControl.request.sending": "Envoi...",

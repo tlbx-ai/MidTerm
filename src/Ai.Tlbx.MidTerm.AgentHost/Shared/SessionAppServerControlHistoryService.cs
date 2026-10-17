@@ -1730,7 +1730,7 @@ public sealed partial class SessionAppServerControlHistoryService
         var entry = EnsureHistoryEntry(state, $"request:{requestId}", "request", appServerControlEvent.CreatedAt);
         entry.TurnId = request.TurnId;
         entry.RequestId = request.RequestId;
-        entry.Status = request.State;
+        entry.Status = string.Equals(request.Decision, "cancel", StringComparison.Ordinal) ? "cancelled" : request.State;
         entry.ItemType = request.Kind;
         entry.Title = request.KindLabel;
         entry.Body = BuildRequestBody(request);

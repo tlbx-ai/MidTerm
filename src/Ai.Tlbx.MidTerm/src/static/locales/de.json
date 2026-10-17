@@ -860,6 +860,7 @@
   "appServerControl.title.fileChangeOutput": "Ausgabe der Dateiänderung",
   "appServerControl.title.workingDiff": "Aktueller Diff",
   "appServerControl.title.plan": "Plan",
+  "appServerControl.request.cancelled": "Abgebrochen",
   "appServerControl.request.back": "Zurück",
   "appServerControl.request.continue": "Weiter",
   "appServerControl.request.sending": "Wird gesendet...",

@@ -330,6 +330,7 @@ The canonical history contract must satisfy the following:
 - One first-class draft interactive type is an `interview` item that carries a list of questions.
 - The frontend should render `interview` items with a dedicated widget-oriented presentation rather than flattening them into ordinary assistant markdown.
 - Provider-specific question/request semantics may map into that canonical item type, but the frontend should only consume the canonical item contract.
+- Answer edits update the existing form's submit availability without replacing focused inputs. Question navigation and request-busy changes refresh the retained history row even when its provider payload has not changed.
 
 ### Ordering
 
@@ -739,6 +740,8 @@ Status in this branch/work item:
 - implemented: canonical interactive request/question flows are first-class `interview` history items with embedded questions and answers; the frontend prefers that self-renderable payload and retains request-summary lookup only as a compatibility fallback
 - implemented: session-scoped REST and generated CLI control surfaces now support bounded canonical history reads, turn submission, interruption, active-turn steering, and provider-native thread compaction without browser automation
 - implemented: ACP v1 stop waits for the original prompt response while retaining final updates under the original turn. ACP steering cancels and settles that turn before submitting the replacement input in the same provider conversation; the response identifies the replacement turn and its input is retained once in canonical history. Stale turn targets and empty replacement input are rejected before interrupting work.
+- implemented: Grok question extension requests use canonical interview items, preserve native choice labels, multi-select and free-text annotations, and receive explicit cancellation when their owning turn stops. Duplicate or stale answers do not resolve another request.
+- implemented: unhandled ACP bookkeeping notifications remain bounded diagnostic notices and do not create conversation rows. Interview choices retain at least a 44px hit target on mobile.
 - implemented: reconnecting `mt` to an existing ACP host repeats only the ownership handshake when the attachment matches; it preserves the live provider process, provider thread, pending turn, settings, and canonical history. An incompatible attachment is rejected without replacing a live conversation.
 - implemented: Agent Controller attach failures remain observable through the session status and history error response, including failures before a host transport exists. An unattached failed runtime must not be presented as ready.
 - implemented: Codex `thread/settings/updated`, token-usage, account, rate-limit, and healthy MCP startup bookkeeping now update bounded runtime notices/quick settings without producing timeline noise; MCP/provider failures remain visible

@@ -798,6 +798,7 @@
   "appServerControl.title.fileChangeOutput": "ファイル変更の出力",
   "appServerControl.title.workingDiff": "作業中の Diff",
   "appServerControl.title.plan": "Plan",
+  "appServerControl.request.cancelled": "キャンセル済み",
   "appServerControl.request.back": "戻る",
   "appServerControl.request.continue": "続行",
   "appServerControl.request.sending": "送信中...",

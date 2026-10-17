@@ -15767,6 +15767,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-request-choice {
   position: relative;
   display: flex;
+  min-height: 44px;
   align-items: flex-start;
   gap: 10px;
   padding: 11px 12px;

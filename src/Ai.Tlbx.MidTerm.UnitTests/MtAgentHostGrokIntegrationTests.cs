@@ -127,9 +127,8 @@ public sealed class MtAgentHostGrokIntegrationTests
                 turnWindow.Notices,
                 notice => notice.Type == "thread.token-usage.updated" &&
                           notice.Detail?.Contains("1,234 / 128,000 context tokens, 0.0123 USD cumulative", StringComparison.Ordinal) == true);
-            Assert.DoesNotContain(
-                turnWindow.Notices,
-                notice => notice.Message.Contains("ignored", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(turnWindow.Notices, notice => notice.Detail == "_x.ai/session/setup");
+            Assert.DoesNotContain(turnWindow.History, item => item.Body.Contains("ACP notification ignored", StringComparison.Ordinal));
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -379,6 +378,148 @@ public sealed class MtAgentHostGrokIntegrationTests
                 process.Kill(entireProcessTree: true);
             }
 
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Theory]
+    [InlineData("question-test")]
+    [InlineData("question-test wrapped")]
+    [InlineData("question-test legacy")]
+    [InlineData("question-test legacy wrapped")]
+    public async Task MtAgentHost_AnswersAndCancelsGrokQuestions(string prompt)
+    {
+        using var fake = FakeGrokPathScope.Create();
+        using var process = StartAgentHost(ResolveAgentHostDll());
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        var sessionId = "session-grok-questions-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "attach", SessionId = sessionId, Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = sessionId, Provider = "grok", RuntimeKind = "acp-v1",
+                    ExecutablePath = fake.ExecutablePath, ExecutableArguments = ["agent", "stdio"], WorkingDirectory = fake.Root
+                }
+            });
+            var attached = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "attach");
+            Assert.Equal("accepted", attached.Status);
+
+            async Task<AppServerControlRequestSummary> AskAsync(string commandId)
+            {
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId, SessionId = sessionId, Type = "turn.start",
+                    StartTurn = new AppServerControlTurnRequest { Text = prompt }
+                });
+                var started = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, commandId);
+                Assert.Equal("accepted", started.Status);
+                var waiting = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                    process.StandardOutput, process.StandardInput, patches, sessionId,
+                    window => window.Requests.Any(request => request.Kind == "interview" && request.State == "open"),
+                    TimeSpan.FromSeconds(10), count: 96);
+                return Assert.Single(waiting.Requests.Where(request => request.Kind == "interview" && request.State == "open"));
+            }
+
+            var question = await AskAsync("ask-1");
+            Assert.Equal(3, question.Questions.Count);
+            Assert.Equal("color", question.Questions[0].Id);
+            Assert.Equal("Which checks?", question.Questions[1].Id);
+            Assert.True(question.Questions[1].MultiSelect);
+            Assert.Empty(question.Questions[2].Options);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "invalid-answer", SessionId = sessionId, Type = "user-input.resolve",
+                ResolveUserInput = new AppServerControlUserInputResolutionCommand
+                {
+                    RequestId = question.RequestId,
+                    Answers = [new AppServerControlAnsweredQuestion { QuestionId = "wrong-question", Answers = ["Blue"] }]
+                }
+            });
+            var invalid = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "invalid-answer");
+            Assert.Equal("rejected", invalid.Status);
+
+            var resolve = new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "answer", SessionId = sessionId, Type = "user-input.resolve",
+                ResolveUserInput = new AppServerControlUserInputResolutionCommand
+                {
+                    RequestId = question.RequestId,
+                    Answers =
+                    [
+                        new AppServerControlAnsweredQuestion { QuestionId = "color", Answers = ["Blue", "Prefer blue"] },
+                        new AppServerControlAnsweredQuestion { QuestionId = "Which checks?", Answers = ["Tests", "Docs"] },
+                        new AppServerControlAnsweredQuestion { QuestionId = "notes", Answers = ["Typed note"] }
+                    ]
+                }
+            };
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, resolve);
+            var answered = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "answer");
+            Assert.Equal("accepted", answered.Status);
+            var completed = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, sessionId,
+                window => window.CurrentTurn.State == "completed", TimeSpan.FromSeconds(10), count: 96);
+            using var nativeResponse = JsonDocument.Parse(completed.Streams.AssistantText);
+            var nativeResult = nativeResponse.RootElement.GetProperty("result");
+            Assert.Equal("accepted", nativeResult.GetProperty("outcome").GetString());
+            var colorAnswers = nativeResult.GetProperty("answers").GetProperty("Which color?");
+            Assert.Equal(1, colorAnswers.GetArrayLength());
+            Assert.Equal("Blue", colorAnswers[0].GetString());
+            Assert.Equal(2, nativeResult.GetProperty("answers").GetProperty("Which checks?").GetArrayLength());
+            var noteAnswers = nativeResult.GetProperty("answers").GetProperty("Anything else?");
+            Assert.Equal(1, noteAnswers.GetArrayLength());
+            Assert.Equal("Other", noteAnswers[0].GetString());
+            var annotations = nativeResult.GetProperty("annotations");
+            Assert.Equal("#0000ff", annotations.GetProperty("Which color?").GetProperty("preview").GetString());
+            Assert.Equal("Prefer blue", annotations.GetProperty("Which color?").GetProperty("notes").GetString());
+            Assert.Equal("Typed note", annotations.GetProperty("Anything else?").GetProperty("notes").GetString());
+            Assert.False(annotations.TryGetProperty("Which checks?", out _));
+            var resolved = Assert.Single(completed.Requests.Where(request => request.RequestId == question.RequestId));
+            Assert.Equal("resolved", resolved.State);
+            Assert.Equal(3, resolved.Answers.Count);
+            var interview = Assert.Single(completed.History.Where(item => item.RequestId == question.RequestId));
+            Assert.Equal("interview", interview.ItemType);
+            Assert.Equal(3, interview.Answers.Count);
+
+            resolve.CommandId = "duplicate-answer";
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, resolve);
+            var duplicate = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "duplicate-answer");
+            Assert.Equal("rejected", duplicate.Status);
+
+            var toCancel = await AskAsync("ask-2");
+            Assert.NotEqual(question.RequestId, toCancel.RequestId, StringComparer.Ordinal);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cancel-question", SessionId = sessionId, Type = "turn.interrupt",
+                InterruptTurn = new AppServerControlInterruptRequest { TurnId = toCancel.TurnId }
+            });
+            var cancelled = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "cancel-question");
+            Assert.Equal("accepted", cancelled.Status);
+            var stopped = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, sessionId,
+                window => window.CurrentTurn.State == "interrupted", TimeSpan.FromSeconds(10), count: 96);
+            var cancelledQuestion = Assert.Single(stopped.Requests.Where(request => request.RequestId == toCancel.RequestId));
+            Assert.Equal("resolved", cancelledQuestion.State);
+            Assert.Equal("cancel", cancelledQuestion.Decision);
+            Assert.Equal("cancelled", Assert.Single(stopped.History.Where(item => item.RequestId == toCancel.RequestId)).Status);
+            using var cancelledResponse = JsonDocument.Parse(stopped.Streams.AssistantText);
+            Assert.Equal("cancelled", cancelledResponse.RootElement.GetProperty("result").GetProperty("outcome").GetString());
+            Assert.DoesNotContain(stopped.Requests, request => request.State == "open");
+
+            resolve.CommandId = "late-answer";
+            resolve.ResolveUserInput!.RequestId = toCancel.RequestId;
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, resolve);
+            var late = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "late-answer");
+            Assert.Equal("rejected", late.Status);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
             _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
             await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
         }

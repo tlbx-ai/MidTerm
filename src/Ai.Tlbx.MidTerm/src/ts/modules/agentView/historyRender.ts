@@ -1453,8 +1453,12 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const request = state?.snapshot?.requests.find(
       (candidate) => candidate.requestId === entry.requestId,
     );
+    const interactionToken = [
+      state?.requestBusyIds.has(entry.requestId) ? 'busy' : 'idle',
+      state?.requestQuestionIndexById[entry.requestId] ?? 0,
+    ].join(':');
     if (!request) {
-      return 'missing';
+      return `embedded:${interactionToken}`;
     }
 
     return [
@@ -1464,6 +1468,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       request.detail ?? '',
       request.updatedAt,
       request.answers.map((answer) => `${answer.questionId}:${answer.answers.join(',')}`).join('|'),
+      interactionToken,
     ].join('::');
   }
 

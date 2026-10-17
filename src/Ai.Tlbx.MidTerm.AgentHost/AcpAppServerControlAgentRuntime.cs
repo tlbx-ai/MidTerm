@@ -7,7 +7,7 @@ using Ai.Tlbx.MidTerm.Common.Protocol;
 
 namespace Ai.Tlbx.MidTerm.AgentHost;
 
-internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRuntime
+internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerControlAgentRuntime
 {
     private const int MaxInlineImageBytes = 10 * 1024 * 1024;
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
@@ -38,6 +38,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
     private string? _userProfileDirectory;
     private string? _providerThreadId;
     private string? _activeTurnId;
+    private string? _cancellingTurnId;
     private TaskCompletionSource? _activeTurnCompletion;
     private string? _activeTurnModel;
     private string? _activeTurnEffort;
@@ -96,7 +97,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolvePermissionRequestAsync(command, ct).ConfigureAwait(false),
-                "user-input.resolve" => throw new InvalidOperationException($"{_agentName} ACP user-input resolution is not supported yet."),
+                "user-input.resolve" => await ResolveUserInputAsync(command, ct).ConfigureAwait(false),
                 "thread.goal.set" => Accepted(command.CommandId, command.SessionId),
                 _ => throw new InvalidOperationException($"Unsupported ACP command '{command.Type}' for {_agentName}.")
             };
@@ -430,6 +431,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
 
         var completion = _activeTurnCompletion?.Task
             ?? throw new InvalidOperationException($"{_agentName} does not have an active prompt to cancel.");
+        _cancellingTurnId = turnId;
 
         await WriteJsonRpcNotificationAsync(
                 "session/cancel",
@@ -447,8 +449,11 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             if (_pendingPermissions.TryRemove(pair.Key, out var pending))
             {
                 await WritePermissionResponseAsync(pending.RpcId, null, cancelled: true, ct).ConfigureAwait(false);
+                EmitCancelledRequest(pair.Key, pending.TurnId, "command_execution_approval");
             }
         }
+
+        await CancelUserInputRequestsAsync(turnId, ct).ConfigureAwait(false);
 
         // ACP permits final updates until the original prompt response arrives.
         // Keep its turn identity alive and do not admit another prompt before that boundary.
@@ -638,6 +643,10 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             case "session/request_permission":
                 await HandlePermissionRequestAsync(root, line, ct).ConfigureAwait(false);
                 break;
+            case "x.ai/ask_user_question":
+            case "_x.ai/ask_user_question":
+                await HandleGrokUserInputRequestAsync(root, line, ct).ConfigureAwait(false);
+                break;
             default:
                 if (root.TryGetProperty("id", out var requestId))
                 {
@@ -645,7 +654,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 }
                 else
                 {
-                    EmitRuntimeMessage("runtime.notice", $"{_agentName} ACP notification ignored.", method ?? line);
+                    EmitRuntimeMessage("runtime.notice", $"{_agentName} ACP notification ignored.", method ?? line, timelineVisible: false);
                 }
 
                 break;
@@ -732,7 +741,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             default:
                 if (!string.IsNullOrWhiteSpace(updateType))
                 {
-                    EmitRuntimeMessage("runtime.notice", $"{_agentName} ACP update ignored: {updateType}", rawLine);
+                    EmitRuntimeMessage("runtime.notice", $"{_agentName} ACP update ignored: {updateType}", rawLine, timelineVisible: false);
                 }
 
                 break;
@@ -788,7 +797,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         }
 
         var turnId = _activeTurnId;
-        if (string.IsNullOrWhiteSpace(turnId))
+        if (string.IsNullOrWhiteSpace(turnId) || string.Equals(turnId, _cancellingTurnId, StringComparison.Ordinal))
         {
             await WritePermissionResponseAsync(idElement.Clone(), null, cancelled: true, ct).ConfigureAwait(false);
             return;
@@ -1165,6 +1174,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         _pendingRequests.Clear();
         _pendingPromptTurns.Clear();
         _pendingPermissions.Clear();
+        _pendingUserInputs.Clear();
 
         try
         {
@@ -1780,9 +1790,9 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         };
     }
 
-    private void EmitRuntimeMessage(string type, string message, string? detail)
+    private void EmitRuntimeMessage(string type, string message, string? detail, bool timelineVisible = true)
     {
-        EmitRuntimeMessage(type, message, detail, "acp", type, new { message, detail }, null);
+        EmitRuntimeMessage(type, message, detail, "acp", type, new { message, detail }, null, timelineVisible);
     }
 
     private void EmitRuntimeMessage(
@@ -1792,7 +1802,8 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         string source,
         string? method,
         object? payload,
-        string? rawLine)
+        string? rawLine,
+        bool timelineVisible = true)
     {
         if (string.IsNullOrWhiteSpace(_sessionId))
         {
@@ -1801,11 +1812,19 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
 
         _emit(CreateEvent(type, _activeTurnId, null, null, source, method, payload, appServerControlEvent =>
         {
-            appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
+            var runtimeMessage = new AppServerControlProviderRuntimeMessagePayload
             {
                 Message = message,
                 Detail = detail
             };
+            if (timelineVisible)
+            {
+                appServerControlEvent.RuntimeMessage = runtimeMessage;
+            }
+            else
+            {
+                appServerControlEvent.RuntimeNoticeOnly = runtimeMessage;
+            }
         }, rawLine));
     }
 
@@ -2218,6 +2237,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         var completion = _activeTurnCompletion;
         _activeTurnCompletion = null;
         _activeTurnId = null;
+        _cancellingTurnId = null;
         _activeTurnModel = null;
         _activeTurnEffort = null;
         _tools.Clear();
