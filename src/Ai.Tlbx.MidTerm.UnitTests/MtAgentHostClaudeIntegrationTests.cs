@@ -108,19 +108,39 @@ public sealed class MtAgentHostClaudeIntegrationTests
                     Type = "turn.start",
                     StartTurn = new AppServerControlTurnRequest
                     {
-                        Text = "Plan acceptance only.", Model = "claude-test", Effort = effort,
+                        Text = iteration == 3 ? "Ask native question." : "Plan acceptance only.", Model = "claude-test", Effort = effort,
                         PlanMode = AppServerControlQuickSettings.PlanModeOn
                     }
                 });
                 var started = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, commandId);
                 Assert.Equal("accepted", started.Status);
+                if (iteration == 3)
+                {
+                    var pending = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(process.StandardOutput, process.StandardInput,
+                        patches, sessionId, h => h.Requests.Any(request => request.Kind == "interview" && request.State == "open"),
+                        TimeSpan.FromSeconds(10), count: 96);
+                    var request = Assert.Single(pending.Requests, request => request.Kind == "interview" && request.State == "open");
+                    var question = Assert.Single(request.Questions);
+                    Assert.True(question.MultiSelect);
+                    await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                    {
+                        CommandId = "answer-claude-question", SessionId = sessionId, Type = "user-input.resolve",
+                        ResolveUserInput = new AppServerControlUserInputResolutionCommand
+                        {
+                            RequestId = request.RequestId,
+                            Answers = [new AppServerControlAnsweredQuestion { QuestionId = question.Id, Answers = ["Blue", "Red"] }]
+                        }
+                    });
+                    Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "answer-claude-question")).Status);
+                }
                 var completed = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
                     process.StandardOutput, process.StandardInput, patches, sessionId,
                     h => h.CurrentTurn.TurnId == started.TurnStarted?.TurnId && h.CurrentTurn.State == "completed", TimeSpan.FromSeconds(15), count: 96);
                 Assert.Equal(effort, completed.CurrentTurn.Effort);
                 Assert.Equal("claude-test", Assert.Single(completed.QuickSettings.ModelOptions).Value);
                 Assert.Equal(new[] { "low", "high" }, completed.QuickSettings.EffortOptions.Select(option => option.Value), StringComparer.Ordinal);
-                Assert.Contains(completed.History, item => item.TurnId == completed.CurrentTurn.TurnId && item.ItemType == "proposed_plan" && item.Body.Contains("TLBX_CLAUDE_PLAN_FAKE", StringComparison.Ordinal));
+                if (iteration == 3) Assert.Contains("answer=Blue, Red", AppServerControlHostTestClient.CollectAssistantText(completed), StringComparison.Ordinal);
+                else Assert.Contains(completed.History, item => item.TurnId == completed.CurrentTurn.TurnId && item.ItemType == "proposed_plan" && item.Body.Contains("TLBX_CLAUDE_PLAN_FAKE", StringComparison.Ordinal));
                 Assert.DoesNotContain(completed.Requests, request => request.State == "open");
                 Assert.DoesNotContain(completed.Session.AvailableCommands, command => command.Name == "exit");
                 var usage = Assert.IsType<AppServerControlUsageSummary>(completed.Session.Usage);

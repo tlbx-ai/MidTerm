@@ -171,7 +171,16 @@ async function canUseTool(toolName, toolInput, options) {
     );
     if (answers === null)
       return { behavior: "deny", message: "User cancelled the question." };
-    return { behavior: "allow", updatedInput: { ...toolInput, answers } };
+    const sdkAnswers = Object.fromEntries(
+      Object.entries(answers).map(([question, values]) => [
+        question,
+        values.join(", "),
+      ]),
+    );
+    return {
+      behavior: "allow",
+      updatedInput: { ...toolInput, answers: sdkAnswers },
+    };
   }
 
   emit({

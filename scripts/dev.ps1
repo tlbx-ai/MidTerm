@@ -329,7 +329,8 @@ function Should-RestartForPath([string]$relativePath) {
         return $false
     }
 
-    return $relativePath -match '\.(cs|csproj|props|targets)$'
+    return $relativePath -match '\.(cs|csproj|props|targets)$' -or
+        $relativePath -match '(^|[\\/])ClaudeBridge[\\/]dist[\\/]claude-agent-sdk-bridge\.mjs$'
 }
 
 function Wait-ForCodeChange {

@@ -54,7 +54,14 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
         pending is not null &&
         string.Equals(GetString(root, "response", "request_id"), pending.RequestId, StringComparison.Ordinal))
     {
-        await FinishTurnAsync(pending.Prompt, pending.ImageSummary, pending.ToolId, pending.Turn).ConfigureAwait(false);
+        var resolvedPrompt = pending.Prompt;
+        if (resolvedPrompt.Contains("Ask native question", StringComparison.Ordinal))
+        {
+            var answer = GetString(root, "response", "response", "updatedInput", "answers", "Which acceptance color?");
+            if (answer is null) throw new InvalidOperationException("Claude question answers must be native strings.");
+            resolvedPrompt += " answer=" + answer;
+        }
+        await FinishTurnAsync(resolvedPrompt, pending.ImageSummary, pending.ToolId, pending.Turn).ConfigureAwait(false);
         pending = null;
         continue;
     }
@@ -82,8 +89,12 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
         continue;
     }
     var plan = prompt.Contains("Plan acceptance", StringComparison.Ordinal);
-    var toolName = plan ? "ExitPlanMode" : "Bash";
-    object toolInput = plan ? new { plan = "# TLBX_CLAUDE_PLAN_FAKE\n\n1. Review.\n2. Wait for implementation." } : (object)new { command = "pwd" };
+    var question = prompt.Contains("Ask native question", StringComparison.Ordinal);
+    var toolName = plan ? "ExitPlanMode" : question ? "AskUserQuestion" : "Bash";
+    object toolInput = plan ? new { plan = "# TLBX_CLAUDE_PLAN_FAKE\n\n1. Review.\n2. Wait for implementation." }
+        : question ? new { questions = new[] { new { question = "Which acceptance color?", header = "Color", multiSelect = true,
+            options = new[] { new { label = "Blue", description = "Blue color" }, new { label = "Red", description = "Red color" } } } } }
+        : (object)new { command = "pwd" };
     var imageSummary = ReadImageSummary(root);
     var toolId = $"tool-bash-{turn.ToString(CultureInfo.InvariantCulture)}";
     await WriteJsonAsync(new { type = "system", subtype = "init", session_id = sessionId, model = currentModel, effort = currentEffort, terminal_slash_commands = new[] { "exit" } }).ConfigureAwait(false);
