@@ -795,6 +795,7 @@
   "appServerControl.label.plan": "Plan",
   "appServerControl.label.diff": "Diff",
   "appServerControl.label.error": "Error",
+  "appServerControl.label.warning": "সতর্কতা",
   "appServerControl.label.system": "System",
   "appServerControl.label.tlbx": "tlbx",
   "appServerControl.title.assistantResponse": "Assistant response",

@@ -476,6 +476,10 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                     .ToArray();
                 await WriteJsonAsync(new
                 {
+                    jsonrpc = "2.0", method = "serverRequest/resolved", @params = new { threadId, requestId = userInputRequestId }
+                }).ConfigureAwait(false);
+                await WriteJsonAsync(new
+                {
                     jsonrpc = "2.0",
                     method = "item/completed",
                     @params = new
@@ -502,6 +506,10 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                             status = "completed"
                         }
                     }
+                }).ConfigureAwait(false);
+                await WriteJsonAsync(new
+                {
+                    jsonrpc = "2.0", method = "serverRequest/resolved", @params = new { threadId, requestId = userInputRequestId }
                 }).ConfigureAwait(false);
             }
         }

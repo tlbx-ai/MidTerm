@@ -795,6 +795,7 @@
   "appServerControl.label.plan": "计划",
   "appServerControl.label.diff": "Diff",
   "appServerControl.label.error": "错误",
+  "appServerControl.label.warning": "警告",
   "appServerControl.label.system": "系统",
   "appServerControl.label.tlbx": "tlbx",
   "appServerControl.title.assistantResponse": "Assistant 响应",

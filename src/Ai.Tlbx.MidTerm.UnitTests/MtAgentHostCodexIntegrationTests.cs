@@ -556,6 +556,11 @@ public sealed class MtAgentHostCodexIntegrationTests
                 pendingPatches,
                 "session-user-input",
                 "completed");
+            resolveWindow = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, pendingPatches, "session-user-input",
+                window => window.Notices.Any(notice => notice.Message == "Codex resolved a server request."),
+                TimeSpan.FromSeconds(10), count: 96);
+            Assert.DoesNotContain(resolveWindow.History, item => item.Body.Contains("Codex resolved a server request.", StringComparison.Ordinal));
             Assert.Contains(resolveWindow.Requests, request => request.RequestId == userInputRequest.RequestId && request.State == "resolved");
             var retainedAnswer = resolveWindow.Requests.Single(request => request.RequestId == userInputRequest.RequestId).Answers.Single().Answers.Single();
             Assert.Equal(secret ? "[redacted]" : custom ? "Careful" : "Safe", retainedAnswer);

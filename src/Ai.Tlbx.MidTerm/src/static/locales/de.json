@@ -857,6 +857,7 @@
   "appServerControl.label.plan": "Plan",
   "appServerControl.label.diff": "Diff",
   "appServerControl.label.error": "Fehler",
+  "appServerControl.label.warning": "Warnung",
   "appServerControl.label.system": "System",
   "appServerControl.label.tlbx": "tlbx",
   "appServerControl.title.assistantResponse": "Assistant-Antwort",

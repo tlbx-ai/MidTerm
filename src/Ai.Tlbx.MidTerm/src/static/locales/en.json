@@ -164,6 +164,7 @@
   "appServerControl.label.plan": "Plan",
   "appServerControl.label.diff": "Diff",
   "appServerControl.label.error": "Error",
+  "appServerControl.label.warning": "Warning",
   "appServerControl.label.system": "System",
   "appServerControl.label.tlbx": "tlbx",
   "appServerControl.title.assistantResponse": "Assistant response",

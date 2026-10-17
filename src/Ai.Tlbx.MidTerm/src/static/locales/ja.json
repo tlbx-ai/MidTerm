@@ -795,6 +795,7 @@
   "appServerControl.label.plan": "Plan",
   "appServerControl.label.diff": "Diff",
   "appServerControl.label.error": "エラー",
+  "appServerControl.label.warning": "警告",
   "appServerControl.label.system": "システム",
   "appServerControl.label.tlbx": "tlbx",
   "appServerControl.title.assistantResponse": "Assistant の応答",

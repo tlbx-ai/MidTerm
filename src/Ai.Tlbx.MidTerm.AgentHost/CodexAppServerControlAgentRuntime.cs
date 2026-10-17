@@ -1097,7 +1097,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 {
                     _emit(CreateEvent("server.request.resolved", ResolveTurnId(payload), null, GetString(payload, "requestId"), "codex.app-server.notification", method, payload, appServerControlEvent =>
                     {
-                        appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
+                        appServerControlEvent.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
                         {
                             Message = "Codex resolved a server request.",
                             Detail = BuildCompactJsonDetail(payload)
