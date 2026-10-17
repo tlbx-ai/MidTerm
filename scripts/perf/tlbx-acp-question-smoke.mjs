@@ -21,6 +21,7 @@ const planReview = process.env.TLBX_ACP_UI_SCENARIO === "plan";
 const nativeConfig = process.env.TLBX_ACP_UI_SCENARIO === "config";
 const nativeCommands = process.env.TLBX_ACP_UI_SCENARIO === "commands";
 const nativeUsage = process.env.TLBX_ACP_UI_SCENARIO === "usage";
+const codexSteer = process.env.TLBX_ACP_UI_SCENARIO === "codex-steer";
 assert.ok(
   url && cookie && sessionId,
   "Authenticated source URL and acceptance session required",
@@ -576,6 +577,54 @@ try {
     );
     result.nativeCommandsVerified = true;
   }
+  if (codexSteer) {
+    const marker =
+      process.env.TLBX_ACP_UI_EXPECTED_MARKER || "TLBX_CODEX_STEER_79";
+    assert.equal(initial.provider, "codex");
+    assert.equal(initial.currentTurn.state, "completed");
+    if (process.env.TLBX_ACP_UI_EXPECTED_THREAD)
+      assert.equal(
+        initial.thread.threadId,
+        process.env.TLBX_ACP_UI_EXPECTED_THREAD,
+        "Opening the browser retains the native thread",
+      );
+    assert.equal(initial.streams.assistantText.trim(), marker);
+    const users = initial.history.filter(
+      (item) =>
+        item.kind === "user" && item.turnId === initial.currentTurn.turnId,
+    );
+    assert.equal(
+      users.length,
+      2,
+      "Both accepted user instructions survive native steering",
+    );
+    assert.match(users[0].body, /For an observation-only test/);
+    assert.ok(users[1].body.includes(marker));
+    const first = wrapper
+      .locator(".agent-history-user")
+      .filter({ hasText: "For an observation-only test" })
+      .last();
+    const steered = wrapper
+      .locator(".agent-history-user")
+      .filter({ hasText: `Stop listing now and reply exactly ${marker}` });
+    const reply = wrapper
+      .locator(".agent-history-assistant")
+      .filter({ hasText: marker });
+    await first.waitFor({ state: "visible" });
+    await steered.waitFor({ state: "visible" });
+    await reply.waitFor({ state: "visible" });
+    for (const viewport of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await steered.scrollIntoViewIfNeeded();
+      const screenshot = path.join(out, `codex-steer-${viewport.width}.png`);
+      await page.screenshot({ path: screenshot });
+      result.screenshots.push(screenshot);
+    }
+    result.nativeSteeringHistoryVerified = true;
+  }
   if (nativeUsage) {
     assert.equal(initial.session.usage.contextUsedTokens, 2345);
     assert.equal(initial.session.usage.costCurrency, "EUR");
@@ -623,6 +672,7 @@ try {
     !nativeConfig &&
     !nativeCommands &&
     !nativeUsage &&
+    !codexSteer &&
     !initiallyOpen
   ) {
     assert.ok(

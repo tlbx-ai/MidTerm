@@ -1642,6 +1642,8 @@ public sealed partial class SessionAppServerControlHistoryService
         var item = GetOrCreateItemSummary(state.Items, canonicalItemId, appServerControlEvent.TurnId);
         item.TurnId = appServerControlEvent.TurnId ?? item.TurnId;
         item.ItemType = normalizedType;
+        var submittedUserInput = historyKind == "user" && IsLocalUserItemId(appServerControlEvent.ItemId ?? string.Empty);
+        var hasSubmittedUserInput = historyKind == "user" && (IsLocalUserItemId(item.ItemId) || item.AliasItemIds.Any(IsLocalUserItemId));
         item.Status = historyKind == "user"
             ? ChoosePreferredUserMessageStatus(item.Status, appServerControlEvent.Item.Status)
             : PreferNonEmpty(appServerControlEvent.Item.Status, item.Status);
@@ -1651,6 +1653,7 @@ public sealed partial class SessionAppServerControlHistoryService
         item.Detail = appServerControlEvent.Item.Replace ? appServerControlEvent.Item.Detail : historyKind switch
         {
             "assistant" => MergeAssistantItemDetail(item.Detail, appServerControlEvent.Item.Detail, appServerControlEvent.Item.Status),
+            "user" when hasSubmittedUserInput => submittedUserInput ? appServerControlEvent.Item.Detail : item.Detail,
             "user" => PreferMeaningfulText(item.Detail, appServerControlEvent.Item.Detail),
             _ => MergeHistoryBody(item.Detail, appServerControlEvent.Item.Detail)
         };
@@ -1674,7 +1677,8 @@ public sealed partial class SessionAppServerControlHistoryService
             case "user":
                 entry.CommandText = null;
                 entry.Title = null;
-                entry.Body = appServerControlEvent.Item.Replace ? appServerControlEvent.Item.Detail ?? string.Empty
+                entry.Body = hasSubmittedUserInput ? item.Detail ?? string.Empty
+                    : appServerControlEvent.Item.Replace ? appServerControlEvent.Item.Detail ?? string.Empty
                     : PreferMeaningfulText(entry.Body, appServerControlEvent.Item.Detail) ?? string.Empty;
                 entry.Streaming = false;
                 PromoteUserHistoryEntryToTurnLead(state, entry);
@@ -2242,6 +2246,7 @@ public sealed partial class SessionAppServerControlHistoryService
         return new AppServerControlItemSummary
         {
             ItemId = source.ItemId,
+            AliasItemIds = source.AliasItemIds.ToList(),
             TurnId = source.TurnId,
             ItemType = source.ItemType,
             Status = source.Status,
@@ -2393,11 +2398,7 @@ public sealed partial class SessionAppServerControlHistoryService
         AppServerControlProviderEvent appServerControlEvent,
         string historyKind)
     {
-        if (historyKind == "user" &&
-            TryFindLocalUserMessageItem(items, appServerControlEvent.TurnId, out var localItemId))
-        {
-            return localItemId;
-        }
+        if (historyKind == "user") return ResolveCanonicalUserItemId(items, appServerControlEvent);
 
         if (!string.IsNullOrWhiteSpace(appServerControlEvent.ItemId))
         {
@@ -2421,8 +2422,7 @@ public sealed partial class SessionAppServerControlHistoryService
         return historyKind switch
         {
             "assistant" => ResolveAssistantHistoryEntryIdForItem(state, appServerControlEvent, canonicalItemId),
-            "user" when !string.IsNullOrWhiteSpace(appServerControlEvent.TurnId) => $"user:{appServerControlEvent.TurnId}",
-            "user" => $"user:{canonicalItemId}",
+            "user" => ResolveUserHistoryEntryId(state, appServerControlEvent.TurnId, canonicalItemId),
             "tool" => ResolveToolHistoryEntryIdForItem(state, appServerControlEvent, canonicalItemId),
             _ => $"{historyKind}:{canonicalItemId}"
         };
@@ -2699,27 +2699,53 @@ public sealed partial class SessionAppServerControlHistoryService
         return null;
     }
 
-    private static bool TryFindLocalUserMessageItem(
-        IReadOnlyDictionary<string, AppServerControlItemSummary> items,
-        string? turnId,
-        out string itemId)
+    private static string ResolveUserHistoryEntryId(AppServerControlConversationState state, string? turnId, string itemId)
     {
-        if (!string.IsNullOrWhiteSpace(turnId))
+        if (string.IsNullOrWhiteSpace(turnId) || itemId.StartsWith("local-steer:", StringComparison.Ordinal)) return $"user:{itemId}";
+        var primaryId = $"user:{turnId}";
+        return !state.HistoryEntries.TryGetValue(primaryId, out var primary) || primary.ItemId == itemId
+            ? primaryId : $"user:{itemId}";
+    }
+
+    private static string ResolveCanonicalUserItemId(
+        IReadOnlyDictionary<string, AppServerControlItemSummary> items,
+        AppServerControlProviderEvent providerEvent)
+    {
+        var incomingId = providerEvent.ItemId ?? $"local-user:{providerEvent.TurnId ?? providerEvent.EventId}";
+        if (items.ContainsKey(incomingId)) return incomingId;
+        var candidates = items.Values.Where(item => item.ItemType == "user_message" &&
+            string.Equals(item.TurnId, providerEvent.TurnId, StringComparison.Ordinal)).ToArray();
+        var matched = candidates.FirstOrDefault(item => item.AliasItemIds.Contains(incomingId, StringComparer.Ordinal));
+        if (matched is not null) return matched.ItemId;
+
+        var detail = providerEvent.Item?.Detail;
+        if (IsLocalUserItemId(incomingId))
         {
-            foreach (var pair in items)
-            {
-                if (pair.Key.StartsWith("local-user:", StringComparison.Ordinal) &&
-                    string.Equals(pair.Value.TurnId, turnId, StringComparison.Ordinal))
-                {
-                    itemId = pair.Key;
-                    return true;
-                }
-            }
+            var native = candidates.Where(item => !IsLocalUserItemId(item.ItemId) &&
+                !item.AliasItemIds.Any(IsLocalUserItemId)).ToArray();
+            matched = native.FirstOrDefault(item => SameUserMessageBody(item.Detail, detail));
+            if (matched is null && incomingId.StartsWith("local-user:", StringComparison.Ordinal)) matched = native.FirstOrDefault();
+            matched ??= native.FirstOrDefault(item => string.IsNullOrWhiteSpace(item.Detail));
+        }
+        else
+        {
+            var local = candidates.Where(item => IsLocalUserItemId(item.ItemId) &&
+                !item.AliasItemIds.Any(static id => !IsLocalUserItemId(id))).ToArray();
+            matched = local.FirstOrDefault(item => SameUserMessageBody(item.Detail, detail)) ??
+                local.FirstOrDefault(item => item.ItemId.StartsWith("local-user:", StringComparison.Ordinal));
+            if (matched is null && string.IsNullOrWhiteSpace(detail)) matched = local.FirstOrDefault();
         }
 
-        itemId = string.Empty;
-        return false;
+        if (matched is null) return incomingId;
+        matched.AliasItemIds.Add(incomingId);
+        return matched.ItemId;
     }
+
+    private static bool IsLocalUserItemId(string itemId) =>
+        itemId.StartsWith("local-user:", StringComparison.Ordinal) || itemId.StartsWith("local-steer:", StringComparison.Ordinal);
+
+    private static bool SameUserMessageBody(string? first, string? second) =>
+        !string.IsNullOrWhiteSpace(first) && string.Equals(first, second, StringComparison.Ordinal);
 
     private static string? ResolveOwningToolItemIdForStream(
         IReadOnlyDictionary<string, AppServerControlItemSummary> items,
@@ -3203,7 +3229,8 @@ public sealed partial class SessionAppServerControlHistoryService
         AppServerControlHistoryItem entry)
     {
         if (!string.Equals(entry.Kind, "user", StringComparison.Ordinal) ||
-            string.IsNullOrWhiteSpace(entry.TurnId))
+            string.IsNullOrWhiteSpace(entry.TurnId) ||
+            !string.Equals(entry.EntryId, $"user:{entry.TurnId}", StringComparison.Ordinal))
         {
             return;
         }

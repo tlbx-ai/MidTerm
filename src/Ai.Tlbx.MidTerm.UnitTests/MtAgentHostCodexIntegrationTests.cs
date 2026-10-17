@@ -107,6 +107,12 @@ public sealed class MtAgentHostCodexIntegrationTests
                 "cmd-steer");
             Assert.Equal("accepted", steerResult.Status);
             Assert.Equal(activeTurnId, steerResult.Accepted?.TurnId);
+            var steeredHistory = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, pendingPatches, "session-control", count: 96);
+            var userMessages = steeredHistory.History.Where(item => item.Kind == "user" && item.TurnId == activeTurnId).ToArray();
+            Assert.Equal(2, userMessages.Length);
+            Assert.Equal("Keep this turn open briefly.", userMessages[0].Body);
+            Assert.Equal("Append this instruction.", userMessages[1].Body);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {

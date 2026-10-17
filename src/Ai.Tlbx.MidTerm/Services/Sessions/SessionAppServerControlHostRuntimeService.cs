@@ -1485,6 +1485,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         return new AppServerControlItemSummary
         {
             ItemId = source.ItemId,
+            AliasItemIds = source.AliasItemIds.ToList(),
             TurnId = source.TurnId,
             ItemType = source.ItemType,
             Status = source.Status,

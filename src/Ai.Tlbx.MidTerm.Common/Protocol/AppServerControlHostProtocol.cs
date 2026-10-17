@@ -415,6 +415,7 @@ public sealed class AppServerControlInlineImagePreview
 public sealed class AppServerControlItemSummary
 {
     public string ItemId { get; set; } = string.Empty;
+    public List<string> AliasItemIds { get; set; } = [];
     public string? TurnId { get; set; }
     public string ItemType { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;

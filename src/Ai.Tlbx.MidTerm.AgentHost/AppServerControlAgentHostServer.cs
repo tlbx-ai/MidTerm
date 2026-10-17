@@ -297,7 +297,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         return _history.GetSnapshotWindow(sessionId, startIndex, count, viewportWidth);
     }
 
-    private static HostCommandOutcome MaybeAppendSubmittedUserMessage(
+    private HostCommandOutcome MaybeAppendSubmittedUserMessage(
         AppServerControlHostCommandEnvelope command,
         HostCommandOutcome outcome,
         string provider)
@@ -312,8 +312,10 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             ? new AppServerControlTurnRequest { Text = steer.Text, Attachments = steer.Attachments }
             : null);
         var turnStarted = outcome.Result.TurnStarted;
+        var activeSteer = string.Equals(command.Type, "turn.steer", StringComparison.Ordinal) && turnStarted is null;
+        var turnId = turnStarted?.TurnId ?? outcome.Result.Accepted?.TurnId;
         if (request is null ||
-            turnStarted is null ||
+            string.IsNullOrWhiteSpace(turnId) ||
             !string.Equals(outcome.Result.Status, "accepted", StringComparison.OrdinalIgnoreCase) ||
             (string.IsNullOrWhiteSpace(request.Text) && request.Attachments.Count == 0))
         {
@@ -325,10 +327,10 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         {
             EventId = $"evt-user-{Guid.NewGuid():N}",
             SessionId = command.SessionId,
-            Provider = turnStarted.Provider,
-            ThreadId = turnStarted.ThreadId,
-            TurnId = turnStarted.TurnId,
-            ItemId = $"local-user:{turnStarted.TurnId ?? Guid.NewGuid().ToString("N")}",
+            Provider = turnStarted?.Provider ?? provider,
+            ThreadId = turnStarted?.ThreadId ?? _history.GetSnapshot(command.SessionId)?.Thread.ThreadId ?? string.Empty,
+            TurnId = turnId,
+            ItemId = activeSteer ? $"local-steer:{command.CommandId}" : $"local-user:{turnId}",
             CreatedAt = DateTimeOffset.UtcNow,
             Type = "item.completed",
             Item = new AppServerControlProviderItemPayload

@@ -304,6 +304,7 @@ export interface AppServerControlHistoryItem {
 
 export interface AppServerControlItemSummary {
   itemId: string;
+  aliasItemIds?: string[];
   turnId?: string | null;
   itemType: string;
   status: string;

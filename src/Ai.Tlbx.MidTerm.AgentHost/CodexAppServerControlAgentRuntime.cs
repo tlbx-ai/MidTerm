@@ -825,6 +825,16 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                 break;
             }
 
+            case "thread/readState/changed":
+            case "turn/moderationMetadata":
+                _emit(CreateEvent("agent.state", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload,
+                    e => e.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
+                    {
+                        Message = "Codex session metadata updated.",
+                        Detail = BuildCompactJsonDetail(payload)
+                    }));
+                break;
+
             case "thread/settings/updated":
             {
                 var model = AppServerControlQuickSettings.NormalizeOptionalValue(
@@ -1310,6 +1320,8 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                 var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
                 if (itemType == "user_message")
                 {
+                        _emit(CreateEvent("item.completed", turnId, itemId, null, "codex.app-server.notification", method, payload,
+                            e => e.Item = BuildCodexToolItemPayload(itemType, "completed", "User message", payload)));
                     break;
                 }
 
@@ -3356,6 +3368,8 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
         JsonElement payload,
         string? subjectFallback = null)
     {
+        if (itemType == "user_message")
+            return new AppServerControlProviderItemPayload { ItemType = itemType, Status = status, Title = "User message", Detail = BuildCodexItemDetail(payload) };
         var presentation = AppServerControlToolPresentationProjector.FromCodex(
             itemType,
             status,

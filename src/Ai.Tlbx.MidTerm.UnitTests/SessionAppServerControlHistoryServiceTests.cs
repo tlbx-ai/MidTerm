@@ -503,6 +503,56 @@ public sealed class SessionAppServerControlHistoryServiceTests
         Assert.Equal("second turn", snapshot.Streams.AssistantText);
     }
 
+    [Theory]
+    [InlineData(false, false, false, false)]
+    [InlineData(false, true, false, false)]
+    [InlineData(true, false, false, false)]
+    [InlineData(true, true, false, false)]
+    [InlineData(false, false, true, false)]
+    [InlineData(true, true, true, false)]
+    [InlineData(false, false, false, true)]
+    [InlineData(true, true, false, true)]
+    public void GetSnapshot_PreservesSteeringMessagesWithinTheSameNativeTurn(bool localFirst, bool localSteerFirst, bool repeatedText, bool emptyEcho)
+    {
+        var service = new SessionAppServerControlHistoryService();
+        var sequence = 0;
+        var steerText = repeatedText ? "Initial request" : "Steering instruction";
+        void AppendUser(string id, string text)
+        {
+            service.Append(new AppServerControlProviderEvent
+            {
+                EventId = FormattableString.Invariant($"user-{++sequence}"), SessionId = "s1", Provider = "codex", ThreadId = "thread-1", TurnId = "turn-1",
+                ItemId = id, CreatedAt = ParseUtc("2026-10-17T00:00:00Z").AddSeconds(sequence), Type = "item.completed",
+                Item = new AppServerControlProviderItemPayload { ItemType = "user_message", Status = "completed", Detail = text }
+            });
+        }
+
+        if (localFirst) AppendUser("local-user:turn-1", "Initial request");
+        AppendUser("provider-user", emptyEcho ? "" : "Internal native prefix\nInitial request");
+        if (!localFirst) AppendUser("local-user:turn-1", "Initial request");
+        if (localSteerFirst) AppendUser("local-steer:command-2", steerText);
+        AppendUser("provider-steer", emptyEcho ? "" : steerText);
+        if (!localSteerFirst) AppendUser("local-steer:command-2", steerText);
+        AppendUser("provider-steer", "Internal native prefix\n" + steerText);
+
+        var snapshot = service.GetSnapshot("s1")!;
+        var users = snapshot.History.Where(item => item.Kind == "user").ToArray();
+        Assert.Equal(2, users.Length);
+        Assert.Equal("Initial request", users[0].Body);
+        Assert.Equal(steerText, users[1].Body);
+        Assert.All(users, item => Assert.Equal("turn-1", item.TurnId));
+        Assert.Equal(2, snapshot.Items.Count(item => item.ItemType == "user_message"));
+        var restored = new SessionAppServerControlHistoryService();
+        restored.ImportHistoryWindow(snapshot);
+        restored.Append(new AppServerControlProviderEvent
+        {
+            EventId = "after-restore", SessionId = "s1", Provider = "codex", ThreadId = "thread-1", TurnId = "turn-1",
+            ItemId = "provider-steer", CreatedAt = ParseUtc("2026-10-17T00:01:00Z"), Type = "item.completed",
+            Item = new AppServerControlProviderItemPayload { ItemType = "user_message", Status = "completed", Detail = steerText }
+        });
+        Assert.Equal(new[] { "Initial request", steerText }, restored.GetSnapshot("s1")!.History.Where(item => item.Kind == "user").Select(item => item.Body), StringComparer.Ordinal);
+    }
+
     [Fact]
     public void GetSnapshot_ReconcilesProviderUserMessageWithSubmittedLocalUserTurn()
     {
