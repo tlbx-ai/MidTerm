@@ -1097,6 +1097,7 @@ function maybeRememberCompletedTurnDuration(
     !turnId ||
     !startedAt ||
     !completedAt ||
+    snapshot.currentTurn.stateLabel === 'Restored' ||
     state.completedTurnDurationEntries.has(turnId) ||
     ['running', 'in progress'].includes(currentTurnState)
   ) {

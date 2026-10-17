@@ -10,6 +10,7 @@ var currentModel = "claude-test";
 PendingTool? pending = null;
 var waitingForSteer = false;
 var steeringAbort = false;
+var queuedAtInterrupt = false;
 
 while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
 {
@@ -44,9 +45,17 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
                     {
                         new { value = "claude-test", displayName = "Claude Test", description = "Native test model", supportsEffort = true, supportedEffortLevels = new[] { "low", "high" } }
                     }
-                } : new { }
+                } : subtype == "interrupt" ? new { still_queued = queuedAtInterrupt ? new[] { "queued-message" } : Array.Empty<string>() } : new { }
             }
         }).ConfigureAwait(false);
+        if (subtype == "interrupt" && waitingForSteer)
+        {
+            await Task.Delay(150).ConfigureAwait(false);
+            await WriteJsonAsync(new { type = "result", subtype = "success", session_id = sessionId,
+                is_error = false, result = "Initial answer.", queued_turn_count = 0,
+                terminal_reason = "aborted_streaming" }).ConfigureAwait(false);
+            waitingForSteer = false;
+        }
         continue;
     }
 
@@ -81,9 +90,18 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
         waitingForSteer = false;
         continue;
     }
+    if (prompt.Contains("After native stop", StringComparison.Ordinal))
+    {
+        await WriteJsonAsync(new { type = "assistant", session_id = sessionId,
+            message = new { id = "native-after-stop", content = new[] { new { type = "text", text = "After native stop." } } } }).ConfigureAwait(false);
+        await WriteJsonAsync(new { type = "result", subtype = "success", session_id = sessionId,
+            is_error = false, result = "After native stop.", queued_turn_count = 0 }).ConfigureAwait(false);
+        continue;
+    }
     if (prompt.Contains("Hold native Claude turn", StringComparison.Ordinal))
     {
         waitingForSteer = true;
+        queuedAtInterrupt = prompt.Contains("queued cancellation", StringComparison.Ordinal);
         steeringAbort = prompt.Contains("streaming abort", StringComparison.Ordinal);
         await EmitSteerMessageAsync("native-original", "Initial answer.").ConfigureAwait(false);
         continue;
@@ -153,7 +171,7 @@ async Task FinishTurnAsync(string prompt, string imageSummary, string toolId, in
     {
         type = "user",
         session_id = sessionId,
-        message = new { content = new object[] { new { type = "tool_result", tool_use_id = toolId, content = $"pwd -> {Environment.CurrentDirectory}" } } },
+        message = new { content = new object[] { new { type = "tool_result", tool_use_id = toolId, is_error = prompt.Contains("Plan acceptance", StringComparison.Ordinal), content = $"pwd -> {Environment.CurrentDirectory}" } } },
         tool_use_result = new { tool_use_id = toolId, stdout = Environment.CurrentDirectory, stderr = "" }
     }).ConfigureAwait(false);
     var text = $"Fake Claude SDK reply {currentTurn.ToString(CultureInfo.InvariantCulture)}: {prompt}{imageSummary}";

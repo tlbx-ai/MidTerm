@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.Json;
+using Ai.Tlbx.MidTerm.AgentHost;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Xunit;
 
@@ -8,10 +10,46 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 [Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class MtAgentHostClaudeIntegrationTests
 {
+    [Fact]
+    public async Task ClaudeHistory_RestoresNativeMessagesAndToolsWithoutCurrentModelOrInteractiveRequests()
+    {
+        using var document = JsonDocument.Parse("""
+            {"messages":[
+              {"type":"user","uuid":"user-a","timestamp":"2026-10-16T10:00:00Z","message":{"content":"First question"}},
+              {"type":"assistant","uuid":"a","message":{"id":"native-a","content":[
+                {"type":"text","text":"Checking"},{"type":"tool_use","id":"tool-a","name":"Bash","input":{"command":"pwd"}}]}},
+              {"type":"user","uuid":"tool-result","message":{"content":[{"type":"tool_result","tool_use_id":"tool-a","content":"Q:/work"}]}},
+              {"type":"assistant","uuid":"b","message":{"id":"native-b","content":[{"type":"text","text":"Answer one"}]}},
+              {"type":"assistant","uuid":"child","parent_tool_use_id":"tool-a","message":{"content":[{"type":"text","text":"Private subagent"}]}},
+              {"type":"user","uuid":"user-b","message":{"content":[{"type":"text","text":"Second question"}]}},
+              {"type":"assistant","uuid":"c","message":{"id":"native-c","content":[{"type":"text","text":"Answer two"},
+                {"type":"tool_use","id":"plan-tool","name":"ExitPlanMode","input":{"plan":"Restored plan"}}]}},
+              {"type":"user","uuid":"plan-result","message":{"content":[{"type":"tool_result","tool_use_id":"plan-tool","is_error":true,"content":"Wait for review"}]}}
+            ]}
+            """);
+        var events = new List<AppServerControlProviderEvent>();
+        await using var runtime = new ClaudeAppServerControlAgentRuntime(events.Add);
+        runtime.ReplayClaudeHistory(document.RootElement);
+        var turns = events.Where(e => e.TurnStarted is not null).ToArray();
+        Assert.Equal(2, turns.Length);
+        Assert.All(turns, e => { Assert.True(e.TurnStarted!.IsReplay); Assert.Null(e.TurnStarted.Model); Assert.Null(e.TurnStarted.Effort); });
+        Assert.Equal(DateTimeOffset.Parse("2026-10-16T10:00:00Z", CultureInfo.InvariantCulture), turns[0].CreatedAt);
+        Assert.Equal(2, events.Count(e => e.Item?.ItemType == "user_message"));
+        Assert.Contains(events, e => e.ItemId == "native-b" && e.TurnId == "claude-history:user-a");
+        Assert.Contains(events, e => e.ItemId == "native-c" && e.TurnId == "claude-history:user-b");
+        Assert.Contains(events, e => e.ItemId == "tool-a" && e.Item?.Status == "completed");
+        Assert.Contains(events, e => e.ItemId == "plan-tool" && e.Item?.Status == "completed" && e.Item.Title == "Plan review");
+        Assert.Contains(events, e => e.PlanCompleted?.PlanMarkdown == "Restored plan" && e.PlanCompleted.IsProposal);
+        Assert.DoesNotContain(events, e => e.UserInputRequested is not null || e.Item?.Detail == "Private subagent");
+        Assert.Equal(2, events.Count(e => e.TurnCompleted?.StopReason == "history_import"));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task MtAgentHost_KeepsClaudeSteeringAliveAcrossQueuedSdkResults(bool streamingAbort)
+    [InlineData(false, true)]
+    [InlineData(false, true, true)]
+    public async Task MtAgentHost_KeepsClaudeSteeringAliveAcrossQueuedSdkResults(bool streamingAbort, bool interrupt = false, bool queuedAtInterrupt = false)
     {
         using var fakeClaude = FakeClaudePathScope.Create();
         using var process = StartAgentHost(ResolveAgentHostPath());
@@ -33,12 +71,39 @@ public sealed class MtAgentHostClaudeIntegrationTests
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "start-steer", SessionId = sessionId, Type = "turn.start",
-                StartTurn = new AppServerControlTurnRequest { Text = streamingAbort ? "Hold native Claude turn for streaming abort." : "Hold native Claude turn for steering." }
+                StartTurn = new AppServerControlTurnRequest { Text = queuedAtInterrupt ? "Hold native Claude turn for queued cancellation." : streamingAbort ? "Hold native Claude turn for streaming abort." : "Hold native Claude turn for steering." }
             });
             var started = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "start-steer");
             var turnId = Assert.IsType<string>(started.TurnStarted?.TurnId);
             _ = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(process.StandardOutput, process.StandardInput, patches,
                 sessionId, h => h.Streams.AssistantText == "Initial answer.", TimeSpan.FromSeconds(10), count: 96);
+            if (interrupt)
+            {
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "stop-stale", SessionId = sessionId, Type = "turn.interrupt",
+                    InterruptTurn = new AppServerControlInterruptRequest { TurnId = "previous-turn" }
+                });
+                Assert.Equal("rejected", (await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "stop-stale")).Status);
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "stop-active", SessionId = sessionId, Type = "turn.interrupt",
+                    InterruptTurn = new AppServerControlInterruptRequest { TurnId = turnId }
+                });
+                Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "stop-active")).Status);
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "after-stop", SessionId = sessionId, Type = "turn.start",
+                    StartTurn = new AppServerControlTurnRequest { Text = "After native stop" }
+                });
+                var next = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "after-stop");
+                var nextTurnId = next.TurnStarted?.TurnId;
+                var resumed = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(process.StandardOutput, process.StandardInput,
+                    patches, sessionId, h => h.CurrentTurn.TurnId == nextTurnId && h.CurrentTurn.State == "completed",
+                    TimeSpan.FromSeconds(10), count: 96);
+                Assert.Contains(resumed.History, item => item.Kind == "assistant" && item.TurnId == nextTurnId && item.Body == "After native stop.");
+                return;
+            }
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "steer-active", SessionId = sessionId, Type = "turn.steer",
@@ -142,6 +207,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 if (iteration == 3) Assert.Contains("answer=Blue, Red", AppServerControlHostTestClient.CollectAssistantText(completed), StringComparison.Ordinal);
                 else Assert.Contains(completed.History, item => item.TurnId == completed.CurrentTurn.TurnId && item.ItemType == "proposed_plan" && item.Body.Contains("TLBX_CLAUDE_PLAN_FAKE", StringComparison.Ordinal));
                 Assert.DoesNotContain(completed.Requests, request => request.State == "open");
+                if (iteration != 3) Assert.Contains(completed.Items, item => item.Title == "Plan review" && item.Status == "completed");
                 Assert.DoesNotContain(completed.Session.AvailableCommands, command => command.Name == "exit");
                 var usage = Assert.IsType<AppServerControlUsageSummary>(completed.Session.Usage);
                 Assert.Equal(119, usage.ContextUsedTokens);

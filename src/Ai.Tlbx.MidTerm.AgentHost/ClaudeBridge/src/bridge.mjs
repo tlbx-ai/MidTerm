@@ -1,4 +1,4 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
@@ -255,6 +255,12 @@ async function handle(command) {
       if (configuration)
         throw new Error("Claude bridge is already initialized.");
       configuration = command;
+      if (command.resume && command.loadHistory) {
+        const messages = await getSessionMessages(command.resume, {
+          dir: command.cwd,
+        });
+        emit({ type: "bridge.history", messages });
+      }
       await startRuntime(command);
       const initialized = await runtime.initializationResult();
       emit({
@@ -278,10 +284,15 @@ async function handle(command) {
       prompts.push(await makeUserMessage(command));
       return;
     }
-    case "turn.interrupt":
-      if (runtime) await runtime.interrupt();
-      emit({ type: "bridge.interrupted", turnId: command.turnId });
+    case "turn.interrupt": {
+      const receipt = runtime ? await runtime.interrupt() : undefined;
+      emit({
+        type: "bridge.interrupted",
+        turnId: command.turnId,
+        hasQueuedWork: (receipt?.still_queued?.length ?? 0) > 0,
+      });
       return;
+    }
     case "permission.resolve": {
       const resolve = pendingPermissions.get(command.requestId);
       if (!resolve)
@@ -333,7 +344,7 @@ input.on("line", (line) => {
     .catch((error) =>
       fail("Claude bridge command failed.", error, {
         commandType: command?.type,
-        requestId: command?.requestId,
+        requestId: command?.requestId ?? command?.turnId,
       }),
     );
 });

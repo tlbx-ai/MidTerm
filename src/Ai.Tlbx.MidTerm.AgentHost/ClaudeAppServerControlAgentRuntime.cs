@@ -13,6 +13,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private readonly Action<AppServerControlProviderEvent> _emit;
+    private readonly Func<string, bool> _hasRetainedConversation;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Dictionary<int, ClaudeBlockState> _blocks = [];
@@ -41,11 +42,14 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
     private bool _assistantMessageEmitted;
     private bool _interruptRequested;
     private bool _steeringPending;
+    private TaskCompletionSource? _interruptSettled;
+    private bool _interruptHasQueuedWork;
     private long _sequence;
 
-    public ClaudeAppServerControlAgentRuntime(Action<AppServerControlProviderEvent> emit)
+    public ClaudeAppServerControlAgentRuntime(Action<AppServerControlProviderEvent> emit, Func<string, bool>? hasRetainedConversation = null)
     {
         _emit = emit;
+        _hasRetainedConversation = hasRetainedConversation ?? (_ => false);
     }
 
     public string Provider => "claude";
@@ -299,17 +303,36 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         {
             throw new InvalidOperationException("Claude does not have an active turn to interrupt.");
         }
+        if (!string.Equals(turnId, _activeTurnId, StringComparison.Ordinal))
+            throw new InvalidOperationException("The Claude turn to interrupt is no longer active.");
 
         if (_process is { HasExited: false })
         {
             _interruptRequested = true;
-            await WriteBridgeCommandAsync(writer =>
+            _interruptHasQueuedWork = false;
+            _interruptSettled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            try
             {
-                writer.WriteStartObject();
-                writer.WriteString("type", "turn.interrupt");
-                writer.WriteString("turnId", turnId);
-                writer.WriteEndObject();
-            }, ct).ConfigureAwait(false);
+                await WriteBridgeResolutionCommandAsync("interrupt", turnId, writer =>
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("type", "turn.interrupt");
+                    writer.WriteString("turnId", turnId);
+                    writer.WriteEndObject();
+                }, ct).ConfigureAwait(false);
+                if (_interruptHasQueuedWork)
+                    await DisposeProcessAsync(resetTurnState: false).ConfigureAwait(false);
+                else
+                    await _interruptSettled.Task.WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                await DisposeProcessAsync(resetTurnState: false).ConfigureAwait(false);
+            }
+            finally
+            {
+                _interruptSettled = null;
+            }
         }
 
         ResetTurnState();
@@ -562,9 +585,14 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                 ApplyClaudeNativeCatalogue(root, rawLine);
                 _bridgeReady.TrySetResult();
                 break;
+            case "bridge.history":
+                ReplayClaudeHistory(root);
+                break;
             case "bridge.proposed_plan":
             {
                 var markdown = GetString(root, "markdown");
+                if (GetString(root, "toolUseId") is { } planToolId && _tools.TryGetValue(planToolId, out var planTool))
+                    planTool.IsPlanReview = true;
                 if (!string.IsNullOrWhiteSpace(markdown))
                     _emit(CreateEvent("plan.completed", _activeTurnId, GetString(root, "toolUseId"), null,
                         "claude.agent-sdk", "canUseTool/ExitPlanMode", root,
@@ -614,6 +642,10 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                 }, rawLine));
                 break;
             }
+            case "bridge.interrupted":
+                _interruptHasQueuedWork |= GetBoolean(root, "hasQueuedWork");
+                CompleteBridgeResolutionAck("interrupt", GetString(root, "turnId"));
+                break;
             case "bridge.user_input_resolved":
                 CompleteBridgeResolutionAck("user_input", GetString(root, "requestId"));
                 break;
@@ -966,7 +998,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             TryUpdateClaudePresentationFromInputJson(tool);
             AppServerControlToolPresentationProjector.AppendClaudeResult(item, root, tool.Output);
             var failed = GetBoolean(item, "is_error") || GetBoolean(root, "tool_use_result", "is_error");
-            var status = failed ? "failed" : "completed";
+            var status = failed && !tool.IsPlanReview ? "failed" : "completed";
             AppServerControlToolPresentationProjector.ApplyOutput(tool.Presentation, tool.Output, status);
 
             _emit(CreateEvent("item.completed", _activeTurnId, tool.ItemId, null, "claude.agent-sdk", "tool_result", root, appServerControlEvent =>
@@ -975,7 +1007,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                 {
                     ItemType = tool.ItemType,
                     Status = status,
-                    Title = tool.Title,
+                    Title = tool.IsPlanReview ? "Plan review" : tool.Title,
                     Detail = tool.Presentation.Subject,
                     ToolPresentation = AppServerControlToolPresentationProjector.Clone(tool.Presentation)
                 };
@@ -1003,6 +1035,12 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         }
 
         var terminalReason = GetString(root, "terminal_reason");
+        if (_interruptRequested)
+        {
+            _interruptHasQueuedWork |= GetInt32(root, "queued_turn_count") is > 0;
+            _interruptSettled?.TrySetResult();
+            return;
+        }
         if (GetInt32(root, "queued_turn_count") is > 0 ||
             (_steeringPending && !_interruptRequested && terminalReason is "aborted_streaming" or "aborted_tools"))
         {
@@ -1132,7 +1170,9 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             TurnId = turnId,
             ItemId = itemId,
             RequestId = requestId,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = _replayingHistory && payload is JsonElement historical &&
+                DateTimeOffset.TryParse(GetString(historical, "timestamp"), CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var timestamp) ? timestamp : DateTimeOffset.UtcNow,
             Type = eventType,
             Raw = new AppServerControlProviderEventRaw
             {
@@ -1195,6 +1235,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             writer.WriteString("cwd", _workingDirectory);
             writer.WriteString("sessionId", _newProviderSessionId);
             writer.WriteString("permissionMode", _quickSettings.PermissionMode);
+            writer.WriteBoolean("loadHistory", _sessionId is not null && !_hasRetainedConversation(_sessionId));
             if (_quickSettings.Model is not null) writer.WriteString("model", _quickSettings.Model);
             if (!string.IsNullOrWhiteSpace(_providerThreadId))
             {
@@ -1300,6 +1341,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         {
             "permission.resolve" => "permission",
             "user_input.resolve" => "user_input",
+            "turn.interrupt" => "interrupt",
             _ => null
         };
         if (resolutionType is not null && !string.IsNullOrWhiteSpace(requestId) &&
@@ -1737,6 +1779,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
 
     private sealed class ClaudeToolState
     {
+        public bool IsPlanReview { get; set; }
         public string ItemId { get; set; } = string.Empty;
         public string ItemType { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;

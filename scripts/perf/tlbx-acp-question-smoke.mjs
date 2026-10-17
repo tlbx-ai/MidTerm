@@ -28,6 +28,7 @@ const nativeUsage =
 const codexSteer = process.env.TLBX_ACP_UI_SCENARIO === "codex-steer";
 const claudeSteer = process.env.TLBX_ACP_UI_SCENARIO === "claude-steer";
 const nativeSteer = codexSteer || claudeSteer;
+const nativeHistory = process.env.TLBX_ACP_UI_SCENARIO === "native-history";
 assert.ok(
   url && cookie && sessionId,
   "Authenticated source URL and acceptance session required",
@@ -210,6 +211,16 @@ try {
     );
     const implement = wrapper.locator(".agent-plan-implement").last();
     await implement.waitFor({ state: "visible" });
+    await page.waitForFunction(
+      () => {
+        const buttons = document.querySelectorAll(".agent-plan-implement");
+        return (
+          buttons.length > 0 && buttons[buttons.length - 1].disabled === false
+        );
+      },
+      undefined,
+      { timeout: 10000 },
+    );
     assert.equal(
       await implement.isDisabled(),
       false,
@@ -622,6 +633,36 @@ try {
     );
     result.nativeCommandsVerified = true;
   }
+  if (nativeHistory) {
+    const marker = process.env.TLBX_ACP_UI_EXPECTED_MARKER;
+    assert.ok(marker);
+    assert.equal(
+      initial.thread.threadId,
+      process.env.TLBX_ACP_UI_EXPECTED_THREAD,
+    );
+    assert.ok(
+      initial.history.filter((item) => item.kind === "user").length >= 2,
+    );
+    assert.ok(
+      initial.history.filter((item) => item.kind === "assistant").length >= 2,
+    );
+    const reply = wrapper
+      .locator(".agent-history-assistant")
+      .filter({ hasText: marker })
+      .last();
+    await reply.waitFor({ state: "visible" });
+    for (const viewport of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await reply.scrollIntoViewIfNeeded();
+      const screenshot = path.join(out, `native-history-${viewport.width}.png`);
+      await page.screenshot({ path: screenshot });
+      result.screenshots.push(screenshot);
+    }
+    result.nativeHistoryVerified = true;
+  }
   if (nativeSteer) {
     const marker =
       process.env.TLBX_ACP_UI_EXPECTED_MARKER ||
@@ -830,6 +871,7 @@ try {
     !nativeCommands &&
     !nativeUsage &&
     !nativeSteer &&
+    !nativeHistory &&
     !initiallyOpen
   ) {
     assert.ok(

@@ -491,7 +491,8 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         if (string.Equals(provider, "claude", StringComparison.Ordinal) &&
             string.Equals(command.AttachRuntime?.RuntimeKind, "claude-agent-sdk", StringComparison.Ordinal))
         {
-            _runtime = new ClaudeAppServerControlAgentRuntime(EmitRuntimeEvent);
+            _runtime = new ClaudeAppServerControlAgentRuntime(EmitRuntimeEvent,
+                sessionId => _history.GetSnapshot(sessionId)?.History.Any(entry => entry.Kind is "user" or "assistant" or "tool") == true);
             return _runtime;
         }
 
