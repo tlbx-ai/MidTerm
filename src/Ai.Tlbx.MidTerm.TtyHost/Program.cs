@@ -289,10 +289,29 @@ public static class Program
             return (["/K", initialCommand], ReadOnlyMemory<byte>.Empty);
         }
 
-        // Keep bookmark launch atomic inside mthost, but let interactive shells render
-        // their real startup prompt before the command begins. Embedding a command in
-        // PowerShell's -Command argument suppresses the prompt and leaves a completely
-        // blank terminal while full-screen CLIs initialize.
+        if (shellConfig.ShellType is ShellType.Pwsh or ShellType.PowerShell)
+        {
+            // The prompt is printed before PSReadLine finishes initializing. Typing
+            // into the PTY at that point (or after a fixed timeout) can lose input.
+            // Supply the first line through the shell's own readline hook instead:
+            // the real prompt still renders before a full-screen command starts,
+            // and subsequent reads use the original user/PSReadLine implementation.
+            var encodedCommand = Convert.ToBase64String(Encoding.UTF8.GetBytes(initialCommand));
+            var arguments = shellConfig.Arguments;
+            var firstLine = "& {" +
+                "$command=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encodedCommand + "'));" +
+                "$readLine=$function:PSConsoleHostReadLine;" +
+                "Set-Item Function:global:PSConsoleHostReadLine -Value {" +
+                "if($null -ne $readLine){Set-Item Function:global:PSConsoleHostReadLine -Value $readLine}" +
+                "else{Remove-Item Function:global:PSConsoleHostReadLine};" +
+                "[Console]::WriteLine($command);" +
+                "$command" +
+                "}.GetNewClosure()}";
+            return ([.. arguments[..^1], arguments[^1] + ";" + firstLine], ReadOnlyMemory<byte>.Empty);
+        }
+
+        // Other interactive shells advertise readiness through their prompt or
+        // bracketed-paste mode before receiving the initial terminal input.
         return (shellConfig.Arguments, Encoding.UTF8.GetBytes(initialCommand + "\r"));
     }
 
@@ -1497,9 +1516,6 @@ internal sealed class TerminalInputReadinessDetector
         var lastLine = value[lastLineStart..].TrimEnd();
         return _shellType switch
         {
-            ShellType.PowerShell or ShellType.Pwsh =>
-                lastLine.StartsWith("PS ", StringComparison.Ordinal) &&
-                lastLine.EndsWith('>'),
             ShellType.Bash => lastLine.EndsWith('$') || lastLine.EndsWith('#'),
             ShellType.Zsh => lastLine.EndsWith('%') || lastLine.EndsWith('#'),
             _ => false
