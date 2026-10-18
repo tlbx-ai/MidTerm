@@ -1,0 +1,66 @@
+name: Apple notarization diagnostics
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, chore/apple-notary-diagnostics]
+    paths: [.github/workflows/apple-notary-diagnostics.yml]
+
+permissions: {}
+
+jobs:
+  check-access:
+    runs-on: macos-14
+    timeout-minutes: 5
+    steps:
+      - name: Check team and notarization access without uploading
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          import sys
+
+          def report(message):
+              print(message, flush=True)
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+                  summary.write(message + '\n\n')
+
+          required = ('APPLE_ID', 'APPLE_ID_PASSWORD', 'APPLE_TEAM_ID')
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              report('Missing GitHub secrets: ' + ', '.join(missing))
+              sys.exit(1)
+
+          if os.environ['APPLE_TEAM_ID'] != 'FK7G5C74WH':
+              report('FAIL: APPLE_TEAM_ID does not match the expected Johannes Schmidt team FK7G5C74WH.')
+              sys.exit(1)
+          report('PASS: APPLE_TEAM_ID matches team FK7G5C74WH.')
+
+          command = [
+              'xcrun', 'notarytool', 'history',
+              '--apple-id', os.environ['APPLE_ID'],
+              '--password', os.environ['APPLE_ID_PASSWORD'],
+              '--team-id', os.environ['APPLE_TEAM_ID'],
+              '--output-format', 'json',
+          ]
+          try:
+              result = subprocess.run(command, capture_output=True, text=True, timeout=240)
+          except subprocess.TimeoutExpired:
+              report('FAIL: Apple notarization access check timed out after 240 seconds.')
+              sys.exit(1)
+
+          if result.returncode:
+              diagnostic = (result.stderr + '\n' + result.stdout).strip()
+              for name in required:
+                  diagnostic = diagnostic.replace(os.environ[name], '[redacted]')
+              report('FAIL: notarytool history returned exit code ' + str(result.returncode) + '.')
+              report('Apple response:\n\n```text\n' + diagnostic[:4000] + '\n```')
+              sys.exit(1)
+
+          report('PASS: Apple notarization history is accessible with the CI credentials. No build or upload was performed. Submission history is not printed.')
+          PY
