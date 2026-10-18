@@ -9,6 +9,7 @@
 import { createLogger } from '../logging';
 import type { ChatMessage, VoiceToolName, InteractiveOp } from '../../types';
 import { escapeHtml } from '../../utils';
+import { renderMarkdown } from '../../utils/markdown';
 import { t } from '../i18n';
 
 const log = createLogger('chat');
@@ -24,16 +25,32 @@ interface ToolEntry {
   request: string;
   response: string;
   rowEl: HTMLElement;
+  group: ActiveToolGroup;
+  state: 'running' | 'done' | 'failed' | 'declined';
+  statusEl: HTMLElement;
+  outcomeEl: HTMLElement;
 }
 
 interface ActiveToolGroup {
   element: HTMLElement;
   entriesContainer: HTMLElement;
-  timeEl: HTMLElement;
+  summary: HTMLElement;
+  statusEl: HTMLElement;
+  countEl: HTMLElement;
+  namesEl: HTMLElement;
   entries: ToolEntry[];
 }
 
 let activeToolGroup: ActiveToolGroup | null = null;
+const toolEntries = new Map<string, ToolEntry>();
+
+function rememberToolEntry(id: string, entry: ToolEntry): void {
+  toolEntries.set(id, entry);
+  if (toolEntries.size > MAX_CHAT_MESSAGES) {
+    const oldest = toolEntries.keys().next().value;
+    if (oldest !== undefined) toolEntries.delete(oldest);
+  }
+}
 
 /**
  * Initialize the chat panel and event handlers
@@ -105,12 +122,27 @@ export function addChatMessage(message: ChatMessage): void {
       activeToolGroup = group;
     }
 
-    addToolEntry(activeToolGroup, toolName, args, message.timestamp);
-  } else if (message.role === 'tool' && activeToolGroup) {
-    const lastEntry = activeToolGroup.entries[activeToolGroup.entries.length - 1];
-    if (lastEntry) {
-      updateToolEntryResponse(lastEntry, message.content);
+    const entry = addToolEntry(activeToolGroup, toolName, args, message.timestamp);
+    if (message.toolRequestId) {
+      rememberToolEntry(message.toolRequestId, entry);
     }
+  } else if (message.role === 'tool') {
+    let entry = message.toolRequestId ? toolEntries.get(message.toolRequestId) : undefined;
+    entry ??= !message.toolRequestId
+      ? activeToolGroup?.entries
+          .slice()
+          .reverse()
+          .find(
+            (candidate) =>
+              !candidate.response && (!message.toolName || candidate.toolName === message.toolName),
+          )
+      : undefined;
+    if (!entry) {
+      const group = createToolGroup(message.timestamp);
+      document.getElementById('chat-messages')?.appendChild(group.element);
+      entry = addToolEntry(group, message.toolName || 'tool', '', message.timestamp);
+    }
+    updateToolEntryResponse(entry, message.content);
   } else {
     finalizeToolGroup();
     renderMessage(message);
@@ -163,31 +195,51 @@ function formatJsonContent(content: string): string {
 }
 
 /**
- * Condense text to first N lines, adding ellipsis if truncated
- */
-function condensed(text: string, maxLines: number): string {
-  const lines = text.split('\n');
-  if (lines.length <= maxLines) return text;
-  return lines.slice(0, maxLines).join('\n') + '\n…';
-}
-
-/**
- * Create a tool group bubble element
+ * Create a compact, keyboard-accessible tool activity disclosure.
  */
 function createToolGroup(timestamp: string): ActiveToolGroup {
-  const el = document.createElement('div');
+  const el = document.createElement('details');
   el.className = 'chat-msg chat-msg-tool-group';
+  const summary = document.createElement('summary');
+  summary.className = 'tool-group-header';
+  summary.title = formatTime(timestamp);
+  const statusEl = document.createElement('span');
+  statusEl.className = 'tool-group-state';
+  statusEl.setAttribute('aria-hidden', 'true');
+  const countEl = document.createElement('span');
+  countEl.className = 'tool-group-count';
+  const namesEl = document.createElement('span');
+  namesEl.className = 'tool-group-names';
+  summary.append(statusEl, countEl, namesEl);
+  el.appendChild(summary);
 
   const entriesContainer = document.createElement('div');
   entriesContainer.className = 'tool-group-entries';
   el.appendChild(entriesContainer);
 
-  const timeEl = document.createElement('div');
-  timeEl.className = 'chat-msg-time';
-  timeEl.textContent = formatTime(timestamp);
-  el.appendChild(timeEl);
+  return { element: el, summary, statusEl, countEl, namesEl, entriesContainer, entries: [] };
+}
 
-  return { element: el, entriesContainer, timeEl, entries: [] };
+function toolStateLabel(state: ToolEntry['state']): string {
+  return t(`chat.tools${state.charAt(0).toUpperCase()}${state.slice(1)}`);
+}
+
+function refreshToolGroup(group: ActiveToolGroup): void {
+  const state = group.entries.some((entry) => entry.state === 'failed')
+    ? 'failed'
+    : group.entries.some((entry) => entry.state === 'declined')
+      ? 'declined'
+      : group.entries.some((entry) => entry.state === 'running')
+        ? 'running'
+        : 'done';
+  group.element.dataset.state = state;
+  group.statusEl.textContent = state === 'running' ? '⋯' : state === 'done' ? '✓' : '!';
+  group.countEl.textContent = String(group.entries.length);
+  const names = group.entries.map((entry) => entry.toolName).join(' · ');
+  group.namesEl.textContent = names;
+  const label = `${group.entries.length} ${t(group.entries.length === 1 ? 'chat.toolCall' : 'chat.toolCalls')} · ${toolStateLabel(state)} · ${names}`;
+  group.summary.setAttribute('aria-label', label);
+  group.summary.title = label;
 }
 
 /**
@@ -198,77 +250,51 @@ function addToolEntry(
   toolName: string,
   args: string,
   timestamp: string,
-): void {
+): ToolEntry {
   const entry: ToolEntry = {
     toolName,
     request: args,
     response: '',
-    rowEl: document.createElement('div'),
+    rowEl: document.createElement('details'),
+    group,
+    state: 'running',
+    statusEl: document.createElement('span'),
+    outcomeEl: document.createElement('span'),
   };
   const row = entry.rowEl;
   row.className = 'tool-group-entry-row';
 
-  const headerRow = document.createElement('div');
+  const headerRow = document.createElement('summary');
   headerRow.className = 'tool-group-entry-header';
 
-  const arrow = document.createElement('span');
-  arrow.className = 'tool-group-expand';
-  arrow.textContent = '▸';
+  entry.statusEl.className = 'tool-entry-state';
+  entry.statusEl.textContent = '⋯';
+  entry.statusEl.setAttribute('aria-label', toolStateLabel('running'));
 
   const nameEl = document.createElement('span');
   nameEl.className = 'tool-group-entry-name';
   nameEl.textContent = toolName;
 
-  headerRow.appendChild(arrow);
+  headerRow.appendChild(entry.statusEl);
   headerRow.appendChild(nameEl);
 
-  const summaryEl = document.createElement('div');
-  summaryEl.className = 'tool-group-entry-summary';
+  entry.outcomeEl.className = 'tool-group-entry-outcome';
+  headerRow.appendChild(entry.outcomeEl);
 
   const detailEl = document.createElement('div');
   detailEl.className = 'tool-group-entry-detail';
 
   row.appendChild(headerRow);
-  row.appendChild(summaryEl);
   row.appendChild(detailEl);
-
-  headerRow.addEventListener('click', () => {
-    const isExpanded = row.classList.contains('expanded');
-    if (isExpanded) {
-      row.classList.remove('expanded', 'fully-expanded');
-      arrow.textContent = '▸';
-    } else {
-      row.classList.add('expanded');
-      arrow.textContent = '▾';
-      rebuildSummary(entry, summaryEl);
-    }
-  });
-
-  summaryEl.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (!row.classList.contains('fully-expanded')) {
-      row.classList.add('fully-expanded');
-      rebuildDetail(entry, detailEl);
-    } else {
-      row.classList.remove('fully-expanded');
-    }
+  row.addEventListener('toggle', () => {
+    if ((row as HTMLDetailsElement).open) rebuildDetail(entry, detailEl);
   });
 
   group.entriesContainer.appendChild(row);
   group.entries.push(entry);
-  group.timeEl.textContent = formatTime(timestamp);
-}
-
-/**
- * Rebuild the summary section (condensed request + response)
- */
-function rebuildSummary(entry: ToolEntry, el: HTMLElement): void {
-  const reqText = entry.request ? condensed(entry.request, 2) : '';
-  const resText = entry.response ? condensed(entry.response, 2) : '';
-  let html = '';
-  if (reqText) html += `<span class="tool-group-summary-text">${escapeHtml(reqText)}</span>`;
-  if (resText) html += `<span class="tool-group-summary-response">${escapeHtml(resText)}</span>`;
-  el.innerHTML = html;
+  headerRow.title = formatTime(timestamp);
+  refreshToolGroup(group);
+  return entry;
 }
 
 /**
@@ -292,16 +318,40 @@ function rebuildDetail(entry: ToolEntry, el: HTMLElement): void {
 /**
  * Attach a tool response to an existing entry
  */
+function parseToolOutcome(content: string): { state: ToolEntry['state']; outcome: string } {
+  let state: ToolEntry['state'] = 'done';
+  let outcome = '';
+  try {
+    const response = JSON.parse(content) as {
+      error?: unknown;
+      declined?: boolean;
+      result?: { error?: unknown; success?: boolean; responseText?: unknown };
+    };
+    if (response.declined) state = 'declined';
+    else if (response.error || response.result?.error || response.result?.success === false)
+      state = 'failed';
+    const description = response.error || response.result?.error || response.result?.responseText;
+    if (typeof description === 'string') outcome = description;
+  } catch {
+    // A legacy plain-text response still remains inspectable in the detail view.
+  }
+  return { state, outcome };
+}
+
 function updateToolEntryResponse(entry: ToolEntry, content: string): void {
   entry.response = content;
-  const summaryEl = entry.rowEl.querySelector<HTMLElement>('.tool-group-entry-summary');
-  if (summaryEl && entry.rowEl.classList.contains('expanded')) {
-    rebuildSummary(entry, summaryEl);
-  }
+  const { state, outcome } = parseToolOutcome(content);
+  entry.state = state;
+  entry.rowEl.dataset.state = entry.state;
+  entry.statusEl.textContent = entry.state === 'done' ? '✓' : '!';
+  entry.statusEl.setAttribute('aria-label', toolStateLabel(entry.state));
+  entry.outcomeEl.textContent = outcome || toolStateLabel(entry.state);
+  entry.outcomeEl.title = outcome || toolStateLabel(entry.state);
   const detailEl = entry.rowEl.querySelector<HTMLElement>('.tool-group-entry-detail');
-  if (detailEl && entry.rowEl.classList.contains('fully-expanded')) {
+  if (detailEl && (entry.rowEl as HTMLDetailsElement).open) {
     rebuildDetail(entry, detailEl);
   }
+  refreshToolGroup(entry.group);
 }
 
 /**
@@ -326,7 +376,7 @@ function trimChatDom(): void {
 }
 
 /**
- * Render a single message to the chat panel (non-tool or orphan tool)
+ * Render a conversation message; tool activity uses its compact disclosures.
  */
 function renderMessage(message: ChatMessage): void {
   const container = document.getElementById('chat-messages');
@@ -335,25 +385,11 @@ function renderMessage(message: ChatMessage): void {
   const msgEl = document.createElement('div');
   const time = formatTime(message.timestamp);
 
-  if (message.role === 'tool') {
-    msgEl.className = 'chat-msg chat-msg-tool-response';
-    const formattedContent = formatJsonContent(message.content);
-    msgEl.innerHTML = `
-      <div class="chat-msg-tool-header">
-        <span class="chat-msg-tool-icon">🔧</span>
-        <span class="chat-msg-tool-name">${escapeHtml(message.toolName || 'tool')}</span>
-        <span class="chat-msg-tool-label">${escapeHtml(t('chat.toolResponse'))}</span>
-      </div>
-      <pre class="chat-msg-tool-result">${escapeHtml(formattedContent)}</pre>
+  msgEl.className = `chat-msg chat-msg-${message.role}`;
+  msgEl.innerHTML = `
+      <div class="chat-msg-content${message.role === 'assistant' ? ' chat-markdown' : ''}">${message.role === 'assistant' ? renderMarkdown(message.content) : escapeHtml(message.content)}</div>
       <div class="chat-msg-time">${time}</div>
     `;
-  } else {
-    msgEl.className = `chat-msg chat-msg-${message.role}`;
-    msgEl.innerHTML = `
-      <div class="chat-msg-content">${escapeHtml(message.content)}</div>
-      <div class="chat-msg-time">${time}</div>
-    `;
-  }
 
   container.appendChild(msgEl);
 }
