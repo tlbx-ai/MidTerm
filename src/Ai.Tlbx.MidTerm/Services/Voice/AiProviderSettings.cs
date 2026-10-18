@@ -48,12 +48,24 @@ public sealed class AiProviderSettings(SettingsService settings)
 
     public JsonObject Status() => new()
     {
-        ["providers"] = new JsonArray(Providers.Select(p => (JsonNode)new JsonObject {
-            ["id"] = p, ["configured"] = !string.IsNullOrEmpty(GetKey(p)) }).ToArray()),
+        ["providers"] = new JsonArray(Providers.Select(p => (JsonNode)ProviderStatus(p)).ToArray()),
         ["workerModel"] = WorkerModel.ToString(), ["voiceModel"] = "gpt-live-1",
         ["workerModels"] = new JsonArray(WorkerModels.Select(m => (JsonNode)new JsonObject {
             ["id"] = m.ToString(), ["name"] = m.ToDisplayName(), ["provider"] = ProviderFor(m) }).ToArray())
     };
+
+    private JsonObject ProviderStatus(string provider)
+    {
+        var key = GetKey(provider);
+        return new JsonObject
+        {
+            ["id"] = provider,
+            ["configured"] = !string.IsNullOrEmpty(key),
+            ["keyPreview"] = string.IsNullOrEmpty(key) ? null
+                : key.Length <= 12 ? "••••••••"
+                : key[..8] + "••••••••" + key[^4..]
+        };
+    }
 
     public AiInferenceClient CreateClient(HttpClient http)
     {

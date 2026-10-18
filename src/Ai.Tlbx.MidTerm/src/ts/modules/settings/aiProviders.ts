@@ -1,7 +1,7 @@
 import { refreshVoiceAvailability } from '../voice';
 
 interface AiSettings {
-  providers: { id: string; configured: boolean }[];
+  providers: { id: string; configured: boolean; keyPreview: string | null }[];
   workerModel: string;
   workerModels: { id: string; name: string; provider: string }[];
 }
@@ -25,7 +25,10 @@ async function request(path: string, body?: unknown): Promise<AiSettings> {
 function render(settings: AiSettings): void {
   for (const provider of settings.providers) {
     const status = document.getElementById(`ai-key-status-${provider.id}`);
-    if (status) status.textContent = provider.configured ? 'Key saved' : 'No key configured';
+    if (status)
+      status.textContent = provider.configured
+        ? `Key saved${provider.keyPreview ? ` · ${provider.keyPreview}` : ''}`
+        : 'No key configured';
     const remove = document.getElementById(
       `ai-key-remove-${provider.id}`,
     ) as HTMLButtonElement | null;

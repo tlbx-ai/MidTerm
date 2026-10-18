@@ -37,6 +37,33 @@ public sealed class AiProviderSettingsTests : IDisposable
     }
 
     [Fact]
+    public void PublicPreviewsIdentifySavedKeysWithoutReturningTheirHiddenContents()
+    {
+        Directory.CreateDirectory(_directory);
+        var settings = new AiProviderSettings(new SettingsService(_directory));
+        foreach (var provider in AiProviderSettings.Providers)
+        {
+            var key = "sk-test-" + provider + "-hidden-middle-1234";
+            settings.SetKey(provider, key);
+            var status = settings.Status();
+            var entry = status["providers"]!.AsArray().Single(p => p!["id"]!.GetValue<string>() == provider)!;
+            Assert.True(entry["configured"]!.GetValue<bool>());
+            Assert.Equal("sk-test-••••••••1234", entry["keyPreview"]!.GetValue<string>());
+            Assert.DoesNotContain(key, status.ToJsonString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("hidden-middle", status.ToJsonString(), StringComparison.Ordinal);
+            settings.SetKey(provider, null);
+            entry = settings.Status()["providers"]!.AsArray().Single(p => p!["id"]!.GetValue<string>() == provider)!;
+            Assert.False(entry["configured"]!.GetValue<bool>());
+            Assert.Null(entry["keyPreview"]);
+        }
+        foreach (var key in new[] { "x", "short-key", "123456789012" })
+        {
+            settings.SetKey("openai", key);
+            Assert.Equal("••••••••", settings.Status()["providers"]![0]!["keyPreview"]!.GetValue<string>());
+        }
+    }
+
+    [Fact]
     public void DictationWaveHeaderMatchesBrowserPcmFormat()
     {
         var wav = VoiceEndpoints.Wave([0, 1, 2, 3]);
