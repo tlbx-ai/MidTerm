@@ -12,7 +12,7 @@ public sealed class TtyHostStartupTests
     [InlineData("PowerShell")]
     public async Task PowerShellFirstReadLine_PreservesExactCommandAndRestoresOriginalHook(string shellName)
     {
-        var shell = new ShellRegistry().GetConfigurationByName(shellName)!;
+        var shell = new ShellRegistry().GetConfiguration(Enum.Parse<ShellType>(shellName));
         if (!shell.IsAvailable())
         {
             Assert.Skip($"{shellName} is not installed on this platform.");
@@ -61,7 +61,7 @@ public sealed class TtyHostStartupTests
     [InlineData("PowerShell")]
     public void BuildShellLaunch_SuppliesPowerShellBookmarkThroughFirstReadLine(string shellName)
     {
-        var shell = new ShellRegistry().GetConfigurationByName(shellName)!;
+        var shell = new ShellRegistry().GetConfiguration(Enum.Parse<ShellType>(shellName));
 
         var launch = TtyHost.Program.BuildShellLaunch(shell, "codex --yolo");
 
