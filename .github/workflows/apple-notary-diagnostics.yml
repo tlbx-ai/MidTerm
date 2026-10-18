@@ -11,7 +11,7 @@ permissions: {}
 jobs:
   check-access:
     runs-on: macos-14
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Check team and notarization access without uploading
         shell: bash
@@ -63,4 +63,67 @@ jobs:
               sys.exit(1)
 
           report('PASS: Apple notarization history is accessible with the CI credentials. No build or upload was performed. Submission history is not printed.')
+          PY
+
+      - name: Verify account authentication and team membership through App Store Connect
+        if: always()
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          def report(message):
+              print(message, flush=True)
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+                  summary.write(message + '\n\n')
+
+          required = ('APPLE_ID', 'APPLE_ID_PASSWORD', 'APPLE_TEAM_ID')
+          if any(not os.environ.get(name) for name in required):
+              report('Account membership check skipped: required Apple secrets are missing.')
+              sys.exit(1)
+
+          command = [
+              'xcrun', 'altool', '--list-providers',
+              '-u', os.environ['APPLE_ID'],
+              '-p', '@env:APPLE_ID_PASSWORD',
+              '--output-format', 'json',
+          ]
+          try:
+              result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+          except subprocess.TimeoutExpired:
+              report('FAIL: App Store Connect account check timed out after 120 seconds.')
+              sys.exit(1)
+
+          if result.returncode:
+              diagnostic = (result.stderr + '\n' + result.stdout).strip()
+              for name in required:
+                  diagnostic = diagnostic.replace(os.environ[name], '[redacted]')
+              report('FAIL: altool provider lookup returned exit code ' + str(result.returncode) + '.')
+              report('Apple response:\n\n```text\n' + diagnostic[:4000] + '\n```')
+              sys.exit(1)
+
+          try:
+              data = json.loads(result.stdout)
+          except json.JSONDecodeError:
+              report('FAIL: App Store Connect returned an unexpected response format; provider data was not printed.')
+              sys.exit(1)
+
+          providers = data.get('providers')
+          if not isinstance(providers, list):
+              report('FAIL: No provider list in the App Store Connect response. Top-level fields: ' + ', '.join(sorted(data)))
+              sys.exit(1)
+
+          report('PASS: App Store Connect accepted the CI Apple ID and app-specific password.')
+          matches = [provider for provider in providers if provider.get('WWDRTeamID') == os.environ['APPLE_TEAM_ID']]
+          if not matches:
+              report('FAIL: The CI Apple account does not list the configured team among its App Store Connect providers. Provider count: ' + str(len(providers)) + '.')
+              sys.exit(1)
+          report('PASS: App Store Connect confirms the CI account belongs to the configured team. Provider count: ' + str(len(providers)) + '. Provider identifiers and account details were not printed.')
           PY
