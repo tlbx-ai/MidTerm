@@ -117,8 +117,7 @@ export function setToggleRecording(recording: boolean): void {
     toggleBtn.classList.toggle('recording', recording);
     const icon = toggleBtn.querySelector('.icon');
     if (icon) {
-      // &#xe912; is play, &#xe996; is stop
-      icon.innerHTML = recording ? '&#xe996;' : '&#xe912;';
+      icon.textContent = recording ? '\uea17' : '\uea15';
     }
   }
 }
