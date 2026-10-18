@@ -9540,6 +9540,18 @@ body.shared-session-mode .session-tab-bar {
   overflow: hidden;
 }
 
+@media (max-width: 768px) {
+  .chat-panel:not(.hidden) {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    width: 100%;
+    box-sizing: border-box;
+    padding: var(--safe-area-inset-top) var(--safe-area-inset-right)
+      var(--safe-area-inset-bottom) var(--safe-area-inset-left);
+  }
+}
+
 .chat-header {
   display: flex;
   align-items: center;
@@ -10014,6 +10026,12 @@ body.shared-session-mode .session-tab-bar {
 
 .chat-markdown > :last-child {
   margin-bottom: 0;
+}
+
+.chat-markdown :is(h1, h2, h3, h4) {
+  margin: 8px 0;
+  font-size: 1em;
+  font-weight: 600;
 }
 
 .chat-markdown ul,

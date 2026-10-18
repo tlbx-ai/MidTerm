@@ -323,7 +323,7 @@ export interface AppState {
 /** Chat message role */
 export type ChatRole = 'user' | 'assistant' | 'tool';
 
-/** Chat message from voice server */
+/** Message in the local voice conversation. */
 export interface ChatMessage {
   role: ChatRole;
   content: string;
