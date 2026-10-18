@@ -127,3 +127,42 @@ jobs:
               sys.exit(1)
           report('PASS: App Store Connect confirms the CI account belongs to the configured team. Provider count: ' + str(len(providers)) + '. Provider identifiers and account details were not printed.')
           PY
+
+      - name: Check whether App Store Connect application access is also blocked
+        if: always()
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          try:
+              result = subprocess.run([
+                  'xcrun', 'altool', '--list-apps', '-u', os.environ['APPLE_ID'],
+                  '-p', '@env:APPLE_ID_PASSWORD', '--output-format', 'json',
+              ], capture_output=True, text=True, timeout=120)
+          except subprocess.TimeoutExpired:
+              message = 'FAIL: App Store Connect application access timed out after 120 seconds.'
+          else:
+              if not result.returncode:
+                  message = 'PASS: App Store Connect application listing is accessible. Application data was not printed.'
+              else:
+                  try:
+                      data = json.loads(result.stdout)
+                      errors = json.dumps(data.get('product-errors', data.get('errors', [])))
+                  except json.JSONDecodeError:
+                      errors = '(No structured error response.)'
+                  detail = result.stderr + '\n' + errors
+                  for name in ('APPLE_ID', 'APPLE_ID_PASSWORD'):
+                      detail = detail.replace(os.environ.get(name, ''), '[redacted]') if os.environ.get(name) else detail
+                  message = 'FAIL: App Store Connect application listing returned exit code ' + str(result.returncode) + '.\n\n```text\n' + detail[:4000] + '\n```'
+          print(message)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              summary.write(message + '\n\n')
+          sys.exit(0 if message.startswith('PASS:') else 1)
+          PY
