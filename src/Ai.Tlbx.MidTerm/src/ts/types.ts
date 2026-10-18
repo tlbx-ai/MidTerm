@@ -328,6 +328,7 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   toolName?: string;
+  toolRequestId?: string;
   timestamp: string;
 }
 

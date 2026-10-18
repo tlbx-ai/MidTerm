@@ -111,6 +111,7 @@ async function handleTool(event: VoiceEvent, socket: WebSocket): Promise<void> {
   addChatMessage({
     role: 'assistant',
     content: `Calling tool: ${event.tool}\n${JSON.stringify(args, null, 2)}`,
+    toolRequestId: event.requestId,
     timestamp: new Date().toISOString(),
   });
   const response = approved
@@ -125,6 +126,7 @@ async function handleTool(event: VoiceEvent, socket: WebSocket): Promise<void> {
     role: 'tool',
     content: JSON.stringify(response),
     toolName: event.tool,
+    toolRequestId: event.requestId,
     timestamp: new Date().toISOString(),
   });
   if (isCurrentSocket(socket)) socket.send(JSON.stringify(response));
