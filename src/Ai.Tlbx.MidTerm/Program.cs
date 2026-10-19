@@ -390,6 +390,7 @@ public class Program
         EndpointSetup.DetectCodeSigning();
 
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
+        Services.Voice.VoiceEndpoints.MapVoiceEndpoints(app, settingsService);
         SecurityEndpoints.MapSecurityEndpoints(app, securityStatusService, apiKeyService);
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
         EndpointSetup.MapSystemEndpoints(app, sessionManager, updateService, settingsService, version);

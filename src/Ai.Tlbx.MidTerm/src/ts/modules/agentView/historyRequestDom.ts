@@ -165,6 +165,18 @@ function createUserInputRequestForm(args: {
       draftAnswers,
     ),
   );
+  // Draft edits keep the focused input node alive. The virtualized row does
+  // not need a structural rerender just to enable its existing submit button.
+  const syncSubmit = (): void => {
+    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (submit) {
+      submit.disabled =
+        state.requestBusyIds.has(request.requestId) ||
+        !hasDraftAnswerForQuestion(ensureRequestDraftAnswers(state, request), activeQuestion);
+    }
+  };
+  form.addEventListener('input', syncSubmit);
+  form.addEventListener('change', syncSubmit);
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     if (activeQuestionIndex < request.questions.length - 1) {
@@ -301,7 +313,9 @@ function createRequestPanelHeader(
           },
         ))
       : summarizeRequestInterruption(request, appServerControlText, appServerControlFormat);
-  header.appendChild(summary);
+  if (!isCancelledRequest(request)) {
+    header.appendChild(summary);
+  }
 
   if (approvalDetail?.technicalDetail) {
     const disclosure = document.createElement('details');
@@ -315,7 +329,11 @@ function createRequestPanelHeader(
     detail.textContent = approvalDetail.technicalDetail;
     disclosure.append(label, detail);
     header.appendChild(disclosure);
-  } else if (request.kind === 'interview' && request.detail?.trim()) {
+  } else if (
+    request.kind === 'interview' &&
+    request.questions.length === 0 &&
+    request.detail?.trim()
+  ) {
     const detail = document.createElement('p');
     detail.className = 'agent-request-detail';
     detail.textContent = request.detail;
@@ -329,6 +347,9 @@ function summarizeRequestEyebrow(
   request: AppServerControlHistoryRequestSummary,
   appServerControlText: AppServerControlText,
 ): string {
+  if (isCancelledRequest(request)) {
+    return appServerControlText('appServerControl.request.cancelled', 'Cancelled');
+  }
   if (request.kind === 'interview') {
     return request.state === 'open'
       ? appServerControlText('appServerControl.request.pendingUserInput', 'Input required')
@@ -338,6 +359,10 @@ function summarizeRequestEyebrow(
   return request.state === 'open'
     ? appServerControlText('appServerControl.request.approvalRequired', 'Approval required')
     : appServerControlText('appServerControl.request.completedApproval', 'Approval resolved');
+}
+
+function isCancelledRequest(request: AppServerControlHistoryRequestSummary): boolean {
+  return request.state === 'cancelled' || request.decision === 'cancel';
 }
 
 function summarizeRequestInterruption(
@@ -366,6 +391,17 @@ function summarizeRequestInterruption(
   if (request.kind === 'interview') {
     const activeQuestion = request.questions[0];
     if (request.questions.length === 1 && activeQuestion?.options.length) {
+      if (activeQuestion.allowCustomAnswer) {
+        return activeQuestion.multiSelect
+          ? appServerControlText(
+              'appServerControl.request.selectManyOrCustom',
+              'Select options or enter your own answer.',
+            )
+          : appServerControlText(
+              'appServerControl.request.selectOneOrCustom',
+              'Select an option or enter your own answer.',
+            );
+      }
       return activeQuestion.multiSelect
         ? appServerControlFormat(
             'appServerControl.request.selectManyToContinue',
@@ -443,7 +479,14 @@ function createResolvedInterviewSummary(
     const answers = answer?.answers.filter((entry) => entry.trim().length > 0) ?? [];
     value.textContent =
       answers.length > 0
-        ? answers.join(', ')
+        ? question.isSecret
+          ? '••••••••'
+          : answers
+              .map(
+                (answer) =>
+                  question.options.find((option) => option.value === answer)?.label ?? answer,
+              )
+              .join(', ')
         : appServerControlText('appServerControl.request.answerSkipped', 'No answer submitted');
     item.appendChild(value);
 
@@ -524,6 +567,7 @@ function createQuestionField(args: {
         autoAdvance: false,
         deps,
         inputType: 'checkbox',
+        appServerControlText,
         question,
         request,
         selectedAnswers: draftValue,
@@ -539,6 +583,7 @@ function createQuestionField(args: {
         autoAdvance: index < totalQuestions - 1,
         deps,
         inputType: 'radio',
+        appServerControlText,
         question,
         request,
         selectedAnswers: draftValue,
@@ -549,15 +594,24 @@ function createQuestionField(args: {
   }
 
   const input = document.createElement('input');
-  input.type = 'text';
+  input.type = question.isSecret ? 'password' : 'text';
+  if (question.isSecret) {
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+  }
   input.name = question.id;
   input.className = 'agent-request-input';
   input.placeholder = appServerControlText('appServerControl.request.typeAnswer', 'Type answer');
   input.value = draftValue[0] || '';
   input.addEventListener('input', () => {
-    updateRequestDraftAnswers(deps, sessionId, request.requestId, question.id, [
-      input.value.trim(),
-    ]);
+    updateRequestDraftAnswers(
+      deps,
+      sessionId,
+      request.requestId,
+      question.id,
+      [question.isSecret ? input.value : input.value.trim()],
+      false,
+    );
   });
   wrapper.appendChild(input);
   return wrapper;
@@ -567,32 +621,45 @@ function createQuestionChoiceList(args: {
   autoAdvance: boolean;
   deps: AgentHistoryRequestDomDeps;
   inputType: 'checkbox' | 'radio';
+  appServerControlText: AppServerControlText;
   question: AppServerControlHistoryRequestSummary['questions'][number];
   request: AppServerControlHistoryRequestSummary;
   selectedAnswers: readonly string[];
   sessionId: string;
 }): HTMLElement {
-  const { autoAdvance, deps, inputType, question, request, selectedAnswers, sessionId } = args;
+  const {
+    autoAdvance,
+    deps,
+    inputType,
+    question,
+    request,
+    selectedAnswers,
+    sessionId,
+    appServerControlText,
+  } = args;
   const options = document.createElement('div');
   options.className = 'agent-request-choice-list';
 
   for (const [index, option] of question.options.entries()) {
+    const optionValue = option.value ?? option.label;
     const optionLabel = document.createElement('label');
     optionLabel.className = 'agent-request-choice';
     const input = document.createElement('input');
     input.type = inputType;
     input.name = question.id;
-    input.value = option.label;
+    input.value = optionValue;
     input.className = 'agent-request-choice-input';
-    input.checked = selectedAnswers.includes(option.label);
+    input.checked = selectedAnswers.includes(optionValue);
     input.addEventListener('change', () => {
       if (inputType === 'radio') {
+        const custom = options.querySelector<HTMLInputElement>('.agent-request-custom-input');
+        if (custom) custom.value = '';
         updateRequestDraftAnswers(
           deps,
           sessionId,
           request.requestId,
           question.id,
-          [option.label],
+          [optionValue],
           false,
         );
         if (autoAdvance) {
@@ -611,6 +678,9 @@ function createQuestionChoiceList(args: {
           `input[name="${CSS.escape(question.id)}"]:checked`,
         ),
       ).map((candidate) => candidate.value);
+      const custom = options.querySelector<HTMLInputElement>('.agent-request-custom-input');
+      if (custom?.value.trim())
+        nextAnswers.push(question.isSecret ? custom.value : custom.value.trim());
       updateRequestDraftAnswers(deps, sessionId, request.requestId, question.id, nextAnswers);
     });
     optionLabel.appendChild(input);
@@ -639,6 +709,34 @@ function createQuestionChoiceList(args: {
     options.appendChild(optionLabel);
   }
 
+  if (question.allowCustomAnswer) {
+    const custom = document.createElement('input');
+    custom.type = question.isSecret ? 'password' : 'text';
+    custom.name = question.id + ':custom';
+    if (question.isSecret) {
+      custom.autocomplete = 'off';
+      custom.spellcheck = false;
+    }
+    custom.className = 'agent-request-input agent-request-custom-input';
+    const otherLabel = appServerControlText('appServerControl.request.otherAnswer', 'Other answer');
+    custom.placeholder = otherLabel;
+    custom.setAttribute('aria-label', `${question.header || question.question}: ${otherLabel}`);
+    custom.value =
+      selectedAnswers.find(
+        (answer) => !question.options.some((option) => (option.value ?? option.label) === answer),
+      ) ?? '';
+    custom.addEventListener('input', () => {
+      const choices = Array.from(options.querySelectorAll<HTMLInputElement>('input:checked'));
+      if (!question.multiSelect && custom.value.trim()) {
+        for (const choice of choices) choice.checked = false;
+      }
+      const answers =
+        question.multiSelect || !custom.value.trim() ? choices.map((choice) => choice.value) : [];
+      if (custom.value.trim()) answers.push(question.isSecret ? custom.value : custom.value.trim());
+      updateRequestDraftAnswers(deps, sessionId, request.requestId, question.id, answers, false);
+    });
+    options.appendChild(custom);
+  }
   return options;
 }
 

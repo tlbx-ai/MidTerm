@@ -8,6 +8,122 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 [Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class MtAgentHostCodexIntegrationTests
 {
+    [Theory]
+    [InlineData("completed", false)]
+    [InlineData("inProgress", false)]
+    [InlineData("completed", true)]
+    [InlineData("inProgress", true)]
+    public async Task MtAgentHost_RestoresNativeCodexHistoryAndPreservesLiveOrdering(string status, bool paginated)
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start("thread-history", "Unused.");
+        fakeServer.EmitUsageNotifications = true;
+        fakeServer.PaginatedHistory = paginated;
+        fakeServer.ThreadHistoryJson = $$"""
+            {"id":"thread-history","turns":[{"id":"turn-history","status":"{{status}}","startedAt":1792196000,"completedAt":1792196010,"items":[
+              {"id":"user-original","type":"userMessage","content":[{"type":"text","text":"Original request."}]},
+              {"id":"user-steer","type":"userMessage","content":[{"type":"text","text":"Steering request."}]},
+              {"id":"assistant-history","type":"agentMessage","text":"Restored response."}
+            ]}]}
+            """;
+        fakeServer.BeforeHistoryNotificationJson = """
+            {"method":"item/agentMessage/delta","params":{"threadId":"thread-history","turnId":"turn-history","itemId":"assistant-history","delta":"Restored "}}
+            """;
+        fakeServer.AfterHistoryNotificationJson = """
+            {"method":"item/agentMessage/delta","params":{"threadId":"thread-history","turnId":"turn-history","itemId":"assistant-history","delta":" Live suffix."}}
+            """;
+        using var process = StartAgentHost(ResolveAgentHostDll());
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            var attach = new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "attach-history",
+                SessionId = "session-history",
+                Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = "session-history",
+                    Provider = "codex",
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    ResumeThreadId = "thread-history",
+                    AttachPoint = new SessionAgentAttachPoint
+                    {
+                        Provider = "codex",
+                        TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                        Endpoint = fakeServer.Endpoint,
+                        SharedRuntime = true
+                    }
+                }
+            };
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, attach);
+            Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput, patches, attach.CommandId)).Status);
+            var history = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, attach.SessionId,
+                h => h.Streams.AssistantText.EndsWith(" Live suffix.", StringComparison.Ordinal),
+                TimeSpan.FromSeconds(10), count: 96);
+            Assert.Equal("Restored response. Live suffix.", history.Streams.AssistantText);
+            var users = history.History.Where(h => h.Kind == "user" && h.TurnId == "turn-history").ToArray();
+            Assert.Equal(new[] { "Original request.", "Steering request." }, users.Select(h => h.Body), StringComparer.Ordinal);
+            Assert.Equal("turn-history", history.CurrentTurn.TurnId);
+            Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1792196000), history.CurrentTurn.StartedAt);
+            Assert.Null(history.CurrentTurn.Model);
+            Assert.Null(history.CurrentTurn.Effort);
+            Assert.Equal(status == "inProgress" ? "running" : "ready", history.Session.State);
+            Assert.Equal("Codex", history.Session.AgentName);
+            var usage = Assert.IsType<AppServerControlUsageSummary>(history.Session.Usage);
+            Assert.Equal(1234, usage.ContextUsedTokens);
+            Assert.Equal(128000, usage.ContextWindowTokens);
+            Assert.Equal(89000, usage.InputTokens);
+            Assert.Equal(1123, usage.OutputTokens);
+            Assert.Equal(80000, usage.CachedReadTokens);
+            Assert.Equal(0, usage.CachedWriteTokens);
+            Assert.Equal(234, usage.ReasoningTokens);
+            Assert.Equal(23, usage.PrimaryRateLimitUsedPercent);
+            Assert.Null(usage.SecondaryRateLimitUsedPercent);
+            Assert.Null(usage.CostAmount);
+            if (paginated)
+            {
+                Assert.Equal(2, fakeServer.HistoryPageCount);
+                Assert.Contains(history.History, h => h.Kind == "assistant" && h.Body == "Previous response.");
+            }
+
+            attach.CommandId = "reattach-history";
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, attach);
+            Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput, patches, attach.CommandId)).Status);
+            Assert.Equal(1, fakeServer.ThreadResumeCount);
+            if (status == "inProgress")
+            {
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput,
+                    new AppServerControlHostCommandEnvelope
+                    {
+                        CommandId = "steer-restored",
+                        SessionId = attach.SessionId,
+                        Type = "turn.steer",
+                        SteerTurn = new AppServerControlSteerRequest
+                        {
+                            ExpectedTurnId = "turn-history",
+                            Text = "Continue restored turn."
+                        }
+                    });
+                Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput, patches, "steer-restored")).Status);
+            }
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);
+        }
+    }
+
     [Fact]
     public async Task MtAgentHost_CanSteerAndCompactFakeCodexThread()
     {
@@ -61,6 +177,9 @@ public sealed class MtAgentHostCodexIntegrationTests
                 StartTurn = new AppServerControlTurnRequest
                 {
                     Text = "Keep this turn open briefly.",
+                    PlanMode = AppServerControlQuickSettings.PlanModeOn,
+                    Model = "gpt-5.3-codex",
+                    Effort = "high",
                     FastMode = AppServerControlQuickSettings.FastModeOn
                 }
             });
@@ -71,6 +190,10 @@ public sealed class MtAgentHostCodexIntegrationTests
             Assert.Equal("accepted", turnResult.Status);
             Assert.True(fakeServer.LastThreadResumeExcludeTurns);
             Assert.Equal("fast", fakeServer.LastTurnServiceTier);
+            Assert.Equal("plan", fakeServer.LastTurnCollaborationMode);
+            Assert.Equal("gpt-5.3-codex", fakeServer.LastTurnCollaborationModel);
+            Assert.Equal("high", fakeServer.LastTurnCollaborationEffort);
+            Assert.Equal("Keep this turn open briefly.", fakeServer.LastTurnText);
             var activeTurnId = Assert.IsType<string>(turnResult.Accepted?.TurnId);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
@@ -107,6 +230,12 @@ public sealed class MtAgentHostCodexIntegrationTests
                 "cmd-steer");
             Assert.Equal("accepted", steerResult.Status);
             Assert.Equal(activeTurnId, steerResult.Accepted?.TurnId);
+            var steeredHistory = await AppServerControlHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, pendingPatches, "session-control", count: 96);
+            var userMessages = steeredHistory.History.Where(item => item.Kind == "user" && item.TurnId == activeTurnId).ToArray();
+            Assert.Equal(2, userMessages.Length);
+            Assert.Equal("Keep this turn open briefly.", userMessages[0].Body);
+            Assert.Equal("Append this instruction.", userMessages[1].Body);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -120,6 +249,20 @@ public sealed class MtAgentHostCodexIntegrationTests
                     process.StandardOutput,
                     pendingPatches,
                     "cmd-compact")).Status);
+
+            _ = await WaitForTurnStateWindowAsync(process.StandardOutput, process.StandardInput, pendingPatches,
+                "session-control", "completed");
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput,
+                new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "cmd-leave-plan-mode",
+                    SessionId = "session-control",
+                    Type = "turn.start",
+                    StartTurn = new AppServerControlTurnRequest { Text = "Proceed normally.", PlanMode = AppServerControlQuickSettings.PlanModeOff }
+                });
+            Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput, pendingPatches, "cmd-leave-plan-mode")).Status);
+            Assert.Equal("default", fakeServer.LastTurnCollaborationMode);
         }
         finally
         {
@@ -215,6 +358,16 @@ public sealed class MtAgentHostCodexIntegrationTests
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
+                CommandId = "cmd-invalid-approval",
+                SessionId = "session-1",
+                Type = "request.resolve",
+                ResolveRequest = new AppServerControlRequestResolutionCommand { RequestId = request.RequestId, Decision = "invalid" }
+            });
+            Assert.Equal("rejected", (await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput, pendingPatches, "cmd-invalid-approval")).Status);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
                 CommandId = "cmd-resolve",
                 SessionId = "session-1",
                 Type = "request.resolve",
@@ -254,8 +407,13 @@ public sealed class MtAgentHostCodexIntegrationTests
         }
     }
 
-    [Fact]
-    public async Task MtAgentHost_CanDriveFakeCodexUserInputFlow()
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, false, false, true)]
+    public async Task MtAgentHost_CanDriveFakeCodexUserInputFlow(bool numericIds, bool cancel, bool custom = false, bool secret = false)
     {
         using var fakeCodex = FakeCodexPathScope.Create();
         var hostDll = ResolveAgentHostDll();
@@ -294,7 +452,8 @@ public sealed class MtAgentHostCodexIntegrationTests
                 Type = "turn.start",
                 StartTurn = new AppServerControlTurnRequest
                 {
-                    Text = "Inspect the repo and ask user for the mode.",
+                    Text = "Inspect the repo and ask user for the mode." + (numericIds ? string.Empty : " Use string RPC IDs.") +
+                        (custom ? " custom user input" : secret ? " secret user input" : string.Empty),
                     Attachments = []
                 }
             });
@@ -315,6 +474,59 @@ public sealed class MtAgentHostCodexIntegrationTests
                 count: 96);
             var userInputRequest = Assert.Single(questionWindow.Requests, request => request.Kind == "interview" && request.State == "open");
             Assert.Equal("choice", Assert.Single(userInputRequest.Questions).Id);
+            Assert.Equal(custom, userInputRequest.Questions[0].AllowCustomAnswer);
+            Assert.Equal(secret, userInputRequest.Questions[0].IsSecret);
+            if (cancel)
+            {
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "interrupt-interview",
+                    SessionId = "session-user-input",
+                    Type = "turn.interrupt",
+                    InterruptTurn = new AppServerControlInterruptRequest { TurnId = questionWindow.CurrentTurn.TurnId }
+                });
+                Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput, pendingPatches, "interrupt-interview")).Status);
+                _ = await WaitForTurnStateWindowAsync(process.StandardOutput, process.StandardInput, pendingPatches,
+                    "session-user-input", "interrupted");
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "late-interview-answer",
+                    SessionId = "session-user-input",
+                    Type = "user-input.resolve",
+                    ResolveUserInput = new AppServerControlUserInputResolutionCommand
+                    {
+                        RequestId = userInputRequest.RequestId,
+                        Answers = [new AppServerControlAnsweredQuestion { QuestionId = "choice", Answers = [secret ? "FIXTURE_SECRET_96" : custom ? "Careful" : "Safe"] }]
+                    }
+                });
+                Assert.Equal("rejected", (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput, pendingPatches, "late-interview-answer")).Status);
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "after-interrupted-interview",
+                    SessionId = "session-user-input",
+                    Type = "turn.start",
+                    StartTurn = new AppServerControlTurnRequest { Text = "Continue normally." }
+                });
+                Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
+                    process.StandardOutput, pendingPatches, "after-interrupted-interview")).Status);
+                return;
+            }
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-invalid-user-answer",
+                SessionId = "session-user-input",
+                Type = "user-input.resolve",
+                ResolveUserInput = new AppServerControlUserInputResolutionCommand
+                {
+                    RequestId = userInputRequest.RequestId,
+                    Answers = []
+                }
+            });
+            Assert.Equal("rejected", (await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput, pendingPatches, "cmd-invalid-user-answer")).Status);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -329,7 +541,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                         new AppServerControlAnsweredQuestion
                         {
                             QuestionId = "choice",
-                            Answers = ["Safe"]
+                            Answers = [secret ? "FIXTURE_SECRET_96" : custom ? "Careful" : "Safe"]
                         }
                     ]
                 }
@@ -344,7 +556,19 @@ public sealed class MtAgentHostCodexIntegrationTests
                 pendingPatches,
                 "session-user-input",
                 "completed");
+            resolveWindow = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, pendingPatches, "session-user-input",
+                window => window.Notices.Any(notice => notice.Message == "Codex resolved a server request."),
+                TimeSpan.FromSeconds(10), count: 96);
+            Assert.DoesNotContain(resolveWindow.History, item => item.Body.Contains("Codex resolved a server request.", StringComparison.Ordinal));
             Assert.Contains(resolveWindow.Requests, request => request.RequestId == userInputRequest.RequestId && request.State == "resolved");
+            var retainedAnswer = resolveWindow.Requests.Single(request => request.RequestId == userInputRequest.RequestId).Answers.Single().Answers.Single();
+            Assert.Equal(secret ? "[redacted]" : custom ? "Careful" : "Safe", retainedAnswer);
+            if (secret)
+            {
+                Assert.Contains(resolveWindow.History, item => item.Body.Contains("Native secret receipt verified.", StringComparison.Ordinal));
+                Assert.DoesNotContain(resolveWindow.History, item => item.Body.Contains("FIXTURE_SECRET_96", StringComparison.Ordinal) || item.Answers.Any(answer => answer.Answers.Contains("FIXTURE_SECRET_96", StringComparer.Ordinal)));
+            }
             Assert.Contains(resolveWindow.History, item => item.RequestId == userInputRequest.RequestId && item.ItemType == "interview");
         }
         finally

@@ -26,6 +26,7 @@ import {
   getSessionAgentFeed,
   getSessionAgentVibe,
   getHistory,
+  getAppServerControlHistoryWindow,
   sendSessionPrompt,
 } from '../api/client';
 import {
@@ -57,7 +58,6 @@ import {
 import type {
   VoiceToolRequest,
   VoiceToolResponse,
-  VoiceToolName,
   MakeInputArgs,
   ReadScrollbackArgs,
   InteractiveReadArgs,
@@ -419,7 +419,7 @@ function parseEscapeSequences(text: string): string {
  * Sleep helper for delays between operations.
  */
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.min(ms, 10_000))));
 }
 
 function resolveSessionId(sessionId?: string | null): string | null {
@@ -680,6 +680,8 @@ async function buildSessionOverview(
     summary.repos = compactGitRepos(getCachedGitReposForSession(session.id));
   }
 
+  if (session.appServerControlOnly) summary.surface = 'agent-controller';
+
   return summary;
 }
 
@@ -703,6 +705,9 @@ async function handleMakeInput(args: MakeInputArgs): Promise<MakeInputResult> {
   }
 
   const parsedText = parseEscapeSequences(expandNamedKeys(text));
+  if (session.appServerControlOnly) {
+    throw new Error('Agent Controller sessions accept structured prompts. Use send_prompt.');
+  }
   sendInput(sessionId, parsedText);
 
   await sleep(delayMs);
@@ -739,6 +744,9 @@ function handleReadScrollback(args: ReadScrollbackArgs): ReadScrollbackResult {
   }
 
   const termState = sessionTerminals.get(sessionId);
+  if (session.appServerControlOnly) {
+    throw new Error('Agent Controller history is provider-backed. Use session_activity.');
+  }
   if (!termState?.terminal) {
     return {
       content: `Terminal for session ${sessionId} is not rendered`,
@@ -1158,6 +1166,14 @@ async function handleSessionActivity(args: SessionActivityArgs): Promise<unknown
   const bellLimit = Math.max(0, Math.min(args.bellLimit ?? 8, 25));
   const feeds = await Promise.all(
     sessions.map(async (session) => {
+      if (session.appServerControlOnly) {
+        return {
+          sessionId: session.id,
+          title: session.name || session.terminalTitle || null,
+          surface: 'agent-controller',
+          history: await getAppServerControlHistoryWindow(session.id, undefined, 40),
+        };
+      }
       const feed = await getSessionAgentFeed(session.id, tailLines, activitySeconds, bellLimit);
       return {
         sessionId: session.id,
@@ -2900,44 +2916,47 @@ async function handleBookmarks(args: BookmarksArgs): Promise<unknown> {
   };
 }
 
-const voiceToolHandlers: Record<
-  VoiceToolName,
-  (args: Record<string, unknown>) => Promise<unknown>
-> = {
-  state_of_things: () => Promise.resolve(handleStateOfThings()),
-  session_overview: (args) => handleSessionOverview(args),
-  conversation_continuity: (args) => handleConversationContinuity(args),
-  focus_context: (args) => Promise.resolve(handleFocusContext(args as unknown as FocusContextArgs)),
-  campaign_goal: (args) => Promise.resolve(handleCampaignGoal(args as unknown as CampaignGoalArgs)),
-  campaign_status: (args) => handleCampaignStatus(args),
-  campaign_report: (args) => handleCampaignReport(args),
-  app_shell: (args) => Promise.resolve(handleAppShell(args as unknown as AppShellArgs)),
-  make_input: (args) => handleMakeInput(args as unknown as MakeInputArgs),
-  read_scrollback: (args) =>
-    Promise.resolve(handleReadScrollback(args as unknown as ReadScrollbackArgs)),
-  interactive_read: (args) => handleInteractiveRead(args as unknown as InteractiveReadArgs),
-  create_session: (args) => handleCreateSession(args),
-  select_session: (args) =>
-    Promise.resolve(handleSelectSession(args as unknown as SelectSessionArgs)),
-  send_prompt: (args) => handleSendPrompt(args as unknown as SendPromptArgs),
-  agent_turn: (args) => handleAgentTurn(args as unknown as AgentTurnArgs),
-  campaign_dispatch: (args) => handleCampaignDispatch(args as unknown as CampaignDispatchArgs),
-  session_activity: (args) => handleSessionActivity(args),
-  session_turn_summary: (args) =>
-    handleSessionTurnSummary(args as unknown as SessionTurnSummaryArgs),
-  wait_for_turn_completion: (args) =>
-    handleWaitForTurnCompletion(args as unknown as WaitForTurnCompletionArgs),
-  dev_browser_open: (args) => handleDevBrowserOpen(args as unknown as DevBrowserOpenArgs),
-  dev_browser_status: (args) => handleDevBrowserStatus(args),
-  dev_browser_command: (args) => handleDevBrowserCommand(args as unknown as DevBrowserCommandArgs),
-  dev_browser_screenshot: (args) => handleDevBrowserScreenshot(args),
-  repo_monitor: (args) => handleRepoMonitor(args as unknown as RepoMonitorArgs),
-  layout_control: (args) =>
-    Promise.resolve(handleLayoutControl(args as unknown as LayoutControlArgs)),
-  close_session: (args) => handleCloseSession(args as unknown as CloseSessionArgs),
-  bookmarks: (args) => handleBookmarks(args as unknown as BookmarksArgs),
-  wait_for_user: () => Promise.resolve({ success: true, waiting: true }),
-};
+type VoiceToolHandler = (args: Record<string, unknown>) => Promise<unknown>;
+const voiceToolHandlers = new Map<string, VoiceToolHandler>(
+  Object.entries<VoiceToolHandler>({
+    state_of_things: () => Promise.resolve(handleStateOfThings()),
+    session_overview: (args) => handleSessionOverview(args),
+    conversation_continuity: (args) => handleConversationContinuity(args),
+    focus_context: (args) =>
+      Promise.resolve(handleFocusContext(args as unknown as FocusContextArgs)),
+    campaign_goal: (args) =>
+      Promise.resolve(handleCampaignGoal(args as unknown as CampaignGoalArgs)),
+    campaign_status: (args) => handleCampaignStatus(args),
+    campaign_report: (args) => handleCampaignReport(args),
+    app_shell: (args) => Promise.resolve(handleAppShell(args as unknown as AppShellArgs)),
+    make_input: (args) => handleMakeInput(args as unknown as MakeInputArgs),
+    read_scrollback: (args) =>
+      Promise.resolve(handleReadScrollback(args as unknown as ReadScrollbackArgs)),
+    interactive_read: (args) => handleInteractiveRead(args as unknown as InteractiveReadArgs),
+    create_session: (args) => handleCreateSession(args),
+    select_session: (args) =>
+      Promise.resolve(handleSelectSession(args as unknown as SelectSessionArgs)),
+    send_prompt: (args) => handleSendPrompt(args as unknown as SendPromptArgs),
+    agent_turn: (args) => handleAgentTurn(args as unknown as AgentTurnArgs),
+    campaign_dispatch: (args) => handleCampaignDispatch(args as unknown as CampaignDispatchArgs),
+    session_activity: (args) => handleSessionActivity(args),
+    session_turn_summary: (args) =>
+      handleSessionTurnSummary(args as unknown as SessionTurnSummaryArgs),
+    wait_for_turn_completion: (args) =>
+      handleWaitForTurnCompletion(args as unknown as WaitForTurnCompletionArgs),
+    dev_browser_open: (args) => handleDevBrowserOpen(args as unknown as DevBrowserOpenArgs),
+    dev_browser_status: (args) => handleDevBrowserStatus(args),
+    dev_browser_command: (args) =>
+      handleDevBrowserCommand(args as unknown as DevBrowserCommandArgs),
+    dev_browser_screenshot: (args) => handleDevBrowserScreenshot(args),
+    repo_monitor: (args) => handleRepoMonitor(args as unknown as RepoMonitorArgs),
+    layout_control: (args) =>
+      Promise.resolve(handleLayoutControl(args as unknown as LayoutControlArgs)),
+    close_session: (args) => handleCloseSession(args as unknown as CloseSessionArgs),
+    bookmarks: (args) => handleBookmarks(args as unknown as BookmarksArgs),
+    wait_for_user: () => Promise.resolve({ success: true, waiting: true }),
+  }),
+);
 
 /**
  * Process a tool request from the voice server.
@@ -2947,7 +2966,8 @@ export async function processToolRequest(request: VoiceToolRequest): Promise<Voi
   log.info(() => `Processing tool request: ${request.tool} (${request.requestId})`);
 
   try {
-    const handler = voiceToolHandlers[request.tool];
+    const handler = voiceToolHandlers.get(request.tool);
+    if (!handler) throw new Error('Unknown voice tool.');
     const result = await handler(request.args);
 
     log.info(() => `Tool ${request.tool} completed successfully`);

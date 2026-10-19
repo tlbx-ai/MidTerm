@@ -1,6 +1,7 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
+import { randomUUID } from "node:crypto";
 
 class AsyncMessageQueue {
   #values = [];
@@ -16,7 +17,8 @@ class AsyncMessageQueue {
 
   close() {
     this.#closed = true;
-    for (const waiter of this.#waiters.splice(0)) waiter({ value: undefined, done: true });
+    for (const waiter of this.#waiters.splice(0))
+      waiter({ value: undefined, done: true });
   }
 
   [Symbol.asyncIterator]() {
@@ -24,7 +26,8 @@ class AsyncMessageQueue {
       next: () => {
         const value = this.#values.shift();
         if (value !== undefined) return Promise.resolve({ value, done: false });
-        if (this.#closed) return Promise.resolve({ value: undefined, done: true });
+        if (this.#closed)
+          return Promise.resolve({ value: undefined, done: true });
         return new Promise((resolve) => this.#waiters.push(resolve));
       },
     };
@@ -39,7 +42,6 @@ let runtime;
 let runtimeTask;
 let currentSessionId;
 let activeTurnId;
-let nextRequestId = 0;
 
 function emit(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -59,7 +61,12 @@ function permissionMode(value, planMode) {
   return value === "auto" ? "bypassPermissions" : "default";
 }
 
-const supportedImageMimeTypes = new Set(["image/gif", "image/jpeg", "image/png", "image/webp"]);
+const supportedImageMimeTypes = new Set([
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
 async function makeUserMessage(command) {
   const content = [];
@@ -69,7 +76,9 @@ async function makeUserMessage(command) {
   for (const attachment of command.attachments ?? []) {
     if (attachment.kind !== "image") continue;
     if (!supportedImageMimeTypes.has(attachment.mimeType)) {
-      throw new Error(`Unsupported Claude image attachment type '${attachment.mimeType}'.`);
+      throw new Error(
+        `Unsupported Claude image attachment type '${attachment.mimeType}'.`,
+      );
     }
     const bytes = await readFile(attachment.path);
     content.push({
@@ -85,6 +94,7 @@ async function makeUserMessage(command) {
     type: "user",
     session_id: currentSessionId ?? configuration.sessionId,
     parent_tool_use_id: null,
+    ...(command.type === "turn.steer" ? { priority: "now" } : {}),
     message: { role: "user", content },
   };
 }
@@ -104,26 +114,73 @@ function waitForResolution(map, requestId, signal, fallback) {
 }
 
 async function canUseTool(toolName, toolInput, options) {
-  const requestId = `claude-request-${++nextRequestId}`;
+  if (toolName === "ExitPlanMode") {
+    const input = toolInput?.type === "record" ? toolInput.value : toolInput;
+    if (typeof input?.plan === "string" && input.plan.trim()) {
+      emit({
+        type: "bridge.proposed_plan",
+        turnId: activeTurnId,
+        toolUseId: options.toolUseID,
+        markdown: input.plan,
+      });
+    }
+    return {
+      behavior: "deny",
+      message:
+        "Stop here and wait for the user's feedback or implementation request in a later turn.",
+      toolUseID: options.toolUseID,
+    };
+  }
+  const requestId = `claude-request-${randomUUID()}`;
   if (toolName === "AskUserQuestion") {
     const questions = Array.isArray(toolInput.questions)
       ? toolInput.questions.map((question, index) => ({
-          id: typeof question.question === "string" && question.question ? question.question : `q-${index}`,
-          header: typeof question.header === "string" ? question.header : `Question ${index + 1}`,
-          question: typeof question.question === "string" ? question.question : "",
+          id:
+            typeof question.question === "string" && question.question
+              ? question.question
+              : `q-${index}`,
+          header:
+            typeof question.header === "string"
+              ? question.header
+              : `Question ${index + 1}`,
+          question:
+            typeof question.question === "string" ? question.question : "",
           options: Array.isArray(question.options)
             ? question.options.map((option) => ({
                 label: typeof option.label === "string" ? option.label : "",
-                description: typeof option.description === "string" ? option.description : "",
+                description:
+                  typeof option.description === "string"
+                    ? option.description
+                    : "",
               }))
             : [],
           multiSelect: question.multiSelect === true,
         }))
       : [];
-    emit({ type: "bridge.user_input_request", requestId, turnId: activeTurnId, questions });
-    const answers = await waitForResolution(pendingUserInputs, requestId, options.signal, null);
-    if (answers === null) return { behavior: "deny", message: "User cancelled the question." };
-    return { behavior: "allow", updatedInput: { ...toolInput, answers } };
+    emit({
+      type: "bridge.user_input_request",
+      requestId,
+      turnId: activeTurnId,
+      questions,
+    });
+    const answers = await waitForResolution(
+      pendingUserInputs,
+      requestId,
+      options.signal,
+      null,
+    );
+    if (answers === null)
+      return { behavior: "deny", message: "User cancelled the question." };
+    const sdkAnswers = Object.fromEntries(
+      Object.entries(answers).map(([question, values]) => [
+        question,
+        values.join(", "),
+      ]),
+    );
+    return {
+      behavior: "allow",
+      updatedInput: { ...toolInput, answers: sdkAnswers },
+    };
   }
 
   emit({
@@ -134,11 +191,20 @@ async function canUseTool(toolName, toolInput, options) {
     toolUseId: options.toolUseID,
     input: toolInput,
   });
-  const decision = await waitForResolution(pendingPermissions, requestId, options.signal, "cancel");
-  if (decision === "accept") return { behavior: "allow", updatedInput: toolInput };
+  const decision = await waitForResolution(
+    pendingPermissions,
+    requestId,
+    options.signal,
+    "cancel",
+  );
+  if (decision === "accept")
+    return { behavior: "allow", updatedInput: toolInput };
   return {
     behavior: "deny",
-    message: decision === "cancel" ? "User cancelled tool execution." : "User declined tool execution.",
+    message:
+      decision === "cancel"
+        ? "User cancelled tool execution."
+        : "User declined tool execution.",
   };
 }
 
@@ -156,11 +222,14 @@ async function startRuntime(command) {
       env: process.env,
       canUseTool,
       permissionMode: mode,
-      ...(mode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
-      ...(configuration.resume ? { resume: configuration.resume } : { sessionId: configuration.sessionId }),
+      allowDangerouslySkipPermissions: true,
+      ...(configuration.resume
+        ? { resume: configuration.resume }
+        : { sessionId: configuration.sessionId }),
       ...(command.model ? { model: command.model } : {}),
       ...(command.effort ? { effort: command.effort } : {}),
-      ...(Array.isArray(command.additionalDirectories) && command.additionalDirectories.length
+      ...(Array.isArray(command.additionalDirectories) &&
+      command.additionalDirectories.length
         ? { additionalDirectories: command.additionalDirectories }
         : {}),
       stderr: (data) => emit({ type: "bridge.stderr", message: data }),
@@ -169,7 +238,8 @@ async function startRuntime(command) {
   runtimeTask = (async () => {
     try {
       for await (const message of runtime) {
-        if (typeof message.session_id === "string" && message.session_id) currentSessionId = message.session_id;
+        if (typeof message.session_id === "string" && message.session_id)
+          currentSessionId = message.session_id;
         emit(message);
       }
       emit({ type: "bridge.closed" });
@@ -182,27 +252,53 @@ async function startRuntime(command) {
 async function handle(command) {
   switch (command.type) {
     case "initialize":
-      if (configuration) throw new Error("Claude bridge is already initialized.");
+      if (configuration)
+        throw new Error("Claude bridge is already initialized.");
       configuration = command;
-      emit({ type: "bridge.ready", sdk: "@anthropic-ai/claude-agent-sdk", sdkVersion: "0.3.170" });
+      if (command.resume && command.loadHistory) {
+        const messages = await getSessionMessages(command.resume, {
+          dir: command.cwd,
+        });
+        emit({ type: "bridge.history", messages });
+      }
+      await startRuntime(command);
+      const initialized = await runtime.initializationResult();
+      emit({
+        type: "bridge.ready",
+        sdk: "@anthropic-ai/claude-agent-sdk",
+        sdkVersion: __CLAUDE_AGENT_SDK_VERSION__,
+        models: initialized.models ?? [],
+        commands: initialized.commands ?? [],
+      });
       return;
     case "turn.start":
     case "turn.steer": {
       if (!configuration) throw new Error("Claude bridge is not initialized.");
       await startRuntime(command);
       activeTurnId = command.turnId;
-      if (command.model) await runtime.setModel(command.model);
-      await runtime.setPermissionMode(permissionMode(command.permissionMode, command.planMode));
+      await runtime.setModel(command.model ?? undefined);
+      await runtime.applyFlagSettings({ effortLevel: command.effort ?? null });
+      await runtime.setPermissionMode(
+        permissionMode(command.permissionMode, command.planMode),
+      );
       prompts.push(await makeUserMessage(command));
       return;
     }
-    case "turn.interrupt":
-      if (runtime) await runtime.interrupt();
-      emit({ type: "bridge.interrupted", turnId: command.turnId });
+    case "turn.interrupt": {
+      const receipt = runtime ? await runtime.interrupt() : undefined;
+      emit({
+        type: "bridge.interrupted",
+        turnId: command.turnId,
+        hasQueuedWork: (receipt?.still_queued?.length ?? 0) > 0,
+      });
       return;
+    }
     case "permission.resolve": {
       const resolve = pendingPermissions.get(command.requestId);
-      if (!resolve) throw new Error(`Claude permission request was not found: ${command.requestId}`);
+      if (!resolve)
+        throw new Error(
+          `Claude permission request was not found: ${command.requestId}`,
+        );
       resolve(command.decision);
       emit({
         type: "bridge.permission_resolved",
@@ -213,9 +309,15 @@ async function handle(command) {
     }
     case "user_input.resolve": {
       const resolve = pendingUserInputs.get(command.requestId);
-      if (!resolve) throw new Error(`Claude user input request was not found: ${command.requestId}`);
+      if (!resolve)
+        throw new Error(
+          `Claude user input request was not found: ${command.requestId}`,
+        );
       resolve(command.answers ?? {});
-      emit({ type: "bridge.user_input_resolved", requestId: command.requestId });
+      emit({
+        type: "bridge.user_input_resolved",
+        requestId: command.requestId,
+      });
       return;
     }
     case "shutdown":
@@ -242,7 +344,7 @@ input.on("line", (line) => {
     .catch((error) =>
       fail("Claude bridge command failed.", error, {
         commandType: command?.type,
-        requestId: command?.requestId,
+        requestId: command?.requestId ?? command?.turnId,
       }),
     );
 });

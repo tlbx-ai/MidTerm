@@ -26,7 +26,8 @@
     "watch:typecheck": "node node_modules/typescript-compiler/bin/tsc --noEmit -p tsconfig.json --watch",
     "generate:types": "npx openapi-typescript openapi/openapi.json -o src/ts/api.generated.ts && npx prettier --write src/ts/api.generated.ts",
     "generate:openapi": "dotnet build ../Ai.Tlbx.MidTerm.OpenApi/Ai.Tlbx.MidTerm.OpenApi.csproj && npm run generate:types",
-    "test": "vitest run && npm run test:kitty-graphics",
+    "test": "vitest run && npm run test:kitty-graphics && npm run test:acp-diagnostics",
+    "test:acp-diagnostics": "node ../../scripts/perf/tlbx-acp-question-smoke.mjs --self-test-diagnostics",
     "test:kitty-graphics": "node ../../scripts/kitty-graphics-test.mjs --self-test",
     "test:watch": "vitest",
     "verify": "npm run typecheck && npm run lint && npm run test"

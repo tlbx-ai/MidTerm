@@ -15,6 +15,67 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "tlbx-cli-tests", Guid.NewGuid().ToString("N"));
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CodexPreviewSelectionSurvivesVerifiedRenewalsButNotSessionChanges(bool bash)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        var sessionId = "abcdefgh";
+        var resolutions = 0;
+        app.MapGet("/api/sessions/process-context", () =>
+        {
+            Interlocked.Increment(ref resolutions);
+            return Results.Text(sessionId + ":" + new string('a', 32));
+        });
+        app.MapPost("/api/browser/open", async (HttpContext context) =>
+        {
+            using var body = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
+            Assert.Equal("abcdefgh", body.RootElement.GetProperty("sessionId").GetString());
+            Assert.Equal("background-test", body.RootElement.GetProperty("previewName").GetString());
+            Assert.Equal(new string('a', 32), context.Request.Headers["X-Tlbx-Cli-Context"]);
+            sessionId = "ijklmnop";
+            return Results.Text("opened");
+        });
+        await app.StartAsync(CancellationToken.None);
+        var result = await RunContextShellAsync(bash,
+            bash ? "export CODEX_THREAD_ID=01234567-89ab-cdef-0123-456789abcdef; source \"$1\"; set -e; mt_preview background-test; mt_preview; mt_open https://example.test/; mt_preview"
+                : "$env:CODEX_THREAD_ID='01234567-89ab-cdef-0123-456789abcdef'; . $args[0]; mt_preview background-test; mt_preview; mt_open https://example.test/; mt_preview",
+            app.Urls.Single(), "deadbeef",
+            Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        Assert.True(result.ExitCode == 0, result.Error + result.Output);
+        Assert.Equal(["background-test", "background-test", "opened", "default"],
+            result.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        Assert.True(resolutions >= 4, "Every operation must still verify its calling context.");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FirstPreviewSelectionSurvivesSessionContextResolution(bool bash)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        app.MapGet("/api/sessions/process-context", () => Results.Text("abcdefgh"));
+        await app.StartAsync(CancellationToken.None);
+        var result = await RunContextShellAsync(bash,
+            bash ? "source \"$1\"; mt_preview background-test"
+                : ". $args[0]; mt_preview background-test",
+            app.Urls.Single(), "deadbeef",
+            Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        Assert.True(result.ExitCode == 0, result.Error + result.Output);
+        Assert.Equal("background-test", result.Output.Trim());
+    }
+
+    [Theory]
     [InlineData(false, "")]
     [InlineData(false, "deadbeef")]
     [InlineData(true, "")]

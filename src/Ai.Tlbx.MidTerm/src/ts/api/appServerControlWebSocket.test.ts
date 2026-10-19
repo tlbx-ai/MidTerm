@@ -96,6 +96,56 @@ describe('appServerControlWebSocket', () => {
     disconnect();
   });
 
+  it('reports an open connection to a listener subscribing after the socket opened', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const { openAppServerControlHistorySocket } = await import('./appServerControlWebSocket');
+    const firstOpen = vi.fn();
+    const first = openAppServerControlHistorySocket('session-1', 0, 0, 80, 'rev-1', {
+      onPatch: vi.fn(),
+      onOpen: firstOpen,
+    });
+    await vi.waitFor(() => expect(firstOpen).toHaveBeenCalledTimes(1));
+
+    const secondOpen = vi.fn();
+    const second = openAppServerControlHistorySocket('session-2', 0, 0, 80, 'rev-2', {
+      onPatch: vi.fn(),
+      onOpen: secondOpen,
+    });
+    await vi.waitFor(() => expect(secondOpen).toHaveBeenCalledTimes(1));
+    expect(firstOpen).toHaveBeenCalledTimes(1);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(
+      FakeWebSocket.instances[0]!.sent.map((message) => JSON.parse(message).sessionId),
+    ).toEqual(['session-1', 'session-2']);
+    second();
+    first();
+  });
+
+  it('does not notify a listener removed before an existing connection is subscribed', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const { openAppServerControlHistorySocket } = await import('./appServerControlWebSocket');
+    const firstOpen = vi.fn();
+    const first = openAppServerControlHistorySocket('session-1', 0, 0, 80, 'rev-1', {
+      onPatch: vi.fn(),
+      onOpen: firstOpen,
+    });
+    await vi.waitFor(() => expect(firstOpen).toHaveBeenCalledTimes(1));
+    const onOpen = vi.fn();
+    const disconnect = openAppServerControlHistorySocket('session-2', 0, 0, 80, 'rev-2', {
+      onPatch: vi.fn(),
+      onOpen,
+    });
+    disconnect();
+    await Promise.resolve();
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(
+      FakeWebSocket.instances[0]!.sent.filter(
+        (message) => JSON.parse(message).type === 'subscribe',
+      ),
+    ).toHaveLength(1);
+    first();
+  });
+
   it('ignores subscription history windows that do not match the current browser revision', async () => {
     vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
 

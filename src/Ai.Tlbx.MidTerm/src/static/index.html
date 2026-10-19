@@ -302,27 +302,25 @@
                   <span class="icon">&#xea15;</span>
                 </button>
                 <button
-                  id="btn-voice-sync"
-                  class="voice-btn hidden"
-                  data-i18n-title="sidebar.voiceTestConnection"
-                  title="Test Voice Server Connection"
-                >
-                  <span class="icon">&#xea2e;</span>
-                </button>
-                <button
                   id="btn-voice-chat"
                   class="voice-btn"
                   data-i18n-title="sidebar.voiceToggleChat"
                   title="Toggle Chat Panel"
                 >
-                  <span class="icon">&#xe96b;</span>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z" />
+                  </svg>
                 </button>
               </div>
               <div class="voice-settings" id="voice-settings">
                 <div class="voice-setting-row">
                   <label data-i18n="sidebar.voiceLabel">Voice</label>
                   <select id="voice-select" class="voice-select">
-                    <option value="" data-i18n="sidebar.voiceLoading">Loading...</option>
+                    <option value="marin">Marin · GPT-Live 1</option>
+                    <option value="cedar">Cedar</option>
+                    <option value="quartz">Quartz</option>
+                    <option value="ripple">Ripple</option>
+                    <option value="willow">Willow</option>
                   </select>
                 </div>
                 <div class="voice-setting-row">
@@ -331,24 +329,8 @@
                     <option value="" data-i18n="sidebar.voiceDefault">Default</option>
                   </select>
                 </div>
-                <div class="voice-setting-row">
-                  <label data-i18n="sidebar.voiceSpeed">Speed</label>
-                  <div class="voice-speed-control">
-                    <input
-                      type="range"
-                      id="voice-speed"
-                      min="0.25"
-                      max="1.5"
-                      step="0.25"
-                      value="1.0"
-                    />
-                    <span id="voice-speed-value">1.0x</span>
-                  </div>
-                </div>
               </div>
-              <div class="voice-status" id="voice-status" data-i18n="sidebar.voiceNotConnected">
-                Not connected
-              </div>
+              <div class="voice-status" id="voice-status" role="status">Not connected</div>
             </div>
           </div>
           <div class="network-section" id="network-section">
@@ -417,7 +399,9 @@
             data-i18n-title="chat.hide"
             title="Hide chat panel"
           >
-            <span class="midFont-keyboard_arrow_left"></span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="m14 6-6 6 6 6" />
+            </svg>
           </button>
         </div>
         <div class="chat-messages" id="chat-messages"></div>
@@ -994,6 +978,15 @@
                 </button>
                 <button
                   class="settings-tab"
+                  data-tab="ai-voice"
+                  role="tab"
+                  aria-selected="false"
+                  title="Provider keys and voice orchestration"
+                >
+                  <span class="icon">&#xea15;</span><span class="tab-label">AI &amp; Voice</span>
+                </button>
+                <button
+                  class="settings-tab"
                   data-tab="workflow"
                   role="tab"
                   aria-selected="false"
@@ -1072,6 +1065,111 @@
 
               <!-- Right: Content Area -->
               <div class="settings-content" role="tabpanel">
+                <section class="settings-panel hidden" data-panel="ai-voice">
+                  <h2>AI &amp; Voice</h2>
+                  <p>
+                    Talk to GPT-Live 1 to inspect and steer your terminal and Agent Controller
+                    sessions. The orchestration worker uses the model selected below.
+                  </p>
+                  <p>
+                    Keys are saved in this tlbx installation's protected secret storage. Only masked
+                    previews are returned to the browser. OpenAI is required for voice; the worker
+                    needs its provider's key.
+                  </p>
+                  <div class="setting-row ai-provider-row">
+                    <div class="setting-label">
+                      <label for="ai-key-openai">OpenAI</label
+                      ><span class="setting-description" id="ai-key-status-openai">Loading…</span>
+                    </div>
+                    <div class="setting-control ai-provider-controls">
+                      <input
+                        id="ai-key-openai"
+                        type="password"
+                        autocomplete="off"
+                        spellcheck="false"
+                        placeholder="Paste API key"
+                        aria-label="OpenAI API key"
+                      />
+                      <button id="ai-key-save-openai" type="button" class="btn-secondary">
+                        Save
+                      </button>
+                      <button id="ai-key-remove-openai" type="button" class="btn-secondary">
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                  <div class="setting-row ai-provider-row">
+                    <div class="setting-label">
+                      <label for="ai-key-google">Google</label
+                      ><span class="setting-description" id="ai-key-status-google">Loading…</span>
+                    </div>
+                    <div class="setting-control ai-provider-controls">
+                      <input
+                        id="ai-key-google"
+                        type="password"
+                        autocomplete="off"
+                        spellcheck="false"
+                        placeholder="Paste API key"
+                        aria-label="Google API key"
+                      />
+                      <button id="ai-key-save-google" type="button" class="btn-secondary">
+                        Save
+                      </button>
+                      <button id="ai-key-remove-google" type="button" class="btn-secondary">
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                  <div class="setting-row ai-provider-row">
+                    <div class="setting-label">
+                      <label for="ai-key-anthropic">Anthropic</label
+                      ><span class="setting-description" id="ai-key-status-anthropic"
+                        >Loading…</span
+                      >
+                    </div>
+                    <div class="setting-control ai-provider-controls">
+                      <input
+                        id="ai-key-anthropic"
+                        type="password"
+                        autocomplete="off"
+                        spellcheck="false"
+                        placeholder="Paste API key"
+                        aria-label="Anthropic API key"
+                      />
+                      <button id="ai-key-save-anthropic" type="button" class="btn-secondary">
+                        Save
+                      </button>
+                      <button id="ai-key-remove-anthropic" type="button" class="btn-secondary">
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                  <div class="setting-row ai-provider-row">
+                    <div class="setting-label">
+                      <label for="ai-key-xai">xAI</label
+                      ><span class="setting-description" id="ai-key-status-xai">Loading…</span>
+                    </div>
+                    <div class="setting-control ai-provider-controls">
+                      <input
+                        id="ai-key-xai"
+                        type="password"
+                        autocomplete="off"
+                        spellcheck="false"
+                        placeholder="Paste API key"
+                        aria-label="xAI API key"
+                      />
+                      <button id="ai-key-save-xai" type="button" class="btn-secondary">Save</button>
+                      <button id="ai-key-remove-xai" type="button" class="btn-secondary">
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <label for="ai-worker-model">Orchestration worker</label
+                    ><select id="ai-worker-model"></select>
+                  </div>
+                  <p id="ai-settings-status" role="status"></p>
+                </section>
                 <section class="settings-panel" data-panel="updates">
                   <h2 data-i18n="settings.updatesAbout.title">Updates &amp; About</h2>
 
@@ -2337,7 +2435,9 @@
                         <span id="setting-ui-transparency-value" class="slider-value">0%</span>
                       </div>
                     </div>
-                    <p class="setting-hint" data-i18n="settings.appearance.readingContrast">File and Git reading panes limit transparency to keep text readable.</p>
+                    <p class="setting-hint" data-i18n="settings.appearance.readingContrast">
+                      File and Git reading panes limit transparency to keep text readable.
+                    </p>
                   </div>
                 </section>
 
@@ -2392,18 +2492,40 @@
                   <div class="settings-section">
                     <h3 data-i18n="settings.sessionsStartup.runtime">Session Runtime</h3>
                     <div class="setting-row">
-                      <label for="setting-runtime-priority-boost" data-i18n="settings.behavior.runtimePriorityBoost">Boost process priority</label>
+                      <label
+                        for="setting-runtime-priority-boost"
+                        data-i18n="settings.behavior.runtimePriorityBoost"
+                        >Boost process priority</label
+                      >
                       <input type="checkbox" id="setting-runtime-priority-boost" />
                     </div>
                     <div class="setting-row">
-                      <label for="setting-runtime-priority-class" data-i18n="settings.behavior.runtimePriorityClass">Process priority</label>
+                      <label
+                        for="setting-runtime-priority-class"
+                        data-i18n="settings.behavior.runtimePriorityClass"
+                        >Process priority</label
+                      >
                       <select id="setting-runtime-priority-class">
-                        <option value="normal" data-i18n="settings.options.runtimePriorityNormal">Normal</option>
-                        <option value="aboveNormal" data-i18n="settings.options.runtimePriorityAboveNormal">Above normal</option>
-                        <option value="high" data-i18n="settings.options.runtimePriorityHigh">High</option>
+                        <option value="normal" data-i18n="settings.options.runtimePriorityNormal">
+                          Normal
+                        </option>
+                        <option
+                          value="aboveNormal"
+                          data-i18n="settings.options.runtimePriorityAboveNormal"
+                        >
+                          Above normal
+                        </option>
+                        <option value="high" data-i18n="settings.options.runtimePriorityHigh">
+                          High
+                        </option>
                       </select>
                     </div>
-                    <p class="setting-hint" data-i18n="settings.behavior.runtimePriorityHint">Windows: applies immediately to tlbx and its hosted processes, including all child processes. New processes inherit the selected priority. Child processes include compilers launched in terminals. High requires a Windows service or elevated privileges.</p>
+                    <p class="setting-hint" data-i18n="settings.behavior.runtimePriorityHint">
+                      Windows: applies immediately to tlbx and its hosted processes, including all
+                      child processes. New processes inherit the selected priority. Child processes
+                      include compilers launched in terminals. High requires a Windows service or
+                      elevated privileges.
+                    </p>
                     <div class="setting-row">
                       <label for="setting-resume-mode" data-i18n="settings.behavior.resumeMode"
                         >Session Resume Mode</label
@@ -2882,24 +3004,33 @@
                           type="button"
                           class="btn-secondary"
                           data-i18n="settings.diagnostics.performanceLogStart"
-                        >Start</button>
+                        >
+                          Start
+                        </button>
                         <button
                           id="btn-performance-log-stop"
                           type="button"
                           class="btn-secondary"
                           data-i18n="settings.diagnostics.performanceLogStop"
-                        >Stop</button>
+                        >
+                          Stop
+                        </button>
                         <button
                           id="btn-performance-log-download"
                           type="button"
                           class="btn-secondary"
                           data-i18n="settings.diagnostics.performanceLogDownload"
-                        >Download JSON</button>
-                        <code id="diag-performance-log-status" class="path-value" aria-live="polite">-</code>
+                        >
+                          Download JSON
+                        </button>
+                        <code id="diag-performance-log-status" class="path-value" aria-live="polite"
+                          >-</code
+                        >
                       </div>
                     </div>
                     <p class="diag-help-text" data-i18n="settings.diagnostics.performanceLogHint">
-                      Records timing and transport counters without terminal text. Pauses while the tab is hidden.
+                      Records timing and transport counters without terminal text. Pauses while the
+                      tab is hidden.
                     </p>
                     <div class="setting-row">
                       <label
@@ -3110,8 +3241,7 @@
                       class="diag-log-output"
                       data-i18n="settings.diagnostics.terminalKeyLogEmpty"
                     >
-Enable terminal key log to capture Enter and modifier events.</pre
-                    >
+Enable terminal key log to capture Enter and modifier events.</pre>
                   </div>
 
                   <div class="settings-section">
@@ -3808,10 +3938,18 @@ Enable terminal key log to capture Enter and modifier events.</pre
     <!-- File Viewer Modal -->
     <div id="file-viewer-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
-      <div class="modal-content file-viewer-modal-content" role="dialog" aria-modal="true" aria-labelledby="file-viewer-dialog-title" tabindex="-1">
+      <div
+        class="modal-content file-viewer-modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="file-viewer-dialog-title"
+        tabindex="-1"
+      >
         <div class="modal-header">
           <div class="file-viewer-header-info">
-            <h3 id="file-viewer-dialog-title" class="file-viewer-title" data-i18n="modal.file">File</h3>
+            <h3 id="file-viewer-dialog-title" class="file-viewer-title" data-i18n="modal.file">
+              File
+            </h3>
             <span class="file-viewer-path"></span>
           </div>
           <div class="file-viewer-header-actions">

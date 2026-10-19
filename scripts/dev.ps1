@@ -213,7 +213,7 @@ function Build-AgentHost {
     $generation = [DateTimeOffset]::UtcNow.ToString("yyyyMMddHHmmssfff")
     $outputDir = Join-Path $DevAgentHostRoot $generation
     New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
-    & dotnet build $AgentHostProjectFile -c Debug --nologo --output $outputDir
+    & dotnet build $AgentHostProjectFile -c Debug --nologo --output $outputDir | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "mtagenthost build failed"
     }
@@ -228,7 +228,7 @@ function Build-AgentHost {
 
 function Build-TmuxShim {
     Write-Host "  Building local mttmux..." -ForegroundColor DarkGray
-    & dotnet build $TmuxShimProjectFile -c Debug --nologo
+    & dotnet build $TmuxShimProjectFile -c Debug --nologo | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "mttmux build failed"
     }
@@ -240,7 +240,7 @@ function Build-WebServer {
         "-p:UseSharedCompilation=false" `
         "-m:1" `
         "--property:SkipFrontendBuild=true" `
-        "--property:DevWatch=true"
+        "--property:DevWatch=true" | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "mt build failed"
     }
@@ -282,6 +282,9 @@ function New-CodeWatcher {
     $watcher.IncludeSubdirectories = $true
     $watcher.NotifyFilter = [System.IO.NotifyFilters]'FileName, LastWrite, CreationTime, Size'
     $watcher.EnableRaisingEvents = $true
+    foreach ($eventName in @('Changed', 'Created', 'Deleted', 'Renamed', 'Error')) {
+        $null = Register-ObjectEvent -InputObject $watcher -EventName $eventName -SourceIdentifier "tlbx.dev.code.$PID.$eventName"
+    }
     return $watcher
 }
 
@@ -322,7 +325,12 @@ function Should-RestartForPath([string]$relativePath) {
         return $false
     }
 
-    return $relativePath -match '\.(cs|csproj|props|targets)$'
+    if ($relativePath -match '(^|[\\/])Ai\.Tlbx\.MidTerm\.(?:[^\\/]*Tests|Fake[^\\/]*)([\\/]|$)') {
+        return $false
+    }
+
+    return $relativePath -match '\.(cs|csproj|props|targets)$' -or
+        $relativePath -match '(^|[\\/])ClaudeBridge[\\/]dist[\\/]claude-agent-sdk-bridge\.mjs$'
 }
 
 function Wait-ForCodeChange {
@@ -333,16 +341,20 @@ function Wait-ForCodeChange {
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     while ($stopwatch.ElapsedMilliseconds -lt $TimeoutMilliseconds) {
-        $remaining = [Math]::Max(1, $TimeoutMilliseconds - [int]$stopwatch.ElapsedMilliseconds)
-        $change = $Watcher.WaitForChanged([System.IO.WatcherChangeTypes]::All, $remaining)
-        if ($change.TimedOut) {
-            return $null
+        $changedPath = $null
+        foreach ($event in @(Get-Event | Where-Object SourceIdentifier -Like "tlbx.dev.code.$PID.*")) {
+            if ($event.SourceEventArgs -is [System.IO.FileSystemEventArgs]) {
+                $relativePath = $event.SourceEventArgs.Name
+                if (Should-RestartForPath $relativePath) { $changedPath = $relativePath }
+                if ($event.SourceEventArgs -is [System.IO.RenamedEventArgs] -and
+                    (Should-RestartForPath $event.SourceEventArgs.OldName)) { $changedPath = $event.SourceEventArgs.OldName }
+            } else {
+                $changedPath = 'code watcher overflow'
+            }
+            Remove-Event -EventIdentifier $event.EventIdentifier
         }
-
-        $relativePath = if ([string]::IsNullOrWhiteSpace($change.Name)) { $change.OldName } else { $change.Name }
-        if (Should-RestartForPath $relativePath) {
-            return $relativePath
-        }
+        if ($changedPath) { return $changedPath }
+        Start-Sleep -Milliseconds ([Math]::Min(100, [Math]::Max(1, $TimeoutMilliseconds - [int]$stopwatch.ElapsedMilliseconds)))
     }
 
     return $null
@@ -428,7 +440,7 @@ function Stop-DevProcess($state, [string]$reason, [switch]$PreserveChildren) {
     Write-Host "  Stopping web process $($process.Id) while preserving session hosts ($reason)..." -ForegroundColor DarkGray
     try {
         $process.Kill($false)
-        $process.WaitForExit(10000)
+        $null = $process.WaitForExit(10000)
     }
     catch {
         throw "Failed to stop local source tlbx web process $($process.Id): $($_.Exception.Message)"
@@ -473,6 +485,19 @@ function Start-DevServer([string]$resolvedTtyHostPath) {
     }
 }
 
+function Start-DevServerAfterBuild {
+    while ($true) {
+        try {
+            return Start-DevServer -resolvedTtyHostPath $resolvedTtyHostPath
+        }
+        catch {
+            Write-Warning "Source build/start failed: $($_.Exception.Message). Dev loop is waiting for the next C# change."
+            while (-not (Wait-ForCodeChange -Watcher $codeWatcher -TimeoutMilliseconds $PollMilliseconds)) { }
+            Start-Sleep -Milliseconds 300
+        }
+    }
+}
+
 function Invoke-DevLoopCleanup {
     if ($script:serverState) {
         Stop-DevProcess -state $script:serverState -reason "script shutdown"
@@ -481,6 +506,8 @@ function Invoke-DevLoopCleanup {
     if ($script:codeWatcher) {
         $script:codeWatcher.Dispose()
         $script:codeWatcher = $null
+        Get-EventSubscriber | Where-Object SourceIdentifier -Like "tlbx.dev.code.$PID.*" | Unregister-Event
+        Get-Event | Where-Object SourceIdentifier -Like "tlbx.dev.code.$PID.*" | Remove-Event
     }
 
     if ($script:staticWatcher) {
@@ -544,7 +571,7 @@ $esbuildProcess = Start-EsbuildWatch
 Write-Host "[3/4] Starting local source tlbx..." -ForegroundColor Cyan
 
 try {
-    $serverState = Start-DevServer -resolvedTtyHostPath $resolvedTtyHostPath
+    $serverState = Start-DevServerAfterBuild
 
     Write-Host ""
     if ($BindAddress -eq "127.0.0.1") {
@@ -558,7 +585,7 @@ try {
         if ($serverState.Process.HasExited) {
             Write-Host "  Local source tlbx exited. Restarting..." -ForegroundColor Yellow
             Start-Sleep -Seconds 1
-            $serverState = Start-DevServer -resolvedTtyHostPath $resolvedTtyHostPath
+            $serverState = Start-DevServerAfterBuild
             continue
         }
 
@@ -574,7 +601,7 @@ try {
             # A source-web rebuild must replace mt only, then let the new mt reconnect.
             Stop-DevProcess -state $serverState -reason "C# change detected: $changedPath" -PreserveChildren
             Start-Sleep -Milliseconds 300
-            $serverState = Start-DevServer -resolvedTtyHostPath $resolvedTtyHostPath
+            $serverState = Start-DevServerAfterBuild
         }
     }
 }

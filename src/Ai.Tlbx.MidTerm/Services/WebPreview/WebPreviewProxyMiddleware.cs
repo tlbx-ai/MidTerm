@@ -1083,15 +1083,18 @@ public sealed partial class WebPreviewProxyMiddleware
                   res.result=curU();
                   break;}
                 case"ready":{
-                  if(document.readyState==="loading"){
-                    document.addEventListener("DOMContentLoaded",function(){
+                  function readyAfterFrame(){
+                    requestAnimationFrame(function(){
                       res.result=curU();
                       if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
-                    },{once:true});
-                    return;
+                    });
                   }
-                  res.result=curU();
-                  break;}
+                  if(document.readyState==="loading"){
+                    document.addEventListener("DOMContentLoaded",readyAfterFrame,{once:true});
+                  }else{
+                    readyAfterFrame();
+                  }
+                  return;}
                 case"clearcookies":{
                   var all=document.cookie.split(";");
                   for(var i=0;i<all.length;i++){var n=all[i].split("=")[0].trim();if(n)document.cookie=n+"=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/";}
@@ -1137,6 +1140,52 @@ public sealed partial class WebPreviewProxyMiddleware
             bws.send(JSON.stringify(res));
           }
           var bwsReconnectTimer=0,bwsStateKey="",bwsVisibleOverride=null;
+          // Chromium can stop animation frames in an offscreen cross-origin
+          // iframe even though its document and automation socket remain live.
+          // Keep application rendering progressing for CLI-owned background previews.
+          var mtNativeRaf=window.requestAnimationFrame.bind(window);
+          var mtNativeCancelRaf=window.cancelAnimationFrame.bind(window);
+          var mtPendingFrames=new Map(),mtFrameTimer=0;
+          function mtBackgroundFrames(){
+            return bwsVisibleOverride===false||document.hidden;
+          }
+          function mtScheduleBackgroundFrames(){
+            if(mtFrameTimer||!mtPendingFrames.size||!mtBackgroundFrames())return;
+            mtFrameTimer=setTimeout(function(){
+              mtFrameTimer=0;
+              if(!mtBackgroundFrames())return;
+              var batch=Array.from(mtPendingFrames.entries());
+              var timestamp=performance.now();
+              for(var i=0;i<batch.length;i++){
+                var id=batch[i][0],callback=mtPendingFrames.get(id);
+                if(!callback)continue;
+                mtPendingFrames.delete(id);
+                mtNativeCancelRaf(id);
+                try{callback.call(window,timestamp);}catch(error){setTimeout(function(){throw error;},0);}
+              }
+              mtScheduleBackgroundFrames();
+            },50);
+          }
+          if(!mtNestedPreview){
+            window.requestAnimationFrame=function(callback){
+              if(typeof callback!=="function")return mtNativeRaf(callback);
+              var id=mtNativeRaf(function(timestamp){
+                var pending=mtPendingFrames.get(id);
+                if(!pending)return;
+                mtPendingFrames.delete(id);
+                pending.call(window,timestamp);
+              });
+              mtPendingFrames.set(id,callback);
+              mtScheduleBackgroundFrames();
+              return id;
+            };
+            window.cancelAnimationFrame=function(id){
+              id=Number(id)>>>0;
+              mtPendingFrames.delete(id);
+              mtNativeCancelRaf(id);
+            };
+            document.addEventListener("visibilitychange",mtScheduleBackgroundFrames);
+          }
           function curBwsState(){
             var hasFocus=false,topLevel=false;
             try{hasFocus=!!document.hasFocus();}catch(e){}
@@ -1174,6 +1223,7 @@ public sealed partial class WebPreviewProxyMiddleware
             if(d&&d.type==="mt-refresh-browser-state"){
               if(d.visible===true)bwsVisibleOverride=true;
               else if(d.visible===false)bwsVisibleOverride=false;
+              mtScheduleBackgroundFrames();
               refreshBwsState(d.force===true);
             }
           });

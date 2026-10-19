@@ -270,6 +270,8 @@ function normalizeAppServerControlTurnRequest(
     ...(request.permissionMode === undefined
       ? {}
       : { permissionMode: request.permissionMode ?? 'manual' }),
+    ...(request.fastMode === undefined ? {} : { fastMode: request.fastMode ?? 'off' }),
+    ...(request.configValues === undefined ? {} : { configValues: { ...request.configValues } }),
     attachments: request.attachments.map((attachment) => ({ ...attachment })),
   };
 }

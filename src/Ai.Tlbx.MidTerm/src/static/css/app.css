@@ -5415,6 +5415,30 @@ body::before {
   }
 }
 
+.ai-provider-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ai-provider-controls input {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.ai-provider-row .setting-description {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .settings-panel.hidden {
   display: none;
 }
@@ -9516,6 +9540,18 @@ body.shared-session-mode .session-tab-bar {
   overflow: hidden;
 }
 
+@media (max-width: 768px) {
+  .chat-panel:not(.hidden) {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    width: 100%;
+    box-sizing: border-box;
+    padding: var(--safe-area-inset-top) var(--safe-area-inset-right)
+      var(--safe-area-inset-bottom) var(--safe-area-inset-left);
+  }
+}
+
 .chat-header {
   display: flex;
   align-items: center;
@@ -9846,104 +9882,197 @@ body.shared-session-mode .session-tab-bar {
   background-color: var(--accent-red-15);
 }
 
-/* Tool Group (consolidated tool calls) */
+/* Compact voice tool activity; full payloads remain available on demand. */
 .chat-msg-tool-group {
-  align-self: flex-start;
-  background: var(--tool-yellow-gradient);
-  border: 1px solid var(--tool-yellow-border-emphasis);
-  padding: 8px 12px;
-  max-width: 95%;
-  border-radius: 8px;
+  align-self: stretch;
+  max-width: 100%;
+  padding: 0;
+  border-radius: 0;
+  color: var(--text-secondary);
 }
 
-.tool-group-entries {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.tool-group-entry-row {
-  border-radius: 4px;
-  overflow: hidden;
-  font-family: var(--font-mono);
-}
-
+.tool-group-header,
 .tool-group-entry-header {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 6px;
-  cursor: pointer;
+  gap: 6px;
+  min-height: 30px;
+  padding: 2px 4px;
   border-radius: 4px;
-  transition: background-color 0.1s;
-}
-
-.tool-group-entry-header:hover {
-  background-color: var(--tool-yellow-bg);
-}
-
-.tool-group-expand {
-  width: 14px;
-  font-size: var(--fs-xs);
-  color: var(--text-secondary);
-  flex-shrink: 0;
-  user-select: none;
-}
-
-.tool-group-entry-name {
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  color: var(--accent-gold);
-  font-weight: 500;
-}
-
-.tool-group-entry-summary {
-  display: none;
-  padding: 2px 6px 2px 24px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--text-secondary);
   cursor: pointer;
+  list-style: none;
 }
 
-.tool-group-entry-row.expanded .tool-group-entry-summary {
-  display: block;
+.tool-group-header::before,
+.tool-group-entry-header::before {
+  content: '›';
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: transform 0.12s ease;
 }
 
-.tool-group-summary-text {
-  display: block;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 2.8em;
+.chat-msg-tool-group[open] > .tool-group-header::before,
+.tool-group-entry-row[open] > .tool-group-entry-header::before {
+  transform: rotate(90deg);
+}
+
+.tool-group-header::-webkit-details-marker,
+.tool-group-entry-header::-webkit-details-marker {
+  display: none;
+}
+
+.tool-group-header:hover,
+.tool-group-entry-header:hover {
+  background: var(--bg-tertiary);
+}
+
+.tool-group-header:focus-visible,
+.tool-group-entry-header:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+}
+
+.tool-group-state,
+.tool-entry-state {
+  flex-shrink: 0;
+  width: 12px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.chat-msg-tool-group[data-state='failed'] > .tool-group-header,
+.tool-group-entry-row[data-state='failed'] .tool-entry-state {
+  color: var(--accent-red);
+}
+
+.chat-msg-tool-group[data-state='running'] > .tool-group-header .tool-group-state {
+  color: var(--accent-blue);
+}
+
+.chat-msg-tool-group[data-state='declined'] > .tool-group-header,
+.tool-group-entry-row[data-state='declined'] .tool-entry-state {
+  color: var(--accent-gold);
+}
+
+.tool-group-count {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-group-names,
+.tool-group-entry-name {
+  min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 400;
 }
 
-.tool-group-summary-response {
-  display: block;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 2.8em;
+.tool-group-entries {
+  margin: 2px 0 4px 9px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border-color);
+}
+
+.tool-group-entry-row {
+  min-width: 0;
+}
+
+.tool-group-entry-header {
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.tool-group-entry-outcome {
+  flex: 1;
+  min-width: 36px;
   overflow: hidden;
-  color: var(--accent-purple);
-  margin-top: 2px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
 }
 
 .tool-group-entry-detail {
-  display: none;
-  padding: 4px 6px 4px 24px;
+  padding: 2px 4px 6px 16px;
 }
 
-.tool-group-entry-row.fully-expanded .tool-group-entry-detail {
-  display: block;
+.tool-group-entry-detail pre {
+  max-height: 220px;
+  overflow: auto;
 }
 
 .tool-group-detail-label {
+  margin: 6px 0 2px;
   font-size: var(--fs-2xs);
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-top: 4px;
-  margin-bottom: 2px;
+}
+
+.chat-markdown {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.chat-markdown p,
+.chat-markdown ul,
+.chat-markdown ol,
+.chat-markdown blockquote,
+.chat-markdown pre {
+  margin: 0 0 8px;
+}
+
+.chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown :is(h1, h2, h3, h4) {
+  margin: 8px 0;
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  padding-left: 18px;
+}
+
+.chat-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}
+
+.chat-markdown pre {
+  overflow: auto;
+  max-height: 240px;
+  padding: 6px;
+  background: var(--bg-primary);
+  border-radius: 4px;
+}
+
+.chat-markdown blockquote {
+  padding-left: 8px;
+  border-left: 2px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.chat-markdown a {
+  color: var(--accent-blue);
+}
+
+.chat-markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-group-header::before,
+  .tool-group-entry-header::before {
+    transition: none;
+  }
 }
 
 /* Chat panel is a flex sibling - main-content shrinks automatically when chat opens */
@@ -13513,6 +13642,19 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   background: var(--terminal-canvas-background-stack);
 }
 
+
+.agent-native-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; padding: 0 16px; border-bottom: 1px solid var(--border-color); color: var(--text-secondary); font-size: 12px; }
+.agent-native-controls[hidden] { display: none; }
+.agent-native-controls details { position: relative; }
+.agent-native-controls summary { display: flex; align-items: center; min-height: 44px; cursor: pointer; white-space: nowrap; }
+.agent-native-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-native-command-form { position: absolute; top: 100%; right: 0; display: grid; gap: 10px; width: min(320px, calc(100vw - 64px)); max-height: 60dvh; overflow: auto; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-input); box-shadow: var(--command-bay-shadow); z-index: 50; }
+.agent-native-command-form select, .agent-native-command-form input { min-width: 0; min-height: 44px; padding: 6px 10px; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 4px; }
+.agent-native-command-form input[hidden] { display: none; }
+.agent-native-command-form p { margin: 0; white-space: normal; }
+.agent-native-command-form button { min-height: 44px; }
+.agent-native-command-error { color: var(--status-error); }
+
 .agent-runtime-stats {
   position: absolute;
   top: 12px;
@@ -13538,6 +13680,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   pointer-events: auto;
   backdrop-filter: blur(5px);
 }
+
+.agent-native-controls:not([hidden]) + .agent-runtime-stats { position: relative; top: auto; right: auto; align-self: flex-end; flex-shrink: 0; max-width: calc(100% - 32px); margin: 4px 16px; }
+.agent-native-controls:not([hidden]) + .agent-runtime-stats .agent-runtime-stats-compact { white-space: normal; overflow-wrap: anywhere; text-align: right; }
 
 .agent-runtime-stats[hidden] {
   display: none;
@@ -14313,6 +14458,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-markdown {
   overflow: visible;
   line-height: 1.38;
+  white-space: normal;
 }
 
 .agent-history-turn-duration {
@@ -15690,6 +15836,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   cursor: wait;
 }
 
+.agent-plan-implement {
+  align-self: flex-start;
+  min-height: 44px;
+}
+
 .agent-view-btn-primary {
   border-color: color-mix(in srgb, var(--accent-blue) 28%, transparent);
   background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
@@ -15767,6 +15918,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-request-choice {
   position: relative;
   display: flex;
+  min-height: 44px;
   align-items: flex-start;
   gap: 10px;
   padding: 11px 12px;
@@ -18962,6 +19114,27 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .smart-input-appServerControl-field {
   padding: 4px 10px;
   gap: 4px;
+}
+
+.smart-input-native-config { position: relative; min-width: 0; }
+.smart-input-appServerControl-field[hidden] { display: none !important; }
+.smart-input-native-config[hidden] { display: none; }
+.smart-input-native-config summary { display: flex; align-items: center; min-height: 44px; padding: 4px 10px; cursor: pointer; }
+.smart-input-native-config-panel { position: absolute; right: 0; bottom: 100%; display: grid; gap: 12px; width: min(320px, calc(100vw - 40px)); max-height: 50dvh; overflow-y: auto; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-input); box-shadow: var(--command-bay-shadow); z-index: 50; }
+.smart-input-native-config-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; min-height: 44px; }
+.smart-input-native-config-field select { grid-column: 1 / -1; width: 100%; min-width: 0; min-height: 44px; padding: 6px 10px; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 4px; }
+.smart-input-native-config-field input { width: 24px; height: 24px; margin: 10px; }
+.smart-input-native-config-field small { grid-column: 1 / -1; color: var(--text-secondary); white-space: normal; }
+.smart-input-appServerControl-settings-sheet .smart-input-native-config { width: 100%; }
+.smart-input-appServerControl-settings-sheet .smart-input-native-config-panel { position: static; width: 100%; box-shadow: none; }
+
+@media (max-width: 768px) {
+  .adaptive-footer-dock .smart-input-appServerControl-settings.smart-input-appServerControl-settings-sheet { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; width: 100%; padding: 12px; overflow: hidden auto; max-height: 50dvh; }
+  .adaptive-footer-dock .smart-input-appServerControl-settings.smart-input-appServerControl-settings-sheet > .smart-input-appServerControl-field { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 5px; }
+  .adaptive-footer-dock .smart-input-appServerControl-settings-sheet .smart-input-appServerControl-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+  .adaptive-footer-dock .smart-input-appServerControl-settings-sheet .smart-input-appServerControl-dropdown-trigger { width: 100%; min-height: 44px; }
+  .adaptive-footer-dock .smart-input-appServerControl-settings-sheet > .smart-input-native-config { grid-column: 1 / -1; }
+  .adaptive-footer-dock .smart-input-appServerControl-settings-sheet .smart-input-native-config-panel { box-sizing: border-box; width: 100%; max-height: none; overflow: visible; }
 }
 
 .smart-input-appServerControl-field + .smart-input-appServerControl-field::before {

@@ -7,11 +7,12 @@ using Ai.Tlbx.MidTerm.Common.Protocol;
 
 namespace Ai.Tlbx.MidTerm.AgentHost;
 
-internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRuntime
+internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerControlAgentRuntime
 {
     private const int MaxInlineImageBytes = 10 * 1024 * 1024;
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly TimeSpan AttachRequestTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan CancelTimeout = TimeSpan.FromSeconds(15);
 
     private readonly Action<AppServerControlProviderEvent> _emit;
     private readonly string _provider;
@@ -35,8 +36,12 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
     private string? _workingDirectory;
     private string? _binaryPath;
     private string? _userProfileDirectory;
+    private Dictionary<string, string?> _environmentVariables = new(StringComparer.Ordinal);
+    private string? _authenticationMethodId;
     private string? _providerThreadId;
     private string? _activeTurnId;
+    private string? _cancellingTurnId;
+    private TaskCompletionSource? _activeTurnCompletion;
     private string? _activeTurnModel;
     private string? _activeTurnEffort;
     private string? _availableCommandsSignature;
@@ -47,6 +52,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
     private bool _supportsLegacyModels;
     private bool _supportsImagePrompts;
     private AppServerControlQuickSettingsSummary _quickSettings = new();
+    private List<AppServerControlCommand> _availableCommands = [];
     private int _nextRequestId;
     private long _sequence;
     private bool _disposed;
@@ -62,7 +68,19 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             : provider.Trim().ToLowerInvariant();
         _agentName = string.IsNullOrWhiteSpace(agentName) ? _provider : agentName.Trim();
         _executableArguments = executableArguments?.ToArray() ?? [];
-        _emit = emit;
+        _emit = providerEvent =>
+        {
+            lock (_replayGate)
+            {
+                if (_replayEvents is not null)
+                {
+                    _replayEvents.Add(providerEvent);
+                    return;
+                }
+            }
+
+            emit(providerEvent);
+        };
     }
 
     public string Provider => _provider;
@@ -91,10 +109,11 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             {
                 "runtime.attach" => await AttachAsync(command, ct).ConfigureAwait(false),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
+                "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
+                "thread.compact" => await CompactViaNativeCommandAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolvePermissionRequestAsync(command, ct).ConfigureAwait(false),
-                "user-input.resolve" => throw new InvalidOperationException($"{_agentName} ACP user-input resolution is not supported yet."),
-                "thread.goal.set" => Accepted(command.CommandId, command.SessionId),
+                "user-input.resolve" => await ResolveUserInputAsync(command, ct).ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"Unsupported ACP command '{command.Type}' for {_agentName}.")
             };
         }
@@ -123,80 +142,113 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             throw new InvalidOperationException($"{_agentName} ACP executable was not found.");
         }
 
+        if (_process is { HasExited: false } && !string.IsNullOrWhiteSpace(_providerThreadId))
+        {
+            var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (!string.Equals(command.SessionId, _sessionId, StringComparison.Ordinal) ||
+                !string.Equals(Path.GetFullPath(attach.WorkingDirectory), Path.GetFullPath(_workingDirectory!), pathComparison) ||
+                !string.Equals(Path.GetFullPath(binaryPath), Path.GetFullPath(_binaryPath!), pathComparison) ||
+                !(attach.ExecutableArguments ?? []).SequenceEqual(_executableArguments, StringComparer.Ordinal) ||
+                !string.Equals(attach.AuthenticationMethodId, _authenticationMethodId, StringComparison.Ordinal) ||
+                !attach.EnvironmentVariables.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                    .SequenceEqual(_environmentVariables.OrderBy(pair => pair.Key, StringComparer.Ordinal)) ||
+                (!string.IsNullOrWhiteSpace(attach.ResumeThreadId) &&
+                 !string.Equals(attach.ResumeThreadId, _providerThreadId, StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException($"{_agentName} already owns a different ACP attachment; its live conversation was preserved.");
+            }
+
+            // mt reconnects to this persistent host after a web-server restart.
+            // Its ownership handshake must not create another provider conversation.
+            return Accepted(command.CommandId, command.SessionId);
+        }
+
         await DisposeProcessAsync().ConfigureAwait(false);
 
         _sessionId = command.SessionId;
         _workingDirectory = attach.WorkingDirectory;
         _binaryPath = binaryPath;
         _userProfileDirectory = attach.UserProfileDirectory;
+        _environmentVariables = new Dictionary<string, string?>(attach.EnvironmentVariables, StringComparer.Ordinal);
+        _authenticationMethodId = attach.AuthenticationMethodId;
         _providerThreadId = null;
         _quickSettings = CreateDefaultQuickSettings();
+        ResetProtocolState();
 
-        await StartAcpProcessAsync(ct).ConfigureAwait(false);
-
-        var initializeResult = await SendRequestAsync(
-                "initialize",
-                writer =>
-                {
-                    writer.WriteStartObject();
-                    writer.WriteNumber("protocolVersion", 1);
-                    writer.WritePropertyName("clientCapabilities");
-                    writer.WriteStartObject();
-                    writer.WritePropertyName("session");
-                    writer.WriteStartObject();
-                    writer.WritePropertyName("configOptions");
-                    writer.WriteStartObject();
-                    writer.WriteBoolean("boolean", true);
-                    writer.WriteEndObject();
-                    writer.WriteEndObject();
-                    writer.WritePropertyName("fs");
-                    writer.WriteStartObject();
-                    writer.WriteBoolean("readTextFile", false);
-                    writer.WriteBoolean("writeTextFile", false);
-                    writer.WriteEndObject();
-                    writer.WriteBoolean("terminal", false);
-                    writer.WriteEndObject();
-                    writer.WritePropertyName("clientInfo");
-                    writer.WriteStartObject();
-                    writer.WriteString("name", "tlbx");
-                    writer.WriteString("title", "tlbx");
-                    writer.WriteString("version", "dev");
-                    writer.WriteEndObject();
-                    writer.WriteEndObject();
-                },
-                AttachRequestTimeout,
-                ct)
-            .ConfigureAwait(false);
-        ValidateProtocolVersion(initializeResult);
-        _supportsImagePrompts = Traverse(initializeResult, "agentCapabilities", "promptCapabilities", "image") is
+        try
         {
-            ValueKind: JsonValueKind.True
-        };
+            await StartAcpProcessAsync(ct).ConfigureAwait(false);
 
-        var newSessionResult = await SendRequestAsync(
-                "session/new",
-                writer =>
+            var initializeResult = await SendRequestAsync(
+                    "initialize",
+                    writer =>
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteNumber("protocolVersion", 2);
+                        writer.WritePropertyName("capabilities");
+                        writer.WriteStartObject();
+                        writer.WriteEndObject();
+                        writer.WritePropertyName("info");
+                        writer.WriteStartObject();
+                        writer.WriteString("name", "tlbx");
+                        writer.WriteString("version", "dev");
+                        writer.WriteEndObject();
+                        writer.WritePropertyName("clientCapabilities");
+                        writer.WriteStartObject();
+                        writer.WritePropertyName("session");
+                        writer.WriteStartObject();
+                        writer.WritePropertyName("configOptions");
+                        writer.WriteStartObject();
+                        writer.WriteBoolean("boolean", true);
+                        writer.WriteEndObject();
+                        writer.WriteEndObject();
+                        writer.WritePropertyName("fs");
+                        writer.WriteStartObject();
+                        writer.WriteBoolean("readTextFile", false);
+                        writer.WriteBoolean("writeTextFile", false);
+                        writer.WriteEndObject();
+                        writer.WriteBoolean("terminal", false);
+                        writer.WriteEndObject();
+                        writer.WritePropertyName("clientInfo");
+                        writer.WriteStartObject();
+                        writer.WriteString("name", "tlbx");
+                        writer.WriteString("title", "tlbx");
+                        writer.WriteString("version", "dev");
+                        writer.WriteEndObject();
+                        writer.WriteEndObject();
+                    },
+                    AttachRequestTimeout,
+                    ct)
+                .ConfigureAwait(false);
+            _protocolGeneration = ResolveProtocolGeneration(initializeResult);
+            await AuthenticateAcpAsync(initializeResult, ct).ConfigureAwait(false);
+            _supportsImagePrompts = _protocolGeneration == 2
+                ? Traverse(initializeResult, "capabilities", "session", "prompt", "image") is { ValueKind: JsonValueKind.Object }
+                : Traverse(initializeResult, "agentCapabilities", "promptCapabilities", "image") is
                 {
-                    writer.WriteStartObject();
-                    writer.WriteString("cwd", _workingDirectory);
-                    writer.WritePropertyName("mcpServers");
-                    writer.WriteStartArray();
-                    writer.WriteEndArray();
-                    writer.WriteEndObject();
-                },
-                AttachRequestTimeout,
-                ct)
-            .ConfigureAwait(false);
+                    ValueKind: JsonValueKind.True
+                };
 
-        _providerThreadId = GetString(newSessionResult, "sessionId")
-                            ?? $"{Provider}-session-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
-        _quickSettings = CreateQuickSettingsFromState(initializeResult, newSessionResult);
+            var resumeThreadId = string.IsNullOrWhiteSpace(attach.ResumeThreadId) ? null : attach.ResumeThreadId.Trim();
+            var sessionMethod = ResolveSessionOpenMethod(initializeResult, resumeThreadId);
+            _providerThreadId = resumeThreadId;
+            var newSessionResult = await OpenSessionAsync(sessionMethod, resumeThreadId, ct).ConfigureAwait(false);
 
-        return Accepted(
-            command.CommandId,
-            command.SessionId,
-            events:
-            [
+            _providerThreadId = resumeThreadId ?? GetString(newSessionResult, "sessionId")
+                ?? throw new InvalidOperationException($"{_agentName} did not return an ACP session id.");
+            _quickSettings = CreateQuickSettingsFromState(initializeResult, newSessionResult);
+
+            var events = new List<AppServerControlProviderEvent>
+        {
+                CreateEvent("agent.metadata.updated", null, null, null, "acp", sessionMethod, newSessionResult, e =>
+                {
+                    _availableCommands = ReadAvailableCommands(newSessionResult);
+                    e.AgentMetadataUpdated = new AppServerControlProviderAgentMetadataPayload
+                    {
+                        AgentName = _agentName,
+                        AvailableCommands = AppServerControlCommand.CloneMany(_availableCommands)
+                    };
+                }),
                 CreateEvent("session.started", null, null, null, "mtagenthost.acp", "runtime.attach", attach, appServerControlEvent =>
                 {
                     appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
@@ -206,7 +258,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                         Reason = $"{_agentName} ACP runtime attached."
                     };
                 }),
-                CreateEvent("thread.started", null, null, null, "acp", "session/new", newSessionResult, appServerControlEvent =>
+                CreateEvent("thread.started", null, null, null, "acp", sessionMethod, newSessionResult, appServerControlEvent =>
                 {
                     appServerControlEvent.ThreadState = new AppServerControlProviderThreadStatePayload
                     {
@@ -214,18 +266,39 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                         StateLabel = "Active",
                         ProviderThreadId = _providerThreadId
                     };
-                }),
-                CreateEvent("session.ready", null, null, null, "acp", "session/new", newSessionResult, appServerControlEvent =>
-                {
-                    appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
-                    {
-                        State = "ready",
-                        StateLabel = "Ready",
-                        Reason = $"{_agentName} ACP runtime is ready for the next turn."
-                    };
-                }),
-                CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", "session/new", newSessionResult)
-            ]);
+                })
+        };
+            AppendLoadedHistory(events);
+            await AppendLoadedRequestsAsync(events, ct).ConfigureAwait(false);
+            lock (_replayGate)
+            {
+                if (_protocolGeneration == 1 || _foregroundState == "idle")
+                    events.Add(CreateEvent("session.ready", null, null, null, "acp", sessionMethod, newSessionResult, appServerControlEvent =>
+                        {
+                            appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
+                            {
+                                State = "ready",
+                                StateLabel = "Ready",
+                                Reason = $"{_agentName} ACP runtime is ready for the next turn."
+                            };
+                        }));
+                events.Add(CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", sessionMethod, newSessionResult));
+                _replayEvents = null;
+                foreach (var providerEvent in events) _emit(providerEvent);
+            }
+            return Accepted(command.CommandId, command.SessionId);
+        }
+        catch
+        {
+            lock (_replayGate)
+            {
+                _loadedUpdates = null;
+                _replayEvents = null;
+            }
+            await DisposeProcessAsync().ConfigureAwait(false);
+            _providerThreadId = null;
+            throw;
+        }
     }
 
     private async Task<HostCommandOutcome> StartTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -238,7 +311,9 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
 
         var request = command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required.");
         var quickSettings = ResolveRequestedQuickSettings(request);
+        ValidateRequestedConfigValues(request.ConfigValues);
         await ApplyRequestedQuickSettingsAsync(quickSettings, ct).ConfigureAwait(false);
+        await ApplyRequestedConfigValuesAsync(request.ConfigValues, ct).ConfigureAwait(false);
         var promptBlocks = BuildPromptBlocks(
             request,
             _planModeId is null ? quickSettings.PlanMode : AppServerControlQuickSettings.PlanModeOff);
@@ -247,14 +322,16 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             throw new InvalidOperationException("App Server Controller turn input must include text or attachments.");
         }
 
-        _activeTurnId = "turn-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var turnId = "turn-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        _activeTurnId = turnId;
+        _activeTurnCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         _quickSettings = MergeRequestedQuickSettings(quickSettings);
         _activeTurnModel = _quickSettings.Model;
         _activeTurnEffort = _quickSettings.Effort;
-        _tools.Clear();
+        if (_protocolGeneration == 1) _tools.Clear();
 
         var requestId = NextRequestId();
-        _pendingPromptTurns[requestId] = _activeTurnId;
+        _pendingPromptTurns[requestId] = turnId;
         foreach (var appServerControlEvent in CreateTurnStartEvents(request))
         {
             _emit(appServerControlEvent);
@@ -280,7 +357,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         {
             _pendingPromptTurns.TryRemove(requestId, out _);
             CompleteTurn(
-                _activeTurnId,
+                turnId,
                 "failed",
                 "Failed",
                 "send_failed",
@@ -301,14 +378,14 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 {
                     SessionId = command.SessionId,
                     Status = "accepted",
-                    TurnId = _activeTurnId
+                    TurnId = turnId
                 },
                 TurnStarted = new AppServerControlTurnStartResponse
                 {
                     SessionId = command.SessionId,
                     Provider = Provider,
                     ThreadId = _providerThreadId ?? _sessionId ?? command.SessionId,
-                    TurnId = _activeTurnId,
+                    TurnId = turnId,
                     Status = "accepted",
                     QuickSettings = new AppServerControlQuickSettingsSummary
                     {
@@ -317,7 +394,8 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                         PlanMode = _quickSettings.PlanMode,
                         PermissionMode = _quickSettings.PermissionMode,
                         ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions),
-                        EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions)
+                        EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions),
+                        ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(_quickSettings.ConfigOptions)
                     }
                 }
             },
@@ -350,8 +428,59 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         ];
     }
 
+    private Task<HostCommandOutcome> CompactViaNativeCommandAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    {
+        if (!_availableCommands.Any(native => native.Name.TrimStart('/').Equals("compact", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException($"{_agentName} does not advertise a native /compact command.");
+        return StartTurnAsync(new AppServerControlHostCommandEnvelope
+        {
+            CommandId = command.CommandId, SessionId = command.SessionId, Type = "turn.start",
+            StartTurn = new AppServerControlTurnRequest { Text = "/compact" }
+        }, ct);
+    }
+
+    private async Task<HostCommandOutcome> SteerTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    {
+        EnsureAttached();
+        var request = command.SteerTurn ?? throw new InvalidOperationException("turn.steer payload is required.");
+        if (string.IsNullOrWhiteSpace(_activeTurnId) ||
+            !string.Equals(request.ExpectedTurnId, _activeTurnId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"{_agentName} steer target no longer matches the active turn.");
+        }
+
+        var replacement = new AppServerControlTurnRequest
+        {
+            Text = request.Text,
+            Attachments = request.Attachments
+        };
+        // Validate input before stopping useful work. ACP v1 steering is an explicit
+        // cancel-and-reprompt within the same provider conversation, not a native steer RPC.
+        if (BuildPromptBlocks(replacement, _quickSettings.PlanMode).Count == 0)
+        {
+            throw new InvalidOperationException("ACP steer input must include text or attachments.");
+        }
+
+        await InterruptTurnAsync(new AppServerControlHostCommandEnvelope
+        {
+            CommandId = command.CommandId,
+            SessionId = command.SessionId,
+            Type = "turn.interrupt",
+            InterruptTurn = new AppServerControlInterruptRequest { TurnId = request.ExpectedTurnId }
+        }, ct).ConfigureAwait(false);
+
+        return await StartTurnAsync(new AppServerControlHostCommandEnvelope
+        {
+            CommandId = command.CommandId,
+            SessionId = command.SessionId,
+            Type = "turn.start",
+            StartTurn = replacement
+        }, ct).ConfigureAwait(false);
+    }
+
     private async Task<HostCommandOutcome> InterruptTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
+        EnsureAttached();
         var turnId = string.IsNullOrWhiteSpace(command.InterruptTurn?.TurnId)
             ? _activeTurnId
             : command.InterruptTurn!.TurnId;
@@ -359,6 +488,15 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         {
             throw new InvalidOperationException($"{_agentName} does not have an active turn to interrupt.");
         }
+
+        if (!string.Equals(turnId, _activeTurnId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"{_agentName} interrupt target no longer matches the active turn.");
+        }
+
+        var completion = _activeTurnCompletion?.Task
+            ?? throw new InvalidOperationException($"{_agentName} does not have an active prompt to cancel.");
+        _cancellingTurnId = turnId;
 
         await WriteJsonRpcNotificationAsync(
                 "session/cancel",
@@ -376,15 +514,24 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             if (_pendingPermissions.TryRemove(pair.Key, out var pending))
             {
                 await WritePermissionResponseAsync(pending.RpcId, null, cancelled: true, ct).ConfigureAwait(false);
+                EmitCancelledRequest(pair.Key, pending.TurnId, "command_execution_approval");
             }
         }
 
-        foreach (var pair in _pendingPromptTurns.Where(pair => string.Equals(pair.Value, turnId, StringComparison.Ordinal)).ToList())
-        {
-            _pendingPromptTurns.TryRemove(pair.Key, out _);
-        }
+        await CancelUserInputRequestsAsync(turnId, ct).ConfigureAwait(false);
 
-        ResetTurnState();
+        // ACP permits final updates until the original prompt response arrives.
+        // Keep its turn identity alive and do not admit another prompt before that boundary.
+        try
+        {
+            await completion.WaitAsync(CancelTimeout, ct).ConfigureAwait(false);
+            EnsureAttached();
+        }
+        catch (TimeoutException)
+        {
+            await DisposeProcessAsync().ConfigureAwait(false);
+            throw new InvalidOperationException($"{_agentName} did not confirm ACP cancellation; its runtime was stopped to prevent overlapping prompts.");
+        }
 
         return Accepted(
             command.CommandId,
@@ -394,28 +541,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 SessionId = command.SessionId,
                 Status = "accepted",
                 TurnId = turnId
-            },
-            events:
-            [
-                CreateEvent("turn.aborted", turnId, null, null, "acp", "session/cancel", command.InterruptTurn, appServerControlEvent =>
-                {
-                    appServerControlEvent.TurnCompleted = new AppServerControlProviderTurnCompletedPayload
-                    {
-                        State = "interrupted",
-                        StateLabel = "Interrupted",
-                        StopReason = "interrupt"
-                    };
-                }),
-                CreateEvent("session.state.changed", turnId, null, null, "acp", "session/cancel", command.InterruptTurn, appServerControlEvent =>
-                {
-                    appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
-                    {
-                        State = "ready",
-                        StateLabel = "Ready",
-                        Reason = $"{_agentName} turn interrupted."
-                    };
-                })
-            ]);
+            });
     }
 
     private async Task<HostCommandOutcome> ResolvePermissionRequestAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -474,6 +600,11 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         {
             AppServerControlProviderRuntimeConfiguration.ApplyUserProfileEnvironment(process.StartInfo, _userProfileDirectory);
             AppServerControlProviderRuntimeConfiguration.ApplyEnvironmentVariables(process.StartInfo, Provider);
+            foreach (var pair in _environmentVariables)
+            {
+                if (pair.Value is null) process.StartInfo.Environment.Remove(pair.Key);
+                else process.StartInfo.Environment[pair.Key] = pair.Value;
+            }
             process.StartInfo.Environment.Remove("FORCE_COLOR");
             process.StartInfo.Environment["NO_COLOR"] = "1";
             if (!process.Start())
@@ -531,6 +662,13 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         }
     }
 
+    internal static bool IsInformationalAcpDiagnostic(string line) =>
+        line.Length > 5 && line[0] == 'I' && line[5] == ' ' &&
+        int.TryParse(line.AsSpan(1, 4), NumberStyles.None, CultureInfo.InvariantCulture, out _) &&
+        !line.Contains("ERROR", StringComparison.OrdinalIgnoreCase) &&
+        !line.Contains("FATAL", StringComparison.OrdinalIgnoreCase) &&
+        !line.Contains("Traceback", StringComparison.OrdinalIgnoreCase);
+
     private async Task ReadErrorLoopAsync(CancellationToken ct)
     {
         try
@@ -545,7 +683,10 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
 
                 if (!string.IsNullOrWhiteSpace(line))
                 {
-                    EmitRuntimeMessage("runtime.warning", line.Trim(), line.Trim());
+                    var diagnostic = line.Trim();
+                    var informational = IsInformationalAcpDiagnostic(diagnostic);
+                    EmitRuntimeMessage(informational ? "runtime.notice" : "runtime.warning", diagnostic, diagnostic,
+                        timelineVisible: !informational);
                 }
             }
         }
@@ -568,6 +709,14 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         }
 
         var method = GetString(root, "method");
+        lock (_replayGate)
+        {
+            if (_loadedUpdates is not null && root.TryGetProperty("id", out _))
+            {
+                _loadedRequests.Add(line);
+                return;
+            }
+        }
         switch (method)
         {
             case "session/update":
@@ -582,6 +731,14 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             case "session/request_permission":
                 await HandlePermissionRequestAsync(root, line, ct).ConfigureAwait(false);
                 break;
+            case "x.ai/ask_user_question":
+            case "_x.ai/ask_user_question":
+                await HandleGrokUserInputRequestAsync(root, line, ct).ConfigureAwait(false);
+                break;
+            case "x.ai/exit_plan_mode":
+            case "_x.ai/exit_plan_mode":
+                await HandleGrokExitPlanModeAsync(root, line, ct).ConfigureAwait(false);
+                break;
             default:
                 if (root.TryGetProperty("id", out var requestId))
                 {
@@ -589,7 +746,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 }
                 else
                 {
-                    EmitRuntimeMessage("runtime.notice", $"{_agentName} ACP notification ignored.", method ?? line);
+                    EmitRuntimeMessage("runtime.notice", $"{_agentName} ACP notification ignored.", method ?? line, timelineVisible: false);
                 }
 
                 break;
@@ -612,6 +769,11 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
 
         if (_pendingPromptTurns.TryRemove(id, out var turnId))
         {
+            if (_protocolGeneration == 2)
+            {
+                HandleV2PromptResponse(turnId, root, rawLine);
+                return;
+            }
             if (root.TryGetProperty("error", out var error))
             {
                 CompleteTurn(turnId, "failed", "Failed", "error", ReadErrorMessage(error), rawLine);
@@ -627,6 +789,27 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
 
     private void HandleSessionUpdate(JsonElement root, string rawLine)
     {
+        var nativeSessionId = GetString(root, "params", "sessionId");
+        if (!string.IsNullOrWhiteSpace(_providerThreadId) && !string.IsNullOrWhiteSpace(nativeSessionId) &&
+            !string.Equals(nativeSessionId, _providerThreadId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        lock (_replayGate)
+        {
+            if (_loadedUpdates is not null)
+            {
+                _loadedUpdates.Add((root.Clone(), rawLine));
+                return;
+            }
+        }
+
+        ApplySessionUpdate(root, rawLine, _activeTurnId);
+    }
+
+    private void ApplySessionUpdate(JsonElement root, string rawLine, string? turnId)
+    {
         var update = Traverse(root, "params", "update");
         if (update is not { ValueKind: JsonValueKind.Object } updateElement)
         {
@@ -634,6 +817,10 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         }
 
         var updateType = GetString(updateElement, "sessionUpdate");
+        if (_protocolGeneration == 2 && HandleV2Update(updateType, updateElement, root, rawLine, turnId))
+        {
+            return;
+        }
         switch (updateType)
         {
             case "available_commands_update":
@@ -650,7 +837,6 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 return;
         }
 
-        var turnId = _activeTurnId;
         if (string.IsNullOrWhiteSpace(turnId))
         {
             return;
@@ -676,7 +862,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             default:
                 if (!string.IsNullOrWhiteSpace(updateType))
                 {
-                    EmitRuntimeMessage("runtime.notice", $"{_agentName} ACP update ignored: {updateType}", rawLine);
+                    EmitRuntimeMessage("runtime.notice", $"{_agentName} ACP update ignored: {updateType}", rawLine, timelineVisible: false);
                 }
 
                 break;
@@ -685,25 +871,34 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
 
     private void HandleAvailableCommandsUpdate(JsonElement update, JsonElement root, string rawLine)
     {
-        var commands = ReadAvailableCommandNames(update);
+        var catalogue = Traverse(update, "availableCommands");
+        var hasCatalogue = catalogue is { ValueKind: JsonValueKind.Array };
+        var commands = hasCatalogue ? ReadAvailableCommands(update) : _availableCommands;
         var tools = ReadMetaTools(update);
-        if (commands.Count == 0 && tools.Count == 0)
-        {
-            return;
-        }
+        if (!hasCatalogue && tools.Count == 0) return;
 
-        var signature = string.Join('\n', commands) + "\u001f" + string.Join('\n', tools);
+        var signature = Traverse(update, "availableCommands")?.GetRawText() + "\u001f" + string.Join('\n', tools);
         if (string.Equals(signature, _availableCommandsSignature, StringComparison.Ordinal))
         {
             return;
         }
 
         _availableCommandsSignature = signature;
+        if (hasCatalogue)
+        {
+            _availableCommands = commands;
+            _emit(CreateEvent("agent.metadata.updated", null, null, null, "acp", "available_commands_update", root,
+                e => e.AgentMetadataUpdated = new AppServerControlProviderAgentMetadataPayload
+                {
+                    AvailableCommands = AppServerControlCommand.CloneMany(commands)
+                }, rawLine));
+        }
+        var names = commands.Select(static command => command.Name).ToList();
         var message = commands.Count == 0
             ? $"{_agentName} ACP tools updated."
-            : $"{_agentName} commands available: {FormatNamePreview(commands)}.";
-        var detail = BuildAvailableCommandsDetail(commands, tools);
-        EmitRuntimeMessage("agent.state", message, detail, "acp", "available_commands_update", root, rawLine);
+            : $"{_agentName} commands available: {FormatNamePreview(names)}.";
+        var detail = BuildAvailableCommandsDetail(names, tools);
+        EmitRuntimeMessage("agent.state", message, detail, "acp", "available_commands_update", root, rawLine, timelineVisible: false);
     }
 
     private void HandleSessionNotification(JsonElement root, string rawLine, string? method)
@@ -732,15 +927,24 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         }
 
         var turnId = _activeTurnId;
-        if (string.IsNullOrWhiteSpace(turnId))
+        var nativeSessionId = GetString(root, "params", "sessionId");
+        if (!string.Equals(nativeSessionId, _providerThreadId, StringComparison.Ordinal) ||
+            (string.IsNullOrWhiteSpace(turnId) && _protocolGeneration == 1) ||
+            (!string.IsNullOrWhiteSpace(turnId) && string.Equals(turnId, _cancellingTurnId, StringComparison.Ordinal)))
         {
             await WritePermissionResponseAsync(idElement.Clone(), null, cancelled: true, ct).ConfigureAwait(false);
             return;
         }
 
-        var requestId = idElement.ToString();
+        var requestId = "acp-approval-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        turnId ??= $"acp-background:{requestId}";
         var toolCall = Traverse(root, "params", "toolCall");
         var options = ReadPermissionOptions(root);
+        if (Provider == "antigravity" && GetString(toolCall, "toolCallId")?.StartsWith("interaction_", StringComparison.Ordinal) == true)
+        {
+            await HandleAcpChoiceQuestionAsync(root, idElement, turnId, options, rawLine, ct).ConfigureAwait(false);
+            return;
+        }
         var selectedOption = string.Equals(_quickSettings.PermissionMode, AppServerControlQuickSettings.PermissionModeAuto, StringComparison.Ordinal)
             ? SelectPermissionOption(options, "accept")
             : null;
@@ -809,7 +1013,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         }
     }
 
-    private void HandleToolCallUpdate(string turnId, JsonElement update, JsonElement root, string rawLine)
+    private void HandleToolCallUpdate(string turnId, JsonElement update, JsonElement root, string rawLine, bool appendContent = false)
     {
         var toolCallId = GetString(update, "toolCallId") ?? $"{Provider}-tool-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
         if (!_tools.TryGetValue(toolCallId, out var state))
@@ -829,7 +1033,16 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             _tools[toolCallId] = state;
         }
 
-        var status = NormalizeToolStatus(GetString(update, "status"));
+        if (_protocolGeneration == 2)
+        {
+            if (update.TryGetProperty("title", out _)) state.Title = GetString(update, "title") ?? toolCallId;
+            if (update.TryGetProperty("kind", out _)) state.ItemType = NormalizeToolItemType(GetString(update, "kind"), state.Title);
+            if (!appendContent && update.TryGetProperty("content", out _)) state.Output = new();
+            turnId = state.TurnId ??= turnId;
+        }
+        var status = _protocolGeneration == 2 && !update.TryGetProperty("status", out _)
+            ? state.Status : NormalizeToolStatus(GetString(update, "status"));
+        state.Status = status;
         var updatePresentation = AppServerControlToolPresentationProjector.FromAcp(
             state.ItemType,
             status,
@@ -844,6 +1057,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         {
             appServerControlEvent.Item = new AppServerControlProviderItemPayload
             {
+                Replace = _protocolGeneration == 2,
                 ItemType = state.ItemType,
                 Status = status,
                 Title = state.Title,
@@ -863,7 +1077,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 };
             }, rawLine));
         }
-        if (IsTerminalToolStatus(status))
+        if (IsTerminalToolStatus(status) && _protocolGeneration == 1)
         {
             _tools.Remove(toolCallId);
         }
@@ -882,34 +1096,6 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", "config_option_update", root, rawLine));
     }
 
-    private void HandleUsageUpdate(JsonElement update, JsonElement root, string rawLine)
-    {
-        var used = update.TryGetProperty("used", out var usedElement) && usedElement.TryGetUInt64(out var usedValue)
-            ? usedValue
-            : 0;
-        var size = update.TryGetProperty("size", out var sizeElement) && sizeElement.TryGetUInt64(out var sizeValue)
-            ? sizeValue
-            : 0;
-        var detail = string.Create(
-            CultureInfo.InvariantCulture,
-            $"{used:N0} / {size:N0} context tokens");
-        if (update.TryGetProperty("cost", out var cost) && cost.ValueKind == JsonValueKind.Object &&
-            cost.TryGetProperty("amount", out var amount) && amount.TryGetDouble(out var amountValue) &&
-            GetString(cost, "currency") is { } currency)
-        {
-            detail += string.Create(CultureInfo.InvariantCulture, $", {amountValue:0.####} {currency} cumulative");
-        }
-
-        _emit(CreateEvent("thread.token-usage.updated", _activeTurnId, null, null, "acp", "usage_update", root, appServerControlEvent =>
-        {
-            appServerControlEvent.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
-            {
-                Message = $"{_agentName} context window updated.",
-                Detail = detail
-            };
-        }, rawLine));
-    }
-
     private void EmitContentDelta(
         string turnId,
         string streamKind,
@@ -919,7 +1105,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         JsonElement root,
         string rawLine)
     {
-        if (string.IsNullOrWhiteSpace(delta))
+        if (string.IsNullOrEmpty(delta))
         {
             return;
         }
@@ -942,6 +1128,8 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             return;
         }
 
+        _lastPlanMarkdown = plan;
+
         _emit(CreateEvent("plan.completed", turnId, null, null, "acp", "plan", root, appServerControlEvent =>
         {
             appServerControlEvent.PlanCompleted = new AppServerControlProviderPlanCompletedPayload
@@ -953,6 +1141,13 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
 
     private void CompleteTurn(string turnId, string state, string stateLabel, string? stopReason, string? errorMessage, string rawLine)
     {
+        TaskCompletionSource? completion = null;
+        if (string.Equals(_activeTurnId, turnId, StringComparison.Ordinal))
+        {
+            completion = _activeTurnCompletion;
+            _activeTurnCompletion = null;
+            ResetTurnState();
+        }
         _emit(CreateEvent("turn.completed", turnId, null, null, "acp", "session/prompt", null, appServerControlEvent =>
         {
             appServerControlEvent.TurnCompleted = new AppServerControlProviderTurnCompletedPayload
@@ -973,10 +1168,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             };
         }, rawLine));
 
-        if (string.Equals(_activeTurnId, turnId, StringComparison.Ordinal))
-        {
-            ResetTurnState();
-        }
+        completion?.TrySetResult();
     }
 
     private async Task<JsonElement> SendRequestAsync(string method, Action<Utf8JsonWriter> writeParameters, TimeSpan timeout, CancellationToken ct)
@@ -1109,6 +1301,8 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         _pendingRequests.Clear();
         _pendingPromptTurns.Clear();
         _pendingPermissions.Clear();
+        _pendingUserInputs.Clear();
+        _pendingChoiceQuestions.Clear();
 
         try
         {
@@ -1156,7 +1350,12 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         {
         }
 
-        if (!_shutdown.IsCancellationRequested && !string.IsNullOrWhiteSpace(_activeTurnId) && process.ExitCode != 0)
+        if (!ReferenceEquals(_process, process))
+        {
+            return;
+        }
+
+        if (!_shutdown.IsCancellationRequested && !string.IsNullOrWhiteSpace(_activeTurnId))
         {
             var turnId = _activeTurnId;
             _emit(CreateEvent("turn.completed", turnId, null, null, "acp", "process.exit", new { process.ExitCode }, appServerControlEvent =>
@@ -1171,6 +1370,11 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             }));
             EmitRuntimeMessage("runtime.error", $"{_agentName} ACP process exited unexpectedly.", $"Exit code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
             ResetTurnState();
+        }
+
+        foreach (var pending in _pendingRequests.Values)
+        {
+            pending.TrySetException(new InvalidOperationException($"{_agentName} ACP connection closed."));
         }
     }
 
@@ -1218,12 +1422,13 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
     {
         return new AppServerControlQuickSettingsSummary
         {
-            Model = requested.Model ?? _quickSettings.Model,
-            Effort = requested.Effort,
+            Model = _quickSettings.Model,
+            Effort = _quickSettings.Effort,
             PlanMode = requested.PlanMode,
             PermissionMode = requested.PermissionMode,
             ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions),
-            EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions)
+            EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions),
+            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(_quickSettings.ConfigOptions)
         };
     }
 
@@ -1231,24 +1436,43 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         AppServerControlQuickSettingsSummary requested,
         CancellationToken ct)
     {
-        if (!string.Equals(requested.Model, _quickSettings.Model, StringComparison.Ordinal) &&
-            !string.IsNullOrWhiteSpace(requested.Model))
+        // Validate all requested native changes before making the first RPC.
+        // A local setting must never claim a provider accepted an unsupported value.
+        var changesModel = !string.Equals(requested.Model, _quickSettings.Model, StringComparison.Ordinal) &&
+                           !string.IsNullOrWhiteSpace(requested.Model);
+        var changesEffort = !string.Equals(requested.Effort, _quickSettings.Effort, StringComparison.Ordinal) &&
+                            !string.IsNullOrWhiteSpace(requested.Effort);
+        if (changesModel)
+        {
+            if (!_configOptionIds.ContainsKey("model") && !_supportsLegacyModels)
+                throw new InvalidOperationException($"{_agentName} does not support changing the ACP model.");
+            ValidateNativeOption("model", requested.Model!, _quickSettings.ModelOptions);
+        }
+        if (changesEffort)
+        {
+            if (!_configOptionIds.ContainsKey("effort"))
+                throw new InvalidOperationException($"{_agentName} does not expose an ACP reasoning effort setting.");
+            ValidateNativeOption("reasoning effort", requested.Effort!, _quickSettings.EffortOptions);
+        }
+
+        if (changesModel)
         {
             if (_configOptionIds.TryGetValue("model", out var configId))
             {
-                await SetConfigOptionAsync(configId, requested.Model, ct).ConfigureAwait(false);
+                await SetConfigOptionAsync(configId, requested.Model!, ct).ConfigureAwait(false);
             }
             else if (_supportsLegacyModels)
             {
-                await SetLegacyModelAsync(requested.Model, ct).ConfigureAwait(false);
+                await SetLegacyModelAsync(requested.Model!, ct).ConfigureAwait(false);
             }
         }
 
-        if (!string.Equals(requested.Effort, _quickSettings.Effort, StringComparison.Ordinal) &&
-            !string.IsNullOrWhiteSpace(requested.Effort) &&
-            _configOptionIds.TryGetValue("effort", out var effortConfigId))
+        if (changesEffort)
         {
-            await SetConfigOptionAsync(effortConfigId, requested.Effort, ct).ConfigureAwait(false);
+            if (!_configOptionIds.TryGetValue("effort", out var effortConfigId))
+                throw new InvalidOperationException($"{_agentName} no longer exposes ACP reasoning effort for the selected model.");
+            ValidateNativeOption("reasoning effort", requested.Effort!, _quickSettings.EffortOptions);
+            await SetConfigOptionAsync(effortConfigId, requested.Effort!, ct).ConfigureAwait(false);
         }
 
         var requestedModeId = string.Equals(
@@ -1264,7 +1488,16 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         }
     }
 
-    private async Task SetConfigOptionAsync(string configId, string value, CancellationToken ct)
+    private void ValidateNativeOption(string name, string value, IReadOnlyCollection<AppServerControlQuickSettingsOption> options)
+    {
+        if (options.Count > 0 && !options.Any(option => string.Equals(option.Value, value, StringComparison.Ordinal)))
+            throw new InvalidOperationException($"{_agentName} does not advertise ACP {name} '{value}'.");
+    }
+
+    private Task SetConfigOptionAsync(string configId, string value, CancellationToken ct) =>
+        SetConfigOptionAsync(configId, JsonSerializer.SerializeToElement(value, AppServerControlHostJsonContext.Default.String), ct);
+
+    private async Task SetConfigOptionAsync(string configId, JsonElement value, CancellationToken ct)
     {
         var result = await SendRequestAsync(
                 "session/set_config_option",
@@ -1273,7 +1506,9 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                     writer.WriteStartObject();
                     writer.WriteString("sessionId", _providerThreadId);
                     writer.WriteString("configId", configId);
-                    writer.WriteString("value", value);
+                    if (_protocolGeneration == 2) writer.WriteString("type", value.ValueKind is JsonValueKind.True or JsonValueKind.False ? "boolean" : "id");
+                    writer.WritePropertyName("value");
+                    value.WriteTo(writer);
                     writer.WriteEndObject();
                 },
                 AttachRequestTimeout,
@@ -1284,6 +1519,11 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         {
             _quickSettings = updated;
             CaptureConfigOptions(Traverse(result, "configOptions"));
+            _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", "session/set_config_option", result, result.GetRawText()));
+        }
+        else
+        {
+            throw new InvalidOperationException($"{_agentName} returned no ACP configuration after changing '{configId}'.");
         }
     }
 
@@ -1301,6 +1541,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                 AttachRequestTimeout,
                 ct)
             .ConfigureAwait(false);
+        _quickSettings.Model = modelId;
     }
 
     private async Task SetLegacyModeAsync(string modeId, CancellationToken ct)
@@ -1334,14 +1575,6 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             _quickSettings.PermissionMode,
             _quickSettings.PermissionMode);
         summary.ModelOptions = ReadModelOptions(modelState, model);
-        summary.EffortOptions =
-        [
-            new AppServerControlQuickSettingsOption { Value = "low", Label = "Low" },
-            new AppServerControlQuickSettingsOption { Value = "medium", Label = "Medium" },
-            new AppServerControlQuickSettingsOption { Value = "high", Label = "High" },
-            new AppServerControlQuickSettingsOption { Value = "xhigh", Label = "Extra high" },
-            new AppServerControlQuickSettingsOption { Value = "max", Label = "Max" }
-        ];
         return ApplyConfigOptions(summary, Traverse(sessionResult, "configOptions")) ?? summary;
     }
 
@@ -1352,11 +1585,12 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             return;
         }
 
+        _configOptionIds.Clear();
         using var optionEnumerator = options.EnumerateArray();
         while (optionEnumerator.MoveNext())
         {
             var option = optionEnumerator.Current;
-            var id = GetString(option, "id");
+            var id = GetString(option, "id") ?? GetString(option, "configId");
             var category = GetString(option, "category");
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -1366,12 +1600,12 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             if (string.Equals(category, "model", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(id, "model", StringComparison.OrdinalIgnoreCase))
             {
-                _configOptionIds["model"] = id;
+                _configOptionIds.TryAdd("model", id);
             }
             else if (string.Equals(category, "thought_level", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(id, "effort", StringComparison.OrdinalIgnoreCase))
             {
-                _configOptionIds["effort"] = id;
+                _configOptionIds.TryAdd("effort", id);
             }
         }
     }
@@ -1411,7 +1645,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         }
     }
 
-    private static AppServerControlQuickSettingsSummary? ApplyConfigOptions(AppServerControlQuickSettingsSummary current, JsonElement? configOptions)
+    private AppServerControlQuickSettingsSummary? ApplyConfigOptions(AppServerControlQuickSettingsSummary current, JsonElement? configOptions)
     {
         if (configOptions is not { ValueKind: JsonValueKind.Array } options)
         {
@@ -1421,29 +1655,38 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         var next = new AppServerControlQuickSettingsSummary
         {
             Model = current.Model,
-            Effort = current.Effort,
+            Effort = null,
             PlanMode = current.PlanMode,
             PermissionMode = current.PermissionMode,
-            ModelOptions = AppServerControlQuickSettings.CloneOptions(current.ModelOptions),
-            EffortOptions = AppServerControlQuickSettings.CloneOptions(current.EffortOptions)
+            ModelOptions = _supportsLegacyModels ? AppServerControlQuickSettings.CloneOptions(current.ModelOptions) : [],
+            EffortOptions = [],
+            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(current.ConfigOptions)
         };
 
+        next.ConfigOptions.Clear();
+
+        var appliedModel = false;
+        var appliedEffort = false;
         using var optionEnumerator = options.EnumerateArray();
         while (optionEnumerator.MoveNext())
         {
             var option = optionEnumerator.Current;
+            next.ConfigOptions.Add(option.Clone());
             var category = GetString(option, "category");
-            var id = GetString(option, "id");
+            var id = GetString(option, "id") ?? GetString(option, "configId");
+            if (GetString(option, "type") != "select") continue;
             var currentValue = GetString(option, "currentValue");
-            if (string.Equals(category, "model", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(id, "model", StringComparison.OrdinalIgnoreCase))
+            if (!appliedModel && (string.Equals(category, "model", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(id, "model", StringComparison.OrdinalIgnoreCase)))
             {
+                appliedModel = true;
                 next.Model = NormalizeOptional(currentValue);
                 next.ModelOptions = ReadConfigValueOptions(option);
             }
-            else if (string.Equals(category, "thought_level", StringComparison.OrdinalIgnoreCase) ||
-                     string.Equals(id, "effort", StringComparison.OrdinalIgnoreCase))
+            else if (!appliedEffort && (string.Equals(category, "thought_level", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(id, "effort", StringComparison.OrdinalIgnoreCase)))
             {
+                appliedEffort = true;
                 next.Effort = currentValue;
                 next.EffortOptions = ReadConfigValueOptions(option);
             }
@@ -1496,8 +1739,13 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         while (itemEnumerator.MoveNext())
         {
             var item = itemEnumerator.Current;
+            if (item.TryGetProperty("options", out var children) && children.ValueKind == JsonValueKind.Array)
+            {
+                result.AddRange(ReadConfigValueOptions(item));
+                continue;
+            }
             var value = GetString(item, "value");
-            if (string.IsNullOrWhiteSpace(value))
+            if (value is null)
             {
                 continue;
             }
@@ -1514,21 +1762,31 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         return result;
     }
 
-    private static void ValidateProtocolVersion(JsonElement initializeResult)
+    private static int ResolveProtocolGeneration(JsonElement initializeResult)
     {
         if (!initializeResult.TryGetProperty("protocolVersion", out var protocolVersion) ||
             protocolVersion.ValueKind != JsonValueKind.Number ||
             !protocolVersion.TryGetInt32(out var value) ||
-            value != 1)
+            value is not (1 or 2))
         {
-            throw new InvalidOperationException("ACP agent returned an unsupported protocol version; tlbx requires ACP v1.");
+            throw new InvalidOperationException("ACP agent returned an unsupported protocol version; tlbx supports ACP v1 and v2.");
         }
+
+        // Some v1 agents report version 2 with the legacy response shape.
+        // The v2 info/capabilities envelope determines lifecycle semantics.
+        return value == 2 && initializeResult.TryGetProperty("info", out _) ? 2 : 1;
     }
 
     private List<AcpPromptBlock> BuildPromptBlocks(AppServerControlTurnRequest request, string? planMode)
     {
         var blocks = new List<AcpPromptBlock>();
-        var prompt = AppServerControlQuickSettings.ApplyPlanModePrompt(request.Text, planMode);
+        var input = request.Text?.TrimStart() ?? string.Empty;
+        var commandName = input.StartsWith('/') ? input[1..].Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() : null;
+        var isNativeCommand = commandName is not null && _availableCommands.Any(command => command.Name == commandName);
+        var useNativePlanCommand = Provider == "antigravity" && planMode == AppServerControlQuickSettings.PlanModeOn &&
+            _availableCommands.Any(command => command.Name == "plan");
+        var prompt = isNativeCommand ? request.Text : useNativePlanCommand ? "/plan " + request.Text :
+            AppServerControlQuickSettings.ApplyPlanModePrompt(request.Text, planMode);
         if (!string.IsNullOrWhiteSpace(prompt))
         {
             blocks.Add(AcpPromptBlock.CreateText(prompt));
@@ -1714,9 +1972,9 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         };
     }
 
-    private void EmitRuntimeMessage(string type, string message, string? detail)
+    private void EmitRuntimeMessage(string type, string message, string? detail, bool timelineVisible = true)
     {
-        EmitRuntimeMessage(type, message, detail, "acp", type, new { message, detail }, null);
+        EmitRuntimeMessage(type, message, detail, "acp", type, new { message, detail }, null, timelineVisible);
     }
 
     private void EmitRuntimeMessage(
@@ -1726,7 +1984,8 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         string source,
         string? method,
         object? payload,
-        string? rawLine)
+        string? rawLine,
+        bool timelineVisible = true)
     {
         if (string.IsNullOrWhiteSpace(_sessionId))
         {
@@ -1735,11 +1994,19 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
 
         _emit(CreateEvent(type, _activeTurnId, null, null, source, method, payload, appServerControlEvent =>
         {
-            appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
+            var runtimeMessage = new AppServerControlProviderRuntimeMessagePayload
             {
                 Message = message,
                 Detail = detail
             };
+            if (timelineVisible)
+            {
+                appServerControlEvent.RuntimeMessage = runtimeMessage;
+            }
+            else
+            {
+                appServerControlEvent.RuntimeNoticeOnly = runtimeMessage;
+            }
         }, rawLine));
     }
 
@@ -1895,7 +2162,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
         return ExtractText(content);
     }
 
-    private static List<string> ReadAvailableCommandNames(JsonElement update)
+    private static List<AppServerControlCommand> ReadAvailableCommands(JsonElement update)
     {
         var commands = Traverse(update, "availableCommands");
         if (commands is not { ValueKind: JsonValueKind.Array } array)
@@ -1903,18 +2170,27 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
             return [];
         }
 
-        var result = new List<string>();
+        var result = new List<AppServerControlCommand>();
+        var names = new HashSet<string>(StringComparer.Ordinal);
         using var commandEnumerator = array.EnumerateArray();
         while (commandEnumerator.MoveNext())
         {
-            var name = GetString(commandEnumerator.Current, "name");
-            if (!string.IsNullOrWhiteSpace(name))
+            var command = commandEnumerator.Current;
+            var name = GetString(command, "name");
+            var description = GetString(command, "description");
+            if (!string.IsNullOrWhiteSpace(name) && description is not null && names.Add(name))
             {
-                result.Add(name);
+                result.Add(new AppServerControlCommand
+                {
+                    Name = name,
+                    Description = description,
+                    Input = Traverse(command, "input")?.Clone(),
+                    InputHint = GetString(command, "input", "type") is null or "text" ? GetString(command, "input", "hint") : null
+                });
             }
         }
 
-        return result.Distinct(StringComparer.Ordinal).ToList();
+        return result;
     }
 
     private static List<string> ReadMetaTools(JsonElement update)
@@ -2026,7 +2302,7 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
                     while (itemEnumerator.MoveNext())
                     {
                         var text = ExtractText(itemEnumerator.Current);
-                        if (!string.IsNullOrWhiteSpace(text))
+                        if (!string.IsNullOrEmpty(text))
                         {
                             parts.Add(text);
                         }
@@ -2149,10 +2425,14 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
 
     private void ResetTurnState()
     {
+        var completion = _activeTurnCompletion;
+        _activeTurnCompletion = null;
         _activeTurnId = null;
+        _cancellingTurnId = null;
         _activeTurnModel = null;
         _activeTurnEffort = null;
-        _tools.Clear();
+        if (_protocolGeneration == 1) _tools.Clear();
+        completion?.TrySetResult();
     }
 
     private static string? GetString(JsonElement? element, params string[] path)
@@ -2227,9 +2507,11 @@ internal sealed class AcpAppServerControlAgentRuntime : IAppServerControlAgentRu
     private sealed class AcpToolState
     {
         public string ItemId { get; init; } = string.Empty;
-        public string ItemType { get; init; } = "dynamic_tool_call";
-        public string Title { get; init; } = string.Empty;
+        public string ItemType { get; set; } = "dynamic_tool_call";
+        public string Title { get; set; } = string.Empty;
+        public string? TurnId { get; set; }
+        public string Status { get; set; } = "in_progress";
         public AppServerControlToolPresentation Presentation { get; init; } = new();
-        public BoundedToolOutputAccumulator Output { get; } = new();
+        public BoundedToolOutputAccumulator Output { get; set; } = new();
     }
 }

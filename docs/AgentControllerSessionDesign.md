@@ -4,7 +4,7 @@
 
 This document is the source of truth for the visual and interaction design of tlbx Agent Controller Session. It exists to prevent Agent Controller Session UI behavior from drifting across ad hoc iterations.
 
-Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The new-session launcher discovers locally installed supported runtimes and recognizes Codex app-server, Claude Code through the official Claude Agent SDK, plus standard ACP-v1 agents. The built-in ACP catalog covers Grok Build, OpenCode, Gemini CLI, and GitHub Copilot CLI; installations can add or override definitions through the server-owned `acp-agents.json` manifest without adding provider branches to `mtagenthost` or the frontend. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
+Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The new-session launcher discovers locally installed supported runtimes and recognizes Codex app-server, Claude Code through the official Claude Agent SDK, OpenCode through its native HTTP/SSE server (CLI 1.14.19+), plus registered ACP v1/v2 agents. The built-in ACP catalog covers Grok Build, Google Antigravity, Gemini CLI, and GitHub Copilot CLI; installations can add or override definitions through the server-owned `acp-agents.json` manifest without adding provider branches to `mtagenthost` or the frontend. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
 
 Any future Agent Controller Session UI change that affects layout, hierarchy, history ordering, timeline rendering, typography, spacing, scrolling, item rendering, or interaction states must update this document with the new fundamental rule or revised rationale.
 
@@ -30,7 +30,9 @@ This document governs:
 
 Provider-specific transport details belong in the C# runtime layer, not here. This document describes the Agent Controller Session UX contract after provider events have been normalized into tlbx-owned concepts.
 
-ACP discovery is intentionally local and non-executing: tlbx only presents catalog entries whose command already resolves on the configured user's machine. The optional `acp-agents.json` file lives beside `settings.json` and has the shape `{ "agents": [{ "profile": "my-agent", "name": "My Agent", "command": "my-agent", "arguments": ["--acp"] }] }`. The server validates these definitions and resolves the executable before sending an owner-authenticated attach request to `mtagenthost`; browser input never supplies an arbitrary executable or argument vector.
+ACP discovery is intentionally local and non-executing: tlbx only presents catalog entries whose command already resolves on the configured user's machine. The optional `acp-agents.json` file lives beside `settings.json` and has the shape `{ "agents": [{ "profile": "my-agent", "name": "My Agent", "command": "my-agent", "arguments": ["--acp"] }] }`. The server validates these definitions and resolves the executable before sending an owner-authenticated attach request to `mtagenthost`; browser input never supplies an arbitrary executable or argument vector. Entries may set `authenticationMethodId` to a method advertised by the agent and `environmentVariables` to an object of process environment overrides (a null value removes an inherited variable). Authentication completes before opening or resuming the native session; live reattachment rejects changed environment/authentication settings. For Antigravity, use the official `agy_acp_server` executable together with its matching harness, select the intended authentication method, and set an isolated `GEMINI_HOME`; an API key can remain in the inherited process environment. OpenCode uses an owned, authenticated loopback HTTP server because its stable ACP adapter does not forward native question tools. Its model/variant and primary-agent catalogues, questions, approvals, history, image parts, usage, cancellation, and compaction use native HTTP/SSE contracts. OpenCode manifest overrides select this transport with `"runtimeKind": "opencode-http"` and an empty argument list; an existing explicit `arguments: ["acp"]` override continues to select ACP. Interaction requests with native `interaction_` IDs are choice questions, even when tool permissions are automatic. Display labels remain separate from the native option values sent back to the agent.
+
+Native compaction uses Codex's dedicated API or an advertised `/compact` command for SDK/ACP providers. Command-based compaction is retained as a user command and remains interruptible; unsupported providers return a clear request error. Claude compaction failures are failures even when its SDK wraps the command in a nominally successful result, and failed compaction must preserve the last known context usage. Attach-time metadata is published in order before live updates, and a completed turn must release its runtime state before another input can be accepted.
 
 ## Non-Regression Floor
 
@@ -63,7 +65,7 @@ New Agent Controller Session work must use the following concept names consisten
 
 - use `Agent Controller` for software that speaks a supported structured agent protocol and provides an agent-control UI
 - use `Agent Controller Session` for one live controlled provider conversation
-- use `provider protocol` for the runtime boundary; currently Codex app-server, Claude Agent SDK, or Agent Client Protocol (ACP) v1 over stdio
+- use `provider protocol` for the runtime boundary; currently Codex app-server, Claude Agent SDK, or Agent Client Protocol (ACP) v1/v2 over stdio
 - use `ACP client runtime` for tlbx's standards-based client implementation that drives registered ACP agents without provider-specific stream parsing
 - use `Agent Controller Runtime` for the backend-owned provider runtime that drives an Agent Controller Session
 - use `history` for the canonical ordered Agent Controller Session item sequence
@@ -101,7 +103,7 @@ Naming rule:
 ## Runtime Boundary
 
 - Explicit Agent Controller Sessions must ingest exactly one tlbx-owned canonical runtime stream, and that stream must come through `mtagenthost`.
-- The active `mtagenthost` Agent Controller Session host protocol is `app-server-control-host-v2`; tlbx should reject older host protocol versions instead of carrying parallel legacy protocol support.
+- The active `mtagenthost` Agent Controller Session host protocol is `app-server-control-host-v3`; tlbx should reject older host protocol versions instead of carrying parallel legacy protocol support.
 - `mtagenthost` is the only place where provider-specific transport, protocol parsing, provider-specific semantics, and event canonization belong for Agent Controller Session.
 - `mtagenthost` must reduce provider-specific structured events into one provider-neutral canonical Agent Controller Session history model that is a capability superset of the supported provider surfaces.
 - `mtagenthost` must own the canonical in-memory Agent Controller Session history for a session. `mt` should broker access to that history, not build and own a second competing canonical reducer.
@@ -330,6 +332,7 @@ The canonical history contract must satisfy the following:
 - One first-class draft interactive type is an `interview` item that carries a list of questions.
 - The frontend should render `interview` items with a dedicated widget-oriented presentation rather than flattening them into ordinary assistant markdown.
 - Provider-specific question/request semantics may map into that canonical item type, but the frontend should only consume the canonical item contract.
+- Answer edits update the existing form's submit availability without replacing focused inputs. Question navigation and request-busy changes refresh the retained history row even when its provider payload has not changed.
 
 ### Ordering
 
@@ -592,7 +595,8 @@ Status in this branch/work item:
 - implemented: Claude Code uses the official Claude Agent SDK instead of the removed stream-json/XML adapter, including partial text, multi-turn state, permissions, resume, and GIF/JPEG/PNG/WebP image content blocks
 - implemented: Claude approval and interview decisions remain pending until the Agent SDK bridge acknowledges resolution of the exact waiting callback; bridge rejection is returned as a failed command instead of falsely resolving the canonical request
 - implemented: approval prompts use compact localized action copy and a tool label, keep provider JSON and exact command text collapsed under technical details, and present concise decline/allow actions
-- implemented: the ACP client performs the standard `initialize` and `session/new` flow, consumes canonical `session/update` notifications, handles permission requests and cancellation, and prefers `session/set_config_option` while retaining protocol-level legacy mode/model fallbacks
+- implemented: the ACP client negotiates v1/v2 initialization envelopes, consumes structured `session/update` notifications, and preserves v1 model/mode RPCs for v1 agents. Native v2 prompt acknowledgement records insertion; foreground `state_update` idle settles completion/cancellation. Typed message IDs, authoritative replacements, item plans, agent-owned terminal bytes and compaction summaries retain separate canonical entities
+- implemented: saved ACP conversations use capability-gated v1 `session/load`/`session/resume` or v2 `session/resume` with `replayFrom: { type: "start" }`; failed resume never silently creates a new conversation. Replayed user/assistant/tool messages retain the requested native session identity.
 - implemented: when an ACP agent advertises `promptCapabilities.image`, GIF/JPEG/PNG/WebP and other declared image MIME attachments are sent as bounded ACP `image` content blocks; agents without that capability retain the explicit local-path text fallback
 - implemented: the new-session launcher queries locally installed Agent Controller runtimes and offers detected Codex app-server, Claude Agent SDK, and registered ACP agents; the selected provider profile is preserved by bookmarks and relaunch
 - implemented: Agent Controller Session retains canonical user-facing history rather than a hidden durable raw-event archive
@@ -738,6 +742,11 @@ Status in this branch/work item:
 - implemented: direct progress-nav scrubs now jump to a tiny centered preview window first and then hydrate into a normal browse window after drag idle, so large jumps do not try to materialize the traversed span
 - implemented: canonical interactive request/question flows are first-class `interview` history items with embedded questions and answers; the frontend prefers that self-renderable payload and retains request-summary lookup only as a compatibility fallback
 - implemented: session-scoped REST and generated CLI control surfaces now support bounded canonical history reads, turn submission, interruption, active-turn steering, and provider-native thread compaction without browser automation
+- implemented: ACP v1 stop waits for the original prompt response while retaining final updates under the original turn. ACP steering cancels and settles that turn before submitting the replacement input in the same provider conversation; the response identifies the replacement turn and its input is retained once in canonical history. Stale turn targets and empty replacement input are rejected before interrupting work.
+- implemented: Grok question extension requests use canonical interview items, preserve native choice labels, multi-select and free-text annotations, and receive explicit cancellation when their owning turn stops. Duplicate or stale answers do not resolve another request.
+- implemented: unhandled ACP bookkeeping notifications remain bounded diagnostic notices and do not create conversation rows. Interview choices retain at least a 44px hit target on mobile.
+- implemented: reconnecting `mt` to an existing ACP host repeats only the ownership handshake when the attachment matches; it preserves the live provider process, provider thread, pending turn, settings, and canonical history. An incompatible attachment is rejected without replacing a live conversation.
+- implemented: Agent Controller attach failures remain observable through the session status and history error response, including failures before a host transport exists. An unattached failed runtime must not be presented as ready.
 - implemented: Codex `thread/settings/updated`, token-usage, account, rate-limit, and healthy MCP startup bookkeeping now update bounded runtime notices/quick settings without producing timeline noise; MCP/provider failures remain visible
 - implemented: Codex model discovery follows all paginated `model/list` cursors and exposes the provider-ordered live catalog, including newly available models, without a stale frontend fallback list
 - implemented: Codex `thread/resume` requests use `excludeTurns` so resuming a large provider thread does not hydrate its complete stored turn payload into the runtime handshake; tlbx canonical history remains the bounded browser history source

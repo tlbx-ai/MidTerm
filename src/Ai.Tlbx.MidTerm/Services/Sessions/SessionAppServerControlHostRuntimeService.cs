@@ -382,7 +382,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     {
                         SessionId = sessionId,
                         Provider = profile,
-                        RuntimeKind = isCodex ? CodexMode : isClaude ? ClaudeAgentSdkMode : "acp-v1",
+                        RuntimeKind = isCodex ? CodexMode : isClaude ? ClaudeAgentSdkMode : acpAgent?.RuntimeKind ?? "acp-v1",
                         WorkingDirectory = workingDirectory,
                         InstanceId = _instanceIdentity.InstanceId,
                         OwnerToken = _instanceIdentity.OwnerToken,
@@ -390,8 +390,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                         ExecutablePath = executablePath,
                         AgentName = acpAgent?.Name,
                         ExecutableArguments = acpAgent?.Arguments.ToList() ?? [],
+                        EnvironmentVariables = acpAgent?.EnvironmentVariables is { } environment
+                            ? new Dictionary<string, string?>(environment, StringComparer.Ordinal) : new(StringComparer.Ordinal),
+                        AuthenticationMethodId = acpAgent?.AuthenticationMethodId,
                         UserProfileDirectory = preferredProfileDirectory,
-                        ResumeThreadId = resumeThreadIdOverride ?? attachPoint?.PreferredThreadId
+                        ResumeThreadId = resumeThreadIdOverride ?? session.AppServerControlResumeThreadId ?? attachPoint?.PreferredThreadId
                     }
                 },
                 ct).ConfigureAwait(false);
@@ -719,14 +722,24 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
     }
 
+    public async Task RecordAttachFailureAsync(string sessionId, string profile, string error, CancellationToken ct)
+    {
+        await DetachAsync(sessionId, ct).ConfigureAwait(false);
+        _states.TryAdd(sessionId, new HostRuntimeState(sessionId)
+        {
+            Profile = profile,
+            Status = HostRuntimeStatus.Error,
+            LastError = AppServerControlHistoryTextSanitizer.Sanitize(error)
+        });
+    }
+
     public bool TryGetRuntimeSummary(string sessionId, out AppServerControlRuntimeSummary summary)
     {
         summary = default!;
         if (!_states.TryGetValue(sessionId, out var state) ||
             state.Status == HostRuntimeStatus.None ||
             state.Status == HostRuntimeStatus.Stopped ||
-            state.Input is null ||
-            state.Output is null)
+            (state.Status != HostRuntimeStatus.Error && (state.Input is null || state.Output is null)))
         {
             return false;
         }
@@ -1044,7 +1057,16 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             await state.Input!.WriteLineAsync(payload).ConfigureAwait(false);
             await state.Input.FlushAsync(ct).ConfigureAwait(false);
 
-            var result = await pending.Task.WaitAsync(CommandTimeout, ct).ConfigureAwait(false);
+            // Attach and settings may require multiple provider round trips. In particular,
+            // an ACP cancel must settle before steering can submit its replacement prompt.
+            var timeout = command.Type switch
+            {
+                "runtime.attach" or "turn.start" => TimeSpan.FromSeconds(60),
+                "turn.steer" => TimeSpan.FromSeconds(90),
+                "turn.interrupt" => TimeSpan.FromSeconds(20),
+                _ => CommandTimeout
+            };
+            var result = await pending.Task.WaitAsync(timeout, ct).ConfigureAwait(false);
             if (!string.Equals(result.Status, "accepted", StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException(result.Message ?? $"App Server Controller host rejected command '{command.Type}'.");
@@ -1466,6 +1488,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         return new AppServerControlItemSummary
         {
             ItemId = source.ItemId,
+            AliasItemIds = source.AliasItemIds.ToList(),
             TurnId = source.TurnId,
             ItemType = source.ItemType,
             Status = source.Status,
@@ -1509,6 +1532,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     {
         return new AppServerControlSessionSummary
         {
+            AgentName = source.AgentName,
+            Usage = source.Usage?.Clone(),
+            AvailableCommands = AppServerControlCommand.CloneMany(source.AvailableCommands),
             State = source.State,
             StateLabel = source.StateLabel,
             Reason = source.Reason,
@@ -1551,7 +1577,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             PermissionMode = source.PermissionMode,
             FastMode = source.FastMode,
             ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions),
-            EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions)
+            EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions),
+            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions)
         };
     }
 
@@ -1615,9 +1642,12 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             Header = source.Header,
             Question = source.Question,
             MultiSelect = source.MultiSelect,
+            AllowCustomAnswer = source.AllowCustomAnswer,
+            IsSecret = source.IsSecret,
             Options = source.Options.Select(option => new AppServerControlQuestionOption
             {
                 Label = option.Label,
+                Value = option.Value,
                 Description = option.Description
             }).ToList()
         };

@@ -10,6 +10,15 @@ const setCwdMock = vi.fn();
 const destroyTreeViewMock = vi.fn();
 const renderPreviewMock = vi.fn();
 const clearPreviewMock = vi.fn();
+const refreshMock = vi.fn();
+const gitListeners: Array<(sessionId: string) => void> = [];
+
+vi.mock('../git', () => ({
+  addGitRepoCacheListener: (listener: (sessionId: string) => void) => {
+    gitListeners.push(listener);
+    return () => {};
+  },
+}));
 
 vi.mock('../logging', () => ({
   createLogger: () => ({
@@ -51,6 +60,7 @@ vi.mock('./navigation', () => ({
     busy = false;
     setCwd = setCwdMock;
     setActive = vi.fn();
+    refresh = refreshMock;
   },
 }));
 
@@ -68,6 +78,8 @@ describe('fileBrowser', () => {
     destroyTreeViewMock.mockReset();
     renderPreviewMock.mockReset();
     clearPreviewMock.mockReset();
+    refreshMock.mockReset();
+    gitListeners.length = 0;
 
     vi.resetModules();
 
@@ -115,6 +127,10 @@ describe('fileBrowser', () => {
     );
     expect(clearPreviewMock).toHaveBeenCalledWith(previewContainer);
     expect(setCwdMock).toHaveBeenCalledWith('Q:\\repos\\MidTerm');
+    gitListeners.forEach((listener) => listener('session-1'));
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+    gitListeners.forEach((listener) => listener('uninitialized-session'));
+    expect(refreshMock).toHaveBeenCalledTimes(1);
     processListeners.forEach((listener) =>
       listener('session-1', { foregroundCwd: 'Q:\\repos\\Another' }),
     );

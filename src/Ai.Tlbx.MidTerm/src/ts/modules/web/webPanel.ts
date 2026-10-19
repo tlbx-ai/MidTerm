@@ -228,6 +228,8 @@ export function initWebPanel(): void {
       const nav = e.data as PreviewNavigationMessage;
       const target = resolvePreviewMessageTarget(frame, e.source, nav);
       if (!target) return;
+      // The bridge announces itself before load, which may be held up by images.
+      refreshPreviewBridgeVisibility(frame, activeFrameKey === frame.dataset.previewFrameKey);
       updateUrlBarFromIframe(
         target,
         nav.url,
@@ -516,6 +518,9 @@ function createPreviewIframe(frameKey: string): HTMLIFrameElement | null {
   frame.src = 'about:blank';
   frame.setAttribute('allow', FRAME_ALLOW_ATTR.trim());
   frame.dataset.previewFrameKey = frameKey;
+  frame.addEventListener('load', () => {
+    refreshPreviewBridgeVisibility(frame, activeFrameKey === frameKey);
+  });
   iframeHost.appendChild(frame);
   previewFrames.set(frameKey, frame);
   applyStoredViewportToFrame(frame);

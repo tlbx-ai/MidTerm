@@ -48,10 +48,6 @@ export function setVoiceSectionVisible(visible: boolean): void {
  */
 export function setDevMode(enabled: boolean): void {
   devModeEnabled = enabled;
-  const syncBtn = document.getElementById('btn-voice-sync');
-  if (syncBtn) {
-    syncBtn.classList.toggle('hidden', !enabled);
-  }
   for (const listener of devModeListeners) {
     listener(enabled);
   }
@@ -121,8 +117,7 @@ export function setToggleRecording(recording: boolean): void {
     toggleBtn.classList.toggle('recording', recording);
     const icon = toggleBtn.querySelector('.icon');
     if (icon) {
-      // &#xe912; is play, &#xe996; is stop
-      icon.innerHTML = recording ? '&#xe996;' : '&#xe912;';
+      icon.textContent = recording ? '\uea17' : '\uea15';
     }
   }
 }

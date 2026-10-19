@@ -46,6 +46,7 @@ export class BrowserNavigation {
   private readonly buttons = new Map<string, HTMLButtonElement>();
   private metadata: FileNavigation | null = null;
   private controller: AbortController | null = null;
+  private locationController: AbortController | null = null;
   private generation = 0;
   private cwd: string | null = null;
   private openRequest: FileOpenRequest | null = null;
@@ -186,6 +187,7 @@ export class BrowserNavigation {
   public dispose(): void {
     this.generation++;
     this.controller?.abort();
+    this.locationController?.abort();
     this.visibility.dispose();
     this.setActive(false);
     this.eventsController.abort();
@@ -202,6 +204,7 @@ export class BrowserNavigation {
         })
       : null;
     if (!active) {
+      this.locationController?.abort();
       this.refreshController?.abort();
       this.events?.close();
       this.events = null;
@@ -265,9 +268,17 @@ export class BrowserNavigation {
   private async refreshLocation(cwd: string): Promise<void> {
     const path = this.metadata?.path;
     if (!path) return;
+    this.locationController?.abort();
+    const controller = new AbortController();
+    this.locationController = controller;
     try {
-      const next = await readFileNavigation(path, this.sessionId, new AbortController().signal);
-      if (this.root.isConnected && this.cwd === cwd && this.metadata?.path === path) {
+      const next = await readFileNavigation(path, this.sessionId, controller.signal);
+      if (
+        !controller.signal.aborted &&
+        this.root.isConnected &&
+        this.cwd === cwd &&
+        this.metadata?.path === path
+      ) {
         this.metadata = next;
         this.renderLocation(document.activeElement === this.address);
         this.syncControls();
@@ -296,6 +307,7 @@ export class BrowserNavigation {
   ): Promise<boolean> {
     if (!path) return false;
     const generation = ++this.generation;
+    this.locationController?.abort();
     // Initial folder hydration belongs to this pane, even if another session opens a file.
     // Interactive navigation still invalidates superseded document opens.
     this.openRequest = this.metadata && this.active ? beginFileOpen(this.sessionId) : null;
@@ -304,7 +316,7 @@ export class BrowserNavigation {
     this.error.hidden = true;
     this.root.setAttribute('aria-busy', 'true');
     try {
-      const next = await readFileNavigation(path, this.sessionId, this.controller.signal);
+      const next = await readFileNavigation(path, this.sessionId, this.controller.signal, false);
       if (!this.current(generation)) return false;
       if (!next.exists) throw new Error(t('fileViewer.fileNotFound'));
       if (!next.isDirectory) return await this.openFileLocation(next);
@@ -360,6 +372,9 @@ export class BrowserNavigation {
     this.visibility.update(data.visibility);
     this.renderLocation();
     this.startWatching();
+    // Optional terminal-detected locations can involve slow/offline paths. Enrich
+    // the location chooser after rendering, independently from folder navigation.
+    void this.refreshLocation(this.cwd ?? next.path);
     return true;
   }
 

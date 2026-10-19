@@ -731,6 +731,12 @@ public sealed partial class SessionAppServerControlHistoryService
         }
 
         state.Session.LastEventAt = appServerControlEvent.CreatedAt;
+        if (appServerControlEvent.AgentMetadataUpdated is { } metadata)
+        {
+            if (metadata.AgentName is not null) state.Session.AgentName = metadata.AgentName;
+            if (metadata.Usage is not null) state.Session.Usage = metadata.Usage.Clone();
+            if (metadata.AvailableCommands is not null) state.Session.AvailableCommands = AppServerControlCommand.CloneMany(metadata.AvailableCommands);
+        }
         ApplySessionState(state, appServerControlEvent);
         ApplyThreadState(state, appServerControlEvent);
 
@@ -1162,16 +1168,17 @@ public sealed partial class SessionAppServerControlHistoryService
         state.CurrentTurn.StateLabel = "Running";
         var model = AppServerControlQuickSettings.NormalizeOptionalValue(appServerControlEvent.TurnStarted?.Model);
         var effort = AppServerControlQuickSettings.NormalizeOptionalValue(appServerControlEvent.TurnStarted?.Effort);
-        state.CurrentTurn.Model = model ?? state.QuickSettings.Model;
-        state.CurrentTurn.Effort = effort ?? state.QuickSettings.Effort;
+        var replay = appServerControlEvent.TurnStarted?.IsReplay == true;
+        state.CurrentTurn.Model = model ?? (replay ? null : state.QuickSettings.Model);
+        state.CurrentTurn.Effort = effort ?? (replay ? null : state.QuickSettings.Effort);
         state.CurrentTurn.StartedAt = appServerControlEvent.CreatedAt;
         state.CurrentTurn.CompletedAt = null;
-        if (model is not null)
+        if (model is not null && !replay)
         {
             state.QuickSettings.Model = model;
         }
 
-        if (effort is not null)
+        if (effort is not null && !replay)
         {
             state.QuickSettings.Effort = effort;
         }
@@ -1209,6 +1216,7 @@ public sealed partial class SessionAppServerControlHistoryService
         state.QuickSettings.PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(quickSettings.PermissionMode);
         state.QuickSettings.ModelOptions = AppServerControlQuickSettings.CloneOptions(quickSettings.ModelOptions);
         state.QuickSettings.EffortOptions = AppServerControlQuickSettings.CloneOptions(quickSettings.EffortOptions);
+        state.QuickSettings.ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(quickSettings.ConfigOptions);
     }
 
     private static void ApplyPlanUpdate(AppServerControlConversationState state, AppServerControlProviderEvent appServerControlEvent)
@@ -1238,6 +1246,7 @@ public sealed partial class SessionAppServerControlHistoryService
         entry.TurnId = appServerControlEvent.TurnId ?? state.CurrentTurn.TurnId;
         entry.Status = "completed";
         entry.Title = "Plan";
+        if (appServerControlEvent.PlanCompleted?.IsProposal == true) entry.ItemType = "proposed_plan";
         entry.Body = !string.IsNullOrWhiteSpace(appServerControlEvent.PlanCompleted?.PlanMarkdown)
             ? RetainWithinBudget(NormalizeHistoryText(appServerControlEvent.PlanCompleted.PlanMarkdown), MaxPlanStreamChars, retainHead: false)
             : AppendRetainedHistoryChunk(entry.Body, appServerControlEvent.PlanDelta?.Delta, MaxPlanStreamChars, retainHead: false);
@@ -1370,47 +1379,50 @@ public sealed partial class SessionAppServerControlHistoryService
             return;
         }
 
-        switch (appServerControlEvent.ContentDelta.StreamKind)
-        {
-            case "assistant_text":
-                state.Streams.AssistantText = AppendAssistantDelta(state.Streams.AssistantText, appServerControlEvent.ContentDelta.Delta);
-                break;
-            case "reasoning_text":
-                state.Streams.ReasoningText = AppendRetainedHistoryChunk(
-                    state.Streams.ReasoningText,
-                    appServerControlEvent.ContentDelta.Delta,
-                    MaxReasoningStreamChars,
-                    retainHead: false);
-                break;
-            case "reasoning_summary_text":
-                state.Streams.ReasoningSummaryText = AppendRetainedHistoryChunk(
-                    state.Streams.ReasoningSummaryText,
-                    appServerControlEvent.ContentDelta.Delta,
-                    MaxReasoningSummaryStreamChars,
-                    retainHead: false);
-                break;
-            case "plan_text":
-                state.Streams.PlanText = AppendRetainedHistoryChunk(
-                    state.Streams.PlanText,
-                    appServerControlEvent.ContentDelta.Delta,
-                    MaxPlanStreamChars,
-                    retainHead: false);
-                break;
-            case "command_output":
-                state.Streams.CommandOutput = AppendRetainedHistoryChunk(
-                    state.Streams.CommandOutput,
-                    appServerControlEvent.ContentDelta.Delta,
-                    MaxCommandOutputStreamChars,
-                    retainHead: false);
-                break;
-            case "file_change_output":
-                state.Streams.FileChangeOutput = AppendRetainedHistoryChunk(
-                    state.Streams.FileChangeOutput,
-                    appServerControlEvent.ContentDelta.Delta,
-                    MaxFileChangeOutputStreamChars,
-                    retainHead: false);
-                break;
-        }
+        if (!appServerControlEvent.ContentDelta.Replace &&
+            (appServerControlEvent.ItemId?.StartsWith("acp:", StringComparison.Ordinal) != true ||
+             string.Equals(appServerControlEvent.TurnId, state.CurrentTurn.TurnId, StringComparison.Ordinal)))
+            switch (appServerControlEvent.ContentDelta.StreamKind)
+            {
+                case "assistant_text":
+                    state.Streams.AssistantText = AppendAssistantDelta(state.Streams.AssistantText, appServerControlEvent.ContentDelta.Delta);
+                    break;
+                case "reasoning_text":
+                    state.Streams.ReasoningText = AppendRetainedHistoryChunk(
+                        state.Streams.ReasoningText,
+                        appServerControlEvent.ContentDelta.Delta,
+                        MaxReasoningStreamChars,
+                        retainHead: false);
+                    break;
+                case "reasoning_summary_text":
+                    state.Streams.ReasoningSummaryText = AppendRetainedHistoryChunk(
+                        state.Streams.ReasoningSummaryText,
+                        appServerControlEvent.ContentDelta.Delta,
+                        MaxReasoningSummaryStreamChars,
+                        retainHead: false);
+                    break;
+                case "plan_text":
+                    state.Streams.PlanText = AppendRetainedHistoryChunk(
+                        state.Streams.PlanText,
+                        appServerControlEvent.ContentDelta.Delta,
+                        MaxPlanStreamChars,
+                        retainHead: false);
+                    break;
+                case "command_output":
+                    state.Streams.CommandOutput = AppendRetainedHistoryChunk(
+                        state.Streams.CommandOutput,
+                        appServerControlEvent.ContentDelta.Delta,
+                        MaxCommandOutputStreamChars,
+                        retainHead: false);
+                    break;
+                case "file_change_output":
+                    state.Streams.FileChangeOutput = AppendRetainedHistoryChunk(
+                        state.Streams.FileChangeOutput,
+                        appServerControlEvent.ContentDelta.Delta,
+                        MaxFileChangeOutputStreamChars,
+                        retainHead: false);
+                    break;
+            }
 
         var historyKind = HistoryKindFromStream(appServerControlEvent.ContentDelta.StreamKind);
         if (historyKind is null)
@@ -1427,7 +1439,38 @@ public sealed partial class SessionAppServerControlHistoryService
         entry.ItemId = appServerControlEvent.ItemId;
         entry.ItemType = appServerControlEvent.ContentDelta.StreamKind;
         entry.Status = "streaming";
-        if (historyKind == "assistant")
+        if (appServerControlEvent.ContentDelta.Replace)
+        {
+            entry.Title = historyKind == "user" ? null : ResolveStreamTitle(historyKind, appServerControlEvent.ContentDelta.StreamKind, entry.Title);
+            entry.Body = AppendRetainedStreamText(string.Empty, appServerControlEvent.ContentDelta.Delta,
+                historyKind is "assistant" or "user" ? MaxAssistantStreamChars : MaxReasoningStreamChars,
+                retainHead: false, separateWithNewline: false);
+            entry.Streaming = historyKind != "user";
+            if (historyKind == "user")
+            {
+                entry.ItemType = "user_message";
+                entry.Status = "completed";
+                PromoteUserHistoryEntryToTurnLead(state, entry);
+            }
+            if (string.Equals(entry.TurnId, state.CurrentTurn.TurnId, StringComparison.Ordinal))
+            {
+                var text = string.Concat(state.HistoryEntries.Values
+                    .Where(item => item.Kind == historyKind && item.TurnId == entry.TurnId)
+                    .OrderBy(item => item.Order).Select(item => item.Body));
+                if (historyKind == "assistant") state.Streams.AssistantText = AppendAssistantDelta(string.Empty, text);
+                if (historyKind == "reasoning") state.Streams.ReasoningText = AppendRetainedHistoryChunk(string.Empty, text, MaxReasoningStreamChars, retainHead: false);
+            }
+        }
+        else if (historyKind == "user")
+        {
+            entry.Title = null;
+            entry.Body = AppendAssistantDelta(entry.Body, appServerControlEvent.ContentDelta.Delta);
+            entry.ItemType = "user_message";
+            entry.Status = "completed";
+            entry.Streaming = false;
+            PromoteUserHistoryEntryToTurnLead(state, entry);
+        }
+        else if (historyKind == "assistant")
         {
             entry.Title = ResolveStreamTitle(historyKind, appServerControlEvent.ContentDelta.StreamKind, entry.Title);
             entry.Body = AppendAssistantDelta(entry.Body, appServerControlEvent.ContentDelta.Delta);
@@ -1457,7 +1500,9 @@ public sealed partial class SessionAppServerControlHistoryService
         else
         {
             entry.Title = ResolveStreamTitle(historyKind, appServerControlEvent.ContentDelta.StreamKind, entry.Title);
-            entry.Body = AppendHistoryChunk(entry.Body, appServerControlEvent.ContentDelta.Delta);
+            entry.Body = appServerControlEvent.ItemId?.StartsWith("acp:", StringComparison.Ordinal) == true
+                ? AppendRetainedStreamText(entry.Body, appServerControlEvent.ContentDelta.Delta, MaxReasoningStreamChars, retainHead: false, separateWithNewline: false)
+                : AppendHistoryChunk(entry.Body, appServerControlEvent.ContentDelta.Delta);
             entry.Streaming = true;
         }
 
@@ -1598,15 +1643,18 @@ public sealed partial class SessionAppServerControlHistoryService
         var item = GetOrCreateItemSummary(state.Items, canonicalItemId, appServerControlEvent.TurnId);
         item.TurnId = appServerControlEvent.TurnId ?? item.TurnId;
         item.ItemType = normalizedType;
+        var submittedUserInput = historyKind == "user" && IsLocalUserItemId(appServerControlEvent.ItemId ?? string.Empty);
+        var hasSubmittedUserInput = historyKind == "user" && (IsLocalUserItemId(item.ItemId) || item.AliasItemIds.Any(IsLocalUserItemId));
         item.Status = historyKind == "user"
             ? ChoosePreferredUserMessageStatus(item.Status, appServerControlEvent.Item.Status)
             : PreferNonEmpty(appServerControlEvent.Item.Status, item.Status);
         item.Title = historyKind == "tool"
             ? PreferNonGenericText(item.Title, appServerControlEvent.Item.Title)
             : PreferMeaningfulText(item.Title, appServerControlEvent.Item.Title);
-        item.Detail = historyKind switch
+        item.Detail = appServerControlEvent.Item.Replace ? appServerControlEvent.Item.Detail : historyKind switch
         {
             "assistant" => MergeAssistantItemDetail(item.Detail, appServerControlEvent.Item.Detail, appServerControlEvent.Item.Status),
+            "user" when hasSubmittedUserInput => submittedUserInput ? appServerControlEvent.Item.Detail : item.Detail,
             "user" => PreferMeaningfulText(item.Detail, appServerControlEvent.Item.Detail),
             _ => MergeHistoryBody(item.Detail, appServerControlEvent.Item.Detail)
         };
@@ -1630,25 +1678,30 @@ public sealed partial class SessionAppServerControlHistoryService
             case "user":
                 entry.CommandText = null;
                 entry.Title = null;
-                entry.Body = PreferMeaningfulText(entry.Body, appServerControlEvent.Item.Detail) ?? string.Empty;
+                entry.Body = hasSubmittedUserInput ? item.Detail ?? string.Empty
+                    : appServerControlEvent.Item.Replace ? appServerControlEvent.Item.Detail ?? string.Empty
+                    : PreferMeaningfulText(entry.Body, appServerControlEvent.Item.Detail) ?? string.Empty;
                 entry.Streaming = false;
                 PromoteUserHistoryEntryToTurnLead(state, entry);
                 break;
             case "assistant":
                 entry.CommandText = null;
                 entry.Title = null;
-                entry.Body = MergeAssistantItemDetail(entry.Body, appServerControlEvent.Item.Detail, item.Status);
+                entry.Body = appServerControlEvent.Item.Replace ? appServerControlEvent.Item.Detail ?? string.Empty
+                    : MergeAssistantItemDetail(entry.Body, appServerControlEvent.Item.Detail, item.Status);
                 entry.Streaming = !IsTerminalStatus(item.Status);
                 break;
             case "reasoning":
             case "plan":
                 entry.CommandText = null;
                 entry.Title = PreferMeaningfulText(entry.Title, appServerControlEvent.Item.Title);
-                entry.Body = MergeHistoryBody(entry.Body, appServerControlEvent.Item.Detail);
+                entry.Body = appServerControlEvent.Item.Replace ? appServerControlEvent.Item.Detail ?? string.Empty
+                    : MergeHistoryBody(entry.Body, appServerControlEvent.Item.Detail);
                 entry.Streaming = !IsTerminalStatus(item.Status);
                 item.Detail = entry.Body;
                 break;
             default:
+                if (appServerControlEvent.Item.Replace) state.ToolRenderStates.Remove(entry.EntryId);
                 var toolState = GetOrCreateToolRenderState(state, entry.EntryId);
                 var incomingPresentation = appServerControlEvent.Item.ToolPresentation ??
                                            AppServerControlToolPresentationProjector.FromLegacy(
@@ -1730,7 +1783,7 @@ public sealed partial class SessionAppServerControlHistoryService
         var entry = EnsureHistoryEntry(state, $"request:{requestId}", "request", appServerControlEvent.CreatedAt);
         entry.TurnId = request.TurnId;
         entry.RequestId = request.RequestId;
-        entry.Status = request.State;
+        entry.Status = string.Equals(request.Decision, "cancel", StringComparison.Ordinal) ? "cancelled" : request.State;
         entry.ItemType = request.Kind;
         entry.Title = request.KindLabel;
         entry.Body = BuildRequestBody(request);
@@ -1799,6 +1852,12 @@ public sealed partial class SessionAppServerControlHistoryService
                 Method = source.Raw.Method,
                 PayloadOmitted = source.Raw.PayloadOmitted
             },
+            AgentMetadataUpdated = source.AgentMetadataUpdated is null ? null : new AppServerControlProviderAgentMetadataPayload
+            {
+                AgentName = source.AgentMetadataUpdated.AgentName,
+                Usage = source.AgentMetadataUpdated.Usage?.Clone(),
+                AvailableCommands = source.AgentMetadataUpdated.AvailableCommands is null ? null : AppServerControlCommand.CloneMany(source.AgentMetadataUpdated.AvailableCommands)
+            },
             SessionState = source.SessionState is null ? null : new AppServerControlProviderSessionStatePayload
             {
                 State = source.SessionState.State,
@@ -1813,6 +1872,7 @@ public sealed partial class SessionAppServerControlHistoryService
             },
             TurnStarted = source.TurnStarted is null ? null : new AppServerControlProviderTurnStartedPayload
             {
+                IsReplay = source.TurnStarted.IsReplay,
                 Model = source.TurnStarted.Model,
                 Effort = source.TurnStarted.Effort
             },
@@ -1826,6 +1886,7 @@ public sealed partial class SessionAppServerControlHistoryService
             ContentDelta = source.ContentDelta is null ? null : new AppServerControlProviderContentDeltaPayload
             {
                 StreamKind = source.ContentDelta.StreamKind,
+                Replace = source.ContentDelta.Replace,
                 Delta = source.ContentDelta.Delta
             },
             PlanDelta = source.PlanDelta is null ? null : new AppServerControlProviderPlanDeltaPayload
@@ -1834,6 +1895,7 @@ public sealed partial class SessionAppServerControlHistoryService
             },
             PlanCompleted = source.PlanCompleted is null ? null : new AppServerControlProviderPlanCompletedPayload
             {
+                IsProposal = source.PlanCompleted.IsProposal,
                 PlanMarkdown = source.PlanCompleted.PlanMarkdown
             },
             DiffUpdated = source.DiffUpdated is null ? null : new AppServerControlProviderDiffUpdatedPayload
@@ -1842,6 +1904,7 @@ public sealed partial class SessionAppServerControlHistoryService
             },
             Item = source.Item is null ? null : new AppServerControlProviderItemPayload
             {
+                Replace = source.Item.Replace,
                 ItemType = source.Item.ItemType,
                 Status = source.Item.Status,
                 Title = source.Item.Title,
@@ -1867,7 +1930,8 @@ public sealed partial class SessionAppServerControlHistoryService
                 PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode),
                 FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.ModelOptions),
-                EffortOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions)
+                EffortOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions),
+                ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.QuickSettingsUpdated.ConfigOptions)
             },
             RequestOpened = source.RequestOpened is null ? null : new AppServerControlProviderRequestOpenedPayload
             {
@@ -1933,9 +1997,12 @@ public sealed partial class SessionAppServerControlHistoryService
             Header = source.Header,
             Question = source.Question,
             MultiSelect = source.MultiSelect,
+            AllowCustomAnswer = source.AllowCustomAnswer,
+            IsSecret = source.IsSecret,
             Options = source.Options.Select(option => new AppServerControlQuestionOption
             {
                 Label = option.Label,
+                Value = option.Value,
                 Description = option.Description
             }).ToList()
         };
@@ -1954,6 +2021,9 @@ public sealed partial class SessionAppServerControlHistoryService
     {
         return new AppServerControlSessionSummary
         {
+            AgentName = source.AgentName,
+            Usage = source.Usage?.Clone(),
+            AvailableCommands = AppServerControlCommand.CloneMany(source.AvailableCommands),
             State = source.State,
             StateLabel = source.StateLabel,
             Reason = source.Reason,
@@ -1964,6 +2034,9 @@ public sealed partial class SessionAppServerControlHistoryService
 
     private static void CopySessionSummary(AppServerControlSessionSummary target, AppServerControlSessionSummary source)
     {
+        target.AgentName = source.AgentName;
+        target.Usage = source.Usage?.Clone();
+        target.AvailableCommands = AppServerControlCommand.CloneMany(source.AvailableCommands);
         target.State = source.State;
         target.StateLabel = source.StateLabel;
         target.Reason = source.Reason;
@@ -2023,7 +2096,8 @@ public sealed partial class SessionAppServerControlHistoryService
             PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(source.PermissionMode),
             FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.FastMode),
             ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions),
-            EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions)
+            EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions),
+            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions)
         };
     }
 
@@ -2036,6 +2110,7 @@ public sealed partial class SessionAppServerControlHistoryService
         target.FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.FastMode);
         target.ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions);
         target.EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions);
+        target.ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions);
     }
 
     private static AppServerControlStreamsSummary CloneStreamsSummary(AppServerControlStreamsSummary source)
@@ -2176,6 +2251,7 @@ public sealed partial class SessionAppServerControlHistoryService
         return new AppServerControlItemSummary
         {
             ItemId = source.ItemId,
+            AliasItemIds = source.AliasItemIds.ToList(),
             TurnId = source.TurnId,
             ItemType = source.ItemType,
             Status = source.Status,
@@ -2327,11 +2403,7 @@ public sealed partial class SessionAppServerControlHistoryService
         AppServerControlProviderEvent appServerControlEvent,
         string historyKind)
     {
-        if (historyKind == "user" &&
-            TryFindLocalUserMessageItem(items, appServerControlEvent.TurnId, out var localItemId))
-        {
-            return localItemId;
-        }
+        if (historyKind == "user") return ResolveCanonicalUserItemId(items, appServerControlEvent);
 
         if (!string.IsNullOrWhiteSpace(appServerControlEvent.ItemId))
         {
@@ -2355,8 +2427,7 @@ public sealed partial class SessionAppServerControlHistoryService
         return historyKind switch
         {
             "assistant" => ResolveAssistantHistoryEntryIdForItem(state, appServerControlEvent, canonicalItemId),
-            "user" when !string.IsNullOrWhiteSpace(appServerControlEvent.TurnId) => $"user:{appServerControlEvent.TurnId}",
-            "user" => $"user:{canonicalItemId}",
+            "user" => ResolveUserHistoryEntryId(state, appServerControlEvent.TurnId, canonicalItemId),
             "tool" => ResolveToolHistoryEntryIdForItem(state, appServerControlEvent, canonicalItemId),
             _ => $"{historyKind}:{canonicalItemId}"
         };
@@ -2469,11 +2540,13 @@ public sealed partial class SessionAppServerControlHistoryService
         var turnId = appServerControlEvent.TurnId ?? state.CurrentTurn.TurnId;
         return historyKind switch
         {
+            "user" when !string.IsNullOrWhiteSpace(turnId) => $"user:{turnId}",
+            "user" => $"user:{appServerControlEvent.ItemId ?? appServerControlEvent.EventId}",
             "assistant" when !string.IsNullOrWhiteSpace(appServerControlEvent.ItemId) => $"assistant:{appServerControlEvent.ItemId}",
             "assistant" when !string.IsNullOrWhiteSpace(turnId) => $"assistant-stream:{turnId}",
             "assistant" => $"assistant-stream:{appServerControlEvent.EventId}",
             "tool" => ResolveToolHistoryEntryIdForStream(state.Items, appServerControlEvent, turnId, streamKind),
-            "reasoning" => $"reasoning:{streamKind}:{turnId ?? appServerControlEvent.ItemId ?? appServerControlEvent.EventId}",
+            "reasoning" => $"reasoning:{streamKind}:{appServerControlEvent.ItemId ?? turnId ?? appServerControlEvent.EventId}",
             _ => $"{historyKind}:{turnId ?? appServerControlEvent.ItemId ?? appServerControlEvent.EventId}"
         };
     }
@@ -2610,6 +2683,7 @@ public sealed partial class SessionAppServerControlHistoryService
     private static string? HistoryKindFromStream(string streamKind)
     {
         var normalized = streamKind.Trim().ToLowerInvariant();
+        if (normalized == "user_text") return "user";
         if (normalized == "assistant_text")
         {
             return "assistant";
@@ -2630,27 +2704,53 @@ public sealed partial class SessionAppServerControlHistoryService
         return null;
     }
 
-    private static bool TryFindLocalUserMessageItem(
-        IReadOnlyDictionary<string, AppServerControlItemSummary> items,
-        string? turnId,
-        out string itemId)
+    private static string ResolveUserHistoryEntryId(AppServerControlConversationState state, string? turnId, string itemId)
     {
-        if (!string.IsNullOrWhiteSpace(turnId))
+        if (string.IsNullOrWhiteSpace(turnId) || itemId.StartsWith("local-steer:", StringComparison.Ordinal)) return $"user:{itemId}";
+        var primaryId = $"user:{turnId}";
+        return !state.HistoryEntries.TryGetValue(primaryId, out var primary) || primary.ItemId == itemId
+            ? primaryId : $"user:{itemId}";
+    }
+
+    private static string ResolveCanonicalUserItemId(
+        IReadOnlyDictionary<string, AppServerControlItemSummary> items,
+        AppServerControlProviderEvent providerEvent)
+    {
+        var incomingId = providerEvent.ItemId ?? $"local-user:{providerEvent.TurnId ?? providerEvent.EventId}";
+        if (items.ContainsKey(incomingId)) return incomingId;
+        var candidates = items.Values.Where(item => item.ItemType == "user_message" &&
+            string.Equals(item.TurnId, providerEvent.TurnId, StringComparison.Ordinal)).ToArray();
+        var matched = candidates.FirstOrDefault(item => item.AliasItemIds.Contains(incomingId, StringComparer.Ordinal));
+        if (matched is not null) return matched.ItemId;
+
+        var detail = providerEvent.Item?.Detail;
+        if (IsLocalUserItemId(incomingId))
         {
-            foreach (var pair in items)
-            {
-                if (pair.Key.StartsWith("local-user:", StringComparison.Ordinal) &&
-                    string.Equals(pair.Value.TurnId, turnId, StringComparison.Ordinal))
-                {
-                    itemId = pair.Key;
-                    return true;
-                }
-            }
+            var native = candidates.Where(item => !IsLocalUserItemId(item.ItemId) &&
+                !item.AliasItemIds.Any(IsLocalUserItemId)).ToArray();
+            matched = native.FirstOrDefault(item => SameUserMessageBody(item.Detail, detail));
+            if (matched is null && incomingId.StartsWith("local-user:", StringComparison.Ordinal)) matched = native.FirstOrDefault();
+            matched ??= native.FirstOrDefault(item => string.IsNullOrWhiteSpace(item.Detail));
+        }
+        else
+        {
+            var local = candidates.Where(item => IsLocalUserItemId(item.ItemId) &&
+                !item.AliasItemIds.Any(static id => !IsLocalUserItemId(id))).ToArray();
+            matched = local.FirstOrDefault(item => SameUserMessageBody(item.Detail, detail)) ??
+                local.FirstOrDefault(item => item.ItemId.StartsWith("local-user:", StringComparison.Ordinal));
+            if (matched is null && string.IsNullOrWhiteSpace(detail)) matched = local.FirstOrDefault();
         }
 
-        itemId = string.Empty;
-        return false;
+        if (matched is null) return incomingId;
+        matched.AliasItemIds.Add(incomingId);
+        return matched.ItemId;
     }
+
+    private static bool IsLocalUserItemId(string itemId) =>
+        itemId.StartsWith("local-user:", StringComparison.Ordinal) || itemId.StartsWith("local-steer:", StringComparison.Ordinal);
+
+    private static bool SameUserMessageBody(string? first, string? second) =>
+        !string.IsNullOrWhiteSpace(first) && string.Equals(first, second, StringComparison.Ordinal);
 
     private static string? ResolveOwningToolItemIdForStream(
         IReadOnlyDictionary<string, AppServerControlItemSummary> items,
@@ -2873,13 +2973,13 @@ public sealed partial class SessionAppServerControlHistoryService
         bool separateWithNewline)
     {
         var normalizedIncoming = NormalizeHistoryText(incoming);
-        if (string.IsNullOrWhiteSpace(normalizedIncoming))
+        if (separateWithNewline ? string.IsNullOrWhiteSpace(normalizedIncoming) : string.IsNullOrEmpty(normalizedIncoming))
         {
             return NormalizeHistoryText(existing);
         }
 
         var normalizedExisting = StripRetentionMarkers(NormalizeHistoryText(existing));
-        if (string.IsNullOrWhiteSpace(normalizedExisting))
+        if (separateWithNewline ? string.IsNullOrWhiteSpace(normalizedExisting) : string.IsNullOrEmpty(normalizedExisting))
         {
             return RetainWithinBudget(normalizedIncoming, maxChars, retainHead);
         }
@@ -3134,7 +3234,8 @@ public sealed partial class SessionAppServerControlHistoryService
         AppServerControlHistoryItem entry)
     {
         if (!string.Equals(entry.Kind, "user", StringComparison.Ordinal) ||
-            string.IsNullOrWhiteSpace(entry.TurnId))
+            string.IsNullOrWhiteSpace(entry.TurnId) ||
+            !string.Equals(entry.EntryId, $"user:{entry.TurnId}", StringComparison.Ordinal))
         {
             return;
         }

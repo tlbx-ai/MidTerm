@@ -9,10 +9,11 @@ using Ai.Tlbx.MidTerm.Common.Protocol;
 
 namespace Ai.Tlbx.MidTerm.AgentHost;
 
-internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgentRuntime
+internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerControlAgentRuntime
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private readonly Action<AppServerControlProviderEvent> _emit;
+    private readonly Func<string, bool> _hasRetainedConversation;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Dictionary<int, ClaudeBlockState> _blocks = [];
@@ -34,16 +35,24 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
     private string? _activeTurnId;
     private string? _activeTurnModel;
     private string? _activeTurnEffort;
+    private string? _currentAssistantItemId;
     private AppServerControlQuickSettingsSummary _quickSettings = new();
     private bool _assistantStreamEmitted;
     private bool _turnStarted;
     private bool _assistantMessageEmitted;
     private bool _interruptRequested;
+    private bool _steeringPending;
+    private TaskCompletionSource? _interruptSettled;
+    private bool _interruptHasQueuedWork;
+    private bool _manualCompactionTurn;
+    private string? _compactionFailure;
+    private long? _compactionContextBefore;
     private long _sequence;
 
-    public ClaudeAppServerControlAgentRuntime(Action<AppServerControlProviderEvent> emit)
+    public ClaudeAppServerControlAgentRuntime(Action<AppServerControlProviderEvent> emit, Func<string, bool>? hasRetainedConversation = null)
     {
         _emit = emit;
+        _hasRetainedConversation = hasRetainedConversation ?? (_ => false);
     }
 
     public string Provider => "claude";
@@ -63,10 +72,11 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         {
             return command.Type switch
             {
-                "runtime.attach" => Attach(command),
+                "runtime.attach" => await AttachAsync(command, ct).ConfigureAwait(false),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
+                "thread.compact" => await CompactViaNativeCommandAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolvePermissionRequestAsync(command, ct).ConfigureAwait(false),
                 "user-input.resolve" => await ResolveUserInputAsync(command, ct).ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"Unsupported Claude command '{command.Type}'.")
@@ -78,7 +88,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         }
     }
 
-    private HostCommandOutcome Attach(AppServerControlHostCommandEnvelope command)
+    private async Task<HostCommandOutcome> AttachAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
         var attach = command.AttachRuntime ?? throw new InvalidOperationException("runtime.attach payload is required.");
         if (!string.Equals(attach.Provider, Provider, StringComparison.Ordinal))
@@ -99,16 +109,31 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             throw new InvalidOperationException("Claude CLI was not found on PATH.");
         }
 
+        if (_process is { HasExited: false })
+        {
+            if (!string.Equals(_sessionId, command.SessionId, StringComparison.Ordinal) ||
+                !string.Equals(_workingDirectory, attach.WorkingDirectory, StringComparison.Ordinal) ||
+                (!string.IsNullOrWhiteSpace(attach.ResumeThreadId) &&
+                 !string.Equals(_providerThreadId, attach.ResumeThreadId, StringComparison.Ordinal)))
+                throw new InvalidOperationException("Claude is already attached to another session, directory or native thread.");
+            return Accepted(command.CommandId, command.SessionId);
+        }
+
         _sessionId = command.SessionId;
         _workingDirectory = attach.WorkingDirectory;
         _binaryPath = binaryPath;
         _userProfileDirectory = attach.UserProfileDirectory;
         _newProviderSessionId = Guid.NewGuid().ToString();
         _quickSettings = CreateDefaultQuickSettings();
-        if (!string.IsNullOrWhiteSpace(attach.ResumeThreadId))
-        {
-            _providerThreadId = attach.ResumeThreadId;
-        }
+        _providerThreadId = AppServerControlQuickSettings.NormalizeOptionalValue(attach.ResumeThreadId);
+        _nativeModels.Clear();
+        _nativeCommands = [];
+        _terminalCommands.Clear();
+        _usage = null;
+        _messageInputTokens = null;
+        _messageOutputTokens = null;
+
+        await EnsureClaudeBridgeAsync(ct).ConfigureAwait(false);
 
         var events = new List<AppServerControlProviderEvent>
         {
@@ -159,13 +184,19 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
 
         var request = command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required.");
         var quickSettings = ResolveRequestedQuickSettings(request);
-        var prompt = BuildPromptInput(request, quickSettings.PlanMode, out var addDirectories);
+        var prompt = BuildPromptInput(request, out var addDirectories);
         if (string.IsNullOrWhiteSpace(prompt))
         {
             throw new InvalidOperationException("App Server Controller turn input must include text or attachments.");
         }
 
-        _activeTurnId = "turn-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var turnId = "turn-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var commandText = (request.Text ?? string.Empty).TrimStart();
+        _manualCompactionTurn = commandText.StartsWith("/compact", StringComparison.Ordinal) &&
+            (commandText.Length == 8 || char.IsWhiteSpace(commandText[8]));
+        _compactionFailure = null;
+        _compactionContextBefore = _usage?.ContextUsedTokens;
+        _activeTurnId = turnId;
         _activeTurnModel = quickSettings.Model;
         _activeTurnEffort = quickSettings.Effort;
         _quickSettings = quickSettings;
@@ -199,21 +230,23 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                 {
                     SessionId = command.SessionId,
                     Status = "accepted",
-                    TurnId = _activeTurnId
+                    TurnId = turnId
                 },
                 TurnStarted = new AppServerControlTurnStartResponse
                 {
                     SessionId = command.SessionId,
                     Provider = Provider,
                     ThreadId = _providerThreadId ?? _sessionId ?? command.SessionId,
-                    TurnId = _activeTurnId,
+                    TurnId = turnId,
                     Status = "accepted",
                     QuickSettings = new AppServerControlQuickSettingsSummary
                     {
                         Model = _quickSettings.Model,
                         Effort = _quickSettings.Effort,
                         PlanMode = _quickSettings.PlanMode,
-                        PermissionMode = _quickSettings.PermissionMode
+                        PermissionMode = _quickSettings.PermissionMode,
+                        ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions),
+                        EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions)
                     }
                 }
             },
@@ -222,6 +255,17 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                 CreateQuickSettingsUpdatedEvent(_quickSettings, "midterm.appServerControl", "turn.start", request)
             ]
         };
+    }
+
+    private Task<HostCommandOutcome> CompactViaNativeCommandAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    {
+        if (!_nativeCommands.Any(native => native.Name.TrimStart('/').Equals("compact", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Claude does not advertise a native /compact command.");
+        return StartTurnAsync(new AppServerControlHostCommandEnvelope
+        {
+            CommandId = command.CommandId, SessionId = command.SessionId, Type = "turn.start",
+            StartTurn = new AppServerControlTurnRequest { Text = "/compact" }
+        }, ct);
     }
 
     private async Task<HostCommandOutcome> SteerTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -233,6 +277,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         }
 
         var request = command.SteerTurn ?? throw new InvalidOperationException("turn.steer payload is required.");
+        var turnId = _activeTurnId;
         if (!string.IsNullOrWhiteSpace(request.ExpectedTurnId) &&
             !string.Equals(request.ExpectedTurnId, _activeTurnId, StringComparison.Ordinal))
         {
@@ -244,13 +289,14 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             Text = request.Text,
             Attachments = request.Attachments
         };
-        var prompt = BuildPromptInput(turnRequest, _quickSettings.PlanMode, out var addDirectories);
+        var prompt = BuildPromptInput(turnRequest, out var addDirectories);
         if (string.IsNullOrWhiteSpace(prompt))
         {
             throw new InvalidOperationException("Claude steer input must include text or attachments.");
         }
 
         await EnsureClaudeBridgeAsync(ct).ConfigureAwait(false);
+        _steeringPending = true;
         await SendTurnCommandAsync(
             "turn.steer",
             prompt,
@@ -262,7 +308,10 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             _quickSettings.PermissionMode,
             ct).ConfigureAwait(false);
 
-        return Accepted(command.CommandId, command.SessionId);
+        return Accepted(command.CommandId, command.SessionId, new AppServerControlCommandAcceptedResponse
+        {
+            SessionId = command.SessionId, Status = "accepted", TurnId = turnId
+        });
     }
 
     private async Task<HostCommandOutcome> InterruptTurnAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -274,17 +323,36 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         {
             throw new InvalidOperationException("Claude does not have an active turn to interrupt.");
         }
+        if (!string.Equals(turnId, _activeTurnId, StringComparison.Ordinal))
+            throw new InvalidOperationException("The Claude turn to interrupt is no longer active.");
 
         if (_process is { HasExited: false })
         {
             _interruptRequested = true;
-            await WriteBridgeCommandAsync(writer =>
+            _interruptHasQueuedWork = false;
+            _interruptSettled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            try
             {
-                writer.WriteStartObject();
-                writer.WriteString("type", "turn.interrupt");
-                writer.WriteString("turnId", turnId);
-                writer.WriteEndObject();
-            }, ct).ConfigureAwait(false);
+                await WriteBridgeResolutionCommandAsync("interrupt", turnId, writer =>
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("type", "turn.interrupt");
+                    writer.WriteString("turnId", turnId);
+                    writer.WriteEndObject();
+                }, ct).ConfigureAwait(false);
+                if (_interruptHasQueuedWork)
+                    await DisposeProcessAsync(resetTurnState: false).ConfigureAwait(false);
+                else
+                    await _interruptSettled.Task.WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                await DisposeProcessAsync(resetTurnState: false).ConfigureAwait(false);
+            }
+            finally
+            {
+                _interruptSettled = null;
+            }
         }
 
         ResetTurnState();
@@ -511,6 +579,9 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
 
         switch (type)
         {
+            case "system":
+                HandleClaudeSystemMessage(root, line);
+                break;
             case "stream_event":
                 HandleStreamEvent(root, line);
                 break;
@@ -531,8 +602,23 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         switch (type)
         {
             case "bridge.ready":
+                ApplyClaudeNativeCatalogue(root, rawLine);
                 _bridgeReady.TrySetResult();
                 break;
+            case "bridge.history":
+                ReplayClaudeHistory(root);
+                break;
+            case "bridge.proposed_plan":
+            {
+                var markdown = GetString(root, "markdown");
+                if (GetString(root, "toolUseId") is { } planToolId && _tools.TryGetValue(planToolId, out var planTool))
+                    planTool.IsPlanReview = true;
+                if (!string.IsNullOrWhiteSpace(markdown))
+                    _emit(CreateEvent("plan.completed", _activeTurnId, GetString(root, "toolUseId"), null,
+                        "claude.agent-sdk", "canUseTool/ExitPlanMode", root,
+                        e => e.PlanCompleted = new AppServerControlProviderPlanCompletedPayload { PlanMarkdown = markdown, IsProposal = true }, rawLine));
+                break;
+            }
             case "bridge.permission_request":
             {
                 var requestId = GetString(root, "requestId");
@@ -576,6 +662,10 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                 }, rawLine));
                 break;
             }
+            case "bridge.interrupted":
+                _interruptHasQueuedWork |= GetBoolean(root, "hasQueuedWork");
+                CompleteBridgeResolutionAck("interrupt", GetString(root, "turnId"));
+                break;
             case "bridge.user_input_resolved":
                 CompleteBridgeResolutionAck("user_input", GetString(root, "requestId"));
                 break;
@@ -645,7 +735,8 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                 Id = GetString(value, "id") ?? string.Empty,
                 Header = GetString(value, "header") ?? string.Empty,
                 Question = GetString(value, "question") ?? string.Empty,
-                MultiSelect = GetBoolean(value, "multiSelect")
+                MultiSelect = GetBoolean(value, "multiSelect"),
+                AllowCustomAnswer = true
             };
             var rawOptions = Traverse(value, "options");
             if (rawOptions is { ValueKind: JsonValueKind.Array } options)
@@ -673,6 +764,10 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         switch (eventType)
         {
             case "message_start":
+                _currentAssistantItemId = GetString(root, "event", "message", "id");
+                _assistantStreamEmitted = false;
+                _blocks.Clear();
+                UpdateClaudeMessageUsage(root, Traverse(root, "event", "message", "usage"), rawLine);
                 if (!string.IsNullOrWhiteSpace(_activeTurnId))
                 {
                     _emit(CreateEvent("session.state.changed", _activeTurnId, null, null, "claude.agent-sdk", "message_start", root, appServerControlEvent =>
@@ -698,6 +793,9 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                         }, rawLine));
                     }
                 }
+                break;
+            case "message_delta":
+                UpdateClaudeMessageUsage(root, Traverse(root, "event", "usage"), rawLine);
                 break;
             case "content_block_start":
                 HandleContentBlockStart(root, rawLine);
@@ -851,6 +949,13 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
 
     private void HandleAssistant(JsonElement root, string rawLine)
     {
+        UpdateClaudeMessageUsage(root, Traverse(root, "message", "usage"), rawLine);
+        if (GetString(root, "message", "id") is { } messageId &&
+            !string.Equals(messageId, _currentAssistantItemId, StringComparison.Ordinal))
+        {
+            _currentAssistantItemId = messageId;
+            _assistantStreamEmitted = false;
+        }
         var text = JoinClaudeAssistantText(root);
         if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(_activeTurnId))
         {
@@ -873,7 +978,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         }
 
         _assistantMessageEmitted = true;
-        var itemId = $"assistant:{_activeTurnId}";
+        var itemId = _currentAssistantItemId ?? $"assistant:{_activeTurnId}";
         _emit(CreateEvent("item.completed", _activeTurnId, itemId, null, "claude.agent-sdk", "assistant", root, appServerControlEvent =>
         {
             appServerControlEvent.Item = new AppServerControlProviderItemPayload
@@ -914,7 +1019,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             TryUpdateClaudePresentationFromInputJson(tool);
             AppServerControlToolPresentationProjector.AppendClaudeResult(item, root, tool.Output);
             var failed = GetBoolean(item, "is_error") || GetBoolean(root, "tool_use_result", "is_error");
-            var status = failed ? "failed" : "completed";
+            var status = failed && !tool.IsPlanReview ? "failed" : "completed";
             AppServerControlToolPresentationProjector.ApplyOutput(tool.Presentation, tool.Output, status);
 
             _emit(CreateEvent("item.completed", _activeTurnId, tool.ItemId, null, "claude.agent-sdk", "tool_result", root, appServerControlEvent =>
@@ -923,7 +1028,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
                 {
                     ItemType = tool.ItemType,
                     Status = status,
-                    Title = tool.Title,
+                    Title = tool.IsPlanReview ? "Plan review" : tool.Title,
                     Detail = tool.Presentation.Subject,
                     ToolPresentation = AppServerControlToolPresentationProjector.Clone(tool.Presentation)
                 };
@@ -934,14 +1039,23 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
 
     private void HandleResult(JsonElement root, string rawLine)
     {
+        UpdateClaudeResultUsage(root, rawLine);
         if (string.IsNullOrWhiteSpace(_activeTurnId))
         {
             return;
         }
 
-        var isError = GetBoolean(root, "is_error");
-        var subtype = GetString(root, "subtype") ?? (isError ? "error" : "success");
         var resultText = GetString(root, "result");
+        var compactFailed = _manualCompactionTurn && (_compactionFailure is not null ||
+            resultText?.StartsWith("Error during compaction:", StringComparison.OrdinalIgnoreCase) == true);
+        var isError = GetBoolean(root, "is_error") || compactFailed;
+        var subtype = compactFailed ? "compaction_failed" : GetString(root, "subtype") ?? (isError ? "error" : "success");
+        if (compactFailed && _usage is not null)
+        {
+            _usage.ContextUsedTokens = _compactionContextBefore;
+            EmitClaudeUsage(root, rawLine);
+        }
+        var errorMessage = isError ? _compactionFailure ?? resultText : null;
         if (!isError &&
             !_assistantMessageEmitted &&
             !string.IsNullOrWhiteSpace(resultText))
@@ -949,17 +1063,33 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             EmitAssistantMessage(resultText, root, rawLine);
         }
 
-        _emit(CreateEvent("turn.completed", _activeTurnId, null, null, "claude.agent-sdk", "result", root, appServerControlEvent =>
+        var terminalReason = GetString(root, "terminal_reason");
+        if (_interruptRequested)
+        {
+            _interruptHasQueuedWork |= GetInt32(root, "queued_turn_count") is > 0;
+            _interruptSettled?.TrySetResult();
+            return;
+        }
+        if (GetInt32(root, "queued_turn_count") is > 0 ||
+            (_steeringPending && !_interruptRequested && terminalReason is "aborted_streaming" or "aborted_tools"))
+        {
+            _assistantMessageEmitted = false;
+            return;
+        }
+
+        var completedTurnId = _activeTurnId;
+        ResetTurnState();
+        _emit(CreateEvent("turn.completed", completedTurnId, null, null, "claude.agent-sdk", "result", root, appServerControlEvent =>
         {
             appServerControlEvent.TurnCompleted = new AppServerControlProviderTurnCompletedPayload
             {
                 State = isError ? "failed" : "completed",
                 StateLabel = isError ? "Failed" : "Completed",
                 StopReason = subtype,
-                ErrorMessage = isError ? resultText : null
+                ErrorMessage = errorMessage
             };
         }, rawLine));
-        _emit(CreateEvent("session.state.changed", _activeTurnId, null, null, "claude.agent-sdk", "result", root, appServerControlEvent =>
+        _emit(CreateEvent("session.state.changed", completedTurnId, null, null, "claude.agent-sdk", "result", root, appServerControlEvent =>
         {
             appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
             {
@@ -971,7 +1101,6 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             };
         }, rawLine));
 
-        ResetTurnState();
     }
 
     private void EnsureProviderThreadId(JsonElement root)
@@ -1002,7 +1131,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         }
 
         _assistantStreamEmitted = true;
-        var itemId = $"assistant:{_activeTurnId}";
+        var itemId = _currentAssistantItemId ?? $"assistant:{_activeTurnId}";
         _emit(CreateEvent("content.delta", _activeTurnId, itemId, null, "claude.agent-sdk", "assistant", root, appServerControlEvent =>
         {
             appServerControlEvent.ContentDelta = new AppServerControlProviderContentDeltaPayload
@@ -1070,7 +1199,9 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             TurnId = turnId,
             ItemId = itemId,
             RequestId = requestId,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = _replayingHistory && payload is JsonElement historical &&
+                DateTimeOffset.TryParse(GetString(historical, "timestamp"), CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var timestamp) ? timestamp : DateTimeOffset.UtcNow,
             Type = eventType,
             Raw = new AppServerControlProviderEventRaw
             {
@@ -1132,6 +1263,9 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
             writer.WriteString("executablePath", _binaryPath);
             writer.WriteString("cwd", _workingDirectory);
             writer.WriteString("sessionId", _newProviderSessionId);
+            writer.WriteString("permissionMode", _quickSettings.PermissionMode);
+            writer.WriteBoolean("loadHistory", _sessionId is not null && !_hasRetainedConversation(_sessionId));
+            if (_quickSettings.Model is not null) writer.WriteString("model", _quickSettings.Model);
             if (!string.IsNullOrWhiteSpace(_providerThreadId))
             {
                 writer.WriteString("resume", _providerThreadId);
@@ -1236,6 +1370,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         {
             "permission.resolve" => "permission",
             "user_input.resolve" => "user_input",
+            "turn.interrupt" => "interrupt",
             _ => null
         };
         if (resolutionType is not null && !string.IsNullOrWhiteSpace(requestId) &&
@@ -1381,11 +1516,10 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
 
     private static string BuildPromptInput(
         AppServerControlTurnRequest request,
-        string? planMode,
         out List<string> addDirectories)
     {
         addDirectories = [];
-        var text = AppServerControlQuickSettings.ApplyPlanModePrompt(request.Text, planMode);
+        var text = request.Text ?? string.Empty;
         if (request.Attachments.Count == 0)
         {
             return text;
@@ -1461,12 +1595,15 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         var defaultPermissionMode = AppServerControlProviderRuntimeConfiguration.GetClaudeDangerouslySkipPermissionsDefault()
             ? AppServerControlQuickSettings.PermissionModeAuto
             : AppServerControlQuickSettings.PermissionModeManual;
-        return AppServerControlQuickSettings.CreateSummary(
+        var settings = AppServerControlQuickSettings.CreateSummary(
             request.Model ?? AppServerControlProviderRuntimeConfiguration.GetClaudeDefaultModel(),
             request.Effort,
             request.PlanMode,
             request.PermissionMode,
             defaultPermissionMode);
+        settings.ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions);
+        settings.EffortOptions = ReadClaudeEffortOptions(settings.Model);
+        return settings;
     }
 
     private AppServerControlProviderEvent CreateQuickSettingsUpdatedEvent(
@@ -1651,10 +1788,15 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
         _activeTurnId = null;
         _activeTurnModel = null;
         _activeTurnEffort = null;
+        _currentAssistantItemId = null;
         _assistantStreamEmitted = false;
         _turnStarted = false;
         _assistantMessageEmitted = false;
         _interruptRequested = false;
+        _steeringPending = false;
+        _manualCompactionTurn = false;
+        _compactionFailure = null;
+        _compactionContextBefore = null;
         _blocks.Clear();
         _tools.Clear();
     }
@@ -1669,6 +1811,7 @@ internal sealed class ClaudeAppServerControlAgentRuntime : IAppServerControlAgen
 
     private sealed class ClaudeToolState
     {
+        public bool IsPlanReview { get; set; }
         public string ItemId { get; set; } = string.Empty;
         public string ItemType { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;

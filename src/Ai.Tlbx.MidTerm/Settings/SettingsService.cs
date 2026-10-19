@@ -324,7 +324,6 @@ public sealed class SettingsService
         settings.SessionSecret = _secretStorage.GetSecret(SecretKeys.SessionSecret);
         settings.PasswordHash = _secretStorage.GetSecret(SecretKeys.PasswordHash);
         settings.CertificatePassword = _secretStorage.GetSecret(SecretKeys.CertificatePassword);
-        settings.VoiceServerPassword = _secretStorage.GetSecret(SecretKeys.VoiceServerPassword);
         LoadHubMachineSecrets(settings);
     }
 
@@ -713,10 +712,6 @@ public sealed class SettingsService
             _secretStorage.DeleteSecret(SecretKeys.CertificatePassword);
         }
 
-        if (!string.IsNullOrEmpty(settings.VoiceServerPassword))
-        {
-            _secretStorage.SetSecret(SecretKeys.VoiceServerPassword, settings.VoiceServerPassword);
-        }
 
         var hubSecrets = new HubMachineSecrets
         {

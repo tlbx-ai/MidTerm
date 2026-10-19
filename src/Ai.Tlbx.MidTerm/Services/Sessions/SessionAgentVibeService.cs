@@ -142,7 +142,10 @@ public sealed class SessionAgentVibeService
         AppServerControlRuntimeSummary runtimeSummary,
         DateTimeOffset now)
     {
-        var transportSummary = $"{runtimeSummary.TransportLabel} is attached as the native App Server Controller runtime. App Server Controller remains provider-owned and separate from any terminal surface.";
+        var failed = runtimeSummary.Status == "error";
+        var transportSummary = failed
+            ? runtimeSummary.LastError ?? "Agent Controller runtime is unavailable."
+            : $"{runtimeSummary.TransportLabel} is attached as the native App Server Controller runtime. App Server Controller remains provider-owned and separate from any terminal surface.";
         var chips = new List<AgentSessionVibeChip>
         {
             new()
@@ -158,7 +161,7 @@ public sealed class SessionAgentVibeService
             new()
             {
                 Text = "Native runtime",
-                Tone = "positive"
+                Tone = failed ? "attention" : "positive"
             }
         };
 
@@ -177,9 +180,9 @@ public sealed class SessionAgentVibeService
                 {
                     Key = capabilityItem.Key,
                     Label = capabilityItem.Label,
-                    Status = "live",
-                    StatusLabel = "Live",
-                    Detail = runtimeSummary.TransportLabel + " is actively feeding App Server Controller for this session."
+                    Status = failed ? "error" : "live",
+                    StatusLabel = failed ? "Unavailable" : "Live",
+                    Detail = failed ? transportSummary : runtimeSummary.TransportLabel + " is actively feeding App Server Controller for this session."
                 }
                 : capabilityItem.Key == "terminal"
                     ? new AgentSessionVibeCapability
@@ -219,7 +222,7 @@ public sealed class SessionAgentVibeService
             },
             Lane = new AgentSessionVibeLane
             {
-                Mode = "native-live",
+                Mode = failed ? "native-error" : "native-live",
                 Tone = runtimeSummary.Status == "error" ? "attention" : runtimeSummary.Status == "running" ? "positive" : "info",
                 Label = "Native App Server Controller",
                 Detail = transportSummary
@@ -228,7 +231,7 @@ public sealed class SessionAgentVibeService
             Overview = new AgentSessionVibeOverview
             {
                 StateValue = runtimeSummary.StatusLabel,
-                StateMeta = runtimeSummary.PendingQuestion is null ? "Native runtime active" : "Waiting for input",
+                StateMeta = failed ? transportSummary : runtimeSummary.PendingQuestion is null ? "Native runtime active" : "Waiting for input",
                 ActivityValue = $"{runtimeSummary.Activities.Count.ToString(CultureInfo.InvariantCulture)} events",
                 ActivityMeta = runtimeSummary.TransportLabel,
                 LastOutputValue = FormatRelativeTime(runtimeSummary.LastEventAt, now),

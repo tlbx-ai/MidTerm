@@ -127,6 +127,7 @@ export interface AppServerControlQuickSettingsOption {
   description?: string | null;
   hidden?: boolean;
   isDefault?: boolean;
+  effortOptions?: AppServerControlQuickSettingsOption[] | null;
 }
 
 export interface AppServerControlQuickSettingsPayload {
@@ -137,6 +138,7 @@ export interface AppServerControlQuickSettingsPayload {
   fastMode?: string;
   modelOptions?: AppServerControlQuickSettingsOption[];
   effortOptions?: AppServerControlQuickSettingsOption[];
+  configOptions?: AppServerControlConfigOption[];
 }
 
 export interface AppServerControlQuickSettingsSummary {
@@ -147,9 +149,30 @@ export interface AppServerControlQuickSettingsSummary {
   fastMode?: string;
   modelOptions?: AppServerControlQuickSettingsOption[];
   effortOptions?: AppServerControlQuickSettingsOption[];
+  configOptions?: AppServerControlConfigOption[];
+}
+
+export interface AppServerControlConfigOption {
+  configId?: string;
+  id?: string;
+  name: string;
+  description?: string;
+  category?: string;
+  type: string;
+  currentValue: string | boolean;
+  options?: AppServerControlConfigValue[];
+}
+
+export interface AppServerControlConfigValue {
+  value?: string;
+  name: string;
+  description?: string;
+  groupId?: string;
+  options?: AppServerControlConfigValue[];
 }
 
 export interface AppServerControlQuestionOption {
+  value?: string | null;
   label: string;
   description: string;
 }
@@ -159,6 +182,8 @@ export interface AppServerControlQuestion {
   header: string;
   question: string;
   multiSelect: boolean;
+  allowCustomAnswer?: boolean;
+  isSecret?: boolean;
   options: AppServerControlQuestionOption[];
 }
 
@@ -185,11 +210,35 @@ export interface AppServerControlHistoryPatch {
 export type AppServerControlHistoryDelta = AppServerControlHistoryPatch;
 
 export interface AppServerControlSessionSummary {
+  agentName?: string | null;
+  availableCommands?: AppServerControlCommand[];
+  usage?: AppServerControlUsageSummary | null;
   state: string;
   stateLabel: string;
   reason?: string | null;
   lastError?: string | null;
   lastEventAt?: string | null;
+}
+
+export interface AppServerControlCommand {
+  name: string;
+  description?: string | null;
+  inputHint?: string | null;
+  input?: unknown;
+}
+
+export interface AppServerControlUsageSummary {
+  contextUsedTokens?: number | null;
+  contextWindowTokens?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cachedReadTokens?: number | null;
+  cachedWriteTokens?: number | null;
+  reasoningTokens?: number | null;
+  costAmount?: number | null;
+  costCurrency?: string | null;
+  primaryRateLimitUsedPercent?: number | null;
+  secondaryRateLimitUsedPercent?: number | null;
 }
 
 export interface AppServerControlThreadSummary {
@@ -259,6 +308,7 @@ export interface AppServerControlHistoryItem {
 
 export interface AppServerControlItemSummary {
   itemId: string;
+  aliasItemIds?: string[];
   turnId?: string | null;
   itemType: string;
   status: string;
@@ -333,6 +383,7 @@ export interface AppServerControlTerminalReplayStep {
 }
 
 export interface AppServerControlTurnRequest {
+  configValues?: Record<string, string | boolean>;
   text?: string | null;
   model?: string | null;
   effort?: string | null;

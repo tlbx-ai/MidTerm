@@ -17,6 +17,48 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
     private static SettingsService CreateSettingsService(string directory) => new(directory);
 
     [Fact]
+    public void OpenCodeCatalog_UsesNativeHttpAndKeepsExplicitAcpManifestArguments()
+    {
+        using var fake = FakeCodexPathScope.Create();
+        var catalog = new AcpAgentCatalogService(CreateSettingsService(fake.Root));
+        Assert.True(catalog.TryGetDefinition("opencode", out var builtIn));
+        Assert.Equal("opencode-http", builtIn.RuntimeKind);
+        Assert.Empty(builtIn.Arguments);
+        File.WriteAllText(catalog.ManifestPath, $$$"""
+            {"agents":[{"profile":"opencode","name":"Custom OpenCode","command":{{{JsonSerializer.Serialize(fake.ExecutablePath)}}},"arguments":["acp"]}]}
+            """);
+        Assert.True(catalog.TryResolve("opencode", null, out var custom));
+        Assert.Equal("acp-v1", custom.RuntimeKind);
+        Assert.Equal(["acp"], custom.Arguments);
+        File.WriteAllText(catalog.ManifestPath, $$$"""
+            {"agents":[{"profile":"opencode","name":"Native OpenCode","command":{{{JsonSerializer.Serialize(fake.ExecutablePath)}}},"runtimeKind":"opencode-http","arguments":[]},
+              {"profile":"invalid-runtime","name":"Invalid","command":"unused","runtimeKind":"invented"}]}
+            """);
+        Assert.True(catalog.TryResolve("opencode", null, out var native));
+        Assert.Equal("opencode-http", native.RuntimeKind);
+        Assert.Empty(native.Arguments);
+        Assert.False(catalog.ContainsProfile("invalid-runtime"));
+    }
+
+    [Fact]
+    public void AcpCatalog_ResolvesExplicitAuthenticationAndIsolatedEnvironment()
+    {
+        using var fake = FakeCodexPathScope.Create();
+        var settings = CreateSettingsService(fake.Root);
+        var catalog = new AcpAgentCatalogService(settings);
+        File.WriteAllText(catalog.ManifestPath, $$$"""
+            {"agents":[{"profile":"antigravity","name":"Google Antigravity","command":{{{JsonSerializer.Serialize(fake.ExecutablePath)}}},
+              "authenticationMethodId":"gemini-api-key","environmentVariables":{"GEMINI_HOME":"isolated-profile","GOOGLE_API_KEY":null}},
+              {"profile":"invalid-env","name":"Invalid","command":"unused","environmentVariables":{"BAD=KEY":"value"}}]}
+            """);
+        Assert.True(catalog.TryResolve("antigravity", null, out var resolved));
+        Assert.Equal("gemini-api-key", resolved.AuthenticationMethodId);
+        Assert.Equal("isolated-profile", resolved.EnvironmentVariables!["GEMINI_HOME"]);
+        Assert.Null(resolved.EnvironmentVariables["GOOGLE_API_KEY"]);
+        Assert.False(catalog.ContainsProfile("invalid-env"));
+    }
+
+    [Fact]
     public void ResolveConfiguredHostPath_UsesExplicitShadowBuildAndRejectsMissingPath()
     {
         var previous = Environment.GetEnvironmentVariable(
@@ -103,6 +145,27 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
         Assert.Equal("mtagenthost-ipc", runtimeSnapshot.TransportKey);
         Assert.Equal("running", runtimeSnapshot.Status);
         Assert.Equal("Synthetic codex reply for: Inspect the workspace.", runtimeSnapshot.AssistantText);
+    }
+
+    [Theory]
+    [InlineData(null, "saved-native-thread")]
+    [InlineData("explicit-native-thread", "explicit-native-thread")]
+    public async Task SessionAppServerControlRuntimeService_PreservesRequestedResumeIdentity(string? resumeOverride, string expectedThread)
+    {
+        await using var hostRuntime = new SessionAppServerControlHostRuntimeService(CreateSettingsService(), mode: "synthetic");
+        await using var sessionManager = new TtyHostSessionManager();
+        await using var runtime = new SessionAppServerControlRuntimeService(sessionManager, new AiCliProfileService(), hostRuntime);
+        var session = new SessionInfoDto
+        {
+            Id = "resume-identity-" + Guid.NewGuid().ToString("N"),
+            CurrentDirectory = AppContext.BaseDirectory,
+            ForegroundName = "codex",
+            AppServerControlResumeThreadId = "saved-native-thread"
+        };
+        Assert.True(await runtime.EnsureAttachedAsync(session.Id, session, resumeOverride, Xunit.TestContext.Current.CancellationToken));
+        var history = await runtime.GetHistoryWindowAsync(session.Id, count: 32, ct: Xunit.TestContext.Current.CancellationToken);
+        Assert.NotNull(history);
+        Assert.Equal(expectedThread, history.Thread.ThreadId);
     }
 
     [Fact]
@@ -484,7 +547,9 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
 
         Assert.False(attached);
         Assert.False(runtime.IsAttached(session.Id));
-        Assert.False(runtime.TryGetRuntimeSummary(session.Id, out _));
+        Assert.True(runtime.TryGetRuntimeSummary(session.Id, out var failedRuntime));
+        Assert.Equal("error", failedRuntime.Status);
+        Assert.Contains("Injected mtagenthost cold-start failure.", failedRuntime.LastError, StringComparison.Ordinal);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             runtime.StartTurnAsync(

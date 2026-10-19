@@ -14,6 +14,7 @@ export type SettingsTab =
   | 'workflow'
   | 'terminal'
   | 'ai-agents'
+  | 'ai-voice'
   | 'security'
   | 'connected-hosts'
   | 'advanced';
@@ -28,6 +29,7 @@ const VALID_TABS: SettingsTab[] = [
   'workflow',
   'terminal',
   'ai-agents',
+  'ai-voice',
   'security',
   'connected-hosts',
   'advanced',

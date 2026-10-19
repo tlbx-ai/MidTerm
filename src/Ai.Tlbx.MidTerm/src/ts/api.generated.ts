@@ -2711,6 +2711,7 @@ export interface paths {
         query: {
           path: string;
           sessionId?: string;
+          includeDetectedRoots?: boolean;
         };
         header?: never;
         path?: never;
@@ -4436,6 +4437,9 @@ export interface components {
       planMode?: null | string;
       permissionMode?: null | string;
       fastMode?: null | string;
+      configValues: {
+        [key: string]: unknown;
+      };
       attachments: components['schemas']['AppServerControlAttachmentReference'][];
       terminalReplay: components['schemas']['AppServerControlTerminalReplayStep'][];
     };
@@ -4468,7 +4472,6 @@ export interface components {
       updateResult: null | components['schemas']['UpdateResult'];
       devMode: boolean;
       features: components['schemas']['FeatureFlags'];
-      voicePassword: null | string;
       gitVersion: null | string;
       codeSigned: boolean;
     };

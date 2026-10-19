@@ -2323,6 +2323,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "includeDetectedRoots",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
           }
         ],
         "responses": {
@@ -4120,6 +4128,7 @@
       },
       "AppServerControlTurnRequest": {
         "required": [
+          "configValues",
           "attachments",
           "terminalReplay"
         ],
@@ -4160,6 +4169,10 @@
               "null",
               "string"
             ]
+          },
+          "configValues": {
+            "type": "object",
+            "additionalProperties": { }
           },
           "attachments": {
             "type": "array",
@@ -4251,7 +4264,6 @@
           "updateResult",
           "devMode",
           "features",
-          "voicePassword",
           "gitVersion",
           "codeSigned"
         ],
@@ -4318,12 +4330,6 @@
           },
           "features": {
             "$ref": "#/components/schemas/FeatureFlags"
-          },
-          "voicePassword": {
-            "type": [
-              "null",
-              "string"
-            ]
           },
           "gitVersion": {
             "type": [

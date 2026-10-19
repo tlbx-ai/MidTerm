@@ -7,7 +7,7 @@ import {
   enrichInteractiveTextContent,
   wireAssistantInteractiveContent,
 } from './assistantEnrichment';
-import type { AppServerControlHistoryRequestSummary } from '../../api/client';
+import { registerFilePaths, type AppServerControlHistoryRequestSummary } from '../../api/client';
 import type { AppServerControlAttachmentReference } from '../../api/types';
 import {
   buildAppServerControlAttachmentUrl,
@@ -16,6 +16,11 @@ import {
   resolveHistoryBadgeLabel,
 } from './activationHelpers';
 import { createRequestActionBlock as createRequestActionBlockInternal } from './historyRequestDom';
+import {
+  hasInterruptibleAppServerControlTurnWork,
+  submitAppServerControlTurn,
+} from '../appServerControl/input';
+import { createAppServerControlTurnRequestWithQuickSettings } from '../appServerControl/quickSettings';
 import {
   buildRenderedDiffLines,
   hasInlineCommandPresentation,
@@ -120,6 +125,22 @@ type AgentHistoryDomDeps = {
   retryAppServerControlActivation: (sessionId: string) => Promise<void>;
   logWarn: (message: () => string) => void;
 };
+
+export function isProposedPlanActionDisabled(
+  sessionId: string,
+  state: SessionAppServerControlViewState | undefined,
+): boolean {
+  return (
+    !state?.snapshot ||
+    !state.streamConnected ||
+    hasInterruptibleAppServerControlTurnWork(sessionId) ||
+    ['running', 'in_progress', 'submitted', 'starting'].includes(
+      state.snapshot.currentTurn.state,
+    ) ||
+    state.snapshot.requests.some((request) => request.state === 'open') ||
+    ['error', 'starting', 'exited'].includes(state.snapshot.session.state)
+  );
+}
 
 function buildEmbeddedInterviewRequest(
   entry: AppServerControlHistoryEntry,
@@ -364,16 +385,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       return;
     }
 
-    const compact = [
-      formatTokenWindowCompact(stats),
-      `in ${formatTokenCount(stats.accumulatedInputTokens)}`,
-      `out ${formatTokenCount(stats.accumulatedOutputTokens)}`,
-    ].join('  ');
-    const detailParts = [
-      formatTokenWindowDetail(stats),
-      `Session in ${formatTokenCount(stats.accumulatedInputTokens)}`,
-      `Session out ${formatTokenCount(stats.accumulatedOutputTokens)}`,
-    ];
+    const compact = buildRuntimeStatLabels(stats, false).join('  ');
+    const detailParts = buildRuntimeStatLabels(stats, true);
     if (
       stats.primaryRateLimitUsedPercent !== null ||
       stats.secondaryRateLimitUsedPercent !== null
@@ -428,6 +441,36 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     article.appendChild(createHistoryHeader(entry, sessionId, options.showAssistantBadge === true));
     appendHistoryTitle(article, entry, sessionId);
     appendHistoryBody(article, entry, sessionId);
+    if (entry.sourceItemType === 'proposed_plan') {
+      const actions = document.createElement('div');
+      actions.className = 'agent-history-actions';
+      const implement = document.createElement('button');
+      implement.type = 'button';
+      implement.className = 'agent-view-btn agent-view-btn-primary agent-plan-implement';
+      implement.textContent = appServerControlText(
+        'appServerControl.plan.implement',
+        'Implement plan',
+      );
+      implement.disabled = isProposedPlanActionDisabled(sessionId, deps.getState(sessionId));
+      implement.addEventListener('click', () => {
+        if (isProposedPlanActionDisabled(sessionId, deps.getState(sessionId))) return;
+        implement.disabled = true;
+        const request = createAppServerControlTurnRequestWithQuickSettings(
+          sessionId,
+          `Implement the following proposed plan:\n\n${entry.body}`,
+        );
+        request.planMode = 'off';
+        void submitAppServerControlTurn(sessionId, request)
+          .catch((error: unknown) => {
+            deps.logWarn(() => `Plan implementation request failed: ${String(error)}`);
+          })
+          .finally(() => {
+            deps.renderCurrentAgentView(sessionId);
+          });
+      });
+      actions.appendChild(implement);
+      article.appendChild(actions);
+    }
 
     const attachmentBlock = createHistoryAttachmentBlock(sessionId, entry.attachments);
     if (attachmentBlock) {
@@ -1072,10 +1115,20 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
     const container = document.createElement('div');
     container.className = 'agent-history-attachments';
+    // Restored native images can live in a provider-owned cache outside cwd.
+    // Register these exact paths before loading; the file endpoint continues
+    // to enforce session access even if this request fails.
+    const accessReady = registerFilePaths(
+      sessionId,
+      attachments.map((attachment) => attachment.path),
+    ).catch(() => undefined);
 
     for (const attachment of attachments) {
       const link = document.createElement('a');
-      link.href = buildAppServerControlAttachmentUrl(sessionId, attachment);
+      const previewUrl = buildAppServerControlAttachmentUrl(sessionId, attachment);
+      void accessReady.then(() => {
+        link.href = previewUrl;
+      });
       link.target = '_blank';
       link.rel = 'noreferrer';
 
@@ -1085,7 +1138,9 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         frame.className = 'agent-history-attachment-image-frame';
         const image = document.createElement('img');
         image.className = 'agent-history-attachment-image-el';
-        image.src = link.href;
+        void accessReady.then(() => {
+          image.src = previewUrl;
+        });
         image.loading = 'lazy';
         image.alt = resolveAttachmentLabel(attachment);
         frame.appendChild(image);
@@ -1122,6 +1177,32 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       surface,
       state,
     });
+  }
+
+  function buildRuntimeStatLabels(
+    stats: AppServerControlRuntimeStatsSummary,
+    detail: boolean,
+  ): string[] {
+    const labels: string[] = [];
+    if (stats.windowTokenLimit !== null)
+      labels.push(detail ? formatTokenWindowDetail(stats) : formatTokenWindowCompact(stats));
+    if (stats.accumulatedInputTokens !== null)
+      labels.push(
+        `${detail ? 'Session in' : 'in'} ${formatTokenCount(stats.accumulatedInputTokens)}`,
+      );
+    if (stats.accumulatedOutputTokens !== null)
+      labels.push(
+        `${detail ? 'Session out' : 'out'} ${formatTokenCount(stats.accumulatedOutputTokens)}`,
+      );
+    if (stats.costAmount !== undefined && stats.costCurrency) {
+      const amount = new Intl.NumberFormat(undefined, { maximumSignificantDigits: 6 }).format(
+        stats.costAmount,
+      );
+      labels.push(
+        `${appServerControlText('appServerControl.usage.cost', 'Session cost')} ${amount} ${stats.costCurrency}`,
+      );
+    }
+    return labels;
   }
 
   function formatTokenCount(value: number): string {
