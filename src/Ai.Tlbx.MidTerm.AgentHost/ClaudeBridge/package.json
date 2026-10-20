@@ -7,8 +7,8 @@
     "build": "node build.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.300",
-    "@anthropic-ai/sdk": "0.134.0",
+    "@anthropic-ai/claude-agent-sdk": "0.3.302",
+    "@anthropic-ai/sdk": "0.135.0",
     "@modelcontextprotocol/sdk": "1.32.1",
     "zod": "4.6.7"
   },
