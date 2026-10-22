@@ -29,6 +29,9 @@ const labels: Record<string, string> = german
       search: 'Im Dokument suchen',
       findPrevious: 'Vorheriger Treffer',
       findNext: 'Nächster Treffer',
+      selectText: 'Text auswählen',
+      handTool: 'Handwerkzeug',
+      copyText: 'Markierten Text kopieren',
     }
   : {};
 for (const [id, label] of Object.entries(labels)) {
@@ -39,6 +42,8 @@ for (const [id, label] of Object.entries(labels)) {
 }
 const zoom = element('zoom') as HTMLSelectElement;
 if (german) {
+  element('handTool').textContent = 'Hand';
+  element('copyText').textContent = 'Kopieren';
   zoom.options.item(0)?.replaceChildren('Seitenbreite');
   zoom.options.item(1)?.replaceChildren('Ganze Seite');
   document.querySelector('label[for="password"]')?.replaceChildren('PDF-Passwort');
@@ -66,6 +71,86 @@ linkService.setViewer(viewer);
 GlobalWorkerOptions.workerSrc = '/pdf/worker.js';
 const page = element('page') as HTMLInputElement;
 const search = element('search') as HTMLInputElement;
+const copyText = element('copyText') as HTMLButtonElement;
+let handMode = false;
+let drag: { pointerId: number; x: number; y: number; left: number; top: number } | null = null;
+function selectedText(): string {
+  const selection = window.getSelection();
+  return selection?.anchorNode &&
+    selection.focusNode &&
+    container.contains(selection.anchorNode) &&
+    container.contains(selection.focusNode)
+    ? selection.toString()
+    : '';
+}
+document.addEventListener('selectionchange', () => {
+  copyText.disabled = !selectedText();
+});
+function endPan(): void {
+  if (drag && container.hasPointerCapture(drag.pointerId))
+    container.releasePointerCapture(drag.pointerId);
+  drag = null;
+  container.classList.remove('pdf-dragging');
+}
+function setHandMode(hand: boolean): void {
+  endPan();
+  handMode = hand;
+  container.classList.toggle('pdf-hand', hand);
+  element('selectText').setAttribute('aria-pressed', String(!hand));
+  element('handTool').setAttribute('aria-pressed', String(hand));
+  if (hand) window.getSelection()?.removeAllRanges();
+}
+element('selectText').onclick = () => {
+  setHandMode(false);
+};
+element('handTool').onclick = () => {
+  setHandMode(true);
+};
+// Retain the document selection while the toolbar button takes the click.
+copyText.addEventListener('pointerdown', (event) => {
+  event.preventDefault();
+});
+copyText.onclick = () => {
+  const text = selectedText();
+  if (!text) return;
+  void navigator.clipboard
+    .writeText(text)
+    .then(() => {
+      element('toolStatus').textContent = german ? 'Text kopiert.' : 'Text copied.';
+    })
+    .catch(() => {
+      element('toolStatus').textContent = german
+        ? 'Kopieren fehlgeschlagen. Strg+C verwenden.'
+        : 'Copy failed. Use Ctrl+C.';
+    });
+};
+container.addEventListener('pointerdown', (event) => {
+  if (
+    !handMode ||
+    event.button !== 0 ||
+    event.pointerType === 'touch' ||
+    (event.target instanceof Element && event.target.closest('a, input, button, select, textarea'))
+  )
+    return;
+  event.preventDefault();
+  drag = {
+    pointerId: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    left: container.scrollLeft,
+    top: container.scrollTop,
+  };
+  container.setPointerCapture(event.pointerId);
+  container.classList.add('pdf-dragging');
+});
+container.addEventListener('pointermove', (event) => {
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  container.scrollLeft = drag.left + drag.x - event.clientX;
+  container.scrollTop = drag.top + drag.y - event.clientY;
+});
+container.addEventListener('pointerup', endPan);
+container.addEventListener('pointercancel', endPan);
+container.addEventListener('lostpointercapture', endPan);
 const controls = document.querySelectorAll<
   HTMLInputElement | HTMLButtonElement | HTMLSelectElement
 >('#toolbar button, #toolbar input, #toolbar select');
@@ -86,6 +171,7 @@ resize.observe(toolbar);
 resize.observe(container);
 bus.on('pagesinit', () => {
   for (const control of controls) control.disabled = false;
+  copyText.disabled = !selectedText();
   element('previous').setAttribute('disabled', '');
   (element('next') as HTMLButtonElement).disabled = pageCount <= 1;
   viewer.currentScaleValue = 'page-width';
@@ -128,11 +214,31 @@ page.onchange = () => {
 zoom.onchange = () => {
   viewer.currentScaleValue = zoom.value;
 };
-function changeZoom(factor: number): void {
-  viewer.currentScale = Math.max(0.25, Math.min(5, viewer.currentScale * factor));
+function changeZoom(factor: number, origin?: [number, number]): void {
+  if (!pageCount) return;
+  const scale = Math.max(0.25, Math.min(5, viewer.currentScale * factor));
+  viewer.updateScale({ scaleFactor: scale / viewer.currentScale, ...(origin ? { origin } : {}) });
   customZoom.text = `${Math.round(viewer.currentScale * 100)}%`;
   zoom.value = 'custom';
 }
+// A non-passive listener in the PDF document cancels browser zoom even when
+// the pointer is over its toolbar, or the PDF is loading/at its zoom limit.
+document.addEventListener(
+  'wheel',
+  (event) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    const unit =
+      event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? 16
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          ? container.clientHeight
+          : 1;
+    const factor = Math.exp(Math.max(-0.5, Math.min(0.5, -event.deltaY * unit * 0.002)));
+    changeZoom(factor, [event.clientX, event.clientY]);
+  },
+  { passive: false, capture: true },
+);
 element('zoomIn').onclick = () => {
   changeZoom(1.25);
 };
