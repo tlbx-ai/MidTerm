@@ -1,3 +1,4 @@
+import { createPdfView } from '../fileViewer/pdfView';
 /**
  * File Viewer Module
  *
@@ -874,7 +875,7 @@ async function renderFile(load: FileViewLoad, info: FilePathInfo): Promise<void>
     container.innerHTML = `<audio class="file-viewer-audio" controls src="${viewUrl}"></audio>`;
   } else if (previewKind === 'pdf') {
     updateSaveButtonVisibility(false);
-    container.innerHTML = `<iframe class="file-viewer-pdf" src="${viewUrl}"></iframe>`;
+    container.replaceChildren(createPdfView(viewUrl, 'file-viewer-pdf', load.signal));
   } else if (previewKind === 'text') {
     await renderTextFile(load);
   } else {
