@@ -267,7 +267,7 @@ $versionJsonPath = "$PSScriptRoot\..\src\version.json"
 # Read current version from version.json
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $currentVersion = $versionJson.web
-Assert-ReleaseRuntimeSelection -PtyVersion $versionJson.pty -mthostUpdate $mthostUpdate
+Assert-ReleaseRuntimeSelection -PtyVersion $versionJson.pty -mthostUpdate $mthostUpdate -WebVersion $currentVersion
 Show-ReleaseTestPlan -Categories $selectedCategories -BaseVersion $currentVersion
 Write-Host "Current version: $currentVersion" -ForegroundColor Cyan
 

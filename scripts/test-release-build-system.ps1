@@ -21,6 +21,34 @@ Assert-Check (@(Resolve-ReleaseTestClusters all).Count -eq 7) 'all did not selec
 Assert-Throws { Resolve-ReleaseTestClusters @('all','server') } 'Ambiguous all combination accepted.'
 Assert-Throws { Resolve-ReleaseTestClusters unknown } 'Unknown category accepted.'
 Assert-Throws { Resolve-ReleaseTestClusters frontend -Stable } 'Partial stable verification accepted.'
+$global:TlbxRuntimeBaselineDiff = ''
+$global:TlbxRuntimeBaselineChanged = $false
+$global:TlbxRuntimeBaselineVersion = '1.2.0'
+function global:git {
+    $global:LASTEXITCODE = 0
+    switch ($args[0]) {
+        'rev-parse' { $global:LASTEXITCODE = 1 }
+        'fetch' { $global:LASTEXITCODE = 1 }
+        'show' { @{pty=$global:TlbxRuntimeBaselineVersion} | ConvertTo-Json -Compress }
+        'diff' {
+            $global:TlbxRuntimeBaselineDiff = $args[2]
+            if ($global:TlbxRuntimeBaselineChanged) { 'src/Ai.Tlbx.MidTerm.Common/Changed.cs' }
+        }
+        default { throw "Unexpected baseline probe: $args" }
+    }
+}
+try {
+    Assert-ReleaseRuntimeSelection -PtyVersion 1.2.0 -WebVersion 1.3.0 -mthostUpdate no
+    Assert-Check ($global:TlbxRuntimeBaselineDiff -eq 'refs/tags/v1.3.0') 'Promoted runtime must compare against the verified web tag.'
+    $global:TlbxRuntimeBaselineChanged = $true
+    Assert-Throws { Assert-ReleaseRuntimeSelection -PtyVersion 1.2.0 -WebVersion 1.3.0 -mthostUpdate no } 'Promoted baseline accepted changed runtime sources.'
+    $global:TlbxRuntimeBaselineVersion = '1.1.0'
+    Assert-Throws { Assert-ReleaseRuntimeSelection -PtyVersion 1.2.0 -WebVersion 1.3.0 -mthostUpdate no } 'Mismatched runtime metadata accepted.'
+    Assert-Throws { Assert-ReleaseRuntimeSelection -PtyVersion 1.2.0 -mthostUpdate no } 'Missing runtime and web baseline accepted.'
+} finally {
+    Remove-Item Function:\git
+    Remove-Variable TlbxRuntimeBaselineDiff,TlbxRuntimeBaselineChanged,TlbxRuntimeBaselineVersion -Scope Global
+}
 foreach ($name in @('release-dev.ps1','release.ps1','release-local.ps1','promote.ps1')) {
     $command = Get-Command (Join-Path $PSScriptRoot $name)
     $mandatory = @($command.Parameters.TestCategories.Attributes | Where-Object { $_ -is [Management.Automation.ParameterAttribute] -and $_.Mandatory })
