@@ -397,6 +397,10 @@ public static class ServerSetup
         contentTypeProvider.Mappings[".ttf"] = "font/ttf";
         contentTypeProvider.Mappings[".eot"] = "application/vnd.ms-fontobject";
         contentTypeProvider.Mappings[".zip"] = "application/zip";
+        contentTypeProvider.Mappings[".wasm"] = "application/wasm";
+        contentTypeProvider.Mappings[".bcmap"] = "application/octet-stream";
+        contentTypeProvider.Mappings[".pfb"] = "application/octet-stream";
+        contentTypeProvider.Mappings[".icc"] = "application/octet-stream";
 
         app.UseStaticFiles(new StaticFileOptions
         {
