@@ -13,6 +13,12 @@ export function createPdfView(
     scheme: document.documentElement.dataset.nativeColorScheme ?? 'dark',
   });
   frame.src = `/pdf/index.html?${params}`;
-  signal?.addEventListener('abort', () => frame.remove(), { once: true });
+  signal?.addEventListener(
+    'abort',
+    () => {
+      frame.remove();
+    },
+    { once: true },
+  );
   return frame;
 }
