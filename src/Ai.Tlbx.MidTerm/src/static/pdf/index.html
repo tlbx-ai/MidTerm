@@ -9,6 +9,9 @@
 </head>
 <body>
   <nav id="toolbar" aria-label="PDF">
+    <button id="selectText" type="button" title="Select text" aria-label="Select text" aria-pressed="true">Text</button>
+    <button id="handTool" type="button" title="Hand tool" aria-label="Hand tool" aria-pressed="false">Hand</button>
+    <button id="copyText" type="button" title="Copy selected text" aria-label="Copy selected text" disabled>Copy</button>
     <button id="previous" title="Previous page" aria-label="Previous page">‹</button>
     <input id="page" type="number" min="1" value="1" aria-label="Page">
     <span id="pages">/ …</span>
@@ -22,6 +25,7 @@
     <span id="matches" role="status"></span>
     <a href="/THIRD-PARTY-LICENSES.txt" target="_blank" rel="noopener" title="PDF.js — Apache-2.0">PDF.js</a>
   </nav>
+  <span id="toolStatus" class="sr-only" role="status"></span>
   <p id="status" role="status">Loading PDF…</p>
   <form id="passwordForm" hidden>
     <label for="password">PDF password</label>
