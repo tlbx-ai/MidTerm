@@ -44,12 +44,38 @@ const waitFor = async (predicate, label) => {
   while (Date.now() < deadline) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 150)); }
   throw new Error(`Timed out: ${label}`);
 };
+const boardAction = async (target, action) => {
+  await target.locator('.boards-menu-trigger').click();
+  await target.locator(`.boards-actions-menu [data-board-action="${action}"]`).click();
+};
+const createItem = async kind => {
+  await boardAction(page, 'add');
+  await page.locator(`.boards-context-menu [data-board-action="${kind}"]`).click();
+};
 try {
   const board = await api('', 'POST', { title: 'Project desk', panX: 80, panY: 80 });
   boardId = board.id;
   await page.goto(`${base}/?board=${boardId}`);
   await page.locator('.boards-workspace').waitFor({ state: 'visible' });
   const surface = page.locator('.boards-surface');
+  assert.equal(await page.locator('.boards-tools').count(), 0);
+  await surface.click({button:'right',position:{x:200,y:120}});
+  await page.locator('.boards-context-menu').waitFor();
+  await page.screenshot({path:path.join(out,'board-context-menu.png')});
+  await page.locator('.boards-context-menu [data-board-action="note"]').click();
+  await page.locator('.board-item-text').waitFor();
+  let contextNote = (await api(`/${boardId}`)).items[0];
+  assert.equal(contextNote.x,120); assert.equal(contextNote.y,40);
+  assert.equal((await api(`/${boardId}`)).panX,80);
+  await page.locator('.boards-header select').focus();
+  await api(`/${boardId}/items/${contextNote.id}?expectedRevision=${contextNote.revision}`,'DELETE');
+  await page.locator('.board-item').waitFor({state:'hidden'});
+  await surface.focus(); await page.keyboard.press('Shift+F10');
+  await page.locator('.boards-context-menu').waitFor();
+  await page.keyboard.press('Escape');
+  assert.equal(await surface.evaluate(element => element === document.activeElement),true);
+  passed.push('right-click creates at canvas coordinates without panning; keyboard context menu restores focus');
+
   await surface.dblclick({ position: { x: 220, y: 180 } });
   const note = page.locator('.board-item[data-kind="note"]');
   await note.locator('.board-item-title').fill('An idea worth keeping');
@@ -79,19 +105,44 @@ try {
   await waitFor(async () => (await api(`/${boardId}`)).zoom > 1.2, 'board zoom saved');
   assert.deepEqual(await page.evaluate(() => ({ dpr: devicePixelRatio, width: innerWidth, scale: visualViewport.scale })), viewport);
   passed.push('Ctrl-wheel zooms board and preserves browser zoom');
-  await page.locator('.boards-tools button[data-kind="todo"]').click();
+  await createItem('todo');
   const todo = page.locator('.board-item[data-kind="todo"]');
   await todo.locator('.board-item-title').fill('Today');
-  await todo.locator('.board-entry-add').fill('Ship the useful part');
-  await todo.locator('.board-entry-add').press('Enter');
-  await todo.locator('input[type="checkbox"]').check();
+  await todo.locator('.board-item-title').press('Enter');
+  assert.equal(await todo.locator('.board-entry-add').evaluate(element => element === document.activeElement), true);
+  await page.keyboard.type('Ship the useful part');
+  await page.keyboard.press('Enter');
+  await todo.locator('input[type="checkbox"]').first().check();
   await waitFor(async () => (await api(`/${boardId}`)).items.some(item => item.kind === 'todo' && item.entries[0]?.done), 'todo saved');
   passed.push('low-friction Enter-to-add and toggle todo');
+  const rowText = todo.locator('.board-entry-text');
+  await rowText.first().focus();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  assert.equal(await rowText.count(), 2);
+  assert.equal(await rowText.nth(1).evaluate(element => element === document.activeElement), true);
+  await page.keyboard.type('Second task');
+  await rowText.nth(1).evaluate(element => element.setSelectionRange(7,7));
+  await page.keyboard.press('Enter');
+  assert.equal(await rowText.count(), 3);
+  assert.equal(await rowText.nth(2).inputValue(), 'task');
+  assert.equal(await rowText.nth(2).evaluate(element => element.selectionStart), 0);
+  await page.keyboard.type('Next ');
+  await waitFor(async () => (await api(`/${boardId}`)).items.find(item => item.kind === 'todo').entries[2]?.text === 'Next task', 'Enter rows saved');
+  await page.reload();
+  await todo.waitFor();
+  assert.deepEqual(await rowText.evaluateAll(elements => elements.map(element => element.value)), ['Ship the useful part','Second ','Next task']);
+  assert.deepEqual(await todo.locator('input[type="checkbox"]').evaluateAll(elements => elements.map(element => element.checked)), [true,false,false]);
+  await todo.locator('.board-entry').nth(2).getByRole('button', {name:'Delete entry',exact:true}).click();
+  await todo.locator('.board-entry').nth(1).getByRole('button', {name:'Delete entry',exact:true}).click();
+  await waitFor(async () => (await api(`/${boardId}`)).items.find(item => item.kind === 'todo').entries.length === 1, 'extra keyboard rows removed');
+  passed.push('Enter in an existing to-do inserts and focuses a new unchecked row, splits at caret and persists exact row order through reload');
+
   const state = await api(`/${boardId}`);
   const latestNote = state.items.find(item => item.id === noteId);
   const tileIdentity = await note.evaluate(element => { element.__boardAcceptanceIdentity = 42; return element.dataset.id; });
   await api(`/${boardId}/items/${noteId}`, 'PUT', { expectedRevision: latestNote.revision, item: { ...latestNote, title: 'Updated by CLI agent' } });
-  await page.locator('.boards-title').focus();
+  await page.locator('.boards-header select').focus();
   await waitFor(async () => await note.locator('.board-item-title').inputValue() === 'Updated by CLI agent', 'agent edit visible');
   assert.equal(await note.evaluate(element => element.__boardAcceptanceIdentity), 42);
   assert.equal(await note.getAttribute('data-id'), tileIdentity);
@@ -123,11 +174,11 @@ try {
   assert.equal(await note.locator('.board-item-title').inputValue(), 'Updated by CLI agent');
   assert.ok((await api(`/${boardId}`)).zoom > 1.2);
   passed.push('reload retains saved text, geometry and viewport');
-  await page.locator('.boards-tools button').last().click();
+  await boardAction(page, 'reset');
   await waitFor(async () => (await api(`/${boardId}`)).zoom === 1, 'reset view saved');
-  await page.locator('.boards-tools button[data-kind="calendar"]').click();
+  await createItem('calendar');
   await page.locator('.board-item[data-kind="calendar"] .board-item-title').waitFor();
-  await page.locator('.boards-title').focus();
+  await page.locator('.boards-header select').focus();
   let calendarItem = (await api(`/${boardId}`)).items.find(item => item.kind === 'calendar');
   await api(`/${boardId}/items/${calendarItem.id}`, 'PUT', { expectedRevision: calendarItem.revision, item: { ...calendarItem, calendarMonth: '2021-01' } });
   const calendar = page.locator('.board-item[data-kind="calendar"]');
@@ -140,7 +191,7 @@ try {
   await waitFor(async () => (await api(`/${boardId}`)).items.find(item => item.kind === 'calendar').calendarMonth === '2021-02', 'calendar month saved');
   await calendar.locator('.board-calendar-header button').first().click();
   passed.push('interactive month calendar, selected-day creation and ISO week 53');
-  await page.locator('.boards-tools button[data-kind="mail"]').click();
+  await createItem('mail');
   const mail = page.locator('.board-item[data-kind="mail"]');
   await mail.locator('.board-item-title').fill('Mail inbox');
   await mail.locator('.board-entry-add').fill('Architecture review');
@@ -150,7 +201,7 @@ try {
   await mail.locator('input[type="checkbox"]').check();
   await waitFor(async () => (await api(`/${boardId}`)).items.some(item => item.kind === 'mail' && item.entries[0]?.sender === 'Alex' && item.entries[0]?.done && item.entries[0]?.url === 'https://example.test/mail/42'), 'mail state saved');
   passed.push('mail sender, reference and read state edit directly');
-  await page.locator('.boards-tools button[data-kind="timeline"]').click();
+  await createItem('timeline');
   const timeline = page.locator('.board-item[data-kind="timeline"]');
   await timeline.locator('.board-item-title').fill('Long-term direction');
   await timeline.locator('.board-entry-add').fill('Next milestone');
@@ -162,7 +213,7 @@ try {
   await timeline.locator('.board-item-title').click();
   await waitFor(async () => (await api(`/${boardId}`)).items.some(item => item.kind === 'timeline' && item.entries[0]?.quarter === 3 && item.entries[0]?.week === null), 'quarter saved');
   passed.push('long-term week and quarter plans persist as structured values');
-  await page.locator('.boards-title').focus();
+  await page.locator('.boards-header select').focus();
   const layout = { note: [20, 20, 360, 270], todo: [420, 20, 320, 300], browser: [780, 20, 450, 300], calendar: [20, 330, 360, 440], mail: [420, 360, 360, 360], timeline: [820, 360, 360, 300] };
   for (const item of (await api(`/${boardId}`)).items) {
     const [x, y, width, height] = layout[item.kind];
@@ -183,7 +234,7 @@ try {
   assert.equal(await note.locator('.board-item-text').inputValue(), 'Remote draft kept safely');
   const cameraBefore = await surface.evaluate(element => element.querySelector('.boards-plane').style.transform);
   const titleBase = await api(`/${boardId}`);
-  await page.locator('.boards-title').focus();
+  await boardAction(page, 'rename');
   await api(`/${boardId}`, 'PATCH', {expectedRevision:titleBase.revision,title:'Agent board title'});
   await page.locator('.boards-title').fill('My board title');
   await surface.focus();
@@ -201,7 +252,7 @@ try {
   passed.push('item and title conflict comparison preserves drafts, explicit resolution and camera; keyboard movement persists');
   await page.screenshot({ path: path.join(out, 'board-desktop.png') });
   const popupPromise = page.waitForEvent('popup');
-  await page.locator('.boards-header button[data-board-action="detach"]').click();
+  await boardAction(page, 'detach');
   const popup = await popupPromise;
   await popup.locator('.board-item[data-kind="note"]').waitFor();
   assert.equal(new URL(popup.url()).searchParams.get('board'), boardId);
@@ -210,15 +261,15 @@ try {
   await api(`/${boardId}/items/${browserItem.id}/browser-command`, 'POST', { command: 'click', selector: '#counter' });
   await waitFor(async () => await childProgram.locator('#counter').textContent() === '1', 'CLI ownership transferred to child');
   const childClosed = popup.waitForEvent('close');
-  await popup.locator('[data-board-action="dock"]').click();
+  await boardAction(popup, 'dock');
   await childClosed;
   await waitFor(async () => await program.locator('#counter').evaluate(element => typeof element.onclick === 'function').catch(() => false), 'docked browser ready');
   await api(`/${boardId}/items/${browserItem.id}/browser-command`, 'POST', { command: 'click', selector: '#counter' });
   await waitFor(async () => await program.locator('#counter').textContent() === '1', 'CLI ownership restored to parent');
   passed.push('detach and dock transfer live browser command ownership');
 
-  await page.locator('.boards-title').focus();
-  await page.locator('[data-board-action="settings"]').click();
+  await page.locator('.boards-header select').focus();
+  await boardAction(page, 'settings');
   await page.locator('.board-session-form input[name="workingDirectory"]').fill(fixture);
   await page.locator('.board-session-form input[name="launchCommand"]').fill(`python -u "${path.join(fixture, 'agent.py')}"`);
   await page.locator('.board-session-form input[name="sessionProfile"]').fill('generic-ai');
@@ -286,8 +337,18 @@ try {
     await shell.goto(`${base}/?session=${taskSession}`);
     await shell.locator(`.session-item[data-session-id="${taskSession}"].active`).waitFor();
     await shell.locator('body.has-app-background').waitFor();
+    const nativeBar = await shell.locator('.session-tab-bar').first().evaluate(element => ({
+      height:parseFloat(getComputedStyle(element).height),font:getComputedStyle(element).fontSize
+    }));
     await shell.locator('#btn-boards').click();
     await shell.locator('.boards-workspace:not([hidden])').waitFor();
+    await boardAction(shell, 'reset');
+    const boardBar = await shell.locator('.boards-header').evaluate(element => ({
+      height:element.getBoundingClientRect().height,font:getComputedStyle(element).fontSize
+    }));
+    assert.deepEqual(boardBar, nativeBar, 'Boards header uses native bar height and type size');
+    assert.equal(await shell.locator('.boards-tools, [data-board-action="close"]').count(), 0);
+    assert.equal(await shell.locator('.boards-title').isVisible(), false);
     await shell.locator('.boards-header select').selectOption(boardId);
     await shell.locator('.boards-workspace[aria-busy="false"]').waitFor();
     const assertPane = async (withWallpaper = true) => {
@@ -302,7 +363,7 @@ try {
           appInert:document.querySelector('#app').inert, role:root.getAttribute('role'),
           sidebarUsable: sidebar.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)),
           terminalVisible:getComputedStyle(document.querySelector('.layout-root')).visibility,
-          colors:[root,document.querySelector('.boards-header'),document.querySelector('.boards-tools')].map(color),
+          colors:[root,document.querySelector('.boards-header'),document.querySelector('.boards-actions-menu')].map(color),
           foreground:getComputedStyle(root).color,
           wallpaper:getComputedStyle(document.documentElement).getPropertyValue('--app-background-image') };
       });
@@ -355,18 +416,20 @@ try {
     await settle();
     await assertPane(false);
     await shell.screenshot({ path:path.join(out, `board-embedded-${theme}-narrow.png`) });
-    await shell.locator('.boards-header button[data-board-action="close"]').click();
-    await shell.locator('.boards-workspace').waitFor({state:'hidden'});
     await shell.close();
   }
   passed.push('embedded Boards fills terminal pane with opaque chrome under wallpaper in all four themes; sidebar navigation, key isolation and narrow layout work');
   await page.locator('.boards-inspector > button').first().click();
-  await page.locator('.boards-tools button').last().focus();
-  await page.keyboard.press('Tab');
-  assert.equal(await page.evaluate(() => document.activeElement === document.querySelector('.boards-header select')), true);
-  await page.keyboard.press('Shift+Tab');
-  assert.equal(await page.evaluate(() => document.activeElement === document.querySelector('.boards-tools button:last-child')), true);
-  passed.push('Tab and Shift-Tab keep keyboard focus inside detached board window');
+  await page.locator('.boards-menu-trigger').focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('End');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.boardAction), 'reset');
+  await page.keyboard.press('Home');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.boardAction), 'add');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('.boards-workspace').isVisible(), true);
+  assert.equal(await page.evaluate(() => document.activeElement.classList.contains('boards-menu-trigger')), true);
+  passed.push('overflow menu keyboard navigation and Escape preserve board and restore trigger focus');
   await page.setViewportSize({ width: 390, height: 844 });
   const touch = await context.newCDPSession(page);
   await touch.send('Emulation.setTouchEmulationEnabled', {enabled:true,maxTouchPoints:2});
@@ -380,14 +443,18 @@ try {
   await waitFor(async () => (await api(`/${boardId}`)).zoom > touchZoom*1.5, 'two-finger zoom persisted');
   assert.deepEqual(await page.evaluate(() => ({dpr:devicePixelRatio,scale:visualViewport.scale})), touchScale);
   await touch.detach();
-  await page.locator('.boards-tools button').last().click();
+  await boardAction(page, 'reset');
   await waitFor(async () => (await api(`/${boardId}`)).zoom === 1, 'reset after touch');
   await page.mouse.move(5, 300);
   await page.mouse.wheel(90,0);
   await waitFor(async () => (await api(`/${boardId}`)).panX < 0, 'mobile pan saved');
   passed.push('real two-finger touch zoom persists without browser zoom and mobile pan remains usable');
   await page.screenshot({ path: path.join(out, 'board-narrow.png') });
-  assert.ok(await page.locator('.boards-header button[data-board-action="close"]').isVisible());
+  assert.ok(await page.locator('.boards-menu-trigger').isVisible());
+  await boardAction(page, 'add');
+  await page.locator('.boards-context-menu').waitFor();
+  await page.screenshot({path:path.join(out,'board-narrow-menu.png')});
+  await page.keyboard.press('Escape');
   passed.push('narrow viewport retains board controls');
   assert.deepEqual(errors, []);
   fs.writeFileSync(path.join(out, 'summary.json'), JSON.stringify({ passed, errors }, null, 2));

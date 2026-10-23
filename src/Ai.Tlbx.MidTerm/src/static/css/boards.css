@@ -21,17 +21,22 @@
 .boards-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 20px;
-  min-height: 64px;
-  border-bottom: 1px solid var(--border-color);
-  background: var(--bg-elevated-opaque);
+  gap: 4px;
+  flex-shrink: 0;
+  height: var(--bar-height);
+  min-height: var(--bar-height);
+  padding: 0 8px;
+  font-size: var(--fs-base);
+  background: var(--bg-primary-opaque, #0d0e14);
   z-index: 2;
 }
 
-.boards-header strong { font-size: 17px; letter-spacing: -.03em; }
-.boards-title { flex: 1; min-width: 80px; font-weight: 600; }
-.boards-header select { max-width: 160px; }
+.boards-header .session-cwd { padding: 0 8px; }
+.boards-header select { max-width: min(280px, 42vw); min-width: 0; padding: 0 4px; }
+.boards-title { width: min(320px, 45vw); min-width: 0; }
+.boards-header .boards-menu-trigger { flex-shrink: 0; padding: 0 8px; font-size: 18px; }
+.boards-header .boards-save-state { margin-left: auto; }
+.boards-header > :is(input, select, button) { -webkit-app-region: no-drag; }
 
 :where(.boards-workspace) :is(button, input, textarea, select) {
   font: inherit;
@@ -61,26 +66,26 @@
 .boards-surface.is-dragging { cursor: grabbing; user-select: none; }
 .boards-surface.is-dragging iframe { pointer-events: none; }
 
-.boards-tools {
+.boards-menu {
   position: absolute;
-  bottom: 28px;
-  left: 50%;
-  transform: translateX(-50%);
+  z-index: 120;
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px;
-  max-width: calc(100% - 32px);
-  overflow-x: auto;
+  flex-direction: column;
+  min-width: 200px;
+  max-width: calc(100% - 8px);
+  max-height: calc(100% - 8px);
+  overflow: auto;
+  padding: 4px;
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: 6px;
   background: var(--bg-elevated-opaque);
-  box-shadow: 0 4px 18px #0002;
-  z-index: 3;
+  box-shadow: 0 8px 24px #0008;
+  font-size: var(--fs-base);
 }
-
-.boards-tools button { white-space: nowrap; font-size: 13px; }
-.boards-hint { position: absolute; bottom: 7px; left: 20px; font-size: 10px; color: var(--text-secondary); pointer-events: none; }
+.boards-menu[hidden] { display: none; }
+.boards-menu button { min-height: 32px; padding: 6px 12px; text-align: left; border-radius: 3px; }
+.boards-menu button:hover,
+.boards-menu button:focus-visible { background: var(--bg-hover-opaque, var(--bg-hover)); }
 
 .board-item {
   --note-bg: #eee4c8;
@@ -167,16 +172,10 @@
 .boards-palette button { width: 26px; height: 26px; border-radius: 50%; background: var(--note-bg, #eee4c8); border: 1px solid var(--border-color); }
 
 @media (width <= 700px) {
-  .boards-header { padding: 8px; gap: 5px; flex-wrap: wrap; }
-  .boards-header strong { font-size: 14px; }
-  .boards-header select { max-width: 100px; }
-  .boards-header button { font-size: 11px; padding: 6px; }
-  .boards-save-state { display: none; }
-  .boards-tools { display: grid; grid-template-columns: repeat(3, 1fr); width: 320px; gap: 2px; bottom: 22px; }
-  .boards-tools button:last-child { grid-column: 1 / -1; padding: 4px; }
-  .boards-tools button { min-height: 36px; padding: 8px; font-size: 12px; }
-  .boards-hint { display: none; }
-  .boards-inspector { width: 220px; right: 8px; }
+  .boards-save-state:empty { display: none; }
+  .boards-header .session-cwd { display: none; }
+  .boards-inspector { width: 220px; right: 8px; top: calc(var(--bar-height) + 8px); }
+  .boards-menu button { min-height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -214,7 +213,7 @@
   .board-item-grip { min-height: 48px; }
   .board-item-grip button { min-height: 44px; min-width: 40px; opacity: .65; }
   .board-resize { width: 30px; height: 30px; }
-  .boards-header button { min-height: 44px; }
+
 }
 
 .boards-conflict-overlay { position: absolute; inset: 0; z-index: 20; background: #0006; display: grid; place-items: center; padding: 20px; }

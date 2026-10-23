@@ -6,6 +6,7 @@ import {
   type BoardItem,
 } from './boardApi';
 import { bindBoardCanvas } from './boardCanvas';
+import { BoardMenu, type BoardMenuAction } from './boardMenu';
 import { renderBoardItems } from './boardItems';
 import { t } from '../i18n';
 import { showConfirm } from '../../utils/dialog';
@@ -81,7 +82,15 @@ class BoardView {
   private readonly picker = document.createElement('select');
   private readonly title = document.createElement('input');
   private readonly status = document.createElement('span');
-  private readonly zoom = document.createElement('button');
+  private readonly contextMenu = new BoardMenu(this.root, 'boards-context-menu');
+  private readonly actionsMenu = new BoardMenu(this.root, 'boards-actions-menu');
+  private readonly menuButton = this.button(
+    '⋯',
+    () => {
+      this.showActions();
+    },
+    'menu',
+  );
   private readonly inspector = document.createElement('aside');
   private board: BoardDocument | null = null;
   private canvas: ReturnType<typeof bindBoardCanvas> | null = null;
@@ -130,99 +139,64 @@ class BoardView {
     this.root.hidden = true;
     const header = document.createElement('header');
     header.className = 'boards-header';
-    const brand = document.createElement('strong');
+    const brand = document.createElement('span');
+    brand.className = 'session-cwd';
     brand.textContent = t('boards.title');
     this.picker.setAttribute('aria-label', t('boards.chooseBoard'));
     this.picker.addEventListener('change', () => {
       void this.open(this.picker.value);
     });
     this.title.className = 'boards-title';
+    this.title.hidden = true;
     this.title.setAttribute('aria-label', t('boards.boardTitle'));
     this.title.maxLength = 256;
     this.title.addEventListener('change', () => {
       if (this.board && this.title.value.trim()) {
-        this.board.title = this.title.value;
+        this.board.title = this.title.value.trim();
         this.titleDirty = ++this.generation;
         this.schedule();
+        this.syncPickerTitle();
       }
+    });
+    this.title.addEventListener('blur', () => {
+      this.endRename();
+    });
+    this.title.addEventListener('keydown', (event) => {
+      if (!['Enter', 'Escape'].includes(event.key)) return;
+      event.stopPropagation();
+      event.preventDefault();
+      if (event.key === 'Escape') this.title.value = this.board?.title ?? '';
+      this.title.blur();
+      this.picker.focus();
     });
     this.status.className = 'boards-save-state';
     this.status.setAttribute('role', 'status');
     this.resolveButton.hidden = true;
-    header.append(
-      brand,
-      this.picker,
-      this.title,
-      this.status,
-      this.resolveButton,
-      this.button(
-        t('boards.newBoard'),
-        () => {
-          void this.createBoard();
-        },
-        'new',
-      ),
-      this.button(
-        t(this.windows.canDock ? 'boards.dock' : 'boards.detach'),
-        () => {
-          const operation = this.windows.canDock ? this.windows.dock() : this.windows.detach();
-          void operation.catch((error: unknown) => {
-            this.error(error);
-          });
-        },
-        this.windows.canDock ? 'dock' : 'detach',
-      ),
-      this.button(
-        t('boards.boardSettings'),
-        () => {
-          void this.settings();
-        },
-        'settings',
-      ),
-      this.button(
-        t('boards.close'),
-        () => {
-          void this.close();
-        },
-        'close',
-      ),
-    );
-    const tools = document.createElement('nav');
-    tools.className = 'boards-tools';
-    tools.setAttribute('aria-label', t('boards.tools'));
-    const kinds: BoardItem['kind'][] = ['note', 'todo', 'calendar', 'mail', 'timeline', 'browser'];
-    for (const kind of kinds) {
-      const tool = this.button(t(`boards.${kind}`), () => {
-        void this.add(kind);
-      });
-      tool.dataset.kind = kind;
-      tools.append(tool);
-    }
-    this.zoom.type = 'button';
-    this.zoom.title = t('boards.resetView');
-    this.zoom.addEventListener('click', () => {
-      if (!this.board) return;
-      this.board.zoom = 1;
-      this.board.panX = 80;
-      this.board.panY = 80;
-      this.canvas?.render();
-      this.markViewport();
-    });
-    tools.append(this.zoom);
+    this.menuButton.className = 'ide-bar-btn boards-menu-trigger';
+    this.menuButton.setAttribute('aria-label', t('boards.actions'));
+    this.menuButton.setAttribute('aria-haspopup', 'menu');
+    this.menuButton.setAttribute('aria-expanded', 'false');
+    header.append(brand, this.picker, this.title, this.status, this.resolveButton, this.menuButton);
     this.surface.className = 'boards-surface';
     this.surface.tabIndex = 0;
     this.surface.setAttribute('aria-label', t('boards.canvasHint'));
     this.plane.className = 'boards-plane';
     this.surface.append(this.plane);
-    this.surface.addEventListener('boardzoom', () => {
-      this.zoom.textContent = `${Math.round((this.board?.zoom ?? 1) * 100)}%`;
+    this.surface.addEventListener('contextmenu', (event) => {
+      if (event.target !== this.surface && event.target !== this.plane) return;
+      event.preventDefault();
+      this.showCreationMenu(event.clientX, event.clientY);
+    });
+    this.surface.addEventListener('keydown', (event) => {
+      if (event.target !== this.surface) return;
+      if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.showCreationMenu();
     });
     this.inspector.className = 'boards-inspector';
     this.inspector.hidden = true;
-    const hint = document.createElement('div');
-    hint.className = 'boards-hint';
-    hint.textContent = t('boards.canvasHint');
-    this.root.append(header, this.surface, tools, this.inspector, hint);
+    this.root.append(header, this.surface, this.inspector);
     const host = detached ? document.body : document.querySelector('.terminals-area');
     if (!host) throw new Error('Boards workspace host is missing.');
     host.append(this.root);
@@ -254,6 +228,9 @@ class BoardView {
       await this.flush();
       if (this.hasPendingChanges() || generation !== this.loadGeneration) return false;
     }
+    this.endRename();
+    this.contextMenu.close(false);
+    this.actionsMenu.close(false);
     this.root.hidden = false;
     this.showPane();
     this.removeBackLayer ??= registerBackButtonLayer(() => {
@@ -278,6 +255,113 @@ class BoardView {
         if (this.refreshQueued) void this.refresh();
       }
     }
+  }
+
+  private beginRename(): void {
+    this.picker.hidden = true;
+    this.title.hidden = false;
+    this.title.value = this.board?.title ?? '';
+    this.title.focus();
+    this.title.select();
+  }
+
+  private endRename(): void {
+    this.title.hidden = true;
+    this.picker.hidden = false;
+  }
+
+  private showCreationMenu(x?: number, y?: number): void {
+    this.actionsMenu.close(false);
+    const rect = this.surface.getBoundingClientRect();
+    const clientX = x ?? rect.left + rect.width / 2;
+    const clientY = y ?? rect.top + rect.height / 2;
+    const board = this.board;
+    if (!board) return;
+    const boardX = (clientX - rect.left - board.panX) / board.zoom - (x === undefined ? 160 : 0);
+    const boardY = (clientY - rect.top - board.panY) / board.zoom - (y === undefined ? 100 : 0);
+    const kinds: BoardItem['kind'][] = ['note', 'todo', 'calendar', 'mail', 'timeline', 'browser'];
+    const actions: BoardMenuAction[] = kinds.map((kind) => ({
+      label: t(`boards.${kind}`),
+      id: kind,
+      run: () => {
+        void this.add(kind, boardX, boardY);
+      },
+    }));
+    actions.push({
+      id: 'reset',
+      label: t('boards.resetView'),
+      run: () => {
+        this.resetView();
+      },
+    });
+    this.contextMenu.open(actions, clientX, clientY, this.surface);
+  }
+
+  private showActions(): void {
+    if (this.actionsMenu.isOpen) {
+      this.actionsMenu.close();
+      return;
+    }
+    this.contextMenu.close(false);
+    const rect = this.menuButton.getBoundingClientRect();
+    const dock = this.windows.canDock;
+    const actions: BoardMenuAction[] = [
+      {
+        id: 'add',
+        label: t('boards.addItem'),
+        run: () => {
+          this.showCreationMenu();
+        },
+      },
+      {
+        id: 'rename',
+        label: t('boards.rename'),
+        run: () => {
+          this.beginRename();
+        },
+      },
+      {
+        id: 'new',
+        label: t('boards.newBoard'),
+        run: () => {
+          void this.createBoard();
+        },
+      },
+      {
+        id: dock ? 'dock' : 'detach',
+        label: t(dock ? 'boards.dock' : 'boards.detach'),
+        run: () => {
+          void (dock ? this.windows.dock() : this.windows.detach()).catch((error: unknown) => {
+            this.error(error);
+          });
+        },
+      },
+      {
+        id: 'settings',
+        label: t('boards.boardSettings'),
+        run: () => {
+          void this.settings();
+        },
+      },
+      {
+        id: 'reset',
+        label: `${t('boards.resetView')} (${Math.round((this.board?.zoom ?? 1) * 100)}%)`,
+        run: () => {
+          this.resetView();
+        },
+      },
+    ];
+    this.actionsMenu.open(actions, rect.right - 200, rect.bottom, this.menuButton);
+  }
+
+  private resetView(): void {
+    if (!this.board) return;
+    this.board.zoom = 1;
+    this.board.panX = 80;
+    this.board.panY = 80;
+    this.canvas?.render();
+    this.markViewport();
+    this.surface.focus();
   }
 
   private showPane(): void {
@@ -365,7 +449,7 @@ class BoardView {
     }
     this.windows.announceReady(board.id);
     this.title.disabled = false;
-    this.title.focus();
+    this.picker.focus();
     const targetId = query.get('board') === board.id ? query.get('item') : null;
     const target = board.items.find((item) => item.id === targetId);
     if (target) {
@@ -424,7 +508,7 @@ class BoardView {
         panY: 80,
       });
       await this.open(board.id);
-      this.title.select();
+      this.beginRename();
     } catch (error) {
       this.error(error);
     }
@@ -877,7 +961,7 @@ class BoardView {
     else this.board.items = this.board.items.filter((entry) => entry.id !== item.id);
     this.dirty.delete(item.id);
     this.clearConflict();
-    this.title.focus();
+    this.picker.focus();
     this.select(null);
     this.render();
     this.status.textContent = t('boards.saved');
@@ -935,6 +1019,8 @@ class BoardView {
       return;
     }
     this.root.hidden = true;
+    this.contextMenu.close(false);
+    this.actionsMenu.close(false);
     this.setPaneOpen(false);
     this.removeBackLayer?.();
     this.removeBackLayer = null;
