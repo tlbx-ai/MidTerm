@@ -262,13 +262,23 @@ try {
   for (const theme of ['dark', 'light', 'solarizedDark', 'solarizedLight']) {
     const shell = await context.newPage();
     shell.on('pageerror', error => errors.push(error.message));
-    await shell.route('**/api/settings', async route => {
-      const response = await route.fetch();
-      const settings = await response.json();
-      await route.fulfill({ response, json: { ...settings, theme, uiTransparency: 100,
-        terminalTransparency: 100, backgroundImageEnabled: true,
-        backgroundImageFileName: 'acceptance.svg', backgroundImageRevision: 1,
-        backgroundImageHideOnMobile: false } });
+    const appearance = settings => ({ ...settings, theme, uiTransparency:100,
+      terminalTransparency:100, backgroundImageEnabled:true,
+      backgroundImageFileName:'acceptance.svg', backgroundImageRevision:1 });
+    for (const endpoint of ['settings', 'bootstrap']) {
+      await shell.route(`**/api/${endpoint}`, async route => {
+        const response = await route.fetch();
+        const data = await response.json();
+        const json = endpoint === 'bootstrap' ? {...data,settings:appearance(data.settings)} : appearance(data);
+        await route.fulfill({response,json});
+      });
+    }
+    await shell.routeWebSocket('**/ws/settings', socket => {
+      const server = socket.connectToServer();
+      server.onMessage(message => {
+        const data = JSON.parse(String(message));
+        socket.send(JSON.stringify(data.settings ? {...data,settings:appearance(data.settings)} : data));
+      });
     });
     await shell.route('**/api/settings/background-image?*', route => route.fulfill({
       contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000"><path fill="#df81b0" d="M0 0h1600v1000H0z"/><path fill="#285d65" d="M0 500L800 100l800 600v300H0z"/></svg>'
@@ -280,7 +290,7 @@ try {
     await shell.locator('.boards-workspace:not([hidden])').waitFor();
     await shell.locator('.boards-header select').selectOption(boardId);
     await shell.locator('.boards-workspace[aria-busy="false"]').waitFor();
-    const assertPane = async () => {
+    const assertPane = async (withWallpaper = true) => {
       const geometry = await shell.evaluate(() => {
         const root = document.querySelector('.boards-workspace');
         const host = document.querySelector('.terminals-area');
@@ -293,6 +303,7 @@ try {
           sidebarUsable: sidebar.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)),
           terminalVisible:getComputedStyle(document.querySelector('.layout-root')).visibility,
           colors:[root,document.querySelector('.boards-header'),document.querySelector('.boards-tools')].map(color),
+          foreground:getComputedStyle(root).color,
           wallpaper:getComputedStyle(document.documentElement).getPropertyValue('--app-background-image') };
       });
       assert.deepEqual(geometry.root, geometry.host, `${theme}: board fills terminal pane`);
@@ -301,7 +312,16 @@ try {
       assert.equal(geometry.role, 'region');
       assert.equal(geometry.terminalVisible, 'hidden');
       assert.ok(geometry.colors.every(color => /^rgb\(/.test(color)), `${theme}: opaque canvas and chrome: ${geometry.colors}`);
-      assert.ok(geometry.wallpaper.includes('background-image'));
+      const luminance = color => color.match(/[\d.]+/g).slice(0,3).map(Number).map(c => c/255)
+        .map(c => c<=0.04045 ? c/12.92 : ((c+0.055)/1.055)**2.4)
+        .reduce((sum,c,i) => sum+c*[0.2126,0.7152,0.0722][i],0);
+      const foreground = luminance(geometry.foreground);
+      for (const color of geometry.colors) {
+        const background = luminance(color);
+        assert.ok((Math.max(foreground,background)+0.05)/(Math.min(foreground,background)+0.05)>=4.5,
+          `${theme}: readable text ${geometry.foreground} contrast on ${color}`);
+      }
+      if (withWallpaper) assert.ok(geometry.wallpaper.includes('background-image'));
       return geometry;
     };
     assert.equal((await assertPane()).sidebarUsable, true);
@@ -318,12 +338,22 @@ try {
     await shell.locator('#settings-view').waitFor({state:'visible'});
     await shell.locator('#btn-boards').click();
     await shell.locator('.boards-workspace[aria-busy="false"]').waitFor();
-    await shell.locator(`.session-item[data-session-id="${taskSession}"]`).click();
+    await shell.locator(`.session-item[data-session-id="${taskSession}"]`).click({position:{x:30,y:20}});
     await shell.locator('.boards-workspace').waitFor({state:'hidden'});
     await shell.locator('#btn-boards').click();
     await shell.locator('.boards-workspace[aria-busy="false"]').waitFor();
     await shell.setViewportSize({ width:390, height:844 });
-    await assertPane();
+    const settle = () => shell.evaluate(() => Promise.all(document.getAnimations()
+      .filter(animation => animation.effect?.getTiming().iterations !== Infinity)
+      .map(animation => animation.finished.catch(() => {}))));
+    await settle();
+    await shell.locator('#btn-mobile-strip-terminal').click();
+    await shell.locator('.boards-workspace').waitFor({state:'hidden'});
+    await shell.locator('#btn-hamburger').click();
+    await shell.locator('#btn-boards').click();
+    await shell.locator('.boards-workspace[aria-busy="false"]').waitFor();
+    await settle();
+    await assertPane(false);
     await shell.screenshot({ path:path.join(out, `board-embedded-${theme}-narrow.png`) });
     await shell.locator('.boards-header button[data-board-action="close"]').click();
     await shell.locator('.boards-workspace').waitFor({state:'hidden'});
