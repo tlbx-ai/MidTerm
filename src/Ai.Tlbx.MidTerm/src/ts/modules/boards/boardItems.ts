@@ -110,8 +110,17 @@ function createItem(item: BoardItem, actions: BoardItemActions): HTMLElement {
   add.className = 'board-entry-add';
   add.placeholder = t('boards.addEntry');
   add.setAttribute('aria-label', t('boards.addEntry'));
+  title.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.isComposing || itemContext.get(tile)?.kind !== 'todo')
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    add.focus();
+  });
   add.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter' || !add.value.trim()) return;
+    if (event.key !== 'Enter' || event.isComposing || !add.value.trim()) return;
+    event.preventDefault();
+    event.stopPropagation();
     const current = required(itemContext.get(tile));
     current.entries.push({
       id: crypto.randomUUID(),
@@ -239,6 +248,30 @@ function patchEntries(parent: HTMLElement, item: BoardItem, actions: BoardItemAc
         row.classList.toggle('is-done', done.checked);
         actions.changed(required(entryContext.get(row)).item);
       });
+      text.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' || event.isComposing) return;
+        const current = required(entryContext.get(row));
+        if (current.item.kind !== 'todo') return;
+        event.preventDefault();
+        event.stopPropagation();
+        const start = text.selectionStart ?? text.value.length;
+        const end = text.selectionEnd ?? start;
+        const entry: BoardEntry = {
+          id: crypto.randomUUID(),
+          text: text.value.slice(end),
+          done: false,
+        };
+        current.entry.text = text.value.slice(0, start);
+        text.value = current.entry.text;
+        current.item.entries.splice(current.item.entries.indexOf(current.entry) + 1, 0, entry);
+        patchEntries(parent, current.item, actions);
+        actions.changed(current.item);
+        const next = parent.querySelector<HTMLInputElement>(
+          `[data-entry-id="${entry.id}"] .board-entry-text`,
+        );
+        next?.focus();
+        next?.setSelectionRange(0, 0);
+      });
       text.addEventListener('input', () => {
         required(entryContext.get(row)).entry.text = text.value;
         actions.changed(required(entryContext.get(row)).item);
@@ -280,6 +313,7 @@ function patchEntries(parent: HTMLElement, item: BoardItem, actions: BoardItemAc
     },
     patch: (row, entry) => {
       entryContext.set(row, { entry, item });
+      row.dataset.entryId = entry.id;
       const inputs = row.querySelectorAll('input');
       required(inputs[0]).checked = entry.done;
       patchInput(required(inputs[1]), entry.text);
