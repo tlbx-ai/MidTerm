@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Browser;
+using Ai.Tlbx.MidTerm.Services.Boards;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -13,6 +14,105 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class TlbxCliScriptWriterTests : IDisposable
 {
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "tlbx-cli-tests", Guid.NewGuid().ToString("N"));
+
+    [Fact]
+    public async Task NativeBoardServeUsesVerifiedTransportAndExactLocalDirectory()
+    {
+        var helperDirectory = Path.Combine(_tempDir, ".tlbx");
+        var program = Path.Combine(_tempDir, "Grüße local program");
+        Directory.CreateDirectory(helperDirectory);
+        Directory.CreateDirectory(program);
+        await File.WriteAllTextAsync(Path.Combine(program, "index.html"), "<button>Local</button>", Xunit.TestContext.Current.CancellationToken);
+        TlbxCliScriptWriter.WriteScripts(helperDirectory, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        BoardItemWrite? received = null;
+        app.MapGet("/api/sessions/process-context", () => Results.Text("abcdefgh:" + new string('a', 32)));
+        app.MapPost("/api/boards/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/items", async (HttpContext context) =>
+        {
+            Assert.Equal(new string('a', 32), context.Request.Headers["X-Tlbx-Cli-Context"]);
+            received = await context.Request.ReadFromJsonAsync(BoardJsonContext.Default.BoardItemWrite, context.RequestAborted);
+            return Results.Text("created");
+        });
+        await app.StartAsync(CancellationToken.None);
+        var names = new[] { "MT_BASE_URL", "MT_SESSION_ID", "CODEX_SESSION_ID", "CODEX_THREAD_ID" };
+        var previous = names.ToDictionary(name => name, Environment.GetEnvironmentVariable, StringComparer.Ordinal);
+        try
+        {
+            Environment.SetEnvironmentVariable("MT_BASE_URL", app.Urls.Single());
+            Environment.SetEnvironmentVariable("MT_SESSION_ID", "deadbeef");
+            Environment.SetEnvironmentVariable("CODEX_SESSION_ID", null);
+            Environment.SetEnvironmentVariable("CODEX_THREAD_ID", "01234567-89ab-cdef-0123-456789abcdef");
+            var exit = BoardCliCommand.Run(["serve", new string('a', 32), program], _tempDir);
+            Assert.Equal(0, exit);
+            Assert.NotNull(received);
+            Assert.Equal(program, received.Item.LocalDirectory);
+            Assert.Equal("browser", received.Item.Kind);
+            Assert.Equal(640, received.Item.Width);
+        }
+        finally
+        {
+            foreach (var pair in previous) Environment.SetEnvironmentVariable(pair.Key, pair.Value);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BoardCrudPreservesBodiesRevisionsAndVerifiedContext(bool bash)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        await File.WriteAllTextAsync(Path.Combine(_tempDir, "board-body.json"), "{\"title\":\"Grüße $ ` test\"}", Xunit.TestContext.Current.CancellationToken);
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        var requests = new List<(string Method, string Path, string Body)>();
+        app.MapGet("/api/sessions/process-context", () => Results.Text("abcdefgh:" + new string('a', 32)));
+        app.MapMethods("/api/boards/{**rest}", ["GET", "POST", "PATCH", "PUT", "DELETE"], async (HttpContext context) =>
+        {
+            Assert.Equal(new string('a', 32), context.Request.Headers["X-Tlbx-Cli-Context"]);
+            using var reader = new StreamReader(context.Request.Body);
+            requests.Add((context.Request.Method, context.Request.Path + context.Request.QueryString, await reader.ReadToEndAsync(context.RequestAborted)));
+            return Results.Text("ok");
+        });
+        await app.StartAsync(CancellationToken.None);
+        var result = await RunContextShellAsync(bash,
+            bash ? """
+                export CODEX_THREAD_ID=01234567-89ab-cdef-0123-456789abcdef
+                source "$1"
+                set -e
+                mt_board list
+                mt_board get aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                mt_board create "@$(dirname "$1")/board-body.json"
+                mt_board update aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa '{"expectedRevision":1,"zoom":0.5}'
+                mt_board add aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa '{"item":{"text":"note"}}'
+                mt_board write aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb '{"expectedRevision":2,"item":{"text":"changed"}}'
+                mt_board remove aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 3
+                mt_board delete aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 4
+                """ : """
+                $env:CODEX_THREAD_ID='01234567-89ab-cdef-0123-456789abcdef'
+                . $args[0]
+                mt_board list
+                mt_board get aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                mt_board create ('@' + (Join-Path (Split-Path $args[0]) 'board-body.json'))
+                mt_board update aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa '{"expectedRevision":1,"zoom":0.5}'
+                mt_board add aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa '{"item":{"text":"note"}}'
+                mt_board write aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb '{"expectedRevision":2,"item":{"text":"changed"}}'
+                mt_board remove aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 3
+                mt_board delete aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 4
+                """,
+            app.Urls.Single(), "deadbeef", Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        Assert.True(result.ExitCode == 0, result.Error + result.Output);
+        Assert.Equal(8, requests.Count);
+        Assert.Equal(new[] { "GET", "GET", "POST", "PATCH", "POST", "PUT", "DELETE", "DELETE" }, requests.Select(request => request.Method), StringComparer.Ordinal);
+        Assert.Equal("{\"title\":\"Grüße $ ` test\"}", requests[2].Body);
+        Assert.Equal("{\"expectedRevision\":2,\"item\":{\"text\":\"changed\"}}", requests[5].Body);
+        Assert.EndsWith("/items/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?expectedRevision=3", requests[6].Path, StringComparison.Ordinal);
+        Assert.EndsWith("/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?expectedRevision=4", requests[7].Path, StringComparison.Ordinal);
+    }
 
     [Theory]
     [InlineData(false)]

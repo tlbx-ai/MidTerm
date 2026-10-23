@@ -116,6 +116,7 @@ public static class ServerSetup
         builder.Services.ConfigureHttpJsonOptions(options =>
         {
             options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);
+            options.SerializerOptions.TypeInfoResolverChain.Insert(0, Services.Boards.BoardJsonContext.Default);
         });
 
         builder.Services.AddSingleton(settingsService);
@@ -192,6 +193,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<InputHistoryService>();
         builder.Services.AddSingleton<ControlPlaneService>();
         builder.Services.AddSingleton<ActionGraphService>();
+        builder.Services.AddSingleton<Services.Boards.BoardService>();
         builder.Services.AddSingleton<SpaceService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();
         builder.Services.AddSingleton<GitWatcherService>();

@@ -1,5 +1,6 @@
 (function () {
   var params = new URLSearchParams(window.location.search);
+  if (params.get('embedded') === '1') document.documentElement.classList.add('board-embedded');
   var sessionId = params.get('session') || '';
   var initialPreviewName = params.get('preview') || 'default';
   var initialViewportWidth = parseInt(params.get('viewportWidth') || '0', 10) || 0;

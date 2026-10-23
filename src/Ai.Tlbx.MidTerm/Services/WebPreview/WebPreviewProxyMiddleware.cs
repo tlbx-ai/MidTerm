@@ -2573,6 +2573,13 @@ public sealed partial class WebPreviewProxyMiddleware
             localPath = Path.Combine(localPath, "index.html");
         }
 
+        var localRoot = _service.GetLocalRootByRouteKey(routeKey);
+        if (localRoot is not null && WebPreviewLocalDirectory.ResolveFile(localRoot, Path.GetRelativePath(localRoot, localPath)) is null)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
         if (!File.Exists(localPath))
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;

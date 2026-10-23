@@ -193,6 +193,9 @@ public sealed class WebPreviewService
         return TryGetStateByRouteKey(routeKey, out var state) ? state.TargetUri : null;
     }
 
+    internal string? GetLocalRootByRouteKey(string routeKey) =>
+        TryGetStateByRouteKey(routeKey, out var state) ? state.LocalRoot : null;
+
     public bool IsActive(string sessionId, string? previewName = null)
     {
         return GetTargetUri(sessionId, previewName) is not null;
@@ -203,7 +206,7 @@ public sealed class WebPreviewService
         return _previews.Values.Any(state => state.TargetUri is not null);
     }
 
-    public bool SetTarget(string sessionId, string? previewName, string url, bool preserveCookies = false, bool preserveTargetRevision = false)
+    public bool SetTarget(string sessionId, string? previewName, string url, bool preserveCookies = false, bool preserveTargetRevision = false, string? localRoot = null)
     {
         if (string.IsNullOrWhiteSpace(url))
         {
@@ -241,6 +244,7 @@ public sealed class WebPreviewService
 
         var state = GetOrCreateState(sessionId, previewName);
         var oldTarget = state.TargetUri;
+        if (!preserveTargetRevision) state.LocalRoot = localRoot;
         if ((oldTarget is null || !TargetsShareCookieScope(oldTarget, uri)) && !preserveCookies)
         {
             ResetCookieJar(state);
@@ -1398,6 +1402,7 @@ public sealed class WebPreviewService
         public int LogIdCounter;
         public string? TargetUrl;
         public Uri? TargetUri;
+        public string? LocalRoot;
         public long TargetRevision;
         public CookieContainer CookieContainer { get; set; }
         public PreviewHttpInvoker HttpClient { get; set; }

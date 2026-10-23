@@ -614,6 +614,36 @@ public static class TlbxCliScriptWriter
         }
 
         # Session management
+        # Shared boards: JSON bodies may be inline or @/absolute/path.json.
+        # mt_board list|get ID|create JSON|update ID JSON|delete ID REV
+        # mt_board add ID JSON|write ID ITEM JSON|remove ID ITEM REV
+        # Updates use { expectedRevision: N, item: { ... } }; read the current item first.
+        mt_boards() { _MC "$_MT/api/boards"; }
+        mt_board() {
+          local action="${1:-list}"; [ $# -eq 0 ] || shift
+          local method=GET path="/api/boards" body=""
+          case "$action" in
+            list) ;;
+            create) method=POST; body="${1:?JSON body required}" ;;
+            get|update|delete|add|write|remove)
+              [[ "${1:-}" =~ ^[a-f0-9]{32}$ ]] || { echo 'Board id must be a 32-character id from mt_boards.' >&2; return 2; }
+              path="$path/$1"; shift
+              case "$action" in
+                get) ;;
+                update) method=PATCH; body="${1:?JSON body required}" ;;
+                delete) [[ "${1:-}" =~ ^[0-9]+$ ]] || return 2; method=DELETE; path="$path?expectedRevision=$1" ;;
+                add) method=POST; path="$path/items"; body="${1:?JSON body required}" ;;
+                write|remove)
+                  [[ "${1:-}" =~ ^[a-f0-9]{32}$ ]] || { echo 'Item id required.' >&2; return 2; }
+                  path="$path/items/$1"; shift
+                  if [ "$action" = write ]; then method=PUT; body="${1:?JSON body required}"
+                  else [[ "${1:-}" =~ ^[0-9]+$ ]] || return 2; method=DELETE; path="$path?expectedRevision=$1"; fi ;;
+              esac ;;
+            *) echo 'mt_board list|get ID|create JSON|update ID JSON|delete ID REV|add ID JSON|write ID ITEM JSON|remove ID ITEM REV' >&2; return 2 ;;
+          esac
+          if [ -n "$body" ]; then _MC -X "$method" -H 'Content-Type: application/json' --data-binary "$body" "$_MT$path"
+          else _MC -X "$method" "$_MT$path"; fi
+        }
         mt_sessions()   { _MC "$_MT/api/sessions"; }
         mt_buffer() {
           local sid
@@ -1924,6 +1954,41 @@ public static class TlbxCliScriptWriter
         }
 
         # Session management
+        function Mt-Boards { _MC "$script:_MT/api/boards" }
+        function Mt-Board {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $parts = @($InputArgs)
+            $action = if ($parts.Count) { $parts[0] } else { 'list' }
+            $method = 'GET'; $path = '/api/boards'; $body = $null
+            if ($action -eq 'create') {
+                if ($parts.Count -ne 2) { throw 'mt_board create JSON' }
+                $method = 'POST'; $body = $parts[1]
+            } elseif ($action -ne 'list') {
+                if ($parts.Count -lt 2 -or $parts[1] -cnotmatch '^[a-f0-9]{32}$') { throw 'Board id required. Run mt_boards first.' }
+                $path += "/$($parts[1])"
+                switch ($action) {
+                    'get' { if ($parts.Count -ne 2) { throw 'mt_board get ID' } }
+                    'update' { if ($parts.Count -ne 3) { throw 'mt_board update ID JSON' }; $method = 'PATCH'; $body = $parts[2] }
+                    'delete' {
+                        if ($parts.Count -ne 3 -or $parts[2] -notmatch '^[0-9]+$') { throw 'mt_board delete ID REV' }
+                        $method = 'DELETE'; $path += "?expectedRevision=$($parts[2])"
+                    }
+                    'add' { if ($parts.Count -ne 3) { throw 'mt_board add ID JSON' }; $method = 'POST'; $path += '/items'; $body = $parts[2] }
+                    { $_ -in 'write','remove' } {
+                        if ($parts.Count -ne 4 -or $parts[2] -cnotmatch '^[a-f0-9]{32}$') { throw 'mt_board write ID ITEM JSON | remove ID ITEM REV' }
+                        $path += "/items/$($parts[2])"
+                        if ($action -eq 'write') { $method = 'PUT'; $body = $parts[3] }
+                        else {
+                            if ($parts[3] -notmatch '^[0-9]+$') { throw 'Expected revision required.' }
+                            $method = 'DELETE'; $path += "?expectedRevision=$($parts[3])"
+                        }
+                    }
+                    default { throw 'mt_board list|get ID|create JSON|update ID JSON|delete ID REV|add ID JSON|write ID ITEM JSON|remove ID ITEM REV' }
+                }
+            }
+            if ($null -ne $body) { _MC -X $method -H 'Content-Type: application/json' --data-binary $body "$script:_MT$path" }
+            else { _MC -X $method "$script:_MT$path" }
+        }
         function Mt-Sessions   { _MC "$script:_MT/api/sessions" }
         function Mt-Buffer {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
@@ -2537,6 +2602,8 @@ public static class TlbxCliScriptWriter
         Set-Alias -Name mt_proxylog_summary -Value Mt-ProxyLogSummary
         Set-Alias -Name mt_apply_update -Value Mt-ApplyUpdate
         Set-Alias -Name mt_sessions -Value Mt-Sessions
+        Set-Alias -Name mt_boards -Value Mt-Boards
+        Set-Alias -Name mt_board -Value Mt-Board
         Set-Alias -Name mt_buffer -Value Mt-Buffer
         Set-Alias -Name mt_redraw -Value Mt-Redraw
         Set-Alias -Name mt_tail -Value Mt-Tail
