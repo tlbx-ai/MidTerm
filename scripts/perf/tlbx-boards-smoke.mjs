@@ -259,30 +259,114 @@ try {
   assert.equal(controlled.result, '0');
   await api(`/${boardId}/items/${served.id}?expectedRevision=${served.revision}`, 'DELETE');
   passed.push('native mt board item and serve work inside real session with authenticated CLI ancestry and live local program');
-  const shell = await context.newPage();
-  await shell.goto(`${base}/?session=${taskSession}`);
-  await shell.locator(`.session-item[data-session-id="${taskSession}"].active`).waitFor();
-  await shell.locator('#btn-boards').click();
-  await shell.locator('.boards-workspace:not([hidden])').waitFor();
-  assert.equal(await shell.locator('#app').evaluate(element => element.inert), true);
-  const beforeModalKeys = fs.readFileSync(path.join(fixture, 'prompt.txt'), 'utf8');
-  await shell.locator('.boards-surface').focus();
-  await shell.keyboard.type('z');
-  await shell.keyboard.press('Enter');
-  await new Promise(resolve => setTimeout(resolve,150));
-  assert.equal(fs.readFileSync(path.join(fixture, 'prompt.txt'), 'utf8'), beforeModalKeys);
-  await shell.keyboard.press('Escape');
-  await shell.locator('.boards-workspace').waitFor({state:'hidden'});
-  assert.equal(await shell.locator('#app').evaluate(element => element.inert), false);
-  await shell.close();
-  passed.push('session link opens correct terminal; main-app board modal isolates keys and restores app interaction');
+  for (const theme of ['dark', 'light', 'solarizedDark', 'solarizedLight']) {
+    const shell = await context.newPage();
+    shell.on('pageerror', error => errors.push(error.message));
+    const appearance = settings => ({ ...settings, theme, uiTransparency:100,
+      terminalTransparency:100, backgroundImageEnabled:true,
+      backgroundImageFileName:'acceptance.svg', backgroundImageRevision:1 });
+    for (const endpoint of ['settings', 'bootstrap']) {
+      await shell.route(`**/api/${endpoint}`, async route => {
+        const response = await route.fetch();
+        const data = await response.json();
+        const json = endpoint === 'bootstrap' ? {...data,settings:appearance(data.settings)} : appearance(data);
+        await route.fulfill({response,json});
+      });
+    }
+    await shell.routeWebSocket('**/ws/settings', socket => {
+      const server = socket.connectToServer();
+      server.onMessage(message => {
+        const data = JSON.parse(String(message));
+        socket.send(JSON.stringify(data.settings ? {...data,settings:appearance(data.settings)} : data));
+      });
+    });
+    await shell.route('**/api/settings/background-image?*', route => route.fulfill({
+      contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000"><path fill="#df81b0" d="M0 0h1600v1000H0z"/><path fill="#285d65" d="M0 500L800 100l800 600v300H0z"/></svg>'
+    }));
+    await shell.goto(`${base}/?session=${taskSession}`);
+    await shell.locator(`.session-item[data-session-id="${taskSession}"].active`).waitFor();
+    await shell.locator('body.has-app-background').waitFor();
+    await shell.locator('#btn-boards').click();
+    await shell.locator('.boards-workspace:not([hidden])').waitFor();
+    await shell.locator('.boards-header select').selectOption(boardId);
+    await shell.locator('.boards-workspace[aria-busy="false"]').waitFor();
+    const assertPane = async (withWallpaper = true) => {
+      const geometry = await shell.evaluate(() => {
+        const root = document.querySelector('.boards-workspace');
+        const host = document.querySelector('.terminals-area');
+        const rect = element => { const r = element.getBoundingClientRect(); return [r.x,r.y,r.width,r.height]; };
+        const color = element => getComputedStyle(element).backgroundColor;
+        const sidebar = document.querySelector('#btn-boards');
+        const r = sidebar.getBoundingClientRect();
+        return { root:rect(root), host:rect(host), parent:root.parentElement === host,
+          appInert:document.querySelector('#app').inert, role:root.getAttribute('role'),
+          sidebarUsable: sidebar.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)),
+          terminalVisible:getComputedStyle(document.querySelector('.layout-root')).visibility,
+          colors:[root,document.querySelector('.boards-header'),document.querySelector('.boards-tools')].map(color),
+          foreground:getComputedStyle(root).color,
+          wallpaper:getComputedStyle(document.documentElement).getPropertyValue('--app-background-image') };
+      });
+      assert.deepEqual(geometry.root, geometry.host, `${theme}: board fills terminal pane`);
+      assert.equal(geometry.parent, true);
+      assert.equal(geometry.appInert, false);
+      assert.equal(geometry.role, 'region');
+      assert.equal(geometry.terminalVisible, 'hidden');
+      assert.ok(geometry.colors.every(color => /^rgb\(/.test(color)), `${theme}: opaque canvas and chrome: ${geometry.colors}`);
+      const luminance = color => color.match(/[\d.]+/g).slice(0,3).map(Number).map(c => c/255)
+        .map(c => c<=0.04045 ? c/12.92 : ((c+0.055)/1.055)**2.4)
+        .reduce((sum,c,i) => sum+c*[0.2126,0.7152,0.0722][i],0);
+      const foreground = luminance(geometry.foreground);
+      for (const color of geometry.colors) {
+        const background = luminance(color);
+        assert.ok((Math.max(foreground,background)+0.05)/(Math.min(foreground,background)+0.05)>=4.5,
+          `${theme}: readable text ${geometry.foreground} contrast on ${color}`);
+      }
+      if (withWallpaper) assert.ok(geometry.wallpaper.includes('background-image'));
+      return geometry;
+    };
+    assert.equal((await assertPane()).sidebarUsable, true);
+    const beforeBoardKeys = fs.readFileSync(path.join(fixture, 'prompt.txt'), 'utf8');
+    await shell.locator('.boards-surface').focus();
+    await shell.keyboard.type('z');
+    await shell.keyboard.press('Enter');
+    await new Promise(resolve => setTimeout(resolve,150));
+    assert.equal(fs.readFileSync(path.join(fixture, 'prompt.txt'), 'utf8'), beforeBoardKeys);
+    await shell.screenshot({ path: path.join(out, `board-embedded-${theme}.png`) });
+    // Settings and even reselecting the current session must remain usable from the sidebar.
+    await shell.locator('#btn-settings').click();
+    await shell.locator('.boards-workspace').waitFor({state:'hidden'});
+    await shell.locator('#settings-view').waitFor({state:'visible'});
+    await shell.locator('#btn-boards').click();
+    await shell.locator('.boards-workspace[aria-busy="false"]').waitFor();
+    await shell.locator(`.session-item[data-session-id="${taskSession}"]`).click({position:{x:30,y:20}});
+    await shell.locator('.boards-workspace').waitFor({state:'hidden'});
+    await shell.locator('#btn-boards').click();
+    await shell.locator('.boards-workspace[aria-busy="false"]').waitFor();
+    await shell.setViewportSize({ width:390, height:844 });
+    const settle = () => shell.evaluate(() => Promise.all(document.getAnimations()
+      .filter(animation => animation.effect?.getTiming().iterations !== Infinity)
+      .map(animation => animation.finished.catch(() => {}))));
+    await settle();
+    await shell.locator('#btn-mobile-strip-terminal').click();
+    await shell.locator('.boards-workspace').waitFor({state:'hidden'});
+    await shell.locator('#btn-hamburger').click();
+    await shell.locator('#btn-boards').click();
+    await shell.locator('.boards-workspace[aria-busy="false"]').waitFor();
+    await settle();
+    await assertPane(false);
+    await shell.screenshot({ path:path.join(out, `board-embedded-${theme}-narrow.png`) });
+    await shell.locator('.boards-header button[data-board-action="close"]').click();
+    await shell.locator('.boards-workspace').waitFor({state:'hidden'});
+    await shell.close();
+  }
+  passed.push('embedded Boards fills terminal pane with opaque chrome under wallpaper in all four themes; sidebar navigation, key isolation and narrow layout work');
   await page.locator('.boards-inspector > button').first().click();
   await page.locator('.boards-tools button').last().focus();
   await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement === document.querySelector('.boards-header select')), true);
   await page.keyboard.press('Shift+Tab');
   assert.equal(await page.evaluate(() => document.activeElement === document.querySelector('.boards-tools button:last-child')), true);
-  passed.push('Tab and Shift-Tab keep keyboard focus inside board dialog');
+  passed.push('Tab and Shift-Tab keep keyboard focus inside detached board window');
   await page.setViewportSize({ width: 390, height: 844 });
   const touch = await context.newCDPSession(page);
   await touch.send('Emulation.setTouchEmulationEnabled', {enabled:true,maxTouchPoints:2});

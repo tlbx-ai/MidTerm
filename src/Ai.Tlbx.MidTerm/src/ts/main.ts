@@ -193,6 +193,7 @@ import {
 } from './state';
 import {
   $activeSessionId,
+  $boardsOpen,
   $settingsOpen,
   $operatorOpen,
   $sessionList,
@@ -569,7 +570,7 @@ async function initShared(): Promise<void> {
 }
 
 function getVisibleTerminalSessionIds(): string[] {
-  if ($settingsOpen.get() || $operatorOpen.get()) {
+  if ($settingsOpen.get() || $operatorOpen.get() || $boardsOpen.get()) {
     return [];
   }
 
@@ -636,6 +637,7 @@ function bindTerminalVisibilitySync(): void {
     syncMuxTerminalVisibility();
   });
   $operatorOpen.subscribe(syncMuxTerminalVisibility);
+  $boardsOpen.subscribe(syncMuxTerminalVisibility);
 
   let lastResumeMode = $currentSettings.get()?.resumeMode ?? null;
   $currentSettings.subscribe((settings) => {

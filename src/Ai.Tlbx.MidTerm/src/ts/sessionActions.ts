@@ -87,6 +87,7 @@ import { sendActiveSessionHint } from './modules/comms';
 import { t } from './modules/i18n';
 import { closeOperatorView } from './modules/operator';
 import { closeActionGraphsView } from './modules/actionGraphs';
+import { closeBoardsView } from './modules/boards';
 import { repairTerminalDisplay } from './modules/terminal/displayRepair';
 import { hasDirtySessionFiles, confirmSessionFileNavigation } from './modules/fileViewer/editState';
 
@@ -129,6 +130,7 @@ interface BookmarkSessionRef {
 function closeOverlayViews(): void {
   closeOperatorView();
   closeActionGraphsView();
+  closeBoardsView();
 }
 
 function revealStandaloneTerminal(

@@ -118,3 +118,7 @@ Rules:
 
 - In user-facing MidTerm UI and docs, prefer `Automation Bar` over the old `Middle Manager Bar` name.
 - `middle manager bar` may still appear in older code identifiers and APIs, but new visible labels and architectural descriptions should use `Automation Bar`.
+
+## Embedded UI acceptance
+
+For a new workspace surface, verify its actual embedded entry point in the full app, not only a detached/demo view. Capture desktop and narrow screenshots with a background image and full UI transparency enabled; check pane bounds, readable opaque surfaces, sidebar navigation and terminal input isolation before declaring it accepted.

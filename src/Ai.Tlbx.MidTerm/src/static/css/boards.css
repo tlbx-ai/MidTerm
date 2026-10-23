@@ -1,12 +1,19 @@
 .boards-workspace {
-  position: fixed;
+  --text-primary: var(--workspace-reading-text-primary, #d4d7e8);
+  --text-secondary: var(--workspace-reading-text-secondary, #a0a4b8);
+  --text-muted: var(--workspace-reading-text-muted, #8c91a5);
+  position: absolute;
   inset: 0;
-  z-index: 1800;
+  z-index: 90;
   display: flex;
   flex-direction: column;
   color: var(--text-primary);
-  background: var(--bg-primary);
+  background: var(--bg-primary-opaque, #0d0e14);
 }
+
+.boards-detached { position: fixed; }
+
+.terminals-area.boards-open > :not(.boards-workspace) { visibility: hidden; pointer-events: none; }
 
 .boards-workspace[hidden],
 .boards-inspector[hidden] { display: none; }
@@ -18,7 +25,7 @@
   padding: 12px 20px;
   min-height: 64px;
   border-bottom: 1px solid var(--border-color);
-  background: var(--bg-elevated);
+  background: var(--bg-elevated-opaque);
   z-index: 2;
 }
 
@@ -67,7 +74,7 @@
   overflow-x: auto;
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  background: var(--bg-elevated);
+  background: var(--bg-elevated-opaque);
   box-shadow: 0 4px 18px #0002;
   z-index: 3;
 }
@@ -93,7 +100,7 @@
 [data-color="rose"] { --note-bg: #f0dce1; }
 [data-color="sage"] { --note-bg: #dce6d8; }
 [data-color="blue"] { --note-bg: #dce5f1; }
-[data-color="plain"] { --note-bg: var(--bg-elevated); --note-text: var(--text-primary); }
+[data-color="plain"] { --note-bg: var(--bg-elevated-opaque); --note-text: var(--text-primary); }
 .board-item-grip { display: flex; align-items: center; padding: 6px 10px 0; cursor: grab; min-height: 34px; }
 .board-item-kind { flex: 1; font-size: 10px; text-transform: uppercase; letter-spacing: .07em; opacity: .6; }
 .board-item-grip button { padding: 3px 7px; opacity: 0; transition: opacity 120ms ease; }
@@ -137,7 +144,7 @@
   padding: 16px;
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  background: var(--bg-elevated);
+  background: var(--bg-elevated-opaque);
   box-shadow: 0 8px 30px #0002;
   z-index: 4;
 }
@@ -145,7 +152,7 @@
 .boards-inspector > button { float: right; padding: 0 4px; }
 .boards-inspector label { display: flex; flex-direction: column; gap: 5px; margin-top: 14px; font-size: 11px; color: var(--text-secondary); }
 .boards-inspector label input,
-.boards-inspector label textarea { background: var(--bg-primary); padding: 8px; width: 100%; color: var(--text-primary); font-size: 12px; }
+.boards-inspector label textarea { background: var(--bg-primary-opaque, #0d0e14); padding: 8px; width: 100%; color: var(--text-primary); font-size: 12px; }
 .boards-inspector textarea { min-height: 90px; resize: vertical; }
 .boards-inspector > p { font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
 .board-session-form button { margin-top: 16px; background: var(--bg-hover); }
@@ -211,12 +218,12 @@
 }
 
 .boards-conflict-overlay { position: absolute; inset: 0; z-index: 20; background: #0006; display: grid; place-items: center; padding: 20px; }
-.boards-conflict { width: min(680px, 100%); padding: 24px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-dialog); box-shadow: 0 20px 80px #0005; }
+.boards-conflict { width: min(680px, 100%); padding: 24px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-elevated-opaque); box-shadow: 0 20px 80px #0005; }
 .boards-conflict h2 { margin: 0; font-size: 18px; }
 .boards-conflict p { color: var(--text-secondary); line-height: 1.5; font-size: 13px; }
 .boards-conflict-comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 18px 0; }
 .boards-conflict-comparison label { font-size: 12px; color: var(--text-secondary); }
-.boards-conflict textarea { width: 100%; height: 180px; margin-top: 6px; padding: 12px; resize: vertical; background: var(--bg-primary); color: var(--text-primary); font-size: 13px; }
+.boards-conflict textarea { width: 100%; height: 180px; margin-top: 6px; padding: 12px; resize: vertical; background: var(--bg-primary-opaque, #0d0e14); color: var(--text-primary); font-size: 13px; }
 .boards-conflict-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .boards-conflict-actions button:first-child { background: var(--accent-primary, #8b9dff); color: #10121b; }
 .boards-conflict-actions button:disabled { opacity: .4; }
