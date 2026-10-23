@@ -293,6 +293,7 @@ export async function reloadWebPreview(
 export async function createBrowserPreviewClient(
   sessionId: string,
   previewName: string,
+  tabId = getOrCreateTabId(),
 ): Promise<BrowserPreviewClientResponse | null> {
   if (!sessionId) {
     return null;
@@ -302,7 +303,7 @@ export async function createBrowserPreviewClient(
     const res = await fetch(apiUrl('/api/browser/preview-client'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, previewName, tabId: getOrCreateTabId() }),
+      body: JSON.stringify({ sessionId, previewName, tabId }),
     });
     if (!res.ok) {
       return null;

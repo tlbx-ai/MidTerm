@@ -87,15 +87,16 @@ public sealed partial class WebPreviewProxyMiddleware
               history.replaceState(history.state,"",url.pathname+url.search+url.hash);
             }catch(e){}
           }
-          try{mtCtx=window.name?JSON.parse(window.name):null;}catch(e){mtCtx=null;}
+          // Explicit navigation owns this attachment; an older shared route cookie must never replace it.
+          mtCtx=mtReadBootstrapContext();
+          if(!mtCtx){
+            try{mtCtx=window.name?JSON.parse(window.name):null;}catch(e){mtCtx=null;}
+          }
           if(!mtCtx){
             try{
               var mtCookieCtx=mtReadCookie("mt-preview-ctx");
               mtCtx=mtCookieCtx?JSON.parse(decodeURIComponent(mtCookieCtx)):null;
             }catch(e){mtCtx=null;}
-          }
-          if(!mtCtx){
-            mtCtx=mtReadBootstrapContext();
           }
           if(mtCtx){
             var revisionParam=new URLSearchParams(location.search).get("__mtTargetRevision");
@@ -270,8 +271,8 @@ public sealed partial class WebPreviewProxyMiddleware
             // Non-network schemes must not recurse through relative URL resolution.
             if(u.startsWith("#")||(/^[a-z][a-z0-9+.-]*:/i.test(u)&&!/^https?:|^wss?:/i.test(u)))return u;
             if(u.startsWith("//"))return r(location.protocol+u);
+            if(u.startsWith(PP+"/")||u.startsWith(location.origin+PP+"/"))return ar(u);
             if(window.__mtExternalDocument){
-              if(u.startsWith(PP+"/")||u.startsWith(location.origin+PP+"/"))return ar(u);
               try{return ar(E+encodeURIComponent(new URL(u,window.__mtDocumentUrl).href));}catch(e){}
             }
             if(!u.includes("://")&&!u.startsWith("/")&&!u.startsWith("//")){
@@ -1917,7 +1918,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var path = finalUri.AbsolutePath;
         var lastSlash = path.LastIndexOf('/');
         var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
-        return routePrefix + directory;
+        return routePrefix.TrimEnd('/') + "/" + directory.TrimStart('/');
     }
 
     internal static string? BuildRedirectedProxyPath(
@@ -2573,6 +2574,13 @@ public sealed partial class WebPreviewProxyMiddleware
             localPath = Path.Combine(localPath, "index.html");
         }
 
+        var localRoot = _service.GetLocalRootByRouteKey(routeKey);
+        if (localRoot is not null && WebPreviewLocalDirectory.ResolveFile(localRoot, Path.GetRelativePath(localRoot, localPath)) is null)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
         if (!File.Exists(localPath))
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
@@ -2628,7 +2636,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var baseHref = ComputeBaseHref(routePrefix, requestedFileUri.ToString());
         var targetOrigin = $"{context.Request.Scheme}://{context.Request.Host}";
         var originScript = $"<script>window.__mtTargetOrigin=\"{targetOrigin}\";</script>";
-        html = HeadTagRegex().Replace(html, $"$0<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix), 1);
+        html = InjectHeadContent(html, $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix));
 
         context.Response.Headers.Remove("Content-Length");
         context.Response.ContentType = "text/html; charset=utf-8";

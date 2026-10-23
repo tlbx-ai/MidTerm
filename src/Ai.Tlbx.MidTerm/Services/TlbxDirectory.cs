@@ -501,6 +501,27 @@ public static class TlbxDirectory
 
         mt_detach → (preview opens in popup) → mt_dock → (back in panel)
 
+        ## Boards
+
+        Boards are locally persisted vector workspaces for notes, to-do lists, calendar entries,
+        mail lists, long-term tasks (year/week/quarter), and interactive browser tiles.
+        Use `mt boards` or `mt_board list` to discover IDs; `mt_board get BOARD_ID` reads the full board.
+        `mt_board create JSON`, `update BOARD_ID JSON`, `add BOARD_ID JSON`,
+        `write BOARD_ID ITEM_ID JSON`, and `remove BOARD_ID ITEM_ID REV` provide exact control.
+        JSON may be inline or `@file.json`; item writes use `{ expectedRevision: N, item: { ... } }`.
+        Always read the latest revision before updating; a 409 means someone else changed the item.
+        Kinds: `note`, `todo`, `calendar`, `mail`, `timeline`, `browser`.
+        `mt board serve BOARD_ID DIRECTORY` adds a local HTML/JS program containing `index.html`.
+        Browser tiles use tlbx's preview engine with isolated content and a bounded local directory.
+        `mt_board item BOARD_ID ITEM_ID` reads one item; `viewport BOARD_ID JSON` persists the camera.
+        `launch BOARD_ID ITEM_ID JSON` starts a task session with a board/item deep link and initial prompt.
+        Launch JSON can contain `requestId` (32 hex, reuse unchanged for safe retries), `expectedRevision`,
+        `entryId`, `workingDirectory`, `launchCommand`, `profile`, `appServerControlOnly`.
+        Directory/command/profile defaults come from the item, then the board; command arguments are user-owned.
+        `launches BOARD_ID` reads the durable session links and prompt delivery states. Submitted means delivered,
+        not task completion; never auto-complete a task from session exit. Uncertain delivery requires inspection.
+        `browser BOARD_ID ITEM_ID JSON` runs existing browser commands (`exec`, `click`, etc.) in that tile.
+
         ## Graph boards
 
         tlbx persists named graphs of nodes, edges, positions, session bindings, revisions, and per-node launch actions, and renders them on a virtualized pan/zoom canvas (sidebar entry, off by default). The graph is a shared precision surface: tlbx owns exact IDs, geometry, revisions, atomic mutation, session/process facts, event order, and rendering. It never infers semantics from PTY output. Agents own meaning, attention, completion, and graph evolution.

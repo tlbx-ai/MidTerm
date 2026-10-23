@@ -1,4 +1,6 @@
 import { recoverSettingsAfterBrowserResume } from './modules/comms/settingsChannel';
+import { initBoards, initDetachedBoard } from './modules/boards';
+import { initMobileFullscreen } from './modules/fullscreen';
 /**
  * tlbx Terminal Client
  *
@@ -347,6 +349,8 @@ async function init(): Promise<void> {
   // still loading. Capture that one-shot event before the first await.
   initPwaInstall();
   await initI18n();
+  if (await initDetachedBoard()) return;
+  initBoards(selectSession);
   initUpdateUi();
   initUpdateRuntime();
   initAppShellStatePersistence();
@@ -1298,26 +1302,7 @@ function bindEvents(): void {
     clickActiveSessionTabBarControl('button[data-action="git"]');
   });
 
-  // Fullscreen toggle (mobile) - hide button if API not supported
-  const fullscreenBtn = document.getElementById('btn-fullscreen-mobile');
-  if (document.fullscreenEnabled) {
-    bindClick('btn-fullscreen-mobile', () => {
-      if (document.fullscreenElement) {
-        void document.exitFullscreen();
-      } else {
-        document.documentElement.requestFullscreen().catch(() => {});
-      }
-    });
-
-    document.addEventListener('fullscreenchange', () => {
-      const iconEl = fullscreenBtn?.querySelector('.icon');
-      if (iconEl) {
-        iconEl.textContent = document.fullscreenElement ? '\ue920' : '\ue90c';
-      }
-    });
-  } else if (fullscreenBtn) {
-    fullscreenBtn.style.display = 'none';
-  }
+  initMobileFullscreen();
 
   if (dom.settingsBtn) {
     dom.settingsBtn.addEventListener('click', toggleSettings);

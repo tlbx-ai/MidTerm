@@ -19,6 +19,12 @@ public static class CliCommands
         var runtimeOptions = ArgumentParser.ParseOptions(args);
         runtimeOptions.ApplyProcessEnvironment();
 
+        if (args.Length > 0 && args[0] is "board" or "boards")
+        {
+            Environment.ExitCode = Services.Boards.BoardCliCommand.Run(args[1..], Environment.CurrentDirectory);
+            return true;
+        }
+
         var clipboardWriteImageIdx = Array.IndexOf(args, "--clipboard-write-image");
         if (clipboardWriteImageIdx >= 0)
         {
@@ -474,6 +480,7 @@ public static class CliCommands
         Console.WriteLine($"tlbx {GetVersion()} — browser control station");
         Console.WriteLine();
         Console.WriteLine("Usage: mt [options]");
+        Console.WriteLine("       mt board <command> [args] (run mt board help for persistent canvas commands)");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --port <port>       Set listening port (default: 2000)");

@@ -457,6 +457,7 @@ public class Program
             managerBarQueueService,
             inputHistoryService);
         ActionGraphEndpoints.MapActionGraphEndpoints(app, actionGraphService);
+        Services.Boards.BoardEndpoints.MapBoardEndpoints(app, app.Services.GetRequiredService<Services.Boards.BoardService>());
         FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService, settingsService, gitWatcher);
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager, sessionGitMetadata);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
