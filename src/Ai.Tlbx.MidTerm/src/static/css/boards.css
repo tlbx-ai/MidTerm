@@ -142,7 +142,7 @@
 .boards-inspector {
   position: absolute;
   right: 16px;
-  top: 80px;
+  top: calc(var(--bar-height) + 8px);
   width: 260px;
   max-height: calc(100% - 180px);
   overflow: auto;

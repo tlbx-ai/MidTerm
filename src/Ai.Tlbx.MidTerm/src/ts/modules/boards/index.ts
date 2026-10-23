@@ -289,7 +289,7 @@ class BoardView {
     }));
     actions.push({
       id: 'reset',
-      label: t('boards.resetView'),
+      label: `${t('boards.resetView')} (${Math.round(board.zoom * 100)}%)`,
       run: () => {
         this.resetView();
       },

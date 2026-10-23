@@ -338,11 +338,10 @@ try {
     await shell.locator(`.session-item[data-session-id="${taskSession}"].active`).waitFor();
     await shell.locator('body.has-app-background').waitFor();
     const nativeBar = await shell.locator('.session-tab-bar').first().evaluate(element => ({
-      height:parseFloat(getComputedStyle(element).height),font:getComputedStyle(element).fontSize
+      height:parseFloat(getComputedStyle(element).height),font:getComputedStyle(element.querySelector('.session-tab')).fontSize
     }));
     await shell.locator('#btn-boards').click();
     await shell.locator('.boards-workspace:not([hidden])').waitFor();
-    await boardAction(shell, 'reset');
     const boardBar = await shell.locator('.boards-header').evaluate(element => ({
       height:element.getBoundingClientRect().height,font:getComputedStyle(element).fontSize
     }));
@@ -351,6 +350,7 @@ try {
     assert.equal(await shell.locator('.boards-title').isVisible(), false);
     await shell.locator('.boards-header select').selectOption(boardId);
     await shell.locator('.boards-workspace[aria-busy="false"]').waitFor();
+    await boardAction(shell, 'reset');
     const assertPane = async (withWallpaper = true) => {
       const geometry = await shell.evaluate(() => {
         const root = document.querySelector('.boards-workspace');

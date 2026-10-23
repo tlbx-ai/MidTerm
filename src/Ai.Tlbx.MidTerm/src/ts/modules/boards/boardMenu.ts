@@ -45,11 +45,12 @@ export class BoardMenu {
       ...actions.map((action) => {
         const button = document.createElement('button');
         button.type = 'button';
+        button.tabIndex = -1;
         button.setAttribute('role', 'menuitem');
         button.dataset.boardAction = action.id;
         button.textContent = action.label;
         button.addEventListener('click', () => {
-          this.close(false);
+          this.close();
           action.run();
         });
         return button;
@@ -72,7 +73,7 @@ export class BoardMenu {
 
   private keydown(event: KeyboardEvent): void {
     if (event.key === 'Escape' || event.key === 'Tab') {
-      event.preventDefault();
+      if (event.key === 'Escape') event.preventDefault();
       this.close();
       return;
     }
