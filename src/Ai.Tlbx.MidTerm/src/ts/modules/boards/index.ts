@@ -674,7 +674,15 @@ class BoardView {
 
   private async deleteBoard(): Promise<void> {
     const board = this.board;
-    if (!board || !(await showConfirm(t('boards.confirmDeleteBoard')))) return;
+    if (
+      !board ||
+      !(await showConfirm(t('boards.confirmDeleteBoard'), {
+        title: t('boards.deleteBoard'),
+        confirmLabel: t('boards.deleteBoard'),
+        danger: true,
+      }))
+    )
+      return;
     try {
       await this.flush();
       if (this.hasPendingChanges()) return;
@@ -729,7 +737,15 @@ class BoardView {
   }
 
   private async remove(item: BoardItem): Promise<void> {
-    if (!this.board || !(await showConfirm(t('boards.confirmDelete')))) return;
+    if (
+      !this.board ||
+      !(await showConfirm(t('boards.confirmDelete'), {
+        title: t('boards.deleteItem'),
+        confirmLabel: t('boards.deleteItem'),
+        danger: true,
+      }))
+    )
+      return;
     await this.flush();
     if (this.dirty.has(item.id)) return;
     try {

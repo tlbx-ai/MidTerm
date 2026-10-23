@@ -393,6 +393,54 @@ try {
     await new Promise(resolve => setTimeout(resolve,150));
     assert.equal(fs.readFileSync(path.join(fixture, 'prompt.txt'), 'utf8'), beforeBoardKeys);
     await shell.screenshot({ path: path.join(out, `board-embedded-${theme}.png`) });
+    const deleteItem = (await api(`/${boardId}/items`, 'POST', {item:{
+      kind:'note', title:'Deletion preview', text:'A disposable item', entries:[],
+      x:0,y:0,width:200,height:200,z:9999,color:'plain'
+    }}));
+    const deleteTile = shell.locator(`[data-id="${deleteItem.id}"]`);
+    await deleteTile.waitFor();
+    const openDelete = async () => {
+      await deleteTile.getByRole('button',{name:'Delete item',exact:true}).click();
+      const dialog = shell.getByRole('alertdialog',{name:'Delete item',exact:true});
+      await dialog.waitFor();
+      await dialog.evaluate(element => Promise.all(element.getAnimations({subtree:true}).map(animation => animation.finished)));
+      return dialog;
+    };
+    for (const [width,height] of [[1440,1000],[390,844],[320,568]]) {
+      await shell.setViewportSize({width,height});
+      const dialog = await openDelete();
+      assert.equal(await dialog.locator('.modal-footer [data-role="cancel"]').evaluate(element => element === document.activeElement),true);
+      const layout = await dialog.evaluate(element => {
+        const bounds = node => {const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};};
+        return {dialog:bounds(element),buttons:[...element.querySelectorAll('.modal-footer button')].map(bounds),
+          scroll:element.scrollWidth,client:element.clientWidth,
+          background:getComputedStyle(element).backgroundColor};
+      });
+      assert.ok(Math.abs(layout.dialog.width-Math.min(420,width-32))<1,`${theme}: dialog width at ${width}`);
+      assert.ok(layout.dialog.x>=15 && layout.dialog.right<=width-15);
+      assert.ok(layout.dialog.y>=0 && layout.dialog.bottom<=height);
+      assert.ok(layout.buttons.every(button => button.x>=layout.dialog.x+15 && button.right<=layout.dialog.right-15));
+      assert.ok(layout.scroll<=layout.client);
+      assert.ok(/^rgb\(/.test(layout.background));
+      await shell.screenshot({path:path.join(out,`delete-${theme}-${width}.png`)});
+      // Tab wraps within the dialog; Enter on Cancel must cancel rather than delete.
+      await shell.keyboard.press('Shift+Tab');
+      await shell.keyboard.press('Shift+Tab');
+      assert.equal(await dialog.locator('[data-role="confirm"]').evaluate(element => element === document.activeElement),true);
+      await shell.keyboard.press('Tab');
+      await shell.keyboard.press('Tab');
+      await shell.keyboard.press('Enter');
+      await dialog.waitFor({state:'hidden'});
+      assert.ok((await api(`/${boardId}`)).items.some(item => item.id===deleteItem.id));
+      await openDelete();
+      await shell.keyboard.press('Escape');
+      await dialog.waitFor({state:'hidden'});
+      assert.ok((await api(`/${boardId}`)).items.some(item => item.id===deleteItem.id));
+    }
+    const deletion = await openDelete();
+    await deletion.getByRole('button',{name:'Delete item',exact:true}).click();
+    await waitFor(async () => !(await api(`/${boardId}`)).items.some(item => item.id===deleteItem.id),'explicit Delete removes item');
+    await shell.setViewportSize({width:1440,height:1000});
     // Settings and even reselecting the current session must remain usable from the sidebar.
     await shell.locator('#btn-settings').click();
     await shell.locator('.boards-workspace').waitFor({state:'hidden'});
@@ -418,6 +466,7 @@ try {
     await shell.screenshot({ path:path.join(out, `board-embedded-${theme}-narrow.png`) });
     await shell.close();
   }
+  passed.push('delete confirmation fits desktop, 390px and 320px in all four themes; Cancel/Enter, Escape, focus wrapping and explicit Delete work');
   passed.push('embedded Boards fills terminal pane with opaque chrome under wallpaper in all four themes; sidebar navigation, key isolation and narrow layout work');
   await page.locator('.boards-inspector > button').first().click();
   await page.locator('.boards-menu-trigger').focus();

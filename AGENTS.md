@@ -124,3 +124,5 @@ Rules:
 For a new workspace surface, verify its actual embedded entry point in the full app, not only a detached/demo view. Capture desktop and narrow screenshots with a background image and full UI transparency enabled; check pane bounds, readable opaque surfaces, sidebar navigation and terminal input isolation before declaring it accepted.
 
 For list/text editors, exercise Enter inside an existing row using real keyboard input, caret placement and focus checks, then verify row order/text after reload. Testing only a separate add field or API writes does not cover row editing.
+
+Include dialogs opened by touched controls in embedded visual acceptance: check footer/button bounds on narrow screens, plus keyboard cancellation and explicit confirmation. A closed main view screenshot does not cover its dialogs.
