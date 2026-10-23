@@ -1,4 +1,5 @@
 import type { BoardDocument, BoardItem } from './boardApi';
+import { bindBoardPinch } from './boardTouch';
 
 export interface CanvasCallbacks {
   viewportChanged: () => void;
@@ -26,6 +27,7 @@ export function bindBoardCanvas(
     item: BoardItem | undefined;
     element: HTMLElement | undefined;
     resize: boolean;
+    moved: boolean;
   } | null = null;
   const render = (): void => {
     plane.style.transform = `translate(${board.panX}px, ${board.panY}px) scale(${board.zoom})`;
@@ -33,6 +35,18 @@ export function bindBoardCanvas(
     surface.style.backgroundPosition = `${board.panX}px ${board.panY}px`;
     surface.dispatchEvent(new CustomEvent('boardzoom', { detail: board.zoom }));
   };
+  bindBoardPinch(
+    surface,
+    board,
+    render,
+    callbacks.viewportChanged,
+    () => {
+      if (drag?.item && drag.moved) callbacks.itemChanged(drag.item);
+      drag = null;
+      surface.classList.remove('is-dragging');
+    },
+    abort.signal,
+  );
   surface.addEventListener(
     'wheel',
     (event) => {
@@ -73,10 +87,14 @@ export function bindBoardCanvas(
     },
     options,
   );
-  window.addEventListener(
+  surface.addEventListener(
     'keydown',
     (event) => {
-      if (event.code === 'Space' && event.target === document.body) {
+      if (
+        event.code === 'Space' &&
+        event.target instanceof HTMLElement &&
+        !event.target.closest('input,textarea,select,button,a,[contenteditable="true"]')
+      ) {
         space = true;
         surface.classList.add('is-panning');
         event.preventDefault();
@@ -115,6 +133,7 @@ export function bindBoardCanvas(
       if (item && !pan && !isItemHandle(target)) return;
       if (!item && target !== surface && target !== plane) return;
       event.preventDefault();
+      surface.focus({ preventScroll: true });
       surface.setPointerCapture(event.pointerId);
       const moving = pan ? undefined : item;
       const start = dragOrigin(moving, resize, board);
@@ -127,6 +146,7 @@ export function bindBoardCanvas(
         item: moving,
         element: tile ?? undefined,
         resize,
+        moved: false,
       };
       surface.classList.add('is-dragging');
     },
@@ -138,6 +158,8 @@ export function bindBoardCanvas(
       if (!drag || drag.pointer !== event.pointerId) return;
       const dx = event.clientX - drag.x;
       const dy = event.clientY - drag.y;
+      if (dx === 0 && dy === 0) return;
+      drag.moved = true;
       if (drag.item && drag.element) {
         if (drag.resize) {
           drag.item.width = Math.min(10000, Math.max(160, drag.startX + dx / board.zoom));
@@ -159,8 +181,10 @@ export function bindBoardCanvas(
   );
   const finish = (event: PointerEvent): void => {
     if (!drag || drag.pointer !== event.pointerId) return;
-    if (drag.item) callbacks.itemChanged(drag.item);
-    else callbacks.viewportChanged();
+    if (drag.moved) {
+      if (drag.item) callbacks.itemChanged(drag.item);
+      else callbacks.viewportChanged();
+    }
     drag = null;
     surface.classList.remove('is-dragging');
   };
@@ -171,6 +195,7 @@ export function bindBoardCanvas(
     render,
     dispose: () => {
       abort.abort();
+      surface.classList.remove('is-dragging', 'is-panning');
     },
   };
 }

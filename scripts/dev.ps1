@@ -465,6 +465,10 @@ function Start-DevServer([string]$resolvedTtyHostPath) {
     $psi.WorkingDirectory = $RepoRoot
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $false
+    # This is an independent server. Its terminals must resolve their own client identity,
+    # rather than inherit the Codex thread that happened to launch the dev loop.
+    $null = $psi.Environment.Remove("CODEX_SESSION_ID")
+    $null = $psi.Environment.Remove("CODEX_THREAD_ID")
     $psi.Environment["MIDTERM_SETTINGS_DIR"] = $SettingsDir
     $psi.Environment["MIDTERM_TTYHOST_PATH"] = $resolvedTtyHostPath
     $psi.Environment["MIDTERM_APP_SERVER_CONTROL_AGENTHOST_PATH"] = $script:currentAgentHostPath

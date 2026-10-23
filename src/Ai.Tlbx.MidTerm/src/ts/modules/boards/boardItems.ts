@@ -1,7 +1,8 @@
 import { reconcileKeyedChildren } from '../../utils/domReconcile';
 import type { BoardEntry, BoardItem } from './boardApi';
 import { t } from '../i18n';
-import { mountBoardBrowser } from './boardBrowser';
+import { createBoardBrowserFrame, mountBoardBrowser, resetBoardBrowser } from './boardBrowser';
+import { getSelectedCalendarDate, renderBoardCalendar } from './boardCalendar';
 
 const itemContext = new WeakMap<HTMLElement, BoardItem>();
 const entryContext = new WeakMap<HTMLElement, { entry: BoardEntry; item: BoardItem }>();
@@ -9,8 +10,9 @@ const entryContext = new WeakMap<HTMLElement, { entry: BoardEntry; item: BoardIt
 export interface BoardItemActions {
   changed: (item: BoardItem) => void;
   remove: (item: BoardItem) => void;
-  launch: (item: BoardItem) => void;
+  launch: (item: BoardItem, entryId?: string) => void;
   settings: (item: BoardItem) => void;
+  claim: (item: BoardItem) => void;
 }
 
 function required<T>(value: T | null | undefined): T {
@@ -48,6 +50,8 @@ export function renderBoardItems(
 function createItem(item: BoardItem, actions: BoardItemActions): HTMLElement {
   const tile = document.createElement('article');
   tile.className = 'board-item';
+  tile.tabIndex = 0;
+  tile.setAttribute('role', 'group');
   tile.dataset.id = item.id;
   const header = document.createElement('header');
   header.className = 'board-item-grip';
@@ -55,8 +59,11 @@ function createItem(item: BoardItem, actions: BoardItemActions): HTMLElement {
   kind.className = 'board-item-kind';
   header.append(kind);
   header.append(
-    button('▶', () => {
+    button('▷', () => {
       actions.launch(required(itemContext.get(tile)));
+    }),
+    button('⌖', () => {
+      actions.claim(required(itemContext.get(tile)));
     }),
     button('⋯', () => {
       actions.settings(required(itemContext.get(tile)));
@@ -67,9 +74,11 @@ function createItem(item: BoardItem, actions: BoardItemActions): HTMLElement {
   );
   header.querySelectorAll('button').forEach((element, index) => {
     element.title = t(
-      ['boards.launch', 'boards.itemSettings', 'boards.deleteItem'][index] ?? 'boards.itemSettings',
+      ['boards.launch', 'boards.controlHere', 'boards.itemSettings', 'boards.deleteItem'][index] ??
+        'boards.itemSettings',
     );
     element.setAttribute('aria-label', element.title);
+    if (index === 1) element.classList.add('board-control-here');
     element.addEventListener('pointerdown', (event) => {
       event.stopPropagation();
     });
@@ -95,6 +104,8 @@ function createItem(item: BoardItem, actions: BoardItemActions): HTMLElement {
   });
   const entries = document.createElement('div');
   entries.className = 'board-entry-list';
+  const calendar = document.createElement('div');
+  calendar.className = 'board-calendar';
   const add = document.createElement('input');
   add.className = 'board-entry-add';
   add.placeholder = t('boards.addEntry');
@@ -102,19 +113,37 @@ function createItem(item: BoardItem, actions: BoardItemActions): HTMLElement {
   add.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' || !add.value.trim()) return;
     const current = required(itemContext.get(tile));
-    current.entries.push({ id: crypto.randomUUID(), text: add.value.trim(), done: false });
+    current.entries.push({
+      id: crypto.randomUUID(),
+      text: add.value.trim(),
+      done: false,
+      ...(current.kind === 'calendar' ? { date: getSelectedCalendarDate(calendar) } : {}),
+    });
     add.value = '';
     actions.changed(current);
     patchEntries(entries, current, actions);
   });
-  const frame = document.createElement('iframe');
-  frame.className = 'board-browser-frame';
-  frame.title = t('boards.browser');
-  frame.setAttribute('sandbox', 'allow-scripts allow-forms');
+  const notice = document.createElement('div');
+  notice.className = 'board-browser-notice';
+  const description = document.createElement('p');
+  description.textContent = t('boards.configureBrowser');
+  notice.append(
+    description,
+    button(t('boards.itemSettings'), () => {
+      actions.settings(required(itemContext.get(tile)));
+    }),
+    button(t('boards.retry'), () => {
+      const current = itemContext.get(tile);
+      const frame = tile.querySelector<HTMLIFrameElement>('iframe');
+      if (!current || !frame) return;
+      resetBoardBrowser(frame);
+      void mountBoardBrowser(frame, tile.dataset.boardId ?? '', current);
+    }),
+  );
   const resize = document.createElement('div');
   resize.className = 'board-resize';
   resize.setAttribute('aria-hidden', 'true');
-  tile.append(header, title, text, entries, add, frame, resize);
+  tile.append(header, title, text, calendar, entries, add, notice, resize);
   return tile;
 }
 
@@ -125,7 +154,9 @@ function patchItem(
   actions: BoardItemActions,
 ): void {
   itemContext.set(tile, item);
+  tile.dataset.boardId = boardId;
   tile.dataset.kind = item.kind;
+  tile.setAttribute('aria-label', item.title || t(`boards.${item.kind}`));
   tile.dataset.color = item.color;
   tile.style.transform = `translate(${item.x}px, ${item.y}px)`;
   tile.style.width = `${item.width}px`;
@@ -137,12 +168,29 @@ function patchItem(
   patchInput(required(tile.querySelector<HTMLInputElement>('.board-item-title')), item.title);
   patchInput(required(tile.querySelector<HTMLTextAreaElement>('.board-item-text')), item.text);
   patchEntries(required(tile.querySelector<HTMLElement>('.board-entry-list')), item, actions);
-  const frame = required(tile.querySelector<HTMLIFrameElement>('iframe'));
-  if (item.kind === 'browser') void mountBoardBrowser(frame, boardId, item);
+  let frame = tile.querySelector<HTMLIFrameElement>('iframe');
+  if (item.kind === 'browser') {
+    if (!frame) {
+      frame = createBoardBrowserFrame();
+      tile.insertBefore(frame, tile.querySelector('.board-resize'));
+    }
+    void mountBoardBrowser(frame, boardId, item);
+  } else frame?.remove();
 }
 
 function patchEntries(parent: HTMLElement, item: BoardItem, actions: BoardItemActions): void {
-  reconcileKeyedChildren(parent, item.entries, {
+  const calendar = parent.parentElement?.querySelector<HTMLElement>('.board-calendar');
+  if (item.kind === 'calendar' && calendar)
+    renderBoardCalendar(calendar, item, actions.changed, () => {
+      patchEntries(parent, item, actions);
+    });
+  const entries =
+    item.kind === 'calendar' && calendar
+      ? item.entries.filter(
+          (entry) => !entry.date || entry.date === getSelectedCalendarDate(calendar),
+        )
+      : item.entries;
+  reconcileKeyedChildren(parent, entries, {
     key: (entry) => entry.id,
     create: () => {
       const row = document.createElement('div');
@@ -161,8 +209,34 @@ function patchEntries(parent: HTMLElement, item: BoardItem, actions: BoardItemAc
       period.className = 'board-entry-period';
       period.placeholder = '2027 W12 / Q1';
       period.setAttribute('aria-label', t('boards.period'));
+      const sender = document.createElement('input');
+      sender.className = 'board-mail-sender';
+      sender.placeholder = t('boards.sender');
+      sender.setAttribute('aria-label', t('boards.sender'));
+      sender.addEventListener('input', () => {
+        const current = required(entryContext.get(row));
+        current.entry.sender = sender.value || null;
+        actions.changed(current.item);
+      });
+      const url = document.createElement('input');
+      url.className = 'board-mail-url';
+      url.type = 'url';
+      url.placeholder = t('boards.mailLink');
+      url.setAttribute('aria-label', t('boards.mailLink'));
+      url.addEventListener('change', () => {
+        const current = required(entryContext.get(row));
+        current.entry.url = url.value || null;
+        actions.changed(current.item);
+      });
+      const open = document.createElement('a');
+      open.className = 'board-mail-open';
+      open.textContent = '↗';
+      open.target = '_blank';
+      open.rel = 'noopener noreferrer';
+      open.setAttribute('aria-label', t('boards.openMail'));
       done.addEventListener('change', () => {
         required(entryContext.get(row)).entry.done = done.checked;
+        row.classList.toggle('is-done', done.checked);
         actions.changed(required(entryContext.get(row)).item);
       });
       text.addEventListener('input', () => {
@@ -175,7 +249,7 @@ function patchEntries(parent: HTMLElement, item: BoardItem, actions: BoardItemAc
       });
       period.addEventListener('change', () => {
         const entry = required(entryContext.get(row)).entry;
-        const match = /^(\d{4})\s+(?:W(\d{1,2})|Q([1-4]))$/i.exec(period.value.trim());
+        const match = /^(\d{4})(?:\s+(?:W(\d{1,2})|Q([1-4])))?$/i.exec(period.value.trim());
         if (!match && period.value.trim()) {
           period.setCustomValidity(t('boards.invalidPeriod'));
           period.reportValidity();
@@ -195,7 +269,13 @@ function patchEntries(parent: HTMLElement, item: BoardItem, actions: BoardItemAc
         patchEntries(parent, required(entryContext.get(row)).item, actions);
       });
       remove.setAttribute('aria-label', t('boards.deleteEntry'));
-      row.append(done, text, date, period, remove);
+      const launch = button('▷', () => {
+        const current = required(entryContext.get(row));
+        actions.launch(current.item, current.entry.id);
+      });
+      launch.setAttribute('aria-label', t('boards.launch'));
+      launch.className = 'board-entry-launch';
+      row.append(done, text, date, period, sender, url, open, launch, remove);
       return row;
     },
     patch: (row, entry) => {
@@ -207,10 +287,24 @@ function patchEntries(parent: HTMLElement, item: BoardItem, actions: BoardItemAc
       patchInput(
         required(inputs[3]),
         entry.year
-          ? `${entry.year} ${entry.week ? `W${entry.week}` : `Q${entry.quarter ?? 1}`}`
+          ? `${entry.year}${entry.week ? ` W${entry.week}` : entry.quarter ? ` Q${entry.quarter}` : ''}`
           : '',
       );
       row.classList.toggle('is-done', entry.done);
+      const sender = row.querySelector<HTMLInputElement>('.board-mail-sender');
+      const url = row.querySelector<HTMLInputElement>('.board-mail-url');
+      const open = row.querySelector<HTMLAnchorElement>('.board-mail-open');
+      if (sender) patchInput(sender, entry.sender ?? '');
+      if (url) patchInput(url, entry.url ?? '');
+      if (open) {
+        open.hidden = !entry.url;
+        if (entry.url) open.href = entry.url;
+        else open.removeAttribute('href');
+      }
+      required(inputs[0]).setAttribute(
+        'aria-label',
+        t(item.kind === 'mail' ? 'boards.read' : 'boards.done'),
+      );
     },
   });
 }

@@ -10,7 +10,7 @@ const rewriteSource = source.slice(
   source.indexOf('// === Network APIs ==='),
 );
 
-function rewrite(value: string, external = false) {
+function rewrite(value: string, external = false, targetOrigin?: string) {
   let parses = 0;
   class BoundedURL extends URL {
     constructor(url: string, base?: string) {
@@ -32,7 +32,11 @@ function rewrite(value: string, external = false) {
   `,
   )(
     BoundedURL,
-    { __mtExternalDocument: external, __mtDocumentUrl: 'https://example.org/docs/' },
+    {
+      __mtExternalDocument: external,
+      __mtDocumentUrl: 'https://example.org/docs/',
+      __mtTargetOrigin: targetOrigin,
+    },
     { protocol: 'https:', origin: 'https://localhost:2001', host: 'localhost:2001' },
     { baseURI: 'https://localhost:2001/webpreview/docs/' },
     value,
@@ -41,6 +45,16 @@ function rewrite(value: string, external = false) {
 }
 
 describe('browser URL rewriting', () => {
+  it('keeps already-proxied local program assets stable when target and proxy origins match', () => {
+    const origin = 'https://localhost:2001';
+    for (const value of ['/webpreview/docs/app.js', `${origin}/webpreview/docs/app.js`]) {
+      expect(rewrite(value, false, origin).result).toBe(value);
+      expect(rewrite(rewrite(value, false, origin).result as string, false, origin).result).toBe(
+        value,
+      );
+    }
+    expect(rewrite('app.js', false, origin).result).toBe(`${origin}/webpreview/docs/app.js`);
+  });
   it.each(['mailto:person@example.org', 'data:text/plain,hi', 'javascript:void(0)', '#section'])(
     'passes %s through without parsing or recursion',
     (value) => {

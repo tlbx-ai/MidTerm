@@ -69,6 +69,23 @@ public sealed class BoardServiceTests : IDisposable
         Assert.Null(store.WriteItem(board.Id, null, new()));
     }
 
+    [Fact]
+    public void IndependentViewsPersistCameraWithoutConflictingWithDocumentEdits()
+    {
+        using var first = new BoardService(_directory);
+        using var second = new BoardService(_directory);
+        var board = first.Create(new() { Title = "Before" });
+        Assert.True(second.UpdateViewport(board.Id, new(-120, 450, .25)));
+        first.Update(board.Id, new() { ExpectedRevision = 1, Title = "After" });
+        var saved = second.Get(board.Id)!;
+        Assert.Equal("After", saved.Title);
+        Assert.Equal(2, saved.Revision);
+        Assert.Equal(-120, saved.PanX);
+        Assert.Equal(.25, saved.Zoom);
+        Assert.True(first.UpdateViewport(board.Id, new(80, 90, 2)));
+        Assert.Equal(2, second.Get(board.Id)!.Revision);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(9)]
@@ -95,6 +112,75 @@ public sealed class BoardServiceTests : IDisposable
         Assert.Null(WebPreviewLocalDirectory.ResolveFile(_directory, "index.html:secret"));
         Assert.Null(WebPreviewLocalDirectory.ResolveFile(_directory, Path.GetFullPath(_directory)));
         Assert.Null(WebPreviewLocalDirectory.ResolveFile(_directory, "missing.html"));
+    }
+
+    [Fact]
+    public void CalendarUsesMondayGridAndCorrectIsoYearAtNewYear()
+    {
+        var month = BoardCalendar.Month("2021-01");
+        Assert.Equal(42, month.Days.Count);
+        Assert.Equal("2020-12-28", month.Days[0].Date);
+        Assert.Equal(2020, month.Days[0].IsoYear);
+        Assert.Equal(53, month.Days[0].Week);
+        var january = month.Days.Single(day => day.Date == "2021-01-01");
+        Assert.True(january.InMonth);
+        Assert.Equal(2020, january.IsoYear);
+        Assert.Equal(1, january.Quarter);
+        Assert.Equal(1, month.Days.Single(day => day.Date == "2021-01-04").Week);
+        Assert.Throws<ArgumentException>(() => BoardCalendar.Month("2021-13"));
+    }
+
+    [Fact]
+    public void LongTermEntryRejectsNonexistentIsoWeek()
+    {
+        using var store = new BoardService(_directory);
+        var board = store.Create(new());
+        Assert.Throws<ArgumentException>(() => store.WriteItem(board.Id, null, new()
+        {
+            Item = new() { Kind = "timeline", Entries = [new() { Year = 2021, Week = 53 }] }
+        }));
+        Assert.NotNull(store.WriteItem(board.Id, null, new()
+        {
+            Item = new() { Kind = "timeline", Entries = [new() { Year = 2020, Week = 53 }] }
+        }));
+    }
+
+    [Fact]
+    public void LaunchReceiptIsIdempotentAndKeepsExactContextAndSession()
+    {
+        using var store = new BoardService(_directory);
+        var board = store.Create(new() { WorkingDirectory = _directory, LaunchCommand = "codex --model test", SessionProfile = "codex" });
+        var item = store.WriteItem(board.Id, null, new() { Item = new() { Title = "Plan", Text = "Original instructions", Prompt = "Keep this intact", Entries = [new() { Text = "Ship", Year = 2027, Quarter = 2 }] } })!;
+        var request = new BoardLaunchRequest { RequestId = Guid.NewGuid().ToString("N"), ExpectedRevision = item.Revision, EntryId = item.Entries[0].Id };
+        var started = store.BeginLaunch(board.Id, item.Id, request, "https://example.test:2100");
+        Assert.True(started.Created);
+        Assert.Equal("codex --model test", started.Launch.LaunchCommand);
+        Assert.Contains($"/?board={board.Id}&item={item.Id}&entry={item.Entries[0].Id}", started.Launch.Prompt, StringComparison.Ordinal);
+        Assert.Contains($"mt board item {board.Id} {item.Id}", started.Launch.Prompt, StringComparison.Ordinal);
+        Assert.Contains("Keep this intact", started.Launch.Prompt, StringComparison.Ordinal);
+        var submitted = store.UpdateLaunch(started.Launch, "submitted", "session-123");
+        var duplicate = store.BeginLaunch(board.Id, item.Id, request, "https://example.test:2100");
+        Assert.False(duplicate.Created);
+        Assert.Equal(submitted, duplicate.Launch);
+        Assert.Throws<ArgumentException>(() => store.BeginLaunch(board.Id, item.Id, request with { LaunchCommand = "different" }, "https://example.test"));
+        Assert.Equal("session-123", Assert.Single(store.GetItem(board.Id, item.Id)!.Launches).SessionId);
+        Assert.False(store.GetItem(board.Id, item.Id)!.Entries[0].Done);
+        store.Delete(board.Id, item.Id, item.Revision);
+        Assert.Empty(store.ListLaunches(board.Id));
+    }
+
+    [Fact]
+    public void LaunchRejectsStaleRevisionMissingTaskAndInvalidConfiguration()
+    {
+        using var store = new BoardService(_directory);
+        var board = store.Create(new());
+        var item = store.WriteItem(board.Id, null, new())!;
+        Assert.Throws<BoardConflictException>(() => store.BeginLaunch(board.Id, item.Id, new() { ExpectedRevision = 999 }, "https://example.test"));
+        Assert.Throws<ArgumentException>(() => store.BeginLaunch(board.Id, item.Id, new() { EntryId = "missing" }, "https://example.test"));
+        Assert.Throws<ArgumentException>(() => store.BeginLaunch(board.Id, item.Id, new(), "https://example.test"));
+        var launch = store.BeginLaunch(board.Id, item.Id, new() { WorkingDirectory = _directory, LaunchCommand = "custom-agent" }, "https://example.test");
+        Assert.Null(launch.Launch.EntryId);
+        Assert.Equal("custom-agent", launch.Launch.LaunchCommand);
     }
 
     public void Dispose()

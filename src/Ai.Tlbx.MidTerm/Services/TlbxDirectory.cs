@@ -513,6 +513,14 @@ public static class TlbxDirectory
         Kinds: `note`, `todo`, `calendar`, `mail`, `timeline`, `browser`.
         `mt board serve BOARD_ID DIRECTORY` adds a local HTML/JS program containing `index.html`.
         Browser tiles use tlbx's preview engine with isolated content and a bounded local directory.
+        `mt_board item BOARD_ID ITEM_ID` reads one item; `viewport BOARD_ID JSON` persists the camera.
+        `launch BOARD_ID ITEM_ID JSON` starts a task session with a board/item deep link and initial prompt.
+        Launch JSON can contain `requestId` (32 hex, reuse unchanged for safe retries), `expectedRevision`,
+        `entryId`, `workingDirectory`, `launchCommand`, `profile`, `appServerControlOnly`.
+        Directory/command/profile defaults come from the item, then the board; command arguments are user-owned.
+        `launches BOARD_ID` reads the durable session links and prompt delivery states. Submitted means delivered,
+        not task completion; never auto-complete a task from session exit. Uncertain delivery requires inspection.
+        `browser BOARD_ID ITEM_ID JSON` runs existing browser commands (`exec`, `click`, etc.) in that tile.
 
         ## Graph boards
 

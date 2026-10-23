@@ -6,10 +6,11 @@ using Microsoft.Data.Sqlite;
 namespace Ai.Tlbx.MidTerm.Services.Boards;
 
 /// <summary>Transactional local board storage. Item revisions are independent of viewport edits.</summary>
-public sealed class BoardService : IDisposable
+public sealed partial class BoardService : IDisposable
 {
     private readonly Lock _gate = new();
     private readonly SqliteConnection _db;
+    public event Action<string>? OnChanged;
 
     public BoardService(SettingsService settings) : this(settings.SettingsDirectory) { }
 
@@ -30,6 +31,11 @@ public sealed class BoardService : IDisposable
             CREATE TABLE IF NOT EXISTS board_items(
                 board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
                 id TEXT NOT NULL, document TEXT NOT NULL, PRIMARY KEY(board_id,id));
+            CREATE TABLE IF NOT EXISTS board_launches(
+                id TEXT PRIMARY KEY, board_id TEXT NOT NULL, item_id TEXT NOT NULL,
+                request TEXT NOT NULL, document TEXT NOT NULL, created_at TEXT NOT NULL,
+                FOREIGN KEY(board_id,item_id) REFERENCES board_items(board_id,id) ON DELETE CASCADE);
+            CREATE INDEX IF NOT EXISTS board_launches_item ON board_launches(board_id,item_id,created_at DESC);
             """;
         command.ExecuteNonQuery();
     }
@@ -55,6 +61,7 @@ public sealed class BoardService : IDisposable
             using var command = Command("INSERT INTO boards VALUES($id,$document)", board.Id,
                 JsonSerializer.Serialize(board, BoardJsonContext.Default.BoardDocument));
             command.ExecuteNonQuery();
+            OnChanged?.Invoke(board.Id);
             return board;
         }
     }
@@ -66,8 +73,9 @@ public sealed class BoardService : IDisposable
             var board = ReadBoard(id);
             if (board is null) return null;
             using var command = Command("SELECT document FROM board_items WHERE board_id=$id ORDER BY rowid", id);
-            using var reader = command.ExecuteReader();
-            while (reader.Read()) board.Items.Add(JsonSerializer.Deserialize(reader.GetString(0), BoardJsonContext.Default.BoardItem)!);
+            using (var reader = command.ExecuteReader())
+                while (reader.Read()) board.Items.Add(JsonSerializer.Deserialize(reader.GetString(0), BoardJsonContext.Default.BoardItem)!);
+            AttachLaunches(board);
             return board;
         }
     }
@@ -86,6 +94,7 @@ public sealed class BoardService : IDisposable
                 JsonSerializer.Serialize(board, BoardJsonContext.Default.BoardDocument), transaction);
             command.ExecuteNonQuery();
             transaction.Commit();
+            OnChanged?.Invoke(id);
             return Get(id);
         }
     }
@@ -94,9 +103,26 @@ public sealed class BoardService : IDisposable
     {
         lock (_gate)
         {
-            using var command = Command("SELECT document FROM board_items WHERE board_id=$id AND id=$item", boardId);
-            command.Parameters.AddWithValue("$item", itemId);
-            return command.ExecuteScalar() is string json ? JsonSerializer.Deserialize(json, BoardJsonContext.Default.BoardItem) : null;
+            var item = ReadStoredItem(boardId, itemId);
+            if (item is not null) item.Launches = ListLaunches(boardId, itemId, 20);
+            return item;
+        }
+    }
+
+    public bool UpdateViewport(string id, BoardViewport viewport)
+    {
+        lock (_gate)
+        {
+            using var transaction = _db.BeginTransaction();
+            var board = ReadBoard(id, transaction);
+            if (board is null) return false;
+            Apply(board, new() { PanX = viewport.PanX, PanY = viewport.PanY, Zoom = viewport.Zoom });
+            using var command = Command("UPDATE boards SET document=$document WHERE id=$id", id,
+                JsonSerializer.Serialize(board, BoardJsonContext.Default.BoardDocument), transaction);
+            command.ExecuteNonQuery();
+            transaction.Commit();
+            // Camera persistence is deliberately independent of document revisions and live edits.
+            return true;
         }
     }
 
@@ -108,6 +134,7 @@ public sealed class BoardService : IDisposable
             using var transaction = _db.BeginTransaction();
             if (ReadBoard(boardId, transaction) is null) return null;
             var item = write.Item with { Id = itemId ?? Guid.NewGuid().ToString("N") };
+            item.Launches = [];
             Validate(item);
             var revision = 0L;
             if (itemId is not null)
@@ -124,6 +151,7 @@ public sealed class BoardService : IDisposable
             command.Parameters.AddWithValue("$item", item.Id);
             command.ExecuteNonQuery();
             transaction.Commit();
+            OnChanged?.Invoke(boardId);
             return item;
         }
     }
@@ -152,6 +180,7 @@ public sealed class BoardService : IDisposable
             if (itemId is not null) command.Parameters.AddWithValue("$item", itemId);
             command.ExecuteNonQuery();
             transaction.Commit();
+            OnChanged?.Invoke(boardId);
             return true;
         }
     }
@@ -185,6 +214,22 @@ public sealed class BoardService : IDisposable
             if (string.IsNullOrWhiteSpace(patch.Title) || patch.Title.Length > 256) throw new ArgumentException("Title must contain 1–256 characters.");
             board.Title = patch.Title.Trim();
         }
+        if (patch.WorkingDirectory is not null)
+        {
+            if (patch.WorkingDirectory.Length > 0 && !Path.IsPathFullyQualified(patch.WorkingDirectory)) throw new ArgumentException("Session directory must be absolute.");
+            board.WorkingDirectory = string.IsNullOrWhiteSpace(patch.WorkingDirectory) ? null : patch.WorkingDirectory;
+        }
+        if (patch.LaunchCommand is not null)
+        {
+            if (patch.LaunchCommand.Length > 8192) throw new ArgumentException("Session command is too large.");
+            board.LaunchCommand = string.IsNullOrWhiteSpace(patch.LaunchCommand) ? null : patch.LaunchCommand;
+        }
+        if (patch.SessionProfile is not null)
+        {
+            if (patch.SessionProfile.Length > 128) throw new ArgumentException("Session profile is too large.");
+            board.SessionProfile = string.IsNullOrWhiteSpace(patch.SessionProfile) ? null : patch.SessionProfile;
+        }
+        if (patch.AppServerControlOnly is { } controlOnly) board.AppServerControlOnly = controlOnly;
         if (patch.PanX is { } x) board.PanX = Coordinate(x);
         if (patch.PanY is { } y) board.PanY = Coordinate(y);
         if (patch.Zoom is { } zoom)
@@ -215,12 +260,16 @@ public sealed class BoardService : IDisposable
             if (entry.Id.Length == 0) entry.Id = Guid.NewGuid().ToString("N");
             if (!ids.Add(entry.Id)) throw new ArgumentException("Duplicate entry id.");
             if (entry.Text.Length > 8192 || entry.Week is < 1 or > 53 || entry.Quarter is < 1 or > 4 || entry.Year is < 1 or > 9999) throw new ArgumentException("Invalid entry.");
+            if (entry is { Year: { } year, Week: { } week } && week > ISOWeek.GetWeeksInYear(year)) throw new ArgumentException("This ISO year has no week 53.");
             if (entry.Date is not null && !DateOnly.TryParseExact(entry.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)) throw new ArgumentException("Dates use yyyy-MM-dd.");
+            if (entry.Sender?.Length > 512 || entry.Url?.Length > 8192) throw new ArgumentException("Mail entry is too large.");
+            if (entry.Url is not null && (!Uri.TryCreate(entry.Url, UriKind.Absolute, out var link) || link.Scheme is not ("http" or "https" or "mailto"))) throw new ArgumentException("Mail links must use http, https or mailto.");
         }
         if (item.Url is not null && (!Uri.TryCreate(item.Url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))) throw new ArgumentException("Browser URLs must use http or https.");
         if (item.LocalDirectory is not null && !Path.IsPathFullyQualified(item.LocalDirectory)) throw new ArgumentException("Local directory must be absolute.");
         if (item.WorkingDirectory is not null && !Path.IsPathFullyQualified(item.WorkingDirectory)) throw new ArgumentException("Session directory must be absolute.");
-        if (item.Prompt?.Length > 100_000 || item.LaunchCommand?.Length > 8192) throw new ArgumentException("Session configuration is too large.");
+        if (item.Prompt?.Length > 100_000 || item.LaunchCommand?.Length > 8192 || item.SessionProfile?.Length > 128) throw new ArgumentException("Session configuration is too large.");
+        if (item.CalendarMonth is not null) BoardCalendar.Month(item.CalendarMonth);
     }
 
     public void Dispose() => _db.Dispose();

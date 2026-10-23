@@ -451,13 +451,15 @@ public class WebPreviewProxyMiddlewareTests
             rewritten);
     }
 
-    [Fact]
-    public async Task InvokeAsync_FileTarget_ServesLocalHtmlDocument()
+    [Theory]
+    [InlineData("<html><head></head><body>preview</body></html>")]
+    [InlineData("<!doctype html><body>preview</body><script src=\"./app.js\"></script>")]
+    public async Task InvokeAsync_FileTarget_ServesLocalHtmlDocument(string document)
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "midterm-webpreview-file-target", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
         var indexPath = Path.Combine(tempDir, "index.html");
-        await File.WriteAllTextAsync(indexPath, "<html><head></head><body>preview</body></html>", Xunit.TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(indexPath, document, Xunit.TestContext.Current.CancellationToken);
 
         try
         {
@@ -483,6 +485,10 @@ public class WebPreviewProxyMiddlewareTests
             Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
             Assert.Contains("<body>preview</body>", html, StringComparison.Ordinal);
             Assert.Contains("<base href=\"/webpreview/", html, StringComparison.Ordinal);
+            var filePath = new Uri(indexPath).AbsolutePath;
+            var directoryPath = "/" + filePath[..(filePath.LastIndexOf('/') + 1)].TrimStart('/');
+            Assert.Contains($"<base href=\"/webpreview/{routeKey}{directoryPath}\">", html, StringComparison.Ordinal);
+            Assert.Contains("window.__mtProxy", html, StringComparison.Ordinal);
         }
         finally
         {

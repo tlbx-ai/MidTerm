@@ -20,6 +20,7 @@ using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.Browser;
+using Ai.Tlbx.MidTerm.Services.Boards;
 using Microsoft.AspNetCore.Mvc;
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -385,7 +386,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
         });
 
-        app.MapPost("/api/workers/bootstrap", async (WorkerBootstrapRequest request, CancellationToken ct) =>
+        async Task<IResult> BootstrapWorker(WorkerBootstrapRequest request, CancellationToken ct, Action<string>? created = null)
         {
             var creation = await sessionManager.CreateSessionDetailedAsync(
                 request.Shell,
@@ -403,6 +404,7 @@ public static partial class SessionApiEndpoints
 
             var sessionInfo = creation.Session!;
             var sessionId = sessionInfo.Id;
+            created?.Invoke(sessionId);
             ApplySessionSpaceMetadata(
                 sessionManager,
                 sessionId,
@@ -514,7 +516,9 @@ public static partial class SessionApiEndpoints
                 GuidanceInjected = guidanceInjected,
                 TlbxDir = tlbxDir
             }, AppJsonContext.Default.WorkerBootstrapResponse);
-        });
+        }
+        app.MapPost("/api/workers/bootstrap", (WorkerBootstrapRequest request, CancellationToken ct) => BootstrapWorker(request, ct));
+        BoardSessionEndpoints.Map(app, BootstrapWorker, SubmitPrompt);
 
         app.MapGet("/api/providers/{provider}/resume-candidates", (
             string provider,
@@ -710,7 +714,7 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
-        app.MapPost("/api/sessions/{id}/input/prompt", async (string id, SessionPromptRequest request, HttpContext context, CancellationToken ct) =>
+        async Task<IResult> SubmitPrompt(string id, SessionPromptRequest request, HttpContext context, CancellationToken ct, bool recordBrowserInput)
         {
             if (sessionManager.GetSession(id) is null)
             {
@@ -754,7 +758,7 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
-            var inputBrowser = BrowserIdentity.TryBuildFromBrowserRequest(context.Request);
+            var inputBrowser = recordBrowserInput ? BrowserIdentity.TryBuildFromBrowserRequest(context.Request) : null;
             if (inputBrowser is not null)
                 await terminalSizeControlService.RecordInputAsync(id, inputBrowser, BrowserIdentity.GetDeviceLabel(context.Request), ct);
             await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, id, plan, ct);
@@ -770,7 +774,9 @@ public static partial class SessionApiEndpoints
                     InputHistorySurfaces.Terminal);
             }
             return Results.Ok();
-        });
+        }
+        app.MapPost("/api/sessions/{id}/input/prompt", (string id, SessionPromptRequest request, HttpContext context, CancellationToken ct) =>
+            SubmitPrompt(id, request, context, ct, true));
 
         app.MapGet("/api/sessions/{id}/agent-control/history", async (
             string id,

@@ -1,12 +1,47 @@
-import { boardRequest, newBoardItem, type BoardDocument, type BoardItem } from './boardApi';
+import {
+  BoardApiError,
+  boardRequest,
+  newBoardItem,
+  type BoardDocument,
+  type BoardItem,
+} from './boardApi';
 import { bindBoardCanvas } from './boardCanvas';
 import { renderBoardItems } from './boardItems';
 import { t } from '../i18n';
 import { showConfirm } from '../../utils/dialog';
+import { connectBoardSocket, type BoardBrowserInstruction } from './boardSocket';
+import {
+  executeBoardBrowserInstruction,
+  mountBoardBrowser,
+  resetBoardBrowser,
+} from './boardBrowser';
+import { getWebPreviewTarget } from '../web/webApi';
+import { showBoardConflict } from './boardConflict';
+import { BoardWindows } from './boardWindows';
+import {
+  BoardSessions,
+  hasBoardSessionSettings,
+  renderBoardLaunches,
+  renderBoardSettings,
+} from './boardSession';
+import { registerBackButtonLayer } from '../navigation/backButtonGuard';
+import { $sessionList } from '../../stores';
+import { isBoardEditing, trapBoardFocus } from './boardKeys';
 
 let view: BoardView | null = null;
 
-export function initBoards(): void {
+export function initBoards(onSelectSession: (id: string) => void): void {
+  const requestedSession = new URLSearchParams(location.search).get('session');
+  if (requestedSession) {
+    let selected = false;
+    $sessionList.subscribe((sessions) => {
+      if (selected || !sessions.some((session) => session.id === requestedSession)) return;
+      selected = true;
+      queueMicrotask(() => {
+        onSelectSession(requestedSession);
+      });
+    });
+  }
   document.getElementById('btn-boards')?.addEventListener('click', () => {
     view ??= new BoardView();
     void view.open();
@@ -36,11 +71,40 @@ class BoardView {
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly dirty = new Map<string, number>();
   private viewportDirty = 0;
+  private titleDirty = 0;
   private saving = false;
+  private saveOperation: Promise<void> | null = null;
+  private refreshing = false;
+  private refreshQueued = false;
   private selected: string | null = null;
   private generation = 0;
+  private loadGeneration = 0;
+  private readonly windows: BoardWindows;
+  private readonly sessions = new BoardSessions();
+  private removeBackLayer: (() => void) | null = null;
+  private socket: ReturnType<typeof connectBoardSocket> | null = null;
+  private conflict: { item: BoardItem; remote: BoardItem | null } | null = null;
+  private titleConflict: BoardDocument | null = null;
+  private conflictOverlay: (() => void) | null = null;
+  private readonly resolveButton = this.button(t('boards.resolve'), () => {
+    this.presentConflict();
+  });
 
   constructor(private readonly detached = false) {
+    this.windows = new BoardWindows({
+      boardId: () => this.board?.id ?? null,
+      save: async () => {
+        await this.flush();
+        return !this.hasPendingChanges();
+      },
+      detached: async (id) => {
+        if (!this.detached && this.board?.id === id) await this.close();
+      },
+      dock: (id) => this.open(id, true),
+      error: (error) => {
+        this.error(error);
+      },
+    });
     this.root.className = 'boards-workspace';
     this.root.setAttribute('role', 'dialog');
     this.root.setAttribute('aria-label', t('boards.title'));
@@ -60,30 +124,50 @@ class BoardView {
     this.title.addEventListener('change', () => {
       if (this.board && this.title.value.trim()) {
         this.board.title = this.title.value;
-        this.markViewport();
+        this.titleDirty = ++this.generation;
+        this.schedule();
       }
     });
     this.status.className = 'boards-save-state';
     this.status.setAttribute('role', 'status');
+    this.resolveButton.hidden = true;
     header.append(
       brand,
       this.picker,
       this.title,
       this.status,
-      this.button(t('boards.newBoard'), () => {
-        void this.createBoard();
-      }),
-      this.button(t('boards.detach'), () => {
-        if (this.board)
-          window.open(
-            `/?board=${encodeURIComponent(this.board.id)}`,
-            '_blank',
-            'popup,width=1400,height=900',
-          );
-      }),
-      this.button(t('boards.close'), () => {
-        void this.close();
-      }),
+      this.resolveButton,
+      this.button(
+        t('boards.newBoard'),
+        () => {
+          void this.createBoard();
+        },
+        'new',
+      ),
+      this.button(
+        t(this.windows.canDock ? 'boards.dock' : 'boards.detach'),
+        () => {
+          const operation = this.windows.canDock ? this.windows.dock() : this.windows.detach();
+          void operation.catch((error: unknown) => {
+            this.error(error);
+          });
+        },
+        this.windows.canDock ? 'dock' : 'detach',
+      ),
+      this.button(
+        t('boards.boardSettings'),
+        () => {
+          void this.settings();
+        },
+        'settings',
+      ),
+      this.button(
+        t('boards.close'),
+        () => {
+          void this.close();
+        },
+        'close',
+      ),
     );
     const tools = document.createElement('nav');
     tools.className = 'boards-tools';
@@ -108,6 +192,8 @@ class BoardView {
     });
     tools.append(this.zoom);
     this.surface.className = 'boards-surface';
+    this.surface.tabIndex = 0;
+    this.surface.setAttribute('aria-label', t('boards.canvasHint'));
     this.plane.className = 'boards-plane';
     this.surface.append(this.plane);
     this.surface.addEventListener('boardzoom', () => {
@@ -120,70 +206,184 @@ class BoardView {
     hint.textContent = t('boards.canvasHint');
     this.root.append(header, this.surface, tools, this.inspector, hint);
     document.body.append(this.root);
+    window.addEventListener('beforeunload', (event) => {
+      if (!this.dirty.size && !this.viewportDirty && !this.titleDirty) return;
+      event.preventDefault();
+    });
     this.root.addEventListener('keydown', (event) => {
+      event.stopPropagation();
+      trapBoardFocus(this.root, event);
+      this.handleCanvasKey(event);
       if (event.key === 'Escape') {
-        if (this.selected) this.select(null);
+        if (!this.inspector.hidden) this.hideInspector();
+        else if (this.selected) this.select(null);
         else void this.close();
         event.stopPropagation();
       }
     });
+    this.root.addEventListener('focusout', () => {
+      queueMicrotask(() => {
+        void this.refresh();
+      });
+    });
   }
 
-  async open(id?: string): Promise<void> {
-    if (this.board && (this.dirty.size || this.viewportDirty)) {
+  async open(id?: string, takeControl = false): Promise<boolean> {
+    const generation = ++this.loadGeneration;
+    if (this.board && this.hasPendingChanges()) {
       await this.flush();
-      if (this.dirty.size || this.viewportDirty) return;
+      if (this.hasPendingChanges() || generation !== this.loadGeneration) return false;
     }
     this.root.hidden = false;
+    const app = document.getElementById('app');
+    if (app) app.inert = true;
+    this.removeBackLayer ??= registerBackButtonLayer(() => {
+      void this.close();
+    });
+    this.surface.inert = true;
+    this.title.disabled = true;
+    this.root.setAttribute('aria-busy', 'true');
     try {
-      const boards = await boardRequest<BoardDocument[]>();
-      this.picker.replaceChildren(
-        ...boards.map((board) => {
-          const option = document.createElement('option');
-          option.value = board.id;
-          option.textContent = board.title;
-          return option;
-        }),
-      );
-      const next = id ?? this.board?.id ?? boards[0]?.id;
-      if (!next) {
-        await this.createBoard();
-        return;
-      }
-      const board = await boardRequest<BoardDocument>(`/${next}`);
-      this.canvas?.dispose();
-      this.board = board;
-      this.selected = null;
-      this.inspector.hidden = true;
-      this.title.value = board.title;
-      this.picker.value = board.id;
-      this.canvas = bindBoardCanvas(this.surface, this.plane, board, {
-        viewportChanged: () => {
-          this.markViewport();
-        },
-        itemChanged: (item) => {
-          this.markItem(item);
-        },
-        createNote: (x, y) => {
-          void this.add('note', x, y);
-        },
-        selected: (itemId) => {
-          this.select(itemId);
-        },
-      });
-      this.render();
-      if (!this.poll)
-        this.poll = setInterval(() => {
-          void this.refresh();
-        }, 2000);
-      this.title.focus();
+      const loaded = await this.readBoard(id, generation);
+      if (!loaded || generation !== this.loadGeneration) return false;
+      return await this.activateBoard(loaded.board, loaded.boards, takeControl, generation);
     } catch (error) {
       this.error(error);
+      this.render();
+      return false;
+    } finally {
+      if (generation === this.loadGeneration) {
+        this.surface.inert = false;
+        this.title.disabled = false;
+        this.root.setAttribute('aria-busy', 'false');
+        if (this.refreshQueued) void this.refresh();
+      }
     }
   }
 
+  private async readBoard(
+    id: string | undefined,
+    generation: number,
+  ): Promise<{ board: BoardDocument; boards: BoardDocument[] } | null> {
+    const boards = await boardRequest<BoardDocument[]>();
+    if (generation !== this.loadGeneration) return null;
+    const next = id ?? this.board?.id ?? boards[0]?.id;
+    if (next) return { board: await boardRequest<BoardDocument>(`/${next}`), boards };
+    const board = await boardRequest<BoardDocument>('', 'POST', {
+      title: t('boards.untitled'),
+      panX: 80,
+      panY: 80,
+    });
+    boards.unshift(board);
+    return { board, boards };
+  }
+
+  private async activateBoard(
+    board: BoardDocument,
+    boards: BoardDocument[],
+    takeControl: boolean,
+    generation: number,
+  ): Promise<boolean> {
+    this.canvas?.dispose();
+    this.socket?.dispose();
+    this.board = board;
+    this.selected = null;
+    this.inspector.hidden = true;
+    this.title.value = board.title;
+    this.picker.replaceChildren(
+      ...boards.map((entry) => {
+        const option = document.createElement('option');
+        option.value = entry.id;
+        option.textContent = entry.title;
+        return option;
+      }),
+    );
+    this.picker.value = board.id;
+    const socket = connectBoardSocket(
+      board.id,
+      () => {
+        void this.refresh();
+      },
+      (instruction) => this.handleBrowserInstruction(instruction),
+    );
+    this.socket = socket;
+    this.bindCanvas(board);
+    await socket.ready;
+    if (generation !== this.loadGeneration) return false;
+    const query = new URLSearchParams(location.search);
+    if (takeControl || (query.get('board') === board.id && query.get('handoff') === '1')) {
+      for (const item of board.items.filter((entry) => entry.kind === 'browser')) {
+        await boardRequest(`/${board.id}/items/${item.id}/browser-claim`, 'POST', {});
+        if (generation !== this.loadGeneration) return false;
+      }
+      for (const frame of this.plane.querySelectorAll<HTMLIFrameElement>('iframe'))
+        resetBoardBrowser(frame);
+    }
+    this.render();
+    if (!this.poll)
+      this.poll = setInterval(() => {
+        void this.refresh();
+      }, 30000);
+    if (this.detached) {
+      const locationUrl = new URL(location.href);
+      locationUrl.searchParams.set('board', board.id);
+      history.replaceState(history.state, '', locationUrl);
+    }
+    this.windows.announceReady(board.id);
+    this.title.disabled = false;
+    this.title.focus();
+    const targetId = query.get('board') === board.id ? query.get('item') : null;
+    const target = board.items.find((item) => item.id === targetId);
+    if (target) {
+      board.panX = this.surface.clientWidth / 2 - (target.x + target.width / 2) * board.zoom;
+      board.panY = this.surface.clientHeight / 2 - (target.y + target.height / 2) * board.zoom;
+      this.canvas?.render();
+      this.select(target.id);
+    }
+    return true;
+  }
+
+  private bindCanvas(board: BoardDocument): void {
+    this.canvas = bindBoardCanvas(this.surface, this.plane, board, {
+      viewportChanged: () => {
+        this.markViewport();
+      },
+      itemChanged: (item) => {
+        this.markItem(item);
+      },
+      createNote: (x, y) => {
+        void this.add('note', x, y);
+      },
+      selected: (id) => {
+        this.select(id);
+      },
+    });
+  }
+
+  private handleCanvasKey(event: KeyboardEvent): void {
+    if (isBoardEditing(event) || !this.board) return;
+    const item = this.board.items.find((entry) => entry.id === this.selected);
+    if (event.key.toLowerCase() === 'n' && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      void this.add('note');
+    } else if (item && ['Delete', 'Backspace'].includes(event.key)) {
+      event.preventDefault();
+      void this.remove(item);
+    } else if (item && event.key.startsWith('Arrow')) {
+      event.preventDefault();
+      const step = event.shiftKey ? 10 : 1;
+      if (event.key === 'ArrowLeft') item.x -= step;
+      if (event.key === 'ArrowRight') item.x += step;
+      if (event.key === 'ArrowUp') item.y -= step;
+      if (event.key === 'ArrowDown') item.y += step;
+      this.markItem(item);
+      this.render();
+    }
+  }
   private async createBoard(): Promise<void> {
     try {
+      await this.flush();
+      if (this.hasPendingChanges()) return;
       const board = await boardRequest<BoardDocument>('', 'POST', {
         title: t('boards.untitled'),
         panX: 80,
@@ -208,7 +408,7 @@ class BoardView {
     try {
       const created = await boardRequest<BoardItem>(`/${board.id}/items`, 'POST', { item });
       if (this.board !== board) return;
-      board.items.push(created);
+      if (!board.items.some((entry) => entry.id === created.id)) board.items.push(created);
       this.render();
       this.select(created.id);
       this.plane
@@ -223,6 +423,7 @@ class BoardView {
 
   private render(): void {
     if (!this.board) return;
+    this.syncPickerTitle();
     renderBoardItems(this.plane, this.board.items, this.board.id, {
       changed: (item) => {
         this.markItem(item);
@@ -230,14 +431,34 @@ class BoardView {
       remove: (item) => {
         void this.remove(item);
       },
-      launch: (item) => {
-        this.select(item.id, true);
-        this.inspector.querySelector<HTMLInputElement>('[name="launchCommand"]')?.focus();
+      launch: (item, entryId) => {
+        void this.launch(item, entryId);
       },
       settings: (item) => {
         this.select(item.id, true);
       },
+      claim: (item) => {
+        void this.takeBrowserControl(item).catch((error: unknown) => {
+          this.error(error);
+        });
+      },
     });
+  }
+
+  private async takeBrowserControl(item: BoardItem): Promise<void> {
+    const board = this.board;
+    if (!board) return;
+    if (!item.url && !item.localDirectory && !item.browserSessionId) {
+      this.select(item.id, true);
+      return;
+    }
+    await boardRequest(`/${board.id}/items/${item.id}/browser-claim`, 'POST', {});
+    const target = await getWebPreviewTarget(
+      item.browserSessionId ?? `board-${board.id}`,
+      item.browserPreviewName ?? item.id,
+    );
+    const frame = this.plane.querySelector<HTMLIFrameElement>(`[data-id="${item.id}"] iframe`);
+    if (frame) await mountBoardBrowser(frame, board.id, item, target ?? undefined);
   }
 
   private select(id: string | null, inspect = false): void {
@@ -266,6 +487,7 @@ class BoardView {
       'localDirectory',
       'workingDirectory',
       'launchCommand',
+      'sessionProfile',
       'prompt',
     ] as const;
     for (const field of fields) {
@@ -300,6 +522,94 @@ class BoardView {
     this.inspector.append(palette);
   }
 
+  private async settings(): Promise<void> {
+    await this.flush();
+    const board = this.board;
+    if (!board || this.hasPendingChanges()) return;
+    renderBoardSettings(
+      this.inspector,
+      board,
+      async (patch) => {
+        const saved = await boardRequest<BoardDocument>(`/${board.id}`, 'PATCH', {
+          expectedRevision: board.revision,
+          ...patch,
+        });
+        Object.assign(board, {
+          ...saved,
+          items: board.items,
+          panX: board.panX,
+          panY: board.panY,
+          zoom: board.zoom,
+        });
+      },
+      () => {
+        this.hideInspector();
+      },
+      (error) => {
+        this.error(error);
+      },
+      () => {
+        void this.deleteBoard();
+      },
+    );
+  }
+
+  private async deleteBoard(): Promise<void> {
+    const board = this.board;
+    if (!board || !(await showConfirm(t('boards.confirmDeleteBoard')))) return;
+    try {
+      await this.flush();
+      if (this.hasPendingChanges()) return;
+      await boardRequest(`/${board.id}?expectedRevision=${board.revision}`, 'DELETE');
+      this.board = null;
+      await this.open();
+    } catch (error) {
+      this.error(error);
+    }
+  }
+
+  private async launch(item: BoardItem, entryId?: string, force = false): Promise<void> {
+    const board = this.board;
+    if (!board) return;
+    this.select(item.id);
+    const show = (): void => {
+      renderBoardLaunches(
+        this.inspector,
+        item,
+        () => {
+          void this.launch(item, entryId, true);
+        },
+        () => {
+          this.hideInspector();
+        },
+      );
+    };
+    if (!force && item.launches?.some((launch) => (launch.entryId ?? undefined) === entryId)) {
+      show();
+      return;
+    }
+    try {
+      await this.flush();
+      if (this.hasPendingChanges()) return;
+      if (!hasBoardSessionSettings(board, item)) {
+        await this.settings();
+        return;
+      }
+      this.status.textContent = t('boards.launchState.starting');
+      const launch = await this.sessions.launch(board, item, entryId);
+      if (!launch || this.board !== board) return;
+      this.status.textContent = t(`boards.launchState.${launch.state}`);
+      show();
+    } catch (error) {
+      this.error(error);
+    }
+  }
+
+  private hideInspector(): void {
+    this.inspector.hidden = true;
+    this.surface.focus({ preventScroll: true });
+  }
+
   private async remove(item: BoardItem): Promise<void> {
     if (!this.board || !(await showConfirm(t('boards.confirmDelete')))) return;
     await this.flush();
@@ -329,16 +639,26 @@ class BoardView {
 
   private schedule(): void {
     this.status.textContent = t('boards.saving');
+    this.status.dataset.state = 'saving';
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       void this.flush();
     }, 450);
   }
 
-  private async flush(): Promise<void> {
-    if (this.saving || !this.board) return;
+  private flush(): Promise<void> {
+    if (this.saveOperation) return this.saveOperation;
+    this.saveOperation = this.performFlush().finally(() => {
+      this.saveOperation = null;
+    });
+    return this.saveOperation;
+  }
+
+  private async performFlush(): Promise<void> {
+    if (this.saving || !this.board || this.conflict || this.titleConflict) return;
     this.saving = true;
     const board = this.board;
+    let activeItem: BoardItem | null = null;
     try {
       for (const [id, generation] of this.dirty) {
         const item = board.items.find((entry) => entry.id === id);
@@ -346,6 +666,7 @@ class BoardView {
           this.dirty.delete(id);
           continue;
         }
+        activeItem = item;
         const saved = await boardRequest<BoardItem>(`/${board.id}/items/${id}`, 'PUT', {
           expectedRevision: item.revision,
           item,
@@ -353,92 +674,309 @@ class BoardView {
         item.revision = saved.revision;
         if (this.dirty.get(id) === generation) this.dirty.delete(id);
       }
+      activeItem = null;
+      await this.flushTitle(board);
       if (this.viewportDirty) {
         const generation = this.viewportDirty;
-        const saved = await boardRequest<BoardDocument>(`/${board.id}`, 'PATCH', {
-          expectedRevision: board.revision,
-          title: board.title,
+        await boardRequest(`/${board.id}/viewport`, 'PATCH', {
           panX: board.panX,
           panY: board.panY,
           zoom: board.zoom,
         });
-        board.revision = saved.revision;
         if (this.viewportDirty === generation) this.viewportDirty = 0;
       }
+      this.syncPickerTitle();
       this.status.textContent = t('boards.saved');
-      if (this.dirty.size || this.viewportDirty) this.schedule();
+      this.status.dataset.state = 'saved';
+      if (this.hasPendingChanges()) this.schedule();
     } catch (error) {
-      this.error(error);
+      await this.handleSaveError(error, activeItem);
     } finally {
       this.saving = false;
+      if (this.refreshQueued) void this.refresh();
     }
   }
 
-  private async refresh(): Promise<void> {
-    if (
-      !this.board ||
-      this.root.hidden ||
-      this.saving ||
-      this.dirty.size ||
-      this.viewportDirty ||
-      this.surface.classList.contains('is-dragging')
-    )
+  private hasPendingChanges(): boolean {
+    return this.dirty.size > 0 || this.viewportDirty !== 0 || this.titleDirty !== 0;
+  }
+
+  private syncPickerTitle(): void {
+    const option = this.picker.selectedOptions[0];
+    if (option && this.board) option.textContent = this.board.title;
+  }
+
+  private async flushTitle(board: BoardDocument): Promise<void> {
+    if (!this.titleDirty) return;
+    const generation = this.titleDirty;
+    const saved = await boardRequest<BoardDocument>(`/${board.id}`, 'PATCH', {
+      expectedRevision: board.revision,
+      title: board.title,
+    });
+    board.revision = saved.revision;
+    if (this.titleDirty === generation) this.titleDirty = 0;
+  }
+  private async handleSaveError(error: unknown, item: BoardItem | null): Promise<void> {
+    if (!item && this.titleDirty && error instanceof BoardApiError && error.status === 409) {
+      try {
+        if (!this.board) return;
+        this.titleConflict = await boardRequest<BoardDocument>(`/${this.board.id}`);
+        this.resolveButton.hidden = false;
+        this.status.textContent = t('boards.titleConflict');
+        this.status.dataset.state = 'conflict';
+        this.presentConflict();
+      } catch (readError) {
+        this.error(readError);
+      }
       return;
+    }
+    if (item && error instanceof BoardApiError && [404, 409].includes(error.status)) {
+      try {
+        const remote = await this.readConflictItem(item.id);
+        this.conflict = { item: item, remote };
+        this.resolveButton.hidden = false;
+        this.status.textContent = t('boards.conflictTitle');
+        this.status.dataset.state = 'conflict';
+        this.presentConflict();
+      } catch (readError) {
+        this.error(readError);
+      }
+    } else this.error(error);
+  }
+
+  private async readConflictItem(id: string): Promise<BoardItem | null> {
+    if (!this.board) return null;
+    try {
+      return await boardRequest<BoardItem>(`/${this.board.id}/items/${id}`);
+    } catch (error) {
+      if (error instanceof BoardApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  private presentConflict(): void {
+    this.conflictOverlay?.();
+    if (this.titleConflict) {
+      this.presentTitleConflict(this.titleConflict);
+      return;
+    }
+    const conflict = this.conflict;
+    if (!conflict) return;
+    this.conflictOverlay = showBoardConflict(this.root, conflict.item, conflict.remote, {
+      keepMine: async () => {
+        if (!conflict.remote) return;
+        conflict.item.revision = conflict.remote.revision;
+        this.clearConflict();
+        await this.flush();
+      },
+      useServer: async () => {
+        await this.acceptServerItem(conflict.item);
+      },
+      saveCopy: async () => {
+        if (!this.board) return;
+        const item = {
+          ...structuredClone(conflict.item),
+          id: '',
+          revision: 0,
+          x: conflict.item.x + 24,
+          y: conflict.item.y + 24,
+        };
+        const copy = await boardRequest<BoardItem>(`/${this.board.id}/items`, 'POST', { item });
+        await this.acceptServerItem(conflict.item);
+        if (!this.board.items.some((entry) => entry.id === copy.id)) this.board.items.push(copy);
+        this.render();
+        this.select(copy.id);
+      },
+      dismiss: () => {
+        this.conflictOverlay?.();
+        this.conflictOverlay = null;
+        this.resolveButton.focus();
+      },
+    });
+  }
+
+  private clearConflict(): void {
+    this.conflictOverlay?.();
+    this.conflictOverlay = null;
+    this.conflict = null;
+    this.titleConflict = null;
+    this.resolveButton.hidden = true;
+  }
+
+  private presentTitleConflict(remote: BoardDocument): void {
+    const board = this.board;
+    if (!board) return;
+    this.conflictOverlay = showBoardConflict(
+      this.root,
+      { title: board.title, text: '', entries: [] },
+      { title: remote.title, text: '', entries: [] },
+      {
+        titleKey: 'boards.titleConflict',
+        hintKey: 'boards.titleConflictHint',
+        keepMine: async () => {
+          board.revision = remote.revision;
+          this.clearConflict();
+          await this.flush();
+        },
+        useServer: async () => {
+          const latest = await boardRequest<BoardDocument>(`/${board.id}`);
+          board.title = latest.title;
+          board.revision = latest.revision;
+          this.title.value = latest.title;
+          this.titleDirty = 0;
+          this.clearConflict();
+          await this.flush();
+        },
+        dismiss: () => {
+          this.conflictOverlay?.();
+          this.conflictOverlay = null;
+          this.resolveButton.focus();
+        },
+      },
+    );
+  }
+
+  private async acceptServerItem(item: BoardItem): Promise<void> {
+    const remote = await this.readConflictItem(item.id);
+    if (!this.board) return;
+    if (remote) Object.assign(item, remote);
+    else this.board.items = this.board.items.filter((entry) => entry.id !== item.id);
+    this.dirty.delete(item.id);
+    this.clearConflict();
+    this.title.focus();
+    this.select(null);
+    this.render();
+    this.status.textContent = t('boards.saved');
+    this.status.dataset.state = 'saved';
+    await this.flush();
+  }
+
+  private async refresh(): Promise<void> {
+    if (!this.board || this.root.hidden) return;
+    this.refreshQueued = true;
+    if (this.refreshing || !this.canReadBoard()) return;
+    this.refreshQueued = false;
+    this.refreshing = true;
     const board = this.board;
     try {
       const fresh = await boardRequest<BoardDocument>(`/${board.id}`);
-      if (!this.canApplyRefresh(board)) return;
+      if (!this.canApplyRefresh(board)) {
+        this.refreshQueued = true;
+        return;
+      }
       const existing = new Map(board.items.map((item) => [item.id, item]));
+      const editingId = this.editingItemId();
       const items = fresh.items.map((item) => {
         const previous = existing.get(item.id);
+        if (previous && item.id === editingId) return previous;
         return previous ? Object.assign(previous, item) : item;
       });
+      const editing = editingId ? existing.get(editingId) : undefined;
+      if (editing && !items.some((item) => item.id === editingId)) items.push(editing);
       board.items = items;
-      if (fresh.revision !== board.revision) {
-        Object.assign(board, { ...fresh, items });
-        if (document.activeElement !== this.title) this.title.value = board.title;
+      if (!items.some((item) => item.id === this.selected)) this.select(null);
+      if (fresh.revision !== board.revision && document.activeElement !== this.title) {
+        const camera = { panX: board.panX, panY: board.panY, zoom: board.zoom };
+        Object.assign(board, { ...fresh, ...camera, items });
+        this.title.value = board.title;
         this.canvas?.render();
       }
       this.render();
     } catch (error) {
       this.error(error);
+    } finally {
+      this.refreshing = false;
+      if (this.refreshQueued) void this.refresh();
     }
   }
 
   private async close(): Promise<void> {
     await this.flush();
-    if (this.saving || this.dirty.size || this.viewportDirty) return;
+    if (this.saving || this.hasPendingChanges()) return;
+    ++this.loadGeneration;
     if (this.detached) {
-      window.close();
+      if (window.opener) window.close();
+      else location.assign('/');
       return;
     }
     this.root.hidden = true;
+    const app = document.getElementById('app');
+    if (app) app.inert = false;
+    this.removeBackLayer?.();
+    this.removeBackLayer = null;
+    for (const frame of this.plane.querySelectorAll<HTMLIFrameElement>('iframe')) {
+      resetBoardBrowser(frame);
+      frame.src = 'about:blank';
+    }
     this.canvas?.dispose();
     this.canvas = null;
+    this.socket?.dispose();
+    this.socket = null;
     if (this.poll) clearInterval(this.poll);
     this.poll = null;
     document.getElementById('btn-boards')?.focus();
   }
 
   private canApplyRefresh(board: BoardDocument): boolean {
+    return this.board === board && this.canReadBoard();
+  }
+
+  private canReadBoard(): boolean {
     return (
-      this.board === board &&
       !this.saving &&
       !this.dirty.size &&
       !this.viewportDirty &&
+      !this.titleDirty &&
+      !this.surface.inert &&
+      !this.surface.classList.contains('is-dragging') &&
       !this.inspector.contains(document.activeElement)
     );
   }
 
+  private editingItemId(): string | null {
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLTextAreaElement ||
+      (active instanceof HTMLInputElement && active.type !== 'checkbox')
+    )
+      return active.closest<HTMLElement>('.board-item')?.dataset.id ?? null;
+    return null;
+  }
+
+  private async handleBrowserInstruction(message: BoardBrowserInstruction): Promise<void> {
+    let failure: string | undefined;
+    try {
+      if (!this.board) throw new Error('This board is closed.');
+      await executeBoardBrowserInstruction(this.plane, this.board, message);
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error);
+    }
+    if (message.requestId) {
+      const response = await fetch('/api/browser/ui-result', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestId: message.requestId,
+          command: message.command,
+          success: !failure,
+          error: failure,
+        }),
+      });
+      if (!response.ok) this.error(new Error('Browser command acknowledgement failed.'));
+    }
+  }
+
   private error(error: unknown): void {
+    this.status.dataset.state = 'error';
     this.status.textContent = `${t('boards.saveError')} ${error instanceof Error ? error.message : String(error)}`;
     this.status.title = this.status.textContent;
   }
 
-  private button(label: string, action: () => void): HTMLButtonElement {
+  private button(label: string, action: () => void, key?: string): HTMLButtonElement {
     const element = document.createElement('button');
     element.type = 'button';
     element.textContent = label;
+    if (key) element.dataset.boardAction = key;
     element.addEventListener('click', action);
     return element;
   }

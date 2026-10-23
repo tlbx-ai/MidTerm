@@ -14,7 +14,7 @@ internal static class BoardCliCommand
         {
             if (arguments.Length > 0 && arguments[0] is "help" or "--help" or "-h")
             {
-                Console.WriteLine("mt board list|get ID|create JSON|update ID JSON|delete ID REV|add ID JSON|write ID ITEM JSON|remove ID ITEM REV");
+                Console.WriteLine("mt board list|get ID|item ID ITEM|create JSON|update ID JSON|viewport ID JSON|delete ID REV|add ID JSON|write ID ITEM JSON|remove ID ITEM REV|browser ID ITEM JSON|launch ID ITEM JSON|launches ID");
                 Console.WriteLine("mt board serve BOARD_ID DIRECTORY — add a local HTML/JS program (index.html) as a browser tile");
                 Console.WriteLine("JSON may be inline or @file.json. Updates require expectedRevision from the latest read.");
                 return 0;
@@ -39,7 +39,8 @@ internal static class BoardCliCommand
             if (helper is null) throw new InvalidOperationException("No tlbx connection helper found. Run this command in a tlbx session working directory containing .tlbx/tlbx_cli.");
             var start = new ProcessStartInfo(windows ? "pwsh" : "/bin/bash")
             {
-                UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = workingDirectory
+                UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = workingDirectory,
+                RedirectStandardOutput = true, RedirectStandardError = true
             };
             if (windows)
             {
@@ -51,6 +52,12 @@ internal static class BoardCliCommand
             start.ArgumentList.Add("mt_board");
             foreach (var argument in arguments) start.ArgumentList.Add(argument);
             using var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the tlbx CLI transport.");
+            // A native caller may itself be piped by an agent. Preserve both channels and drain concurrently.
+            using var output = Console.OpenStandardOutput();
+            using var error = Console.OpenStandardError();
+            Task.WhenAll(
+                process.StandardOutput.BaseStream.CopyToAsync(output),
+                process.StandardError.BaseStream.CopyToAsync(error)).GetAwaiter().GetResult();
             process.WaitForExit();
             return process.ExitCode;
         }

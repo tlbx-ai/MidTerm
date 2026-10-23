@@ -32,7 +32,22 @@ export interface BoardItem {
   workingDirectory?: string | null;
   launchCommand?: string | null;
   prompt?: string | null;
+  sessionProfile?: string | null;
+  appServerControlOnly?: boolean | null;
+  launches?: BoardLaunch[];
+  calendarMonth?: string | null;
+}
+
+export interface BoardLaunch {
+  id: string;
+  boardId: string;
+  itemId: string;
+  entryId?: string | null;
   sessionId?: string | null;
+  state: 'starting' | 'submitting' | 'submitted' | 'failed' | 'uncertain';
+  name: string;
+  error?: string | null;
+  createdAt: string;
 }
 
 export interface BoardDocument {
@@ -43,6 +58,10 @@ export interface BoardDocument {
   panY: number;
   zoom: number;
   items: BoardItem[];
+  workingDirectory?: string | null;
+  launchCommand?: string | null;
+  sessionProfile?: string | null;
+  appServerControlOnly?: boolean;
 }
 
 export class BoardApiError extends Error {
@@ -54,14 +73,34 @@ export class BoardApiError extends Error {
   }
 }
 
+export function getBoardTabId(boardId: string): string {
+  return `${getOrCreateTabId()}/board/${boardId}`;
+}
+
 export async function boardRequest<T>(path = '', method = 'GET', body?: unknown): Promise<T> {
+  const boardId = /^\/([a-f0-9]{32})(?:\/|$)/.exec(path)?.[1];
   const response = await fetch(`/api/boards${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json', 'X-MidTerm-Tab-Id': getOrCreateTabId() },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-MidTerm-Tab-Id': boardId ? getBoardTabId(boardId) : getOrCreateTabId(),
+    },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  if (!response.ok) throw new BoardApiError(response.status, await response.text());
+  if (!response.ok) throw new BoardApiError(response.status, problemDetail(await response.text()));
   return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+}
+
+function problemDetail(text: string): string {
+  try {
+    const value = JSON.parse(text) as unknown;
+    if (typeof value === 'string') return value;
+    if (value && typeof value === 'object' && 'detail' in value && typeof value.detail === 'string')
+      return value.detail;
+  } catch {
+    /* Plain-text API errors remain readable. */
+  }
+  return text;
 }
 
 export function newBoardItem(kind: BoardItem['kind'], x: number, y: number): BoardItem {
@@ -74,8 +113,8 @@ export function newBoardItem(kind: BoardItem['kind'], x: number, y: number): Boa
     color: kind === 'note' ? 'sand' : 'plain',
     x,
     y,
-    width: kind === 'browser' ? 640 : 320,
-    height: kind === 'browser' ? 440 : 280,
+    width: kind === 'browser' ? 640 : kind === 'mail' ? 420 : 320,
+    height: kind === 'browser' || kind === 'calendar' ? 440 : kind === 'mail' ? 360 : 280,
     z: 0,
     entries: [],
   };

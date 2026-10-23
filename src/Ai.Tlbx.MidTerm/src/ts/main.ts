@@ -350,7 +350,7 @@ async function init(): Promise<void> {
   initPwaInstall();
   await initI18n();
   if (await initDetachedBoard()) return;
-  initBoards();
+  initBoards(selectSession);
   initUpdateUi();
   initUpdateRuntime();
   initAppShellStatePersistence();

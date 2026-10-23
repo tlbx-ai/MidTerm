@@ -10,6 +10,10 @@ public sealed record BoardDocument
     public double PanX { get; set; }
     public double PanY { get; set; }
     public double Zoom { get; set; } = 1;
+    public string? WorkingDirectory { get; set; }
+    public string? LaunchCommand { get; set; }
+    public string? SessionProfile { get; set; }
+    public bool AppServerControlOnly { get; set; }
     public List<BoardItem> Items { get; set; } = [];
 }
 
@@ -34,7 +38,10 @@ public sealed record BoardItem
     public string? WorkingDirectory { get; set; }
     public string? LaunchCommand { get; set; }
     public string? Prompt { get; set; }
-    public string? SessionId { get; set; }
+    public string? SessionProfile { get; set; }
+    public bool? AppServerControlOnly { get; set; }
+    public List<BoardLaunch> Launches { get; set; } = [];
+    public string? CalendarMonth { get; set; }
 }
 
 public sealed record BoardEntry
@@ -57,7 +64,13 @@ public sealed record BoardPatch
     public double? PanX { get; set; }
     public double? PanY { get; set; }
     public double? Zoom { get; set; }
+    public string? WorkingDirectory { get; set; }
+    public string? LaunchCommand { get; set; }
+    public string? SessionProfile { get; set; }
+    public bool? AppServerControlOnly { get; set; }
 }
+
+public sealed record BoardViewport(double PanX, double PanY, double Zoom);
 
 public sealed record BoardItemWrite
 {
@@ -65,10 +78,18 @@ public sealed record BoardItemWrite
     public BoardItem Item { get; set; } = new();
 }
 
+public sealed record BoardSignal(string Type, string BoardId);
+
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(BoardDocument))]
 [JsonSerializable(typeof(List<BoardDocument>))]
 [JsonSerializable(typeof(BoardItem))]
 [JsonSerializable(typeof(BoardPatch))]
 [JsonSerializable(typeof(BoardItemWrite))]
+[JsonSerializable(typeof(BoardCalendarMonth))]
+[JsonSerializable(typeof(BoardSignal))]
+[JsonSerializable(typeof(BoardViewport))]
+[JsonSerializable(typeof(BoardLaunch))]
+[JsonSerializable(typeof(List<BoardLaunch>))]
+[JsonSerializable(typeof(BoardLaunchRequest))]
 internal partial class BoardJsonContext : JsonSerializerContext;

@@ -1,6 +1,7 @@
 (function () {
   var params = new URLSearchParams(window.location.search);
-  if (params.get('embedded') === '1') document.documentElement.classList.add('board-embedded');
+  var boardEmbedded = params.get('embedded') === '1';
+  if (boardEmbedded) document.documentElement.classList.add('board-embedded');
   var sessionId = params.get('session') || '';
   var initialPreviewName = params.get('preview') || 'default';
   var initialViewportWidth = parseInt(params.get('viewportWidth') || '0', 10) || 0;
@@ -155,6 +156,10 @@
     var proxyUrl = new URL(path === '/' ? prefix + '/' : prefix + path, previewOrigin);
     proxyUrl.search = parsed.search;
     proxyUrl.hash = parsed.hash;
+    if (previewContext && previewContext.previewId && previewContext.previewToken) {
+      proxyUrl.searchParams.set('__mtPreviewId', previewContext.previewId);
+      proxyUrl.searchParams.set('__mtPreviewToken', previewContext.previewToken);
+    }
     if (reloadToken) {
       proxyUrl.searchParams.set('__mtReloadToken', reloadToken);
     }
@@ -1020,6 +1025,7 @@
   }
 
   async function refreshStatusIndicator() {
+    if (boardEmbedded) return;
     if (!currentUrl && !(previewContext && previewContext.previewId)) {
       setStatusIndicator('info', null);
       return;
@@ -1467,7 +1473,7 @@
       applyViewport(initialViewportWidth, initialViewportHeight);
     }
 
-    if (statusRefreshTimer === null) {
+    if (!boardEmbedded && statusRefreshTimer === null) {
       statusRefreshTimer = window.setInterval(function () {
         void refreshStatusIndicator();
       }, 4000);

@@ -90,8 +90,13 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
                 mt_board update aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa '{"expectedRevision":1,"zoom":0.5}'
                 mt_board add aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa '{"item":{"text":"note"}}'
                 mt_board write aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb '{"expectedRevision":2,"item":{"text":"changed"}}'
+                mt_board browser aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb '{"command":"exec","value":"document.title"}'
                 mt_board remove aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 3
                 mt_board delete aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 4
+                mt_board item aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+                mt_board launches aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                mt_board viewport aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa '{"panX":20,"panY":30,"zoom":0.5}'
+                mt_board launch aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb '{"requestId":"cccccccccccccccccccccccccccccccc","expectedRevision":2}'
                 """ : """
                 $env:CODEX_THREAD_ID='01234567-89ab-cdef-0123-456789abcdef'
                 . $args[0]
@@ -101,17 +106,27 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
                 mt_board update aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa '{"expectedRevision":1,"zoom":0.5}'
                 mt_board add aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa '{"item":{"text":"note"}}'
                 mt_board write aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb '{"expectedRevision":2,"item":{"text":"changed"}}'
+                mt_board browser aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb '{"command":"exec","value":"document.title"}'
                 mt_board remove aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 3
                 mt_board delete aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 4
+                mt_board item aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+                mt_board launches aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                mt_board viewport aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa '{"panX":20,"panY":30,"zoom":0.5}'
+                mt_board launch aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb '{"requestId":"cccccccccccccccccccccccccccccccc","expectedRevision":2}'
                 """,
             app.Urls.Single(), "deadbeef", Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
         Assert.True(result.ExitCode == 0, result.Error + result.Output);
-        Assert.Equal(8, requests.Count);
-        Assert.Equal(new[] { "GET", "GET", "POST", "PATCH", "POST", "PUT", "DELETE", "DELETE" }, requests.Select(request => request.Method), StringComparer.Ordinal);
+        Assert.Equal(13, requests.Count);
+        Assert.Equal(new[] { "GET", "GET", "POST", "PATCH", "POST", "PUT", "POST", "DELETE", "DELETE", "GET", "GET", "PATCH", "POST" }, requests.Select(request => request.Method), StringComparer.Ordinal);
         Assert.Equal("{\"title\":\"Grüße $ ` test\"}", requests[2].Body);
         Assert.Equal("{\"expectedRevision\":2,\"item\":{\"text\":\"changed\"}}", requests[5].Body);
-        Assert.EndsWith("/items/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?expectedRevision=3", requests[6].Path, StringComparison.Ordinal);
-        Assert.EndsWith("/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?expectedRevision=4", requests[7].Path, StringComparison.Ordinal);
+        Assert.EndsWith("/items/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/browser-command", requests[6].Path, StringComparison.Ordinal);
+        Assert.EndsWith("/items/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?expectedRevision=3", requests[7].Path, StringComparison.Ordinal);
+        Assert.EndsWith("/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?expectedRevision=4", requests[8].Path, StringComparison.Ordinal);
+        Assert.EndsWith("/items/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", requests[9].Path, StringComparison.Ordinal);
+        Assert.EndsWith("/launches", requests[10].Path, StringComparison.Ordinal);
+        Assert.EndsWith("/viewport", requests[11].Path, StringComparison.Ordinal);
+        Assert.EndsWith("/launch", requests[12].Path, StringComparison.Ordinal);
     }
 
     [Theory]

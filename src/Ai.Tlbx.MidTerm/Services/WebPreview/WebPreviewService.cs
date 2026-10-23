@@ -196,6 +196,15 @@ public sealed class WebPreviewService
     internal string? GetLocalRootByRouteKey(string routeKey) =>
         TryGetStateByRouteKey(routeKey, out var state) ? state.LocalRoot : null;
 
+    internal bool ConfigureBoardTarget(string sessionId, string previewName, string url, string? localRoot, string signature)
+    {
+        var state = GetOrCreateState(sessionId, previewName);
+        if (state.BoardTargetSignature == signature && state.TargetUri is not null) return true;
+        if (!SetTarget(sessionId, previewName, url, localRoot: localRoot)) return false;
+        state.BoardTargetSignature = signature;
+        return true;
+    }
+
     public bool IsActive(string sessionId, string? previewName = null)
     {
         return GetTargetUri(sessionId, previewName) is not null;
@@ -1403,6 +1412,7 @@ public sealed class WebPreviewService
         public string? TargetUrl;
         public Uri? TargetUri;
         public string? LocalRoot;
+        public string? BoardTargetSignature;
         public long TargetRevision;
         public CookieContainer CookieContainer { get; set; }
         public PreviewHttpInvoker HttpClient { get; set; }
