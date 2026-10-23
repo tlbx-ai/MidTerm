@@ -29,7 +29,7 @@ function global:git {
     switch ($args[0]) {
         'rev-parse' { $global:LASTEXITCODE = 1 }
         'fetch' { $global:LASTEXITCODE = 1 }
-        'show' { @{pty=$global:TlbxRuntimeBaselineVersion} | ConvertTo-Json -Compress }
+        'show' { @{pty=$global:TlbxRuntimeBaselineVersion;web='1.3.0'} | ConvertTo-Json -Compress }
         'diff' {
             $global:TlbxRuntimeBaselineDiff = $args[2]
             if ($global:TlbxRuntimeBaselineChanged) { 'src/Ai.Tlbx.MidTerm.Common/Changed.cs' }
@@ -40,6 +40,27 @@ function global:git {
 try {
     Assert-ReleaseRuntimeSelection -PtyVersion 1.2.0 -WebVersion 1.3.0 -mthostUpdate no
     Assert-Check ($global:TlbxRuntimeBaselineDiff -eq 'refs/tags/v1.3.0') 'Promoted runtime must compare against the verified web tag.'
+    # Execute the real preparation guard with an unpublished worktree candidate.
+    $devAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'release-dev.ps1'), [ref]$null, [ref]$null)
+    $getVersion = $devAst.Find({ param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-WebVersionFromGitRef'
+    }, $true)
+    . ([scriptblock]::Create($getVersion.Extent.Text))
+    $baselineAssignment = $devAst.Find({ param($node)
+        $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+        $node.Left.VariablePath.UserPath -eq 'runtimeBaselineWebVersion'
+    }, $true)
+    $runtimeGuard = $devAst.Find({ param($node)
+        $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Assert-ReleaseRuntimeSelection'
+    }, $true)
+    $releaseRemoteCommit = 'integration-base'
+    $currentVersion = '1.4.0-dev'
+    $versionJson = @{pty='1.2.0'}
+    $mthostUpdate = 'no'
+    . ([scriptblock]::Create($baselineAssignment.Extent.Text))
+    . ([scriptblock]::Create($runtimeGuard.Extent.Text))
+    Assert-Check ($global:TlbxRuntimeBaselineDiff -eq 'refs/tags/v1.3.0') 'Re-preparation must not use the unpublished candidate as its runtime baseline.'
     $global:TlbxRuntimeBaselineChanged = $true
     Assert-Throws { Assert-ReleaseRuntimeSelection -PtyVersion 1.2.0 -WebVersion 1.3.0 -mthostUpdate no } 'Promoted baseline accepted changed runtime sources.'
     $global:TlbxRuntimeBaselineVersion = '1.1.0'
