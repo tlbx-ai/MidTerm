@@ -148,7 +148,9 @@ public sealed class GitWorkspaceTests : IDisposable
         await Init(); await Git(Root, "config", "credential.helper", "");
         using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); listener.Start();
         var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        // Preparation can be slow on a loaded runner. Keep the fixture alive until
+        // the operation ends; an expired listener otherwise turns a 401 into a Git timeout.
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         var server = Task.Run(async () => {
             try {
                 while (!cancellation.IsCancellationRequested) {
@@ -158,7 +160,7 @@ public sealed class GitWorkspaceTests : IDisposable
                     await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes("HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"test\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"), cancellation.Token);
                 }
             } catch (OperationCanceledException) { }
-        }, cancellation.Token);
+        });
         try {
             await Git(Root, "remote", "add", "auth", "http://user:private-secret@127.0.0.1:" + port.ToString(System.Globalization.CultureInfo.InvariantCulture) + "/repo.git");
             var fetch = await Request("fetch"); fetch.Remote = "auth"; var result = await Execute(fetch);
