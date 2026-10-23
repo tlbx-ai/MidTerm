@@ -7361,6 +7361,15 @@ body::before {
 
 .dialog-content .modal-footer { flex-wrap: wrap; }
 .dialog-content .modal-footer > button { min-width: 80px; padding: 8px 16px; }
+.dialog-content .btn-danger {
+  color: var(--workspace-reading-accent-red, var(--accent-red));
+  background: var(--bg-elevated-opaque);
+  border: 1px solid currentcolor;
+}
+.dialog-content .btn-danger:hover {
+  background: color-mix(in srgb, var(--accent-red) 12%, var(--bg-elevated-opaque));
+}
+
 
 .dialog-content .modal-header h3 {
   margin: 0;

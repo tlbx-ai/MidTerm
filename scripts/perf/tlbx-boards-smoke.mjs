@@ -414,7 +414,8 @@ try {
         const bounds = node => {const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};};
         return {dialog:bounds(element),buttons:[...element.querySelectorAll('.modal-footer button')].map(bounds),
           scroll:element.scrollWidth,client:element.clientWidth,
-          background:getComputedStyle(element).backgroundColor};
+          background:getComputedStyle(element).backgroundColor,
+          dangerColor:getComputedStyle(element.querySelector('.btn-danger')).color};
       });
       assert.ok(Math.abs(layout.dialog.width-Math.min(420,width-32))<1,`${theme}: dialog width at ${width}`);
       assert.ok(layout.dialog.x>=15 && layout.dialog.right<=width-15);
@@ -422,6 +423,12 @@ try {
       assert.ok(layout.buttons.every(button => button.x>=layout.dialog.x+15 && button.right<=layout.dialog.right-15));
       assert.ok(layout.scroll<=layout.client);
       assert.ok(/^rgb\(/.test(layout.background));
+      const luminance = color => color.match(/[\d.]+/g).slice(0,3).map(Number).map(c => c/255)
+        .map(c => c<=0.04045 ? c/12.92 : ((c+0.055)/1.055)**2.4)
+        .reduce((sum,c,i) => sum+c*[0.2126,0.7152,0.0722][i],0);
+      const foreground = luminance(layout.dangerColor), background = luminance(layout.background);
+      assert.ok((Math.max(foreground,background)+0.05)/(Math.min(foreground,background)+0.05)>=4.5,
+        `${theme}: destructive action text contrast`);
       await shell.screenshot({path:path.join(out,`delete-${theme}-${width}.png`)});
       // Tab wraps within the dialog; Enter on Cancel must cancel rather than delete.
       await shell.keyboard.press('Shift+Tab');
