@@ -160,7 +160,7 @@ public sealed class GitWorkspaceTests : IDisposable
                     await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes("HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"test\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"), cancellation.Token);
                 }
             } catch (OperationCanceledException) { }
-        });
+        }, CancellationToken.None);
         try {
             await Git(Root, "remote", "add", "auth", "http://user:private-secret@127.0.0.1:" + port.ToString(System.Globalization.CultureInfo.InvariantCulture) + "/repo.git");
             var fetch = await Request("fetch"); fetch.Remote = "auth"; var result = await Execute(fetch);
