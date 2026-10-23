@@ -25,12 +25,26 @@ import {
   renderBoardSettings,
 } from './boardSession';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
-import { $sessionList } from '../../stores';
+import {
+  $actionGraphsOpen,
+  $boardsOpen,
+  $operatorOpen,
+  $sessionList,
+  $settingsOpen,
+} from '../../stores';
+import { closeSettings } from '../settings';
+import { closeOperatorView } from '../operator';
+import { closeActionGraphsView } from '../actionGraphs';
 import { isBoardEditing, trapBoardFocus } from './boardKeys';
 
 let view: BoardView | null = null;
 
 export function initBoards(onSelectSession: (id: string) => void): void {
+  for (const state of [$settingsOpen, $operatorOpen, $actionGraphsOpen]) {
+    state.subscribe((open) => {
+      if (open) closeBoardsView();
+    });
+  }
   const requestedSession = new URLSearchParams(location.search).get('session');
   if (requestedSession) {
     let selected = false;
@@ -46,6 +60,10 @@ export function initBoards(onSelectSession: (id: string) => void): void {
     view ??= new BoardView();
     void view.open();
   });
+}
+
+export function closeBoardsView(): void {
+  void view?.close(false);
 }
 
 export async function initDetachedBoard(): Promise<boolean> {
@@ -106,9 +124,9 @@ class BoardView {
       },
     });
     this.root.className = 'boards-workspace';
-    this.root.setAttribute('role', 'dialog');
+    this.root.classList.toggle('boards-detached', detached);
+    this.root.setAttribute('role', 'region');
     this.root.setAttribute('aria-label', t('boards.title'));
-    this.root.setAttribute('aria-modal', 'true');
     this.root.hidden = true;
     const header = document.createElement('header');
     header.className = 'boards-header';
@@ -205,14 +223,16 @@ class BoardView {
     hint.className = 'boards-hint';
     hint.textContent = t('boards.canvasHint');
     this.root.append(header, this.surface, tools, this.inspector, hint);
-    document.body.append(this.root);
+    const host = detached ? document.body : document.querySelector('.terminals-area');
+    if (!host) throw new Error('Boards workspace host is missing.');
+    host.append(this.root);
     window.addEventListener('beforeunload', (event) => {
       if (!this.dirty.size && !this.viewportDirty && !this.titleDirty) return;
       event.preventDefault();
     });
     this.root.addEventListener('keydown', (event) => {
       event.stopPropagation();
-      trapBoardFocus(this.root, event);
+      if (this.detached) trapBoardFocus(this.root, event);
       this.handleCanvasKey(event);
       if (event.key === 'Escape') {
         if (!this.inspector.hidden) this.hideInspector();
@@ -235,8 +255,7 @@ class BoardView {
       if (this.hasPendingChanges() || generation !== this.loadGeneration) return false;
     }
     this.root.hidden = false;
-    const app = document.getElementById('app');
-    if (app) app.inert = true;
+    this.showPane();
     this.removeBackLayer ??= registerBackButtonLayer(() => {
       void this.close();
     });
@@ -259,6 +278,21 @@ class BoardView {
         if (this.refreshQueued) void this.refresh();
       }
     }
+  }
+
+  private showPane(): void {
+    if (this.detached) return;
+    closeSettings();
+    closeOperatorView();
+    closeActionGraphsView();
+    this.setPaneOpen(true);
+    document.getElementById('app')?.classList.remove('sidebar-open');
+  }
+
+  private setPaneOpen(open: boolean): void {
+    this.root.parentElement?.classList.toggle('boards-open', open);
+    document.getElementById('btn-boards')?.classList.toggle('active', open);
+    $boardsOpen.set(open);
   }
 
   private async readBoard(
@@ -890,7 +924,8 @@ class BoardView {
     }
   }
 
-  private async close(): Promise<void> {
+  async close(restoreFocus = true): Promise<void> {
+    if (this.root.hidden) return;
     await this.flush();
     if (this.saving || this.hasPendingChanges()) return;
     ++this.loadGeneration;
@@ -900,8 +935,7 @@ class BoardView {
       return;
     }
     this.root.hidden = true;
-    const app = document.getElementById('app');
-    if (app) app.inert = false;
+    this.setPaneOpen(false);
     this.removeBackLayer?.();
     this.removeBackLayer = null;
     for (const frame of this.plane.querySelectorAll<HTMLIFrameElement>('iframe')) {
@@ -914,7 +948,7 @@ class BoardView {
     this.socket = null;
     if (this.poll) clearInterval(this.poll);
     this.poll = null;
-    document.getElementById('btn-boards')?.focus();
+    if (restoreFocus) document.getElementById('btn-boards')?.focus();
   }
 
   private canApplyRefresh(board: BoardDocument): boolean {

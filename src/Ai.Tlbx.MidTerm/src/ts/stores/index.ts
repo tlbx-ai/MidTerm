@@ -46,6 +46,9 @@ export const $operatorOpen = atom(false);
 /** Agent-curated action graph canvas is covering terminal surfaces. */
 export const $actionGraphsOpen = atom(false);
 
+/** Boards occupies the workspace while terminal sessions remain running. */
+export const $boardsOpen = atom(false);
+
 /**
  * Pending renames awaiting server confirmation.
  * Maps sessionId -> pending name (empty string means clearing the name).
