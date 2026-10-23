@@ -3,6 +3,7 @@ export function createPdfView(
   viewUrl: string,
   className: string,
   signal?: AbortSignal,
+  escape?: () => boolean,
 ): HTMLIFrameElement {
   const frame = document.createElement('iframe');
   frame.className = className;
@@ -13,6 +14,16 @@ export function createPdfView(
     scheme: document.documentElement.dataset.nativeColorScheme ?? 'dark',
   });
   frame.src = `/pdf/index.html?${params}`;
+  if (escape) {
+    frame.addEventListener('load', () => {
+      frame.contentDocument?.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && escape()) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      });
+    });
+  }
   signal?.addEventListener(
     'abort',
     () => {
